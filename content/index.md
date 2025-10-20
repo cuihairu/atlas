@@ -9,3 +9,7 @@ enableToc: true
 
 - 试试跳转到 [[about|About]]
 - 或者搜索你想要的内容
+
+## 分类总览
+
+- [[catalog|点击查看完整分类目录]]
