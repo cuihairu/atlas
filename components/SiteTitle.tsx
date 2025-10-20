@@ -1,5 +1,5 @@
-import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "./quartz/components/types"
-import { i18n } from "./quartz/i18n"
+import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "../quartz/components/types"
+import { i18n } from "../quartz/i18n"
 
 const SiteTitle: QuartzComponent = ({ cfg }: QuartzComponentProps) => {
   const title = cfg?.pageTitle ?? i18n(cfg.locale).propertyDefaults.title
@@ -23,4 +23,3 @@ SiteTitle.css = `
 `
 
 export default (() => SiteTitle) satisfies QuartzComponentConstructor
-

@@ -1,5 +1,5 @@
-import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "./quartz/components/types"
-import { pathToRoot, joinSegments } from "./quartz/util/path"
+import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "../quartz/components/types"
+import { pathToRoot, joinSegments } from "../quartz/util/path"
 
 const cards = [
   { title: "游戏服务器", href: "95-domains/game-server" },
@@ -51,4 +51,3 @@ HomeCards.css = `
 `
 
 export default (() => HomeCards) satisfies QuartzComponentConstructor
-
