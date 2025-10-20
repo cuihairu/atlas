@@ -90,17 +90,23 @@ atlas/
 
 ## 部署（可选）
 
-静态化：`npx quartz build` 会生成 `public/`，可部署到任意静态托管（GitHub Pages/Cloudflare Pages/Nginx）。
+静态化：`npx quartz build` 会生成 `public/`，可部署到任意静态托管。
+
+### GitHub Pages（已内置工作流）
+
+本仓库已自带 `.github/workflows/deploy.yml`，推送到 `main` 将自动构建并发布到 GitHub Pages：
+
+1) 在 GitHub → Settings → Pages：Build and deployment 选择 `GitHub Actions`
+2) 推送到 `main` 分支后，Actions 会构建到 `build/public` 并发布
+3) 访问：https://cuihairu.github.io/atlas
+
+注意：`quartz.config.ts` 中已设置 `baseUrl: "https://cuihairu.github.io/atlas"`，便于生成正确的 canonical/sitemap。
+
+### 手动导出
 
 - 使用容器构建产物：
   - `docker-compose run --rm quartz npx quartz build`
   - 进入容器查看：`docker-compose run --rm quartz sh -lc 'ls -la public'`
-- GitHub Pages 思路：
-  1) 新建 `gh-pages` 分支；将 `public/` 目录内容作为根目录推送
-  2) 开启仓库 Pages（Source: `gh-pages`）
-  3) 或者使用 GitHub Actions 自动化（工作流在 push/build 后发布）
-
-如需我为 `atlas` 补充 GitHub Actions（CI 构建 + Pages 部署）或脚本，请告诉我你偏好的平台。
 
 ## 故障排查
 
@@ -111,4 +117,3 @@ atlas/
 ---
 
 维护者：@cuihairu
-
