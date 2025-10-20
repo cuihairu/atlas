@@ -66,8 +66,9 @@ atlas/
 
 ### 更新 Quartz 版本
 
-- 编辑 `Dockerfile` 的 `ARG QUARTZ_REF`，替换为所需 tag/commit（例如 `v4.3.0`）
-- 重新构建：`docker-compose build --no-cache && docker-compose up -d`
+- 编辑 `Dockerfile` 的 `ARG QUARTZ_REF`，替换为所需 tag/commit（例如 `v4.5.2`）
+- GitHub Actions 工作流会在 `deploy.yml` 中使用同样的 `QUARTZ_REF` 构建并部署（已同步到 `v4.5.2`）
+- 重新构建本地容器预览：`docker-compose build --no-cache && docker-compose up -d`
 
 ## 子模块（submodule）管理
 

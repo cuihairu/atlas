@@ -32,7 +32,7 @@ jobs:
       - name: Prepare Quartz build directory
         run: |
           set -eux
-          QUARTZ_REF=v4.3.0
+          QUARTZ_REF=v4.5.2
           mkdir -p build
           git clone https://github.com/jackyzha0/quartz.git build
           cd build

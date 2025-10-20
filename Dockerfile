@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # Optional: faster CN registry; safe to remove if not needed
 RUN npm config set registry https://registry.npmmirror.com
 
-# Pin Quartz to a specific commit for reproducibility (update as needed)
-ARG QUARTZ_REF=v4.3.0
+# Pin Quartz to a specific tag/commit for reproducibility (update as needed)
+ARG QUARTZ_REF=v4.5.2
 RUN git clone https://github.com/jackyzha0/quartz.git . \
     && git checkout "${QUARTZ_REF}" || true \
     && npm i
@@ -25,4 +25,3 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-
