@@ -42,7 +42,7 @@ jobs:
           cp "$GITHUB_WORKSPACE/quartz.layout.ts" ./
           npx quartz build
           # Avoid content negotiation serving index.xml over index.html on Pages
-          if [ -f index.xml ]; then mv index.xml rss.xml; fi
+          if [ -f public/index.xml ]; then mv public/index.xml public/rss.xml; fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
