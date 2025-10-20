@@ -8,6 +8,7 @@ yarn-error.log*
 public/
 .quartz-cache/
 dist/
+build/
 
 # Env
 .env
@@ -28,4 +29,3 @@ Thumbs.db
 
 # Obsidian
 .obsidian/
-
