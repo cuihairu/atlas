@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v4
+
       - name: Prepare Quartz build directory
         run: |
           set -eux
@@ -43,6 +46,12 @@ jobs:
           npx quartz build
           # Avoid content negotiation serving index.xml over index.html on Pages
           if [ -f public/index.xml ]; then mv public/index.xml public/rss.xml; fi
+
+      - name: Verify site output
+        run: |
+          set -eux
+          test -f build/public/index.html
+          ls -la build/public | sed -n '1,200p'
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
