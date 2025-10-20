@@ -49,13 +49,7 @@ jobs:
           ls -la ./content || true
           # ensure home exists (Quartz warns if missing). Create minimal one if absent.
           if [ ! -f ./content/index.md ]; then
-            cat > ./content/index.md << 'HOME'
----
-title: Home
----
-
-Welcome
-HOME
+            { echo '---'; echo 'title: Home'; echo '---'; echo; echo 'Welcome'; } > ./content/index.md
             echo "Created fallback content/index.md"
           fi
           if [ -d "$GITHUB_WORKSPACE/static" ]; then cp -r "$GITHUB_WORKSPACE/static" ./static; else mkdir -p static; fi
