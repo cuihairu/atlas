@@ -13,18 +13,18 @@ export const sharedPageComponents: SharedLayout = {
 
 // Single content page layout
 export const defaultContentPageLayout: PageLayout = {
-  beforeBody: [Component.ArticleTitle()],
-  left: [SiteTitle()],
-  right: [Component.Backlinks(), Component.Graph()],
+  beforeBody: [Component.Breadcrumbs(), Component.ArticleTitle()],
+  left: [SiteTitle(), Component.Explorer()],
+  right: [Component.RecentNotes(), Component.Backlinks(), Component.Graph()],
   // Some Quartz emitters iterate over `afterBody`; ensure it's always an array
-  afterBody: [],
+  afterBody: [Component.TagList()],
 }
 
 // List page layout (tags/folders)
 export const defaultListPageLayout: PageLayout = {
-  beforeBody: [Component.ArticleTitle()],
-  left: [SiteTitle()],
-  right: [Component.Graph()],
+  beforeBody: [Component.Breadcrumbs(), Component.ArticleTitle()],
+  left: [SiteTitle(), Component.Explorer()],
+  right: [Component.RecentNotes(), Component.Graph()],
   // Keep layout contract consistent with Quartz v4 expectations
-  afterBody: [],
+  afterBody: [Component.TagList()],
 }
