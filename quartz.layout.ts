@@ -5,6 +5,8 @@ import * as Component from "./quartz/components"
 export const sharedPageComponents: SharedLayout = {
   head: Component.Head(),
   header: [],
+  // Ensure emitters (e.g., 404Page) always have an iterable afterBody
+  afterBody: [],
   footer: Component.Footer(),
 }
 
