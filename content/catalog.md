@@ -27,3 +27,4 @@ title: 分类总览（Atlas）
 - 99-scratch → 草稿临时区
 
 标签建议：#cap/concurrency #cap/distributed #cap/observability #cap/performance #cap/security #proto/http2 #ser/protobuf #db/mysql #infra/k8s #domain/game #domain/blockchain #domain/ics #domain/quant。
+- 62-data-analytics 模板/示例：[[62-data-analytics/instrumentation/tracking-plan/tracking-plan-template|Tracking Plan 模板]] · [[62-data-analytics/game-analytics/metrics/dashboard|游戏指标仪表盘]] · [[62-data-analytics/product-analytics/amplitude/quickstart|Amplitude 快速上手]]
