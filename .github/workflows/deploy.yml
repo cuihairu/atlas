@@ -39,7 +39,16 @@ jobs:
           git checkout "$QUARTZ_REF" || true
           npm i
           # copy site content & config from repo
+          echo "-- Listing repo content root --"
+          ls -la "$GITHUB_WORKSPACE/content" || true
           cp -r "$GITHUB_WORKSPACE/content" ./content
+          echo "-- Listing build/content after copy --"
+          ls -la ./content || true
+          # ensure home exists (Quartz warns if missing). Create minimal one if absent.
+          if [ ! -f ./content/index.md ]; then
+            printf "---\ntitle: Home\n---\n\nWelcome\n" > ./content/index.md
+            echo "Created fallback content/index.md"
+          fi
           if [ -d "$GITHUB_WORKSPACE/static" ]; then cp -r "$GITHUB_WORKSPACE/static" ./static; else mkdir -p static; fi
           cp "$GITHUB_WORKSPACE/quartz.config.ts" ./
           cp "$GITHUB_WORKSPACE/quartz.layout.ts" ./
