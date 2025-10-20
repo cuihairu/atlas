@@ -55,6 +55,7 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/static" ]; then cp -r "$GITHUB_WORKSPACE/static" ./static; else mkdir -p static; fi
           cp "$GITHUB_WORKSPACE/quartz.config.ts" ./
           cp "$GITHUB_WORKSPACE/quartz.layout.ts" ./
+          if [ -d "$GITHUB_WORKSPACE/components" ]; then cp -r "$GITHUB_WORKSPACE/components" ./components; fi
           npx quartz build
           # Avoid content negotiation serving index.xml over index.html on Pages
           if [ -f public/index.xml ]; then mv public/index.xml public/rss.xml; fi
