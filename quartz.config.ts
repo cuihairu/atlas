@@ -8,7 +8,9 @@ const config: QuartzConfig = {
     enablePopovers: true,
     analytics: { provider: "plausible" },
     locale: "zh-CN",
-    baseUrl: "localhost:8080",
+    // Use your production site URL for canonical links & sitemap
+    // For GitHub Pages project site: https://<user>.github.io/<repo>
+    baseUrl: "https://cuihairu.github.io/atlas",
     ignorePatterns: ["private", "templates", ".obsidian"],
     defaultDateType: "created",
     theme: {
@@ -74,4 +76,3 @@ const config: QuartzConfig = {
 }
 
 export default config
-

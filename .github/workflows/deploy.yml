@@ -1,0 +1,60 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare Quartz build directory
+        run: |
+          set -eux
+          QUARTZ_REF=v4.3.0
+          mkdir -p build
+          git clone https://github.com/jackyzha0/quartz.git build
+          cd build
+          git checkout "$QUARTZ_REF" || true
+          npm i
+          # copy site content & config from repo
+          cp -r "$GITHUB_WORKSPACE/content" ./content
+          if [ -d "$GITHUB_WORKSPACE/static" ]; then cp -r "$GITHUB_WORKSPACE/static" ./static; else mkdir -p static; fi
+          cp "$GITHUB_WORKSPACE/quartz.config.ts" ./
+          cp "$GITHUB_WORKSPACE/quartz.layout.ts" ./
+          npx quartz build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/public
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
