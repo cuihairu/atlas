@@ -12,7 +12,7 @@ const config: QuartzConfig = {
     // For GitHub Pages project site: <user>.github.io/<repo>
     baseUrl: "cuihairu.github.io/atlas",
     ignorePatterns: ["private", "templates", ".obsidian"],
-    defaultDateType: "created",
+    defaultDateType: "modified",
     theme: {
       fontOrigin: "googleFonts",
       cdnCaching: true,

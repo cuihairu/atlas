@@ -2,6 +2,11 @@ import { PageLayout, SharedLayout } from "./quartz/cfg"
 import * as Component from "./quartz/components"
 import SiteTitle from "./components/SiteTitle"
 import HomeCards from "./components/HomeCards"
+import WordCount from "./components/WordCount"
+
+// Toggles for meta display
+const SHOW_READING_TIME = true
+const SHOW_WORD_COUNT = true
 
 // Components shared across all pages
 export const sharedPageComponents: SharedLayout = {
@@ -24,7 +29,8 @@ export const defaultContentPageLayout: PageLayout = {
     }),
     HomeCards(),
     Component.ArticleTitle(),
-    Component.ContentMeta({ showReadingTime: true, showComma: true }),
+    Component.ContentMeta({ showReadingTime: SHOW_READING_TIME, showComma: true }),
+    ...(SHOW_WORD_COUNT ? [WordCount()] : []),
   ],
   left: [
     SiteTitle(),
@@ -33,7 +39,45 @@ export const defaultContentPageLayout: PageLayout = {
       folderDefaultState: "open",
       folderClickBehavior: "collapse",
       useSavedState: true,
-      // keep default sort/filter/order
+      filterFn: (node) => !["tags","98-templates-snippets","99-scratch"].includes(node.name),
+      // Pin common top-level folders
+      sortFn: (a, b) => {
+        const isFolderA = !a.file
+        const isFolderB = !b.file
+        if (isFolderA !== isFolderB) return isFolderA ? -1 : 1
+        const pinned = [
+          "95-domains",
+          "62-data-analytics",
+          "30-protocols-formats",
+          "50-infrastructure",
+          "60-data-systems",
+          "70-distributed-systems",
+          "75-concurrency-parallelism",
+          "80-architecture-design",
+          "85-observability",
+          "86-performance-capacity",
+          "20-languages",
+          "20-frameworks",
+        ]
+        const rank = (n: string) => {
+          const idx = pinned.indexOf(n)
+          return idx === -1 ? 999 : idx
+        }
+        const ra = rank(a.name)
+        const rb = rank(b.name)
+        if (ra !== rb) return ra - rb
+        return a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" })
+      },
+      // Map folder nodes to use the title from their index.md if present
+      mapFn: (node) => {
+        if (!node.file) {
+          const idxChild = node.children.find((c: any) => c.file && c.name === "index")
+          if (idxChild && idxChild.file?.frontmatter?.title && idxChild.file.frontmatter.title !== "index") {
+            node.displayName = idxChild.file.frontmatter.title
+          }
+        }
+      },
+      order: ["filter","map","sort"],
     }),
   ],
   right: [
@@ -56,7 +100,8 @@ export const defaultListPageLayout: PageLayout = {
       showCurrentPage: true,
     }),
     Component.ArticleTitle(),
-    Component.ContentMeta({ showReadingTime: true, showComma: true }),
+    Component.ContentMeta({ showReadingTime: SHOW_READING_TIME, showComma: true }),
+    ...(SHOW_WORD_COUNT ? [WordCount()] : []),
   ],
   left: [
     SiteTitle(),
@@ -65,6 +110,43 @@ export const defaultListPageLayout: PageLayout = {
       folderDefaultState: "open",
       folderClickBehavior: "collapse",
       useSavedState: true,
+      filterFn: (node) => !["tags","98-templates-snippets","99-scratch"].includes(node.name),
+      sortFn: (a, b) => {
+        const isFolderA = !a.file
+        const isFolderB = !b.file
+        if (isFolderA !== isFolderB) return isFolderA ? -1 : 1
+        const pinned = [
+          "95-domains",
+          "62-data-analytics",
+          "30-protocols-formats",
+          "50-infrastructure",
+          "60-data-systems",
+          "70-distributed-systems",
+          "75-concurrency-parallelism",
+          "80-architecture-design",
+          "85-observability",
+          "86-performance-capacity",
+          "20-languages",
+          "20-frameworks",
+        ]
+        const rank = (n: string) => {
+          const idx = pinned.indexOf(n)
+          return idx === -1 ? 999 : idx
+        }
+        const ra = rank(a.name)
+        const rb = rank(b.name)
+        if (ra !== rb) return ra - rb
+        return a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" })
+      },
+      mapFn: (node) => {
+        if (!node.file) {
+          const idxChild = node.children.find((c: any) => c.file && c.name === "index")
+          if (idxChild && idxChild.file?.frontmatter?.title && idxChild.file.frontmatter.title !== "index") {
+            node.displayName = idxChild.file.frontmatter.title
+          }
+        }
+      },
+      order: ["filter","map","sort"],
     }),
   ],
   right: [Component.RecentNotes({ limit: 5, linkToMore: "tags", showTags: true }), Component.Graph()],
