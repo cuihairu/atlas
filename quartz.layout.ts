@@ -13,6 +13,8 @@ export const defaultContentPageLayout: PageLayout = {
   beforeBody: [Component.ArticleTitle()],
   left: [Component.PageTitle()],
   right: [Component.Backlinks(), Component.Graph()],
+  // Some Quartz emitters iterate over `afterBody`; ensure it's always an array
+  afterBody: [],
 }
 
 // List page layout (tags/folders)
@@ -20,5 +22,6 @@ export const defaultListPageLayout: PageLayout = {
   beforeBody: [Component.ArticleTitle()],
   left: [Component.PageTitle()],
   right: [Component.Graph()],
+  // Keep layout contract consistent with Quartz v4 expectations
+  afterBody: [],
 }
-
