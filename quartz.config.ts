@@ -8,9 +8,9 @@ const config: QuartzConfig = {
     enablePopovers: true,
     analytics: { provider: "plausible" },
     locale: "zh-CN",
-    // Use your production site URL for canonical links & sitemap
-    // For GitHub Pages project site: https://<user>.github.io/<repo>
-    baseUrl: "https://cuihairu.github.io/atlas",
+    // Use your production site (protocol is added by Quartz v4 emitters)
+    // For GitHub Pages project site: <user>.github.io/<repo>
+    baseUrl: "cuihairu.github.io/atlas",
     ignorePatterns: ["private", "templates", ".obsidian"],
     defaultDateType: "created",
     theme: {
