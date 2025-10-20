@@ -23,3 +23,4 @@ enableToc: true
 - 可观测性：[[85-observability/metrics-logs-tracing|三支柱]] · [[85-observability/stacks/prometheus|Prometheus]]
 - 数据系统：[[60-data-systems/relational/mysql|MySQL]] · [[60-data-systems/cache/redis|Redis]] · [[60-data-systems/analytics/clickhouse|ClickHouse]]
 - 工程实践：[[90-engineering-practices/version-control/git|Git]] · [[90-engineering-practices/network-analysis/wireshark|Wireshark]] · [[90-engineering-practices/testing|测试]]
+- 数据分析：[[62-data-analytics/game-analytics/metrics|游戏指标]] · [[62-data-analytics/web-analytics/ga4|GA4]] · [[62-data-analytics/product-analytics/amplitude|Amplitude]] · [[62-data-analytics/experimentation/ab-testing|A/B 测试]]
