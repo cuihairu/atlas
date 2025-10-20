@@ -1,0 +1,13 @@
+services:
+  quartz:
+    build: .
+    ports:
+      - "8080:3000"
+    volumes:
+      - ./content:/app/content
+      - ./static:/app/static
+    environment:
+      - NODE_ENV=development
+    restart: unless-stopped
+    container_name: atlas-quartz
+

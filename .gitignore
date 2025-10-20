@@ -1,41 +1,31 @@
-# Prerequisites
-*.d
+# Dependencies and caches
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# Build outputs
+public/
+.quartz-cache/
+dist/
 
-# Precompiled Headers
-*.gch
-*.pch
+# Env
+.env
+.env.*
 
-# Linker files
-*.ilk
+# OS
+.DS_Store
+Thumbs.db
 
-# Debugger Files
-*.pdb
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
+# Docker
+.dockerignore
 
-# Fortran module files
-*.mod
-*.smod
+# Obsidian
+.obsidian/
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
-
-# debug information files
-*.dwo
