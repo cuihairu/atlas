@@ -57,3 +57,4 @@ asio::awaitable<void> run_server(unsigned short port){
 - [[rpc/client-routing|客户端路由与请求表]]
 - [[rpc/payload-formats|载荷编码（JSON/Proto）选择]]
 - [[rpc/full-stack|RPC 全家桶（路由 + JSON/Proto + 超时/取消/限流/指标）]]
+- [[rpc/proto-demo|Proto 版本 RPC 示例]] · [[rpc/metrics-limits|指标与限流]] · [[rpc/lib-skeleton|库脚手架]]
