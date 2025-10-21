@@ -17,6 +17,24 @@ add_executable(app src/main.cpp)
 target_link_libraries(app PRIVATE core)
 ```
 
+安装与导出（Config 包）
+```cmake
+install(TARGETS core app
+  EXPORT demoTargets
+  RUNTIME DESTINATION bin
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  INCLUDES DESTINATION include)
+
+install(DIRECTORY include/ DESTINATION include)
+install(EXPORT demoTargets NAMESPACE demo:: DESTINATION lib/cmake/demo)
+include(CMakePackageConfigHelpers)
+configure_package_config_file(cmake/demoConfig.cmake.in
+  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/demoConfig.cmake
+  INSTALL_DESTINATION lib/cmake/demo)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/demoConfig.cmake DESTINATION lib/cmake/demo)
+```
+
 最佳实践
 - 以“目标（target）为中心”：`target_*` 指令表达接口与依赖（PUBLIC/PRIVATE/INTERFACE）
 - 不全局污染：少用 `include_directories/add_definitions`，改用 `target_*`
