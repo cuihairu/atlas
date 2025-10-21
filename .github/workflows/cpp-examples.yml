@@ -1,0 +1,33 @@
+name: C++ Examples
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-examples:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure rpc-coro (all OS)
+        run: |
+          cmake -S examples/rpc-coro -B build-rpc-coro -DCMAKE_BUILD_TYPE=Release
+      - name: Build rpc-coro
+        run: cmake --build build-rpc-coro -j
+
+  build-proto-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Protobuf
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - name: Configure rpc-coro-proto
+        run: cmake -S examples/rpc-coro-proto -B build-rpc-coro-proto -DCMAKE_BUILD_TYPE=Release
+      - name: Build rpc-coro-proto
+        run: cmake --build build-rpc-coro-proto -j
+

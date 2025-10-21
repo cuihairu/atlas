@@ -1,0 +1,6 @@
+syntax = "proto3";
+package demo;
+
+message HelloReq { string name = 1; }
+message HelloRsp { string msg  = 1; }
+
