@@ -49,3 +49,11 @@ asio::awaitable<void> run_server(unsigned short port){
 注意事项
 - Boost.Asio 与独立 Asio 写法相近；`asio::use_awaitable` 需要 `co_spawn` 与 `io_context::run`
 - 与协程结合时，避免在 `await_suspend` 阶段做耗时工作；把计算放在线程池
+
+相关章节
+- [[rpc/demo|RPC Demo（server/client/CMake）]]
+- [[rpc/envelope-format|RPC 信封（Envelope）与类型表]]
+- [[rpc/router|RPC 路由与协议封装]]
+- [[rpc/client-routing|客户端路由与请求表]]
+- [[rpc/payload-formats|载荷编码（JSON/Proto）选择]]
+- [[rpc/full-stack|RPC 全家桶（路由 + JSON/Proto + 超时/取消/限流/指标）]]
