@@ -1,8 +1,16 @@
 ---
-title: 并发与并行
+title: 并发与并行（线程/同步/原子/算法/协程）
 ---
 
-> 待补充：在此处组织该主题的知识点、示例与最佳实践。
+导航
+- 内存模型：`concurrency-parallel/memory-model`
+- 线程与取消：`concurrency-parallel/threads`
+- 原子操作：`concurrency-parallel/atomics`
+- 同步原语：`concurrency-parallel/sync`
+- futures/async：`concurrency-parallel/futures-async`
+- 并行算法：`concurrency-parallel/parallel-algorithms`
+- 协程：`concurrency-parallel/coroutines`
+- 任务系统/线程池：`concurrency-parallel/task-system`
 
-- 纲要：
-  - TODO
+建议
+- 优先高层原语与结构化并发；以 stop_token 传递取消；在热点路径评估 atomics 与并行算法

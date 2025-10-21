@@ -1,8 +1,7 @@
 ---
-title: C++11 特性
+title: C++11 特性（摘要）
 ---
 
-> 待补充：在此处组织该主题的知识点、示例与最佳实践。
-
-- 纲要：
-  - TODO
+- 语言：auto/decltype、range‑for、lambda、constexpr（初代）、右值引用/移动语义、委托构造、统一初始化
+- 并发：thread/mutex/condition_variable/atomic
+- 智能指针：unique_ptr/shared_ptr/weak_ptr

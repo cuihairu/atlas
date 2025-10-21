@@ -1,8 +1,8 @@
 ---
-title: 模式与规范
+title: 模式与规范（Core Guidelines / 惯用法 / 陷阱）
 ---
 
-> 待补充：在此处组织该主题的知识点、示例与最佳实践。
-
-- 纲要：
-  - TODO
+导航
+- Core Guidelines：`patterns-guidelines/core-guidelines`
+- 惯用法（PImpl/CRTP/Type Erasure/SBO）：`patterns-guidelines/idioms`
+- 陷阱与未定义行为：`patterns-guidelines/pitfalls`

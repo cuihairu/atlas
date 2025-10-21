@@ -1,8 +1,10 @@
 ---
-title: Windows（COM/WinRT）
+title: Windows（COM / WinRT）
 ---
 
-> 待补充：在此处组织该主题的知识点、示例与最佳实践。
+要点
+- COM：接口基于 `IUnknown`（QueryInterface/AddRef/Release），引用计数；IDL 定义
+- WinRT：现代化的组件模型，语言投影更友好
 
-- 纲要：
-  - TODO
+建议
+- 用智能指针（WRL/C++/WinRT）管理引用计数；明确线程模型（STA/MTA）

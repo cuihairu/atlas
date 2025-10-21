@@ -1,8 +1,7 @@
 ---
-title: Ranges 视图/管道
+title: Ranges 视图与管道（概览）
 ---
 
-> 待补充：在此处组织该主题的知识点、示例与最佳实践。
-
-- 纲要：
-  - TODO
+导航
+- 基础：`stl/ranges`（view/适配器/算法）
+- 组合示例：`stl/ranges/recipes`（zip/chunk/slide/join/par‑unseq/CSV）
