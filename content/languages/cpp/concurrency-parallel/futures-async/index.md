@@ -15,3 +15,6 @@ auto v = f.get();
 建议
 - 新代码优先协程 + 任务系统；legacy 场景用 `future` 作为过渡
 - 避免不明确的 `std::async` 策略（deferred vs async）；显式线程池更可控
+
+互操作
+- 参见 [[concurrency-parallel/futures-async/bridge|协程 ↔ future 桥接]] 示例
