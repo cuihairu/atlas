@@ -3,18 +3,18 @@ import { pathToRoot, joinSegments } from "../quartz/util/path"
 
 type Card = { title: string; href: string; icon: string }
 const cards: Card[] = [
-  { title: "游戏服务器", href: "95-domains/game-server", icon: "gamepad" },
-  { title: "区块链", href: "95-domains/blockchain", icon: "chain" },
-  { title: "数据分析", href: "62-data-analytics", icon: "chart" },
-  { title: "协议与格式", href: "30-protocols-formats", icon: "layers" },
-  { title: "Kubernetes", href: "50-infrastructure/orchestration/k8s", icon: "kube" },
-  { title: "Docker", href: "50-infrastructure/containers/docker", icon: "docker" },
-  { title: "Redis", href: "60-data-systems/cache/redis", icon: "db" },
-  { title: "MySQL", href: "60-data-systems/relational/mysql", icon: "db" },
-  { title: "并发模型", href: "75-concurrency-parallelism", icon: "threads" },
-  { title: "分布式", href: "70-distributed-systems", icon: "network" },
-  { title: "观测与监控", href: "85-observability", icon: "eye" },
-  { title: "性能与压测", href: "86-performance-capacity", icon: "speed" },
+  { title: "游戏服务器", href: "domains/game-server", icon: "gamepad" },
+  { title: "区块链", href: "domains/blockchain", icon: "chain" },
+  { title: "数据分析", href: "data-analytics", icon: "chart" },
+  { title: "协议与格式", href: "protocols-formats", icon: "layers" },
+  { title: "Kubernetes", href: "infrastructure/orchestration/k8s", icon: "kube" },
+  { title: "Docker", href: "infrastructure/containers/docker", icon: "docker" },
+  { title: "Redis", href: "data-systems/cache/redis", icon: "db" },
+  { title: "MySQL", href: "data-systems/relational/mysql", icon: "db" },
+  { title: "并发模型", href: "concurrency-parallelism", icon: "threads" },
+  { title: "分布式", href: "distributed-systems", icon: "network" },
+  { title: "观测与监控", href: "observability", icon: "eye" },
+  { title: "性能与压测", href: "performance-capacity", icon: "speed" },
 ]
 
 function Icon({ name }: { name: string }) {

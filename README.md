@@ -4,7 +4,7 @@
 
 - 子模块路径：`atlas/`
 - 内容目录：`atlas/content/`（可直接作为 Obsidian Vault）
-- 预览端口：`http://localhost:8080`
+- 预览端口：`http://localhost:3000`
 
 ## 快速开始
 
@@ -17,7 +17,7 @@
 - 停止服务：
   - `docker-compose down`
 - 访问页面：
-  - 浏览器打开 `http://localhost:8080`
+  - 浏览器打开 `http://localhost:3000`
 
 服务启动后，编辑 `content/` 下的 Markdown 会自动生效（Quartz dev 模式自动 rebuild）。
 
@@ -101,7 +101,7 @@ atlas/
 2) 推送到 `main` 分支后，Actions 会构建到 `build/public` 并发布
 3) 访问：https://cuihairu.github.io/atlas
 
-注意：`quartz.config.ts` 中已设置 `baseUrl: "https://cuihairu.github.io/atlas"`，便于生成正确的 canonical/sitemap。
+注意：`quartz.config.ts` 中已设置 `baseUrl: "https://cuihairu.github.io/atlas"`，并关闭了 `enableSPA` 以兼容 GitHub Pages 子路径部署（避免相对资源路径导致的跳转失效）。
 
 ### 手动导出
 
@@ -111,7 +111,7 @@ atlas/
 
 ## 故障排查
 
-- 8080 端口被占用：修改 `docker-compose.yml` 暴露端口
+- 3000 端口被占用：修改 `docker-compose.yml` 暴露端口（例如 `- "8080:3000"` 或任一空闲端口）
 - 更换镜像源：移除 `Dockerfile` 中的 `npm config set registry` 或替换为你的私有 registry
 - 反向链接/图谱不显示：确认 `quartz.layout.ts` 中右侧栏已包含 `Backlinks()` 与 `Graph()`，并且笔记之间存在 `[[wikilinks]]`
 

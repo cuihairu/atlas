@@ -2,12 +2,15 @@ services:
   quartz:
     build: .
     ports:
-      - "8080:3000"
+      - "3000:3000"
     volumes:
       - ./content:/app/content
       - ./static:/app/static
+      # Mount config and custom components so dev edits don't require rebuild
+      - ./quartz.config.ts:/app/quartz.config.ts:ro
+      - ./quartz.layout.ts:/app/quartz.layout.ts:ro
+      - ./components:/app/components:ro
     environment:
       - NODE_ENV=development
     restart: unless-stopped
     container_name: atlas-quartz
-

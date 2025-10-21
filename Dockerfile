@@ -13,8 +13,9 @@ RUN git clone https://github.com/jackyzha0/quartz.git . \
     && git checkout "${QUARTZ_REF}" || true \
     && npm i
 
-# Copy our site config/layout to override defaults
+# Copy our site config/layout and custom components to override defaults
 COPY quartz.config.ts quartz.layout.ts ./
+COPY components ./components
 
 # Create content/static folders (mounted as volumes in docker-compose)
 RUN mkdir -p content static

@@ -2,7 +2,11 @@ import { PageLayout, SharedLayout } from "./quartz/cfg"
 import * as Component from "./quartz/components"
 import SiteTitle from "./components/SiteTitle"
 import HomeCards from "./components/HomeCards"
+import CatalogTree from "./components/CatalogTree"
 import WordCount from "./components/WordCount"
+// DebugInfo intentionally not shown per user request
+import NavInit from "./components/NavInit"
+import ExplorerFix from "./components/ExplorerFix"
 
 // Toggles for meta display
 const SHOW_READING_TIME = true
@@ -12,8 +16,8 @@ const SHOW_WORD_COUNT = true
 export const sharedPageComponents: SharedLayout = {
   head: Component.Head(),
   header: [Component.Search(), Component.Darkmode()],
-  // Ensure emitters (e.g., 404Page) always have an iterable afterBody
-  afterBody: [],
+  // Add a tiny initializer to dispatch 'nav' on first load (non-SPA)
+  afterBody: [NavInit(), ExplorerFix()],
   footer: Component.Footer(),
 }
 
@@ -29,6 +33,7 @@ export const defaultContentPageLayout: PageLayout = {
     }),
     HomeCards(),
     Component.ArticleTitle(),
+    CatalogTree(),
     Component.ContentMeta({ showReadingTime: SHOW_READING_TIME, showComma: true }),
     ...(SHOW_WORD_COUNT ? [WordCount()] : []),
   ],
@@ -36,48 +41,10 @@ export const defaultContentPageLayout: PageLayout = {
     SiteTitle(),
     Component.Explorer({
       title: "目录",
-      folderDefaultState: "open",
+      folderDefaultState: "collapsed",
       folderClickBehavior: "collapse",
-      useSavedState: true,
-      filterFn: (node) => !["tags","98-templates-snippets","99-scratch"].includes(node.name),
-      // Pin common top-level folders
-      sortFn: (a, b) => {
-        const isFolderA = !a.file
-        const isFolderB = !b.file
-        if (isFolderA !== isFolderB) return isFolderA ? -1 : 1
-        const pinned = [
-          "95-domains",
-          "62-data-analytics",
-          "30-protocols-formats",
-          "50-infrastructure",
-          "60-data-systems",
-          "70-distributed-systems",
-          "75-concurrency-parallelism",
-          "80-architecture-design",
-          "85-observability",
-          "86-performance-capacity",
-          "20-languages",
-          "20-frameworks",
-        ]
-        const rank = (n: string) => {
-          const idx = pinned.indexOf(n)
-          return idx === -1 ? 999 : idx
-        }
-        const ra = rank(a.name)
-        const rb = rank(b.name)
-        if (ra !== rb) return ra - rb
-        return a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" })
-      },
-      // Map folder nodes to use the title from their index.md if present
-      mapFn: (node) => {
-        if (!node.file) {
-          const idxChild = node.children.find((c: any) => c.file && c.name === "index")
-          if (idxChild && idxChild.file?.frontmatter?.title && idxChild.file.frontmatter.title !== "index") {
-            node.displayName = idxChild.file.frontmatter.title
-          }
-        }
-      },
-      order: ["filter","map","sort"],
+      useSavedState: false,
+      filterFn: (node) => !["tags", "templates-snippets", "scratch"].includes(node.name),
     }),
   ],
   right: [
@@ -107,46 +74,10 @@ export const defaultListPageLayout: PageLayout = {
     SiteTitle(),
     Component.Explorer({
       title: "目录",
-      folderDefaultState: "open",
+      folderDefaultState: "collapsed",
       folderClickBehavior: "collapse",
-      useSavedState: true,
-      filterFn: (node) => !["tags","98-templates-snippets","99-scratch"].includes(node.name),
-      sortFn: (a, b) => {
-        const isFolderA = !a.file
-        const isFolderB = !b.file
-        if (isFolderA !== isFolderB) return isFolderA ? -1 : 1
-        const pinned = [
-          "95-domains",
-          "62-data-analytics",
-          "30-protocols-formats",
-          "50-infrastructure",
-          "60-data-systems",
-          "70-distributed-systems",
-          "75-concurrency-parallelism",
-          "80-architecture-design",
-          "85-observability",
-          "86-performance-capacity",
-          "20-languages",
-          "20-frameworks",
-        ]
-        const rank = (n: string) => {
-          const idx = pinned.indexOf(n)
-          return idx === -1 ? 999 : idx
-        }
-        const ra = rank(a.name)
-        const rb = rank(b.name)
-        if (ra !== rb) return ra - rb
-        return a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" })
-      },
-      mapFn: (node) => {
-        if (!node.file) {
-          const idxChild = node.children.find((c: any) => c.file && c.name === "index")
-          if (idxChild && idxChild.file?.frontmatter?.title && idxChild.file.frontmatter.title !== "index") {
-            node.displayName = idxChild.file.frontmatter.title
-          }
-        }
-      },
-      order: ["filter","map","sort"],
+      useSavedState: false,
+      filterFn: (node) => !["tags", "templates-snippets", "scratch"].includes(node.name),
     }),
   ],
   right: [Component.RecentNotes({ limit: 5, linkToMore: "tags", showTags: true }), Component.Graph()],

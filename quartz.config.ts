@@ -4,13 +4,16 @@ import * as Plugin from "./quartz/plugins"
 const config: QuartzConfig = {
   configuration: {
     pageTitle: "Atlas 知识库",
-    enableSPA: true,
+    // GitHub Pages 在子路径下部署时，SPA 的相对资源解析容易出问题（如 contentIndex.json 路径），
+    // 关闭 SPA，使用浏览器原生跳转更稳妥，避免“除了首页都无法跳转”的问题
+    enableSPA: false,
     enablePopovers: true,
     analytics: { provider: "plausible" },
     locale: "zh-CN",
-    // Use your production site (protocol is added by Quartz v4 emitters)
-    // For GitHub Pages project site: <user>.github.io/<repo>
-    baseUrl: "cuihairu.github.io/atlas",
+    // 生产站点（GitHub Pages 项目站点）
+    // 示例：<user>.github.io/<repo>
+    // 明确带协议，便于 canonical/OG 等生成绝对地址
+    baseUrl: "https://cuihairu.github.io/atlas",
     ignorePatterns: ["private", "templates", ".obsidian"],
     defaultDateType: "modified",
     theme: {
