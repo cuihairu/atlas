@@ -1,0 +1,314 @@
+syntax = "proto3";
+
+package atlas.v1;
+
+option go_package = "github.com/cuihairu/atlas/api/gen/atlasv1;atlasv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Endpoint is the address a game client connects to.
+message Endpoint {
+  string host = 1;
+  int32 port = 2;
+}
+
+// Server is a registered game server (see model.Server).
+message Server {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string region = 4;
+  string realm_id = 5;
+  string shard_id = 6;
+  string version = 7;
+  string platform = 8;
+  Endpoint endpoint = 9;
+  int32 capacity = 10;
+  map<string, string> metadata = 11;
+  string status = 12;
+  int32 players = 13;
+  double load = 14;
+  google.protobuf.Timestamp last_seen_at = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp updated_at = 17;
+}
+
+// Heartbeat is a periodic report from a game server.
+message Heartbeat {
+  int32 players = 1;
+  double load = 2;
+  string status = 3;
+}
+
+// Character is a projection of a game character's index entry.
+message Character {
+  int64 account_id = 1;
+  string server_id = 2;
+  int64 character_id = 3;
+  string name = 4;
+  int32 level = 5;
+  int32 class_id = 6;
+  string avatar = 7;
+  map<string, string> metadata = 8;
+  google.protobuf.Timestamp last_login_at = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// Migration is a server migration record.
+message Migration {
+  string id = 1;
+  repeated string source_servers = 2;
+  string target_server = 3;
+  string status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp completed_at = 6;
+}
+
+// Stats aggregates server and character counts.
+message Stats {
+  int32 total_servers = 1;
+  map<string, int32> servers_by_status = 2;
+  map<string, int32> servers_by_region = 3;
+  map<string, int32> servers_by_version = 4;
+  int32 total_players = 5;
+  int32 total_capacity = 6;
+  int32 total_characters = 7;
+}
+
+// ---- Registry ----
+
+service Registry {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
+}
+
+message RegisterRequest {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string region = 4;
+  string realm_id = 5;
+  string shard_id = 6;
+  string version = 7;
+  string platform = 8;
+  Endpoint endpoint = 9;
+  int32 capacity = 10;
+}
+
+message RegisterResponse {
+  string server_id = 1;
+  string status = 2;
+}
+
+message HeartbeatRequest {
+  string server_id = 1;
+  Heartbeat heartbeat = 2;
+}
+
+message HeartbeatResponse {
+  string server_id = 1;
+  string status = 2;
+  int32 next_heartbeat_in = 3;
+}
+
+message UnregisterRequest {
+  string server_id = 1;
+}
+
+message UnregisterResponse {
+  string server_id = 1;
+  string status = 2;
+}
+
+// ---- Discovery ----
+
+service Discovery {
+  rpc ListServers(ListServersRequest) returns (ListServersResponse);
+  rpc GetServer(GetServerRequest) returns (Server);
+}
+
+message ListServersRequest {
+  string region = 1;
+  string realm = 2;
+  string shard = 3;
+  string version = 4;
+  string platform = 5;
+  string status = 6;
+  int32 limit = 7;
+  string cursor = 8;
+}
+
+message ListServersResponse {
+  repeated Server servers = 1;
+}
+
+message GetServerRequest {
+  string id = 1;
+}
+
+// ---- Directory ----
+
+service Directory {
+  rpc UpsertCharacter(UpsertCharacterRequest) returns (Character);
+  rpc GetCharacter(GetCharacterRequest) returns (Character);
+  rpc GetCharacterByID(GetCharacterByIDRequest) returns (Character);
+  rpc ListByAccount(ListByAccountRequest) returns (ListByAccountResponse);
+  rpc ListByServer(ListByServerRequest) returns (ListByServerResponse);
+  rpc UpdateCharacter(UpdateCharacterRequest) returns (Character);
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
+}
+
+message UpsertCharacterRequest {
+  int64 account_id = 1;
+  string server_id = 2;
+  int64 character_id = 3;
+  string name = 4;
+  int32 level = 5;
+  int32 class_id = 6;
+  string avatar = 7;
+  map<string, string> metadata = 8;
+}
+
+message GetCharacterRequest {
+  int64 account_id = 1;
+  string server_id = 2;
+  int64 character_id = 3;
+}
+
+message GetCharacterByIDRequest {
+  int64 character_id = 1;
+}
+
+message ListByAccountRequest {
+  int64 account_id = 1;
+}
+
+message ListByAccountResponse {
+  repeated Character characters = 1;
+}
+
+message ListByServerRequest {
+  string server_id = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message ListByServerResponse {
+  repeated Character characters = 1;
+  string next_cursor = 2;
+}
+
+message UpdateCharacterRequest {
+  int64 account_id = 1;
+  string server_id = 2;
+  int64 character_id = 3;
+  string name = 4;
+  bool has_name = 5;
+  int32 level = 6;
+  bool has_level = 7;
+  int32 class_id = 8;
+  bool has_class_id = 9;
+  string avatar = 10;
+  bool has_avatar = 11;
+}
+
+message DeleteCharacterRequest {
+  int64 account_id = 1;
+  string server_id = 2;
+  int64 character_id = 3;
+}
+
+message DeleteCharacterResponse {
+  string status = 1;
+}
+
+// ---- Routing ----
+
+service Routing {
+  rpc Recommend(RecommendRequest) returns (RecommendResponse);
+}
+
+message RecommendRequest {
+  int64 account_id = 1;
+  string region = 2;
+  string version = 3;
+  string platform = 4;
+  string status = 5;
+}
+
+message RecommendResponse {
+  Server server = 1;
+  string reason = 2;
+}
+
+// ---- Admin ----
+
+service Admin {
+  rpc SetMaintenance(ServerLifecycleRequest) returns (ServerLifecycleResponse);
+  rpc SetDrain(ServerLifecycleRequest) returns (ServerLifecycleResponse);
+  rpc Enable(ServerLifecycleRequest) returns (ServerLifecycleResponse);
+  rpc Disable(ServerLifecycleRequest) returns (ServerLifecycleResponse);
+  rpc GetStats(GetStatsRequest) returns (Stats);
+  rpc SearchCharacters(SearchCharactersRequest) returns (SearchCharactersResponse);
+  rpc CreateMigration(CreateMigrationRequest) returns (Migration);
+  rpc GetMigration(GetMigrationRequest) returns (Migration);
+  rpc ListMigrations(ListMigrationsRequest) returns (ListMigrationsResponse);
+  rpc RollbackMigration(RollbackMigrationRequest) returns (RollbackMigrationResponse);
+}
+
+message ServerLifecycleRequest {
+  string server_id = 1;
+}
+
+message ServerLifecycleResponse {
+  string server_id = 1;
+  string status = 2;
+}
+
+message GetStatsRequest {}
+
+message SearchCharactersRequest {
+  string name = 1;
+  string server_id = 2;
+  int32 class_id = 3;
+  bool has_class_id = 4;
+  int32 min_level = 5;
+  bool has_min_level = 6;
+  int32 max_level = 7;
+  bool has_max_level = 8;
+  int32 limit = 9;
+  string cursor = 10;
+}
+
+message SearchCharactersResponse {
+  repeated Character characters = 1;
+  string next_cursor = 2;
+}
+
+message CreateMigrationRequest {
+  repeated string source_servers = 1;
+  string target_server = 2;
+}
+
+message GetMigrationRequest {
+  string id = 1;
+}
+
+message ListMigrationsRequest {
+  int32 limit = 1;
+}
+
+message ListMigrationsResponse {
+  repeated Migration migrations = 1;
+}
+
+message RollbackMigrationRequest {
+  string id = 1;
+}
+
+message RollbackMigrationResponse {
+  string id = 1;
+  string status = 2;
+}

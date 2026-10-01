@@ -23,6 +23,10 @@ type Config struct {
 	// Env: ATLAS_ADMIN_ADDR, default ":8082".
 	AdminAddr string
 
+	// GRPCAddr is the address the gRPC API listens on (all services).
+	// Env: ATLAS_GRPC_ADDR, default ":9090".
+	GRPCAddr string
+
 	// DatabaseURL is the PostgreSQL connection string.
 	// Env: ATLAS_DATABASE_URL, default "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable".
 	DatabaseURL string
@@ -90,6 +94,7 @@ func Load() Config {
 		HTTPAddr:            envOr("ATLAS_HTTP_ADDR", ":8080"),
 		RegistryAddr:        envOr("ATLAS_REGISTRY_ADDR", ":8081"),
 		AdminAddr:           envOr("ATLAS_ADMIN_ADDR", ":8082"),
+		GRPCAddr:            envOr("ATLAS_GRPC_ADDR", ":9090"),
 		DatabaseURL:        envOr("ATLAS_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable"),
 		RedisURL:           envOr("ATLAS_REDIS_URL", "redis://localhost:6379/0"),
 		StoreType:          envOr("ATLAS_STORE", "memory"),
