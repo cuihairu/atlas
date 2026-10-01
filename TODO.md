@@ -222,9 +222,8 @@
 
 ## Ongoing
 
-- [ ] Dependency updates — Dependabot auto-merge for patch versions
-- [ ] Security audits — periodic review of auth and storage layers
+- [x] Dependency updates — Dependabot auto-merge for patch versions（dependabot.yml：gomod + dashboard/docs npm 三生态周更，开发依赖分组；auto-merge workflow：仅 dependabot[bot] PR，先跑 Go/dashboard/docs 三门禁，同 major.minor 的 patch 自动 approve+squash 合并，minor/major/digest 人工评审）
+- [x] Security audits — periodic review of auth and storage layers（security-audit workflow：每周 govulncheck + 双 npm audit；docs/security-audit.md 八层检查清单 + v0.1.20 审计记录——检出并修复 GO-2026-6443 gRPC panic（升级修复版本）、SQL 全参数化确认、Server.ID 字符集低危建议）
 - [x] Performance benchmarks — Registry and Discovery QPS（bench_test.go ×2：注册/重注册/心跳/并发心跳扇入/列表 100–5000 台/region 过滤/详情；docs/benchmarks.md 基线表 + O(fleet) 列表的 Redis 往返估算 + 回归警戒线，挂导航）
-- [ ] Documentation — keep docs/ in sync with implementation
 - [x] Test coverage — aim for >80% on service and handler layers（discovery 0→90.9%、httpapi 66.3→80.7%、health 72.1→83.8%、model 36.2→91.4%、memory 31.1→88.4%；admin 87.5 / directory 82.4 / registry 81.8 / routing 87.8 全部达标；新增 ci.yml：build/vet/test + 每包覆盖率进 Actions Summary）
 - [x] Documentation — keep docs/ in sync with implementation（本节交付均已同步：api.md 端点、lifecycle 窗口语义、data-model §7、新拓扑/基准/安全审计三篇 + 导航；docs.yml + ci.yml 双门禁防漂移）
