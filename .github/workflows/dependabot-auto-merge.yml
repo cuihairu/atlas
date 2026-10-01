@@ -1,0 +1,69 @@
+# Dependabot 自动合并：仅 patch 版本升级（x.y.Z 内变更）。
+# 合并前先跑完整门禁（Go build/vet/test + dashboard 构建 + 文档站构建），
+# minor / major 升级一律留给人工评审。仓库无需配置分支保护：
+# 本 workflow 自己执行门禁后走 --auto --squash。
+name: dependabot-auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dashboard/package-lock.json
+            docs/package-lock.json
+
+      # ── 门禁：Go ─────────────────────────────────────────────
+      - name: Go gates
+        run: go build ./... && go vet ./... && go test ./...
+
+      # ── 门禁：Dashboard ──────────────────────────────────────
+      - name: Dashboard build
+        working-directory: dashboard
+        run: npm ci && npm run build
+
+      # ── 门禁：文档站 ─────────────────────────────────────────
+      - name: Docs build
+        working-directory: docs
+        run: npm ci && npx vitepress build
+
+      # ── patch 升级才自动合并 ─────────────────────────────────
+      - name: Auto-merge patch bumps only
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          title="$(gh pr view "$PR_URL" --json title -q .title)"
+          from="$(sed -E 's/.* from v?([^ ]+) to .*/\1/' <<<"$title")"
+          to="$(sed -E 's/.* to v?([^ ]+)$/\1/' <<<"$title")"
+          echo "bump: $from -> $to (title: $title)"
+
+          pat='^[0-9]+\.[0-9]+\.[0-9]+'
+          if [[ "$from" =~ $pat && "$to" =~ $pat ]]; then
+            if [[ "${from%.*}" == "${to%.*}" ]]; then
+              # major.minor 相同 → patch 升级
+              echo "patch bump：自动合并"
+              gh pr review "$PR_URL" --approve
+              gh pr merge "$PR_URL" --auto --squash
+              exit 0
+            fi
+            echo "minor bump：需要人工评审"
+          else
+            echo "major / 非 semver 升级：需要人工评审"
+          fi

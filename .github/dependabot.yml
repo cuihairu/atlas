@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  # Go 模块（根模块 + SDK）
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Dashboard（React / antd / charts）
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+    groups:
+      dashboard-dev:
+        dependency-type: development
+
+  # 文档站（VitePress）
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs-dev:
+        dependency-type: development
