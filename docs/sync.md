@@ -89,41 +89,52 @@ EventAdapter
     │
     ├── Subscribe(topic, handler)
     ├── Publish(event)
-    └── Ack(event)
+    ├── Ack(event)
+    ├── Synchronous()   同步适配器在 Publish 返回前完成应用
+    └── Close()
 ```
 
 Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不改业务代码。
+当前已内置两种实现，通过 `ATLAS_EVENT_ADAPTER` 选择：
+
+| 适配器 | 值 | 语义 |
+| --- | --- | --- |
+| 进程内同步 | `http`（默认） | 事件在请求内同步落地，保留 v0.1 行为，响应含投影结果 |
+| Redis Streams | `redis` | `XADD` 入流，消费组 `atlas` 经 `XREADGROUP` 异步消费后 `XACK`；写端点返回 202 |
+
+Redis Streams 为 at-least-once 投递：处理失败的事件留在 PEL，30 秒后被
+`XAUTOCLAIM` 重投；超过 5 次投递记日志死信。因此消费端必须幂等——
+`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
 ---
 
-## 5. v0.1 的简化做法
+## 5. 写入路径
 
-**第一版可以直接 HTTP 同步写入，预留 Event Adapter 接口。**
+**HTTP 同步写入保留为默认形态，Event Adapter 作为解耦入口并存。**
 
 ```text
 Game Server
      │
-     │ POST /v1/directory/characters      (HTTP)
+     │ POST /v1/directory/characters      (HTTP，默认 ATLAS_EVENT_ADAPTER=http)
+     │         或
+     │ XADD atlas.characters …            (Redis Streams，ATLAS_EVENT_ADAPTER=redis)
      ▼
-   Atlas
+   Atlas Directory（幂等投影）
 ```
 
-理由：
-
-1. **MVP 范围控制** — 引入 Message Bus 会显著增加部署复杂度与调试成本
-2. **接口已就位** — 一旦 Event Adapter 抽象好了，后续切到 Kafka/NATS 不改业务
-3. **量级可承受** — 角色创建是低频操作（相对登录、战斗），HTTP QPS 通常在百级
+同步路径的响应与 v0.1 完全一致；Redis 路径下写端点返回 `202 Accepted`
+（`{"status":"queued"}`），由消费组异步落地。
 
 ### 迁移路径
 
 ```text
-v0.1   HTTP 同步写入
-         │
-         ▼
-v0.2   Event Adapter 接口 + Redis Streams 实现
-         │
-         ▼
-v0.3   Kafka / NATS 适配器
+v0.1    HTTP 同步写入
+          │  ✅ v0.1.2 已到达
+          ▼
+v0.1.2  Event Adapter 接口 + Redis Streams 实现
+          │
+          ▼
+后续    Kafka / NATS 适配器（见 TODO v0.1.12）
 ```
 
 关键是**从第一天就把写入接口设计成幂等的**，这样无论底层是 HTTP 还是 MQ，重试都不会产生副作用。

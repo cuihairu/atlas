@@ -38,15 +38,15 @@
 
 ---
 
-## v0.1.2 — Event Adapter
+## v0.1.2 — Event Adapter ✅
 
-- [ ] Define `EventAdapter` interface in `internal/event/adapter.go`
-- [ ] Implement `internal/event/http/` — HTTP sync adapter (current behavior)
-- [ ] Implement `internal/event/redis/` — Redis Streams adapter (XADD / XREADGROUP)
-- [ ] Add `ATLAS_EVENT_ADAPTER` config (http / redis)
-- [ ] Wire adapter into Directory service, replace direct HTTP call
-- [ ] Tests for both adapters
-- [ ] Update docs/sync.md migration path
+- [x] Define `EventAdapter` interface in `internal/event/adapter.go` (518f76d)
+- [x] Implement `internal/event/http/` — HTTP sync adapter (current behavior) (518f76d)
+- [x] Implement `internal/event/redis/` — Redis Streams adapter (XADD / XREADGROUP) (d53d9c9)
+- [x] Add `ATLAS_EVENT_ADAPTER` config (http / redis) (518f76d)
+- [x] Wire adapter into Directory service, replace direct HTTP call (518f76d)
+- [x] Tests for both adapters (518f76d, d53d9c9)
+- [x] Update docs/sync.md migration path
 
 ## v0.1.3 — Prometheus Metrics
 
