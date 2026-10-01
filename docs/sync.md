@@ -115,6 +115,17 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
+接入只需改一个环境变量，例如：
+
+```bash
+ATLAS_EVENT_ADAPTER=kafka ATLAS_KAFKA_BROKERS=broker1:9092,broker2:9092 ./atlas
+ATLAS_EVENT_ADAPTER=nats ATLAS_NATS_URL=nats://nats:4222 ./atlas
+ATLAS_EVENT_ADAPTER=rabbitmq ATLAS_RABBITMQ_URL=amqp://rabbit:5672/ ./atlas
+```
+
+切换适配器不影响 HTTP 写端点语义（同步路径照常可用），消费侧由 Atlas
+内建消费循环承担，无需额外部署消费者进程。
+
 选型补充（§4 推荐表）之外的运维参照：已有 Redis 用 `redis`（零新增组件）；
 日志/审计类大吞吐、需要回放与多消费组用 `kafka`；云原生内网低延迟、
 多机广播用 `nats`；已有 AMQP 运维体系或需要复杂路由用 `rabbitmq`；
@@ -146,9 +157,9 @@ v0.1    HTTP 同步写入
           │  ✅ v0.1.2 已到达
           ▼
 v0.1.2  Event Adapter 接口 + Redis Streams 实现
-          │
+          │  ✅ v0.1.12 已到达
           ▼
-后续    Kafka / NATS 适配器（见 TODO v0.1.12）
+v0.1.12 Kafka / NATS / RabbitMQ 适配器（见 §4 Event Adapter 接口）
 ```
 
 关键是**从第一天就把写入接口设计成幂等的**，这样无论底层是 HTTP 还是 MQ，重试都不会产生副作用。
