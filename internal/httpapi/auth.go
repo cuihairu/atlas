@@ -33,14 +33,27 @@ type Actor struct {
 	// KeyFingerprint is the first 12 hex chars of the API key's SHA-256 —
 	// enough to correlate audit entries, never reversible to the key.
 	KeyFingerprint string
+	// CertFingerprint is the first 12 hex chars of the client certificate's
+	// SHA-256 when mTLS is used. Empty if no client cert presented.
+	CertFingerprint string
 }
 
-// String renders the actor for logs: "role:fingerprint".
+// String renders the actor for logs: "role:fingerprint[:certfp]".
 func (a Actor) String() string {
-	if a.KeyFingerprint == "" {
+	if a.KeyFingerprint == "" && a.CertFingerprint == "" {
 		return a.Role + ":anonymous"
 	}
-	return a.Role + ":" + a.KeyFingerprint
+	if a.CertFingerprint == "" {
+		return a.Role + ":" + a.KeyFingerprint
+	}
+	return a.Role + ":" + a.KeyFingerprint + ":" + a.CertFingerprint
+}
+
+// CertFingerprintFrom returns the client certificate fingerprint from the
+// request context, or empty string if no client cert was presented.
+func CertFingerprintFrom(ctx context.Context) string {
+	a, _ := ctx.Value(actorKey).(Actor)
+	return a.CertFingerprint
 }
 
 // ActorFrom returns the authenticated actor, or the zero actor when the
@@ -118,6 +131,9 @@ func AdminAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 					}
 				}
 			}
+
+			// ── mTLS client cert fingerprint (for audit correlation) ───
+			actor.CertFingerprint = extractCertFingerprint(r)
 
 			// ── Role check ────────────────────────────────────
 			if actor.Role == RoleViewer && r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -246,4 +262,14 @@ func ParseAPIKeys(raw string) map[string]struct{} {
 		}
 	}
 	return keys
+}
+
+// extractCertFingerprint returns the first 12 hex chars of the peer
+// certificate's SHA-256, or empty string if no client cert presented.
+func extractCertFingerprint(r *http.Request) string {
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(r.TLS.PeerCertificates[0].Raw)
+	return hex.EncodeToString(sum[:])[:12]
 }

@@ -108,6 +108,31 @@ func TestRBAC_ActorInContext(t *testing.T) {
 	}
 }
 
+func TestRBAC_CertFingerprint(t *testing.T) {
+	// The actual cert fingerprint extraction is tested in tlsutil_test.go
+	// with real mTLS connections. Here we just verify the Actor.String()
+	// includes the cert fingerprint when present.
+	actor := Actor{
+		Role:            "operator",
+		KeyFingerprint:  "abc123def456",
+		CertFingerprint: "certfp789012",
+	}
+	s := actor.String()
+	if !strings.Contains(s, "operator") || !strings.Contains(s, "abc123def456") || !strings.Contains(s, "certfp789012") {
+		t.Errorf("unexpected actor string: %q", s)
+	}
+
+	// Without cert fingerprint
+	actor2 := Actor{
+		Role:           "viewer",
+		KeyFingerprint: "keyfp345678",
+	}
+	s2 := actor2.String()
+	if !strings.Contains(s2, "viewer") || !strings.Contains(s2, "keyfp345678") || strings.Contains(s2, "cert") {
+		t.Errorf("unexpected actor string without cert: %q", s2)
+	}
+}
+
 func rbacRoleConfig(t *testing.T) AuthConfig {
 	t.Helper()
 	return AuthConfig{
