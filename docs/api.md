@@ -412,6 +412,19 @@ Player Character
 
 状态机语义详见 [lifecycle.md](lifecycle.md)。
 
+### GET /metrics
+
+Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴露：
+
+| 指标 | 类型 | 说明 |
+| --- | --- | --- |
+| `atlas_registry_servers_total{status}` | gauge | 各生命周期状态的服务器数 |
+| `atlas_directory_characters_total` | gauge | 角色索引条目总数 |
+| `atlas_registry_heartbeat_lag_seconds` | histogram | 健康巡检时观测到的心跳延迟 |
+| `atlas_discovery_requests_total{filter}` | counter | 发现服务列表请求（按过滤条件） |
+| `atlas_admin_requests_total{endpoint,status}` | counter | 管理 API 请求（按路由与状态码） |
+| `atlas_health_transitions_total{from,to}` | counter | 服务器生命周期状态迁移 |
+
 ---
 
 ## 通用约定

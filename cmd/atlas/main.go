@@ -26,6 +26,7 @@ import (
 	redisEvent "github.com/cuihairu/atlas/internal/event/redis"
 	"github.com/cuihairu/atlas/internal/health"
 	"github.com/cuihairu/atlas/internal/httpapi"
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
@@ -51,10 +52,12 @@ func main() {
 
 	// Create stores.
 	var (
-		serverStore  store.ServerStore
-		charStore    store.CharacterStore
-		runtimeStore store.RuntimeStore
-		pingCloser   func()
+		serverStore    store.ServerStore
+		charStore      store.CharacterStore
+		runtimeStore   store.RuntimeStore
+		migrationStore store.MigrationStore
+		statsStore     store.StatsStore
+		pingCloser     func()
 	)
 
 	ctx := context.Background()
@@ -65,6 +68,8 @@ func main() {
 		serverStore = mem
 		charStore = mem
 		runtimeStore = mem
+		migrationStore = mem
+		statsStore = mem
 
 	case "postgres":
 		// PostgreSQL for server + character storage.
@@ -85,6 +90,8 @@ func main() {
 		pg := pgStore.New(pool)
 		serverStore = pg
 		charStore = pg
+		migrationStore = pg
+		statsStore = pg
 
 		// Redis for runtime/heartbeat storage.
 		redisAddr := parseRedisAddr(cfg.RedisURL)
@@ -145,12 +152,18 @@ func main() {
 		ServerStore:    serverStore,
 		CharacterStore: charStore,
 		RuntimeStore:   runtimeStore,
+		MigrationStore: migrationStore,
+		StatsStore:     statsStore,
 	}
 
 	admSvc := admin.New(composite)
 
+	// Prometheus instrumentation (TODO v0.1.3).
+	prom := metrics.New(composite)
+	discSvc.WithMetrics(prom)
+
 	// Start health monitor.
-	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger)
+	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger).WithMetrics(prom)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go monitor.Run(monitorCtx)
@@ -214,6 +227,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+	adminMux.Handle("GET /metrics", prom.Handler())
+
 	var adminHandler http.Handler = adminMux
 	if len(adminKeys) > 0 || len(adminIPs) > 0 {
 		adminHandler = httpapi.AdminAuth(httpapi.AuthConfig{
@@ -222,6 +237,7 @@ func main() {
 			Logger:      logger,
 		})(adminMux)
 	}
+	adminHandler = metrics.RequestCounter(prom.AdminRequests)(adminHandler)
 	adminSrv := &http.Server{
 		Addr:         cfg.AdminAddr,
 		Handler:      adminHandler,

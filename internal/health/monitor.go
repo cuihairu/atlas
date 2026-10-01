@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 )
@@ -21,6 +22,7 @@ type Monitor struct {
 	interval     time.Duration
 	logger       *slog.Logger
 	now          func() time.Time // injectable clock for testing
+	metrics      *metrics.Metrics
 }
 
 // New creates a new health monitor.
@@ -33,6 +35,12 @@ func New(s store.Store, suspectAfter, offlineAfter, interval time.Duration, logg
 		logger:       logger,
 		now:          time.Now,
 	}
+}
+
+// WithMetrics attaches Prometheus instrumentation (optional).
+func (m *Monitor) WithMetrics(mm *metrics.Metrics) *Monitor {
+	m.metrics = mm
+	return m
 }
 
 // Run starts the monitor loop. It blocks until ctx is cancelled.
@@ -81,6 +89,7 @@ func (m *Monitor) sweep(ctx context.Context) error {
 			// If it's been starting for too long, mark offline.
 			if srv.Status == model.StatusStarting {
 				age := now.Sub(srv.CreatedAt)
+				m.metrics.ObserveHeartbeatLag(age)
 				if age > m.offlineAfter {
 					if err := m.transition(ctx, srv, model.StatusOffline, "no heartbeat since creation (age %v)", age); err != nil {
 						m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
@@ -91,6 +100,7 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		}
 
 		age := now.Sub(rt.LastSeenAt)
+		m.metrics.ObserveHeartbeatLag(age)
 
 		switch srv.Status {
 		case model.StatusStarting, model.StatusOnline:
@@ -127,5 +137,6 @@ func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus m
 		"from", srv.Status,
 		"to", newStatus,
 	)
+	m.metrics.CountHealthTransition(srv.Status, newStatus)
 	return m.store.UpdateServerStatus(ctx, srv.ID, newStatus)
 }

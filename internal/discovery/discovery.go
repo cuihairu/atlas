@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 )
@@ -14,6 +15,7 @@ import (
 type Service struct {
 	servers store.ServerStore
 	runtime store.RuntimeStore
+	metrics *metrics.Metrics
 }
 
 // New creates a new discovery service.
@@ -24,11 +26,19 @@ func New(servers store.ServerStore, runtime store.RuntimeStore) *Service {
 	}
 }
 
+// WithMetrics attaches Prometheus instrumentation (optional).
+func (s *Service) WithMetrics(m *metrics.Metrics) *Service {
+	s.metrics = m
+	return s
+}
+
 // ListServers returns servers matching the filter, with runtime data merged in.
 //
 // By default (when filter.Status is empty), only visible servers are returned.
 // If filter.Status is explicitly set, that exact status is used.
 func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*model.Server, error) {
+	s.metrics.CountDiscovery(f)
+
 	servers, err := s.servers.ListServers(ctx, f)
 	if err != nil {
 		return nil, fmt.Errorf("list servers: %w", err)
