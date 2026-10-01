@@ -48,17 +48,17 @@
 - [x] Tests for both adapters (518f76d, d53d9c9)
 - [x] Update docs/sync.md migration path
 
-## v0.1.3 — Prometheus Metrics
+## v0.1.3 — Prometheus Metrics ✅
 
-- [ ] Add `internal/metrics/` package with Prometheus registry
-- [ ] Expose `GET /metrics` on admin port (:8082)
-- [ ] `atlas_registry_servers_total{status}` — gauge
-- [ ] `atlas_registry_heartbeat_lag_seconds` — histogram
-- [ ] `atlas_directory_characters_total` — gauge
-- [ ] `atlas_discovery_requests_total{filter}` — counter
-- [ ] `atlas_admin_requests_total{endpoint,status}` — counter
-- [ ] `atlas_health_transitions_total{from,to}` — counter
-- [ ] Grafana dashboard JSON in `deployments/grafana/`
+- [x] Add `internal/metrics/` package with Prometheus registry (d6742b1)
+- [x] Expose `GET /metrics` on admin port (:8082) (d6742b1)
+- [x] `atlas_registry_servers_total{status}` — gauge (d6742b1)
+- [x] `atlas_registry_heartbeat_lag_seconds` — histogram (d6742b1)
+- [x] `atlas_directory_characters_total` — gauge (d6742b1)
+- [x] `atlas_discovery_requests_total{filter}` — counter (d6742b1)
+- [x] `atlas_admin_requests_total{endpoint,status}` — counter (d6742b1)
+- [x] `atlas_health_transitions_total{from,to}` — counter (d6742b1)
+- [x] Grafana dashboard JSON in `deployments/grafana/`
 
 ## v0.1.4 — Server Routing
 
