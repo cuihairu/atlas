@@ -1,0 +1,43 @@
+# 周期安全审计（docs/security-audit.md）：依赖漏洞扫描。
+# 与 Dependabot 互补——Dependabot 负责日常升级，本 workflow 是独立的第二道复查；
+# govulncheck 发现**被实际调用**的已知漏洞即失败，npm audit high+ 即失败。
+name: security-audit
+
+on:
+  schedule:
+    - cron: "37 3 * * 1" # 每周一 03:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dashboard/package-lock.json
+            docs/package-lock.json
+
+      - name: npm audit (dashboard, prod deps)
+        working-directory: dashboard
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: npm audit (docs, prod deps)
+        working-directory: docs
+        run: npm audit --omit=dev --audit-level=high

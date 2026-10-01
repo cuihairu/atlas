@@ -89,3 +89,8 @@ ATLAS_RATE_LIMIT_DEFAULT="1000:2000"   # 未命中前缀的兜底规则
 | `ATLAS_RATE_LIMIT_DEFAULT` | （空） | 限流兜底规则 |
 
 速率建议：注册接口最严（低 RPS + 小突发），心跳次之（按服务器数 × 心跳频率估算），发现/目录读取最宽。
+
+## 周期审计
+
+依赖漏洞扫描（`govulncheck` + npm audit）由 CI 每周自动执行；逐层人工复查清单与
+历次审计结论见 [security-audit.md](security-audit)。
