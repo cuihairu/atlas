@@ -1,4 +1,4 @@
-# APISIX 示例配置：Atlas 公网入口（TODO v0.1.13）
+# APISIX 示例配置：Atlas 公网入口（v0.1.13 交付）
 #
 # 1) 启用插件（APISIX config.yaml）：
 #

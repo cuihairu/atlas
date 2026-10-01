@@ -1,11 +1,16 @@
-# Atlas APISIX 插件（v0.1.13 交付）
+# APISIX 接入插件
 
-APISIX 网关侧的 Atlas 接入插件：
+Atlas 官方提供两个 APISIX 网关插件（源码与单元测试在
+[`plugins/apisix/`](https://github.com/cuihairu/atlas/tree/main/plugins/apisix)），
+分别负责**玩家身份注入**与**端点组限流**：
 
 | 插件 | 职责 |
 | --- | --- |
 | `atlas-auth.lua` | 校验玩家 token，把玩家身份注入 Atlas 请求头（`X-Atlas-Player-ID`），可选剥离玩家 token 后再转发 |
 | `atlas-ratelimit.lua` | 按 Atlas 端点组（discovery / directory / routing / registry）差异化限流，单路由覆盖整个 `/v1` 面 |
+
+插件与 Atlas 的边界与 [架构设计](/architecture) 一致：认证、限流属于通用网关能力，
+由 APISIX 承担；Atlas 只消费注入后的身份头，不重复校验 token。
 
 ## 安装
 
@@ -16,7 +21,7 @@ APISIX 网关侧的 Atlas 接入插件：
    cp atlas-auth.lua atlas-ratelimit.lua /usr/local/apisix/apisix/plugins/
    ```
 
-2. 在 APISIX `config.yaml` 中启用并声明限流共享字典：
+2. 在 APISIX `config.yaml` 中启用插件并声明限流共享字典：
 
    ```yaml
    plugins:
@@ -33,8 +38,17 @@ APISIX 网关侧的 Atlas 接入插件：
 
 ## 路由配置
 
-一条路由即可把整个 `/v1` 转给 Atlas 公网端口，两个插件分别处理鉴权与限流
-（完整示例见 [`config-example.yaml`](config-example.yaml)）：
+一条路由即可把整个 `/v1` 转给 Atlas 公网端口（:8080），两个插件分别处理
+鉴权与限流。完整示例见
+[`config-example.yaml`](https://github.com/cuihairu/atlas/blob/main/plugins/apisix/config-example.yaml)，
+可经 Admin API 一键创建：
+
+```bash
+curl http://127.0.0.1:9180/apisix/admin/routes/atlas -X PUT \
+  -H "X-API-KEY: $ADMIN_KEY" -d @config-example.yaml
+```
+
+等价的路由 JSON：
 
 ```yaml
 uri: /v1/*
@@ -52,11 +66,15 @@ plugins:
     groups:
       - { prefix: /v1/routing,   rate: 1000, window: 60 }
       - { prefix: /v1/discovery, rate: 600,  window: 60 }
+      - { prefix: /v1/directory, rate: 300,  window: 60 }
       - { prefix: /v1/registry,  rate: 50,   window: 60 }
     default_rate: 0
+    rejected_code: 429
 ```
 
-### atlas-auth 配置
+## 配置参考
+
+### atlas-auth
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
@@ -66,7 +84,7 @@ plugins:
 | `required` | `true` | 缺 token / 未知 token 返回 401；`false` 时匿名放行（Directory 浏览类接口） |
 | `strip_token` | `false` | 转发前剥离玩家 token 头 |
 
-### atlas-ratelimit 配置
+### atlas-ratelimit
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
@@ -80,16 +98,16 @@ ERROR 日志，限流故障不阻断网关。
 ## 验证
 
 ```bash
-# 命中限流组：快速打满 discovery 配额
+# 鉴权：无 token → 401；有效 token → 200
+curl -i http://127.0.0.1:9080/v1/directory/accounts/1001/characters
+curl -i -H "X-Player-Token: demo-token-alice" \
+  http://127.0.0.1:9080/v1/directory/accounts/1001/characters
+
+# 命中限流组：快速打满 discovery 配额，观察 429
 for i in $(seq 1 700); do
   curl -s -o /dev/null -w "%{http_code} " -H "X-Player-Token: demo-token-alice" \
     http://127.0.0.1:9080/v1/discovery/servers
 done
-
-# 鉴权：无 token / 假 token
-curl -i http://127.0.0.1:9080/v1/directory/accounts/1001/characters   # → 401
-curl -i -H "X-Player-Token: demo-token-alice" \
-  http://127.0.0.1:9080/v1/directory/accounts/1001/characters         # → 200
 ```
 
 ## 测试
@@ -102,8 +120,10 @@ lua test/run_tests.lua     # 13 例：注入/401/Bearer/剥离/限流组/最长�
 luac -p *.lua test/*.lua   # 语法检查
 ```
 
-## 与 Atlas 三端口拓扑的关系
+## 与三端口拓扑的关系
 
-APISIX 作为公网入口反代 Atlas public 端口（:8080）。Registry（:8081）与
-Admin（:8082）是服务内部端口，不挂在公网路由上；Registry 的心跳扇入 LB
-使用 HAProxy TCP 模式（`deploy/haproxy/haproxy.cfg`）。
+APISIX 作为公网入口反代 Atlas public 端口（:8080），见
+[部署拓扑](/topology)。Registry（:8081）与 Admin（:8082）是服务内部端口，
+不挂在公网路由上；Registry 的心跳扇入 LB 使用 HAProxy TCP 模式（
+[`deploy/haproxy/haproxy.cfg`](https://github.com/cuihairu/atlas/blob/main/deploy/haproxy/haproxy.cfg)），
+高可用形态见 [高可用](/ha)。
