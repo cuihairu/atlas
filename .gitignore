@@ -42,3 +42,9 @@ __pycache__/
 
 # Go 构建落根（make build）
 /bin/
+
+# Java 构建产物（Maven）
+target/
+
+# Gradle 本地缓存
+.gradle/

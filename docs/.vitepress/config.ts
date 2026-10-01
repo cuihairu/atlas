@@ -53,6 +53,7 @@ export default defineConfig({
           { text: 'C++ SDK', link: '/sdk-cpp' },
           { text: 'Python SDK', link: '/sdk-python' },
           { text: 'JavaScript SDK', link: '/sdk-js' },
+          { text: 'Java SDK', link: '/sdk-java' },
         ],
       },
       {

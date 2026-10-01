@@ -128,13 +128,14 @@
 - [x] Docs: `docs/sdk-js.md` + VitePress 侧边栏
 - [x] 示例竞态修复（Go/Python/JS 同步）：首发心跳改同步，在线后才推荐
 
-## v0.1.10 — Java SDK
+## v0.1.10 — Java SDK ✅
 
-- [ ] `sdk/java/` — Java client library
-- [ ] `AtlasClient` — OkHttp + Gson
-- [ ] Same API surface as Go SDK
-- [ ] Maven + Gradle config
-- [ ] Example: `examples/java/`
+- [x] `sdk/java/` — Java client library（Java 17+，`io.github.cuihairu:atlas-client`）
+- [x] `AtlasClient` — OkHttp + Gson（snake_case/camelCase 双向映射，Instant 时间戳）
+- [x] Same API surface as Go SDK（五组方法全量 + AutoHeartbeat 守护线程 + 重试）
+- [x] Maven + Gradle config（pom.xml + build.gradle，两者构建/测试均验证通过）
+- [x] Tests — JUnit 5 + JDK httpserver 假 Atlas（13 例，含显式 null 集合兜底）
+- [x] Example: `examples/java/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
 
 ## v0.1.11 — C# SDK
 
