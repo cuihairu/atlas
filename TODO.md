@@ -102,17 +102,19 @@
 - [x] `registry_base_url` 覆盖 Registry 独立端口（Go SDK 同步补 `RegistryAddr`）
 - [x] 扁平/嵌套目录写回复归一化（Go `CharacterWriteResult.UnmarshalJSON` + C++ `ParseCharacterWrite`）
 
-## v0.1.8 — Python SDK
+## v0.1.8 — Python SDK ✅
 
-- [ ] `sdk/python/` — Python client library
-- [ ] `atlas_client.py` — sync client using httpx
-- [ ] `AtlasAsyncClient` — async client using httpx + asyncio
-- [ ] `Register` / `Heartbeat` / `Unregister`
-- [ ] `ListServers` / `GetServer`
-- [ ] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`
-- [ ] Auto-heartbeat background task
-- [ ] PyPI package config (`pyproject.toml`)
-- [ ] Example: `examples/python/`
+- [x] `sdk/python/` — Python client library
+- [x] `atlas_client.py` — sync client using httpx
+- [x] `AtlasAsyncClient` — async client using httpx + asyncio
+- [x] `Register` / `Heartbeat` / `Unregister`
+- [x] `ListServers` / `GetServer`
+- [x] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`
+- [x] Auto-heartbeat background task（同步线程 + asyncio 任务，`on_error` 回调）
+- [x] PyPI package config (`pyproject.toml`)
+- [x] Tests — 真实 socket 假 Atlas（路径/认证/查询/错误映射/重试/心跳，同步+异步 13 例）
+- [x] Example: `examples/python/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
+- [x] Docs: `docs/sdk-python.md` + VitePress 侧边栏
 
 ## v0.1.9 — JavaScript/TypeScript SDK
 

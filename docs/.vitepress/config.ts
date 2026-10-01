@@ -51,6 +51,7 @@ export default defineConfig({
         items: [
           { text: 'Go SDK', link: '/sdk-go' },
           { text: 'C++ SDK', link: '/sdk-cpp' },
+          { text: 'Python SDK', link: '/sdk-python' },
         ],
       },
       {

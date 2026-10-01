@@ -33,3 +33,12 @@ Thumbs.db
 .parcel-cache/
 .eslintcache
 /go
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Go 构建落根（make build）
+/bin/
