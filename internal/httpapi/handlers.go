@@ -42,13 +42,28 @@ func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service,
 	}
 }
 
-// RegisterRoutes registers all Atlas routes on the given mux.
+// RegisterRoutes registers all Atlas routes on a single mux (legacy, for
+// development with a single port). For production, use the zone-specific
+// methods below.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// Registry
+	h.RegisterRegistryRoutes(mux)
+	h.RegisterPublicRoutes(mux)
+	h.RegisterAdminRoutes(mux)
+	mux.HandleFunc("GET /healthz", h.handleHealthz)
+	mux.HandleFunc("GET /readyz", h.handleReadyz)
+}
+
+// RegisterRegistryRoutes registers server registration / heartbeat / unregister
+// routes. Mount on the internal-network listener with RegistryAuth middleware.
+func (h *Handler) RegisterRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/registry/servers/register", h.handleRegister)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/heartbeat", h.handleHeartbeat)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/unregister", h.handleUnregister)
+}
 
+// RegisterPublicRoutes registers discovery and directory routes. Mount on the
+// public-facing listener (behind a gateway that handles player auth).
+func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	// Discovery
 	mux.HandleFunc("GET /v1/discovery/servers", h.handleListServers)
 	mux.HandleFunc("GET /v1/discovery/servers/{id}", h.handleGetServer)
@@ -60,8 +75,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/directory/servers/{id}/characters", h.handleListCharactersByServer)
 	mux.HandleFunc("PATCH /v1/directory/characters/{character_id}", h.handlePatchCharacter)
 	mux.HandleFunc("DELETE /v1/directory/characters/{character_id}", h.handleDeleteCharacter)
+}
 
-	// Admin
+// RegisterAdminRoutes registers admin / lifecycle / stats / migration routes.
+// Mount on the management-network listener with AdminAuth middleware.
+func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/admin/servers/{id}/maintenance", h.handleAdminMaintenance)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/drain", h.handleAdminDrain)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/enable", h.handleAdminEnable)
@@ -72,10 +90,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
 	mux.HandleFunc("GET /v1/admin/migrations/{id}", h.handleAdminGetMigration)
 	mux.HandleFunc("POST /v1/admin/migrations/{id}/rollback", h.handleAdminRollbackMigration)
-
-	// Health
-	mux.HandleFunc("GET /healthz", h.handleHealthz)
-	mux.HandleFunc("GET /readyz", h.handleReadyz)
 }
 
 // ---------------------------------------------------------------------------

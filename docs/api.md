@@ -418,11 +418,41 @@ Player Character
 
 ### 认证
 
-| 调用方 | 认证方式 |
-| --- | --- |
-| 游戏服务器（Registry / Directory 写） | 服务间 mTLS 或 Service Token |
-| 客户端（Discovery / Directory 读 / Routing） | 玩家 AccessToken，经 APISIX 校验 |
-| 运维工具（Admin） | 独立的运维凭证 + RBAC |
+Atlas 将 API 划分为三个安全域，各自独立配置：
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                        Atlas API                              │
+│                                                              │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────────┐ │
+│  │  Registry        │  │  Discovery /     │  │  Admin     │ │
+│  │  /v1/registry/*  │  │  Directory 读    │  │  /v1/admin │ │
+│  │                  │  │  /v1/discovery/* │  │  /*        │ │
+│  │  Service Token   │  │  /v1/directory/* │  │  API Key   │ │
+│  │  + IP 白名单     │  │                  │  │  + IP 白名 │ │
+│  │                  │  │  网关层处理认证  │  │  单        │ │
+│  │  内部网络        │  │  公网            │  │  运维工具  │ │
+│  └──────────────────┘  └──────────────────┘  └────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| 安全域 | 端点 | 调用方 | 认证方式 | 配置 |
+| --- | --- | --- | --- | --- |
+| **Registry** | `/v1/registry/*` | 游戏服务器（内部网络） | Service Token（`Authorization: Bearer <token>` 或 `X-Atlas-Token`）+ IP 白名单 | `ATLAS_REGISTRY_TOKENS` + `ATLAS_REGISTRY_IP_WHITELIST` |
+| **Public** | `/v1/discovery/*` `/v1/directory/*` | 客户端（公网） | 网关层处理（玩家 AccessToken），Atlas 不校验 | 网关配置 |
+| **Admin** | `/v1/admin/*` | GM 工具 / 运维 | API Key（`Authorization: Bearer <key>`）+ IP 白名单 | `ATLAS_ADMIN_API_KEYS` + `ATLAS_ADMIN_IP_WHITELIST` |
+
+**为什么 Public 端点不在 Atlas 内做认证？**
+
+客户端请求经过网关（APISIX / Kong / Nginx），网关已经完成了 TLS 终结和玩家身份校验。Atlas 只处理业务逻辑，不重复校验 token。这样做的好处：
+
+1. 网关可以统一管理所有后端服务的认证，不只是 Atlas
+2. 认证策略（token 过期、刷新、黑名单）在网关层集中管理
+3. Atlas 减少一次 JWT 解析的开销
+
+**开发模式**
+
+所有认证配置为空时，对应端点完全开放。这是为了本地开发方便，**生产环境必须配置**。
 
 ### 错误响应
 

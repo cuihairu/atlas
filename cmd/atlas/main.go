@@ -41,7 +41,9 @@ func main() {
 	logger.Info("starting Atlas",
 		"version", version.String(),
 		"store", cfg.StoreType,
-		"addr", cfg.HTTPAddr,
+		"public", cfg.HTTPAddr,
+		"registry", cfg.RegistryAddr,
+		"admin", cfg.AdminAddr,
 	)
 
 	// Create stores.
@@ -121,14 +123,76 @@ func main() {
 	defer monitorCancel()
 	go monitor.Run(monitorCtx)
 
-	// Set up HTTP server.
+	// Set up HTTP handlers.
 	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, composite, logger)
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
 
-	srv := &http.Server{
+	// Parse auth config.
+	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
+	adminIPs, _ := httpapi.ParseIPWhitelist(cfg.AdminIPWhitelist)
+	regTokens := httpapi.ParseAPIKeys(cfg.RegistryTokens)
+	regIPs, _ := httpapi.ParseIPWhitelist(cfg.RegistryIPWhitelist)
+
+	// ── Public API (Discovery + Directory) ─────────────────
+	publicMux := http.NewServeMux()
+	handler.RegisterPublicRoutes(publicMux)
+	publicMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	publicSrv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      mux,
+		Handler:      publicMux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// ── Registry API (internal network) ────────────────────
+	regMux := http.NewServeMux()
+	handler.RegisterRegistryRoutes(regMux)
+	regMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	var regHandler http.Handler = regMux
+	if len(regTokens) > 0 || len(regIPs) > 0 {
+		regHandler = httpapi.RegistryAuth(httpapi.RegistryAuthConfig{
+			Tokens:      regTokens,
+			IPWhitelist: regIPs,
+			Logger:      logger,
+		})(regMux)
+	}
+	regSrv := &http.Server{
+		Addr:         cfg.RegistryAddr,
+		Handler:      regHandler,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// ── Admin API (management network) ─────────────────────
+	adminMux := http.NewServeMux()
+	handler.RegisterAdminRoutes(adminMux)
+	adminMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if err := composite.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"not ready","error":"` + err.Error() + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	var adminHandler http.Handler = adminMux
+	if len(adminKeys) > 0 || len(adminIPs) > 0 {
+		adminHandler = httpapi.AdminAuth(httpapi.AuthConfig{
+			APIKeys:     adminKeys,
+			IPWhitelist: adminIPs,
+			Logger:      logger,
+		})(adminMux)
+	}
+	adminSrv := &http.Server{
+		Addr:         cfg.AdminAddr,
+		Handler:      adminHandler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -139,9 +203,23 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("HTTP server listening", "addr", cfg.HTTPAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("HTTP server error", "error", err)
+		logger.Info("public API listening", "addr", cfg.HTTPAddr)
+		if err := publicSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("public API error", "error", err)
+			os.Exit(1)
+		}
+	}()
+	go func() {
+		logger.Info("registry API listening", "addr", cfg.RegistryAddr)
+		if err := regSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("registry API error", "error", err)
+			os.Exit(1)
+		}
+	}()
+	go func() {
+		logger.Info("admin API listening", "addr", cfg.AdminAddr)
+		if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("admin API error", "error", err)
 			os.Exit(1)
 		}
 	}()
@@ -152,13 +230,13 @@ func main() {
 	// Stop health monitor.
 	monitorCancel()
 
-	// Shutdown HTTP server with a timeout.
+	// Shutdown all HTTP servers with a timeout.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error("HTTP server shutdown error", "error", err)
-	}
+	publicSrv.Shutdown(shutdownCtx)
+	regSrv.Shutdown(shutdownCtx)
+	adminSrv.Shutdown(shutdownCtx)
 
 	// Close stores.
 	if pingCloser != nil {
