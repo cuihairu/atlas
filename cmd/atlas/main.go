@@ -23,6 +23,7 @@ import (
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
 	httpEvent "github.com/cuihairu/atlas/internal/event/http"
+	redisEvent "github.com/cuihairu/atlas/internal/event/redis"
 	"github.com/cuihairu/atlas/internal/health"
 	"github.com/cuihairu/atlas/internal/httpapi"
 	"github.com/cuihairu/atlas/internal/registry"
@@ -113,11 +114,19 @@ func main() {
 	// Event adapter: transports character index writes into the directory
 	// projection (docs/sync.md §4).
 	var evtAdapter event.EventAdapter
+	var evtRdb *redis.Client
 	switch cfg.EventAdapter {
 	case "", "http":
 		evtAdapter = httpEvent.New()
+	case "redis":
+		evtRdb = redis.NewClient(&redis.Options{Addr: parseRedisAddr(cfg.RedisURL)})
+		if err := evtRdb.Ping(ctx).Err(); err != nil {
+			logger.Error("failed to ping Redis for event adapter", "error", err)
+			os.Exit(1)
+		}
+		evtAdapter = redisEvent.New(evtRdb, redisEvent.Options{Logger: logger})
 	default:
-		logger.Error("unknown event adapter (expected 'http')", "adapter", cfg.EventAdapter)
+		logger.Error("unknown event adapter (expected 'http' or 'redis')", "adapter", cfg.EventAdapter)
 		os.Exit(1)
 	}
 
@@ -264,6 +273,9 @@ func main() {
 	// Stop event pipeline.
 	evtCancel()
 	evtAdapter.Close()
+	if evtRdb != nil {
+		evtRdb.Close()
+	}
 
 	// Close stores.
 	if pingCloser != nil {
