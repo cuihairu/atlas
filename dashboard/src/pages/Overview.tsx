@@ -9,12 +9,16 @@ import {
 import { Pie, Column } from '@ant-design/charts';
 import StatsCard from '../components/StatsCard';
 import StatusTag from '../components/StatusTag';
+import ServerMap from '../components/ServerMap';
+import PlayerTrend from '../components/PlayerTrend';
 import { getStats, listServers } from '../api/client';
+import { useLang, t } from '../i18n';
 import type { AdminStats, Server } from '../types';
 
 const REFRESH_INTERVAL = 30_000;
 
 export default function Overview() {
+  useLang(); // re-render on language switch
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [recent, setRecent] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,22 +58,29 @@ export default function Overview() {
     <>
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={6}>
-          <StatsCard title="总服务器数" value={stats.total_servers} prefix={<CloudServerOutlined />} loading={loading} />
+          <StatsCard title={t('totalServers')} value={stats.total_servers} prefix={<CloudServerOutlined />} loading={loading} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatsCard title="在线服务器" value={stats.online_servers} prefix={<CheckCircleOutlined />} loading={loading} />
+          <StatsCard title={t('onlineServers')} value={stats.online_servers} prefix={<CheckCircleOutlined />} loading={loading} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatsCard title="总在线玩家" value={stats.total_players} prefix={<TeamOutlined />} loading={loading} />
+          <StatsCard title={t('totalPlayers')} value={stats.total_players} prefix={<TeamOutlined />} loading={loading} />
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <StatsCard title="总容量" value={stats.total_capacity} prefix={<DatabaseOutlined />} loading={loading} />
+          <StatsCard title={t('totalCapacity')} value={stats.total_capacity} prefix={<DatabaseOutlined />} loading={loading} />
         </Col>
       </Row>
 
+      <div style={{ marginTop: 24 }}>
+        <ServerMap />
+      </div>
+
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} lg={12}>
-          <Card title="服务器状态分布">
+          <PlayerTrend />
+        </Col>
+        <Col xs={24} lg={12}>
+          <Card title={t('statusDistribution')}>
             <Pie
               data={pieData}
               angleField="count"
@@ -82,38 +93,37 @@ export default function Overview() {
             />
           </Card>
         </Col>
-        <Col xs={24} lg={12}>
-          <Card title="区域分布">
-            <Column
-              data={regionData}
-              xField="region"
-              yField="count"
-              color="#d97706"
-              height={300}
-              label={{ position: 'outside' }}
-              axis={{ x: { labelAutoRotate: true } }}
-            />
-          </Card>
-        </Col>
       </Row>
 
-      <Card title="最近服务器" style={{ marginTop: 24 }}>
+      <Card title={t('regionDistribution')} style={{ marginTop: 24 }}>
+        <Column
+          data={regionData}
+          xField="region"
+          yField="count"
+          color="#d97706"
+          height={300}
+          label={{ position: 'outside' }}
+          axis={{ x: { labelAutoRotate: true } }}
+        />
+      </Card>
+
+      <Card title={t('recentServers')} style={{ marginTop: 24 }}>
         <Table
           dataSource={recent}
           rowKey="id"
           pagination={false}
           size="small"
           columns={[
-            { title: 'ID', dataIndex: 'id', ellipsis: true },
-            { title: '名称', dataIndex: 'name' },
-            { title: '区域', dataIndex: 'region' },
+            { title: t('id'), dataIndex: 'id', ellipsis: true },
+            { title: t('name'), dataIndex: 'name' },
+            { title: t('region'), dataIndex: 'region' },
             {
-              title: '状态',
+              title: t('status'),
               dataIndex: 'status',
               render: (s: string) => <StatusTag status={s} />,
             },
             {
-              title: '玩家',
+              title: t('players'),
               render: (_: unknown, r: Server) => `${r.player_count} / ${r.capacity}`,
             },
           ]}

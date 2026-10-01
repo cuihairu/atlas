@@ -1,29 +1,36 @@
 import { useState } from 'react';
-import { Layout as AntLayout, Menu, theme } from 'antd';
+import { Layout as AntLayout, Menu, Button, Tooltip, theme } from 'antd';
 import {
   DashboardOutlined,
   CloudServerOutlined,
   UserOutlined,
   SwapOutlined,
+  SunOutlined,
+  MoonOutlined,
+  GlobalOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { useLang, setLang, t, type Lang } from '../i18n';
+import { useTheme, setTheme } from '../theme';
 
 const { Sider, Header, Content } = AntLayout;
-
-const MENU_ITEMS = [
-  { key: '/', icon: <DashboardOutlined />, label: '总览' },
-  { key: '/servers', icon: <CloudServerOutlined />, label: '服务器' },
-  { key: '/characters', icon: <UserOutlined />, label: '角色搜索' },
-  { key: '/migrations', icon: <SwapOutlined />, label: '迁移管理' },
-];
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const lang = useLang();
+  const mode = useTheme();
   const {
-    token: { colorBgContainer, borderRadiusLG },
+    token: { colorBgContainer, colorBorder, borderRadiusLG },
   } = theme.useToken();
+
+  const MENU_ITEMS = [
+    { key: '/', icon: <DashboardOutlined />, label: t('overview') },
+    { key: '/servers', icon: <CloudServerOutlined />, label: t('servers') },
+    { key: '/characters', icon: <UserOutlined />, label: t('characterSearch') },
+    { key: '/migrations', icon: <SwapOutlined />, label: t('migrations') },
+  ];
 
   // Determine selected key from path
   const selectedKey =
@@ -37,7 +44,8 @@ export default function AppLayout() {
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
-        style={{ background: '#141414' }}
+        theme={mode === 'dark' ? 'dark' : 'light'}
+        style={{ background: mode === 'dark' ? '#141414' : colorBgContainer, borderBottom: `1px solid ${colorBorder}` }}
       >
         <div
           style={{
@@ -57,7 +65,7 @@ export default function AppLayout() {
           {collapsed ? 'AT' : 'ATLAS'}
         </div>
         <Menu
-          theme="dark"
+          theme={mode === 'dark' ? 'dark' : 'light'}
           mode="inline"
           selectedKeys={[selectedKey]}
           items={MENU_ITEMS}
@@ -72,11 +80,31 @@ export default function AppLayout() {
             background: colorBgContainer,
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             fontSize: 18,
             fontWeight: 600,
           }}
         >
-          Atlas Dashboard
+          <span>Atlas Dashboard</span>
+          <span style={{ display: 'flex', gap: 8 }}>
+            <Tooltip title={`${t('language')}: ${lang === 'zh' ? '中文' : 'English'}`}>
+              <Button
+                icon={<GlobalOutlined />}
+                size="small"
+                onClick={() => setLang((lang === 'zh' ? 'en' : 'zh') as Lang)}
+              >
+                {lang === 'zh' ? '中文' : 'EN'}
+              </Button>
+            </Tooltip>
+            <Tooltip title={t('theme')}>
+              <Button
+                icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
+                size="small"
+                onClick={() => setTheme(mode === 'dark' ? 'light' : 'dark')}
+                aria-label="toggle theme"
+              />
+            </Tooltip>
+          </span>
         </Header>
         <Content
           style={{

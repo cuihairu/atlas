@@ -1,4 +1,5 @@
 import { message } from 'antd';
+import { t } from '../i18n';
 import type {
   Server,
   ServerListResponse,
@@ -25,7 +26,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return (await res.json()) as T;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    message.error(`请求失败: ${msg}`);
+    message.error(`${t('requestFailed')}: ${msg}`);
     throw err;
   }
 }

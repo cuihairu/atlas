@@ -194,11 +194,11 @@
 
 ## v0.1.18 — Dashboard Enhancements
 
-- [ ] Real-time server map (geographic distribution)
-- [ ] Player trend charts (daily/weekly active)
-- [ ] Migration progress with live updates
-- [ ] Dark/light theme toggle
-- [ ] i18n (English + Chinese)
+- [x] Real-time server map (geographic distribution)（ServerMap 组件：按区域卡片聚合状态/玩家/负载，10s 轮询 + 更新时间徽标）
+- [x] Player trend charts (daily/weekly active)（PlayerTrend：后端暂无历史库，仪表盘 localStorage 滚动采样（7 天/5000 点），24h/7d 折线切换）
+- [x] Migration progress with live updates（迁移 pending/running 时静默 5s 轮询 + 行展开 Steps 时间线（已创建→迁移中→完成，失败置 error））
+- [x] Dark/light theme toggle（theme.ts 单例 + localStorage，antd darkAlgorithm/defaultAlgorithm 切换，侧栏/头部联动）
+- [x] i18n (English + Chinese)（i18n.ts 模块单例 + useLang 订阅，非 React 的 api client 也可翻译；全部页面/组件硬编码中文迁入词典，头部语言/主题切换按钮）
 
 ## v0.1.19 — High Availability
 

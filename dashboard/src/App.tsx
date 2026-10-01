@@ -1,24 +1,29 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ConfigProvider, theme, App as AntApp } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
 import AppLayout from './components/Layout';
 import Overview from './pages/Overview';
 import Servers from './pages/Servers';
 import ServerDetail from './pages/ServerDetail';
 import Characters from './pages/Characters';
 import Migrations from './pages/Migrations';
+import { useLang, antdLocale } from './i18n';
+import { useTheme } from './theme';
 
 export default function App() {
+  const lang = useLang();
+  const mode = useTheme();
+
   return (
     <ConfigProvider
-      locale={zhCN}
+      locale={antdLocale()}
       theme={{
-        algorithm: theme.darkAlgorithm,
+        algorithm: mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
           colorPrimary: '#d97706',
           borderRadius: 8,
         },
       }}
+      key={lang}
     >
       <AntApp>
         <BrowserRouter>

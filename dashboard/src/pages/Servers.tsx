@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Space, Select, Progress, message, Popconfirm } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import StatusTag from '../components/StatusTag';
+import { useLang, t } from '../i18n';
 import {
   listServers,
   serverMaintenance,
@@ -15,6 +16,7 @@ const REGIONS = ['cn', 'us', 'eu', 'ap'];
 const STATUSES = ['online', 'maintenance', 'suspect', 'offline', 'draining'];
 
 export default function Servers() {
+  useLang(); // re-render on language switch
   const [servers, setServers] = useState<Server[]>([]);
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<string | undefined>();
@@ -45,7 +47,7 @@ export default function Servers() {
       else if (action === 'drain') await serverDrain(id);
       else if (action === 'enable') await serverEnable(id);
       else if (action === 'disable') await serverDisable(id);
-      message.success('操作成功');
+      message.success(t('actionOk'));
       fetch();
     } catch {
       // error handled by client
@@ -55,13 +57,11 @@ export default function Servers() {
   const actionsFor = (s: Server) => {
     const btns: { key: string; label: string; danger?: boolean }[] = [];
     if (s.status === 'online') {
-      btns.push({ key: 'maintenance', label: '进入维护' });
-      btns.push({ key: 'drain', label: '排水' });
-      btns.push({ key: 'disable', label: '禁用', danger: true });
-    } else if (s.status === 'maintenance' || s.status === 'suspect' || s.status === 'draining') {
-      btns.push({ key: 'enable', label: '启用' });
-    } else if (s.status === 'offline') {
-      btns.push({ key: 'enable', label: '启用' });
+      btns.push({ key: 'maintenance', label: t('enterMaintenance') });
+      btns.push({ key: 'drain', label: t('drain') });
+      btns.push({ key: 'disable', label: t('disable'), danger: true });
+    } else {
+      btns.push({ key: 'enable', label: t('enable') });
     }
     return btns;
   };
@@ -71,7 +71,7 @@ export default function Servers() {
       <Space style={{ marginBottom: 16 }} wrap>
         <Select
           allowClear
-          placeholder="区域"
+          placeholder={t('region')}
           style={{ width: 120 }}
           value={region}
           onChange={setRegion}
@@ -79,7 +79,7 @@ export default function Servers() {
         />
         <Select
           allowClear
-          placeholder="状态"
+          placeholder={t('status')}
           style={{ width: 120 }}
           value={status}
           onChange={setStatus}
@@ -96,18 +96,18 @@ export default function Servers() {
           style: { cursor: 'pointer' },
         })}
         columns={[
-          { title: 'ID', dataIndex: 'id', ellipsis: true, width: 200 },
-          { title: '名称', dataIndex: 'name' },
-          { title: '区域', dataIndex: 'region', width: 80 },
-          { title: '版本', dataIndex: 'version', width: 100 },
+          { title: t('id'), dataIndex: 'id', ellipsis: true, width: 200 },
+          { title: t('name'), dataIndex: 'name' },
+          { title: t('region'), dataIndex: 'region', width: 80 },
+          { title: t('version'), dataIndex: 'version', width: 100 },
           {
-            title: '状态',
+            title: t('status'),
             dataIndex: 'status',
             width: 100,
             render: (s: string) => <StatusTag status={s} />,
           },
           {
-            title: '玩家 / 容量',
+            title: t('playersCapacity'),
             width: 200,
             render: (_: unknown, r: Server) => {
               const pct = r.capacity > 0 ? Math.round((r.player_count / r.capacity) * 100) : 0;
@@ -125,20 +125,20 @@ export default function Servers() {
             },
           },
           {
-            title: '负载',
+            title: t('load'),
             dataIndex: 'load',
             width: 80,
             render: (v: number) => `${(v * 100).toFixed(0)}%`,
           },
           {
-            title: '操作',
+            title: t('actions'),
             width: 240,
             render: (_: unknown, record: Server) => (
               <Space>
                 {actionsFor(record).map((a) => (
                   <Popconfirm
                     key={a.key}
-                    title={`确认${a.label}？`}
+                    title={t('confirmAction', { name: a.label })}
                     onConfirm={(e) => {
                       e?.stopPropagation();
                       doAction(record.id, a.key);
@@ -165,7 +165,7 @@ export default function Servers() {
           style={{ marginTop: 16 }}
           onClick={() => setCursor(nextCursor)}
         >
-          加载更多
+          {t('loadMore')}
         </Button>
       )}
     </>
