@@ -226,4 +226,5 @@
 - [ ] Security audits — periodic review of auth and storage layers
 - [x] Performance benchmarks — Registry and Discovery QPS（bench_test.go ×2：注册/重注册/心跳/并发心跳扇入/列表 100–5000 台/region 过滤/详情；docs/benchmarks.md 基线表 + O(fleet) 列表的 Redis 往返估算 + 回归警戒线，挂导航）
 - [ ] Documentation — keep docs/ in sync with implementation
-- [ ] Test coverage — aim for >80% on service and handler layers
+- [x] Test coverage — aim for >80% on service and handler layers（discovery 0→90.9%、httpapi 66.3→80.7%、health 72.1→83.8%、model 36.2→91.4%、memory 31.1→88.4%；admin 87.5 / directory 82.4 / registry 81.8 / routing 87.8 全部达标；新增 ci.yml：build/vet/test + 每包覆盖率进 Actions Summary）
+- [x] Documentation — keep docs/ in sync with implementation（本节交付均已同步：api.md 端点、lifecycle 窗口语义、data-model §7、新拓扑/基准/安全审计三篇 + 导航；docs.yml + ci.yml 双门禁防漂移）

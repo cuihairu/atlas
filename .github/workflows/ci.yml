@@ -1,0 +1,50 @@
+# 主 CI 门禁：Go build / vet / test + 覆盖率报告。
+# Dependabot 的自动合并 workflow 会单独重跑这些门禁；本 workflow 面向所有
+# push / PR。覆盖率目标：service 与 handler 层 >80%（docs/benchmarks.md 的
+# 回归警戒线之外的另一条质量线，见 docs/security-audit.md 的范围表）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with coverage
+        run: go test ./... -coverprofile=coverage.out -count=1
+
+      - name: Coverage report
+        run: |
+          go tool cover -func=coverage.out | sed 's/^/  /' > coverage.txt
+          # 每包覆盖率摘要进 Actions Summary
+          {
+            echo "### Go coverage (per package)"
+            echo '```'
+            go test -cover ./internal/... ./sdk/... 2>&1 | grep -v "no test files"
+            echo '```'
+            go tool cover -func=coverage.out | tail -1
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
