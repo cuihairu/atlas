@@ -232,3 +232,5 @@
 ## 巡检修复（2026-10-02）
 
 - [x] memory store `CreateMaintenanceWindow` / `CreateAnnouncement` 不回填 `CreatedAt`——postgres/mysql 在调用方对象上戳时间,memory 只戳内部副本,导致 API 响应 `created_at` 恒为零值（实测 `mwin-*` 返回 `0001-01-01T00:00:00Z`）；已对齐三库语义（在调用方对象上戳时间再存副本）。走查方式：`ATLAS_STORE=memory` 起真实进程,覆盖注册→心跳提升→窗口自动维护→联动公告→CRUD→异常路径→审计全链路
+- [x] 心跳响应谎报 `status:"online"`——REST handler 与 gRPC server 均硬编码 `online`,服务器被监控判 `suspect`/`offline` 后心跳照常 200 且自称 online,调用方（SDK/运维脚本）无从感知已出局、也就不会触发文档承诺的重注册恢复（实测 offline 后心跳返回 `{"status":"online"}` 而 discovery 列 offline、路由拒派）；已改为 `Service.Heartbeat` 返回生效状态,REST/gRPC 两面如实回显（实测 offline 心跳响应 `"status":"offline"`,重注册→starting→心跳→online 全链路复活）
+- [x] 重注册状态语义三库分裂——postgres/mysql upsert 的 `CASE WHEN EXCLUDED.status='starting' THEN servers.status` 使 offline 服务器重注册后仍 offline（心跳只提升 starting→online,恢复路径在 SQL store 上永久断裂）;memory 则无条件重置,连 `disabled`/`maintenance` 都会被重注册打回 starting（违反 lifecycle.md「禁用不被自动状态机覆盖」）；已统一契约：仅旧状态为 suspect/offline 时重置为 starting,其余（online 及运维态）保留（实测 disable→重注册→仍 disabled;SQL 语句已对齐,三库行为一致）

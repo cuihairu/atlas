@@ -45,12 +45,13 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 	if req.Status != "" {
 		hb.Status = model.ServerStatus(req.Status)
 	}
-	if err := s.registry.Heartbeat(ctx, req.ServerId, hb); err != nil {
+	st, err := s.registry.Heartbeat(ctx, req.ServerId, hb)
+	if err != nil {
 		return nil, statusErr(err)
 	}
 	return &pb.HeartbeatResponse{
 		ServerId:        req.ServerId,
-		Status:          string(model.StatusOnline),
+		Status:          string(st),
 		NextHeartbeatIn: 10,
 	}, nil
 }

@@ -72,7 +72,9 @@ ON CONFLICT (id) DO UPDATE SET
     endpoint_host = EXCLUDED.endpoint_host,
     endpoint_port = EXCLUDED.endpoint_port,
     capacity      = EXCLUDED.capacity,
-    status        = CASE WHEN EXCLUDED.status = 'starting' THEN servers.status ELSE EXCLUDED.status END,
+    -- Reset only a dead-ish lifecycle (suspect / offline) so a re-registering
+    -- server can recover; keep active and operator-set statuses untouched.
+    status        = CASE WHEN servers.status IN ('suspect', 'offline') THEN EXCLUDED.status ELSE servers.status END,
     started_at    = EXCLUDED.started_at,
     updated_at    = EXCLUDED.updated_at
 `

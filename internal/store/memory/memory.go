@@ -78,7 +78,10 @@ func (s *Store) RegisterServer(_ context.Context, srv *model.Server) error {
 		existing.Endpoint = srv.Endpoint
 		existing.Capacity = srv.Capacity
 		existing.StartedAt = srv.StartedAt
-		if srv.Status != "" {
+		// A fresh registration proves a (re)boot: reset only a dead-ish
+		// lifecycle (suspect / offline) so the next heartbeat can promote it
+		// again. Keep active and operator-set statuses untouched.
+		if existing.Status == model.StatusSuspect || existing.Status == model.StatusOffline {
 			existing.Status = srv.Status
 		}
 		existing.UpdatedAt = now

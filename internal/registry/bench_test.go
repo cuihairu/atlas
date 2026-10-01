@@ -60,7 +60,7 @@ func BenchmarkHeartbeat(b *testing.B) {
 			Load:    0.5,
 			Status:  model.StatusOnline,
 		}
-		if err := svc.Heartbeat(ctxBench, "game-1001", hb); err != nil {
+		if _, err := svc.Heartbeat(ctxBench, "game-1001", hb); err != nil {
 			b.Fatalf("heartbeat: %v", err)
 		}
 	}
@@ -85,7 +85,7 @@ func BenchmarkHeartbeatParallel(b *testing.B) {
 		for pb.Next() {
 			id := "game-" + fmt.Sprintf("%04d", i%servers)
 			hb := model.Heartbeat{Players: i % 2000, Load: 0.5, Status: model.StatusOnline}
-			if err := svc.Heartbeat(ctxBench, id, hb); err != nil {
+			if _, err := svc.Heartbeat(ctxBench, id, hb); err != nil {
 				b.Fatalf("heartbeat: %v", err)
 			}
 			i++

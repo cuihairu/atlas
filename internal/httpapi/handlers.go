@@ -199,7 +199,8 @@ func (h *Handler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.registry.Heartbeat(r.Context(), id, hb); err != nil {
+	status, err := h.registry.Heartbeat(r.Context(), id, hb)
+	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
 			return
@@ -214,7 +215,7 @@ func (h *Handler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server_id":         id,
-		"status":            "online",
+		"status":            status,
 		"next_heartbeat_in": 10,
 	})
 }

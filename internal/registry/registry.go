@@ -95,15 +95,18 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 }
 
 // Heartbeat processes a heartbeat from a game server.
-func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heartbeat) error {
+// Heartbeat records a heartbeat and returns the server's effective status
+// afterwards, so callers can tell online from suspect / offline (an offline
+// server must re-register to re-enter rotation).
+func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heartbeat) (model.ServerStatus, error) {
 	if err := hb.Validate(); err != nil {
-		return err
+		return "", err
 	}
 
 	// Verify the server exists.
 	srv, err := s.servers.GetServer(ctx, serverID)
 	if err != nil {
-		return fmt.Errorf("heartbeat for unknown server %s: %w", serverID, err)
+		return "", fmt.Errorf("heartbeat for unknown server %s: %w", serverID, err)
 	}
 
 	// Determine the status to record.
@@ -118,18 +121,19 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 		Status:  status,
 	}
 	if err := s.runtime.RecordHeartbeat(ctx, serverID, runtimeHB); err != nil {
-		return fmt.Errorf("record heartbeat: %w", err)
+		return "", fmt.Errorf("record heartbeat: %w", err)
 	}
 
 	// Auto-promote starting → online on first valid heartbeat.
 	if srv.Status == model.StatusStarting {
 		if err := s.servers.UpdateServerStatus(ctx, serverID, model.StatusOnline); err != nil {
-			return fmt.Errorf("promote to online: %w", err)
+			return "", fmt.Errorf("promote to online: %w", err)
 		}
 		s.logger.Info("server promoted to online", "server_id", serverID)
+		return model.StatusOnline, nil
 	}
 
-	return nil
+	return srv.Status, nil
 }
 
 // Unregister marks a server as offline and removes its runtime data.

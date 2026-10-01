@@ -71,7 +71,9 @@ ON DUPLICATE KEY UPDATE
     endpoint_host = VALUES(endpoint_host),
     endpoint_port = VALUES(endpoint_port),
     capacity      = VALUES(capacity),
-    status        = CASE WHEN VALUES(status) = 'starting' THEN servers.status ELSE VALUES(status) END,
+    -- Reset only a dead-ish lifecycle (suspect / offline) so a re-registering
+    -- server can recover; keep active and operator-set statuses untouched.
+    status        = CASE WHEN servers.status IN ('suspect', 'offline') THEN VALUES(status) ELSE servers.status END,
     started_at    = VALUES(started_at),
     updated_at    = VALUES(updated_at)
 `

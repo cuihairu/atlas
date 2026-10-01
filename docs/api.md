@@ -112,6 +112,9 @@ suspect
 offline
 ```
 
+响应中的 `status` 是服务器**当前生效状态**：正常为 `online`；若曾因心跳中断被标记为
+`suspect` / `offline`，响应会如实返回，此时应重新 `register`（幂等）恢复上线。
+
 详见 [lifecycle.md](lifecycle.md)。
 
 ---

@@ -129,6 +129,7 @@ offline
 | `online` → `suspect` | Atlas | 心跳超时阈值 1 |
 | `suspect` → `online` | Atlas | 收到心跳（恢复） |
 | `suspect` → `offline` | Atlas | 心跳超时阈值 2 |
+| `suspect` / `offline` → `starting` | 游戏服务器 | 重新 `register`（幂等；仅 `suspect` / `offline` 会被重置，`online` 与运维设置的状态不受重复注册影响） |
 | `draining` → `offline` | Atlas / 游戏服务器 | 存量清零或超时 |
 | `maintenance` → `online` | 运维 | `POST /admin/servers/{id}/enable` |
 | 任意 → `disabled` | 运维 | `POST /admin/servers/{id}/disable` |

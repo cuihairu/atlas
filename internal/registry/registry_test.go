@@ -76,7 +76,7 @@ func TestHeartbeat(t *testing.T) {
 
 	// Heartbeat should succeed and promote to online.
 	hb := model.Heartbeat{Players: 100, Load: 0.5}
-	if err := svc.Heartbeat(ctx, "game-1001", hb); err != nil {
+	if _, err := svc.Heartbeat(ctx, "game-1001", hb); err != nil {
 		t.Fatalf("Heartbeat: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestHeartbeatNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	hb := model.Heartbeat{Players: 100, Load: 0.5}
-	err := svc.Heartbeat(ctx, "nonexistent", hb)
+	_, err := svc.Heartbeat(ctx, "nonexistent", hb)
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got: %v", err)
 	}
