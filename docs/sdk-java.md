@@ -1,6 +1,6 @@
 # Java SDK
 
-`sdk/java/`（TODO v0.1.10）。OkHttp + Gson 的 REST 客户端，与 Go / C++ /
+`sdk/java/`（v0.1.10 交付）。OkHttp + Gson 的 REST 客户端，与 Go / C++ /
 Python / JS SDK 同一 API 面。Java 17+，同步阻塞接口，发布坐标
 `io.github.cuihairu:atlas-client`，Maven + Gradle 双构建配置。
 

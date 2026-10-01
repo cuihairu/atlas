@@ -1,6 +1,6 @@
 # C++ SDK
 
-`sdk/cpp/`（TODO v0.1.7）。REST 客户端，与 Go SDK 同一 API 面。依赖已以单头
+`sdk/cpp/`（v0.1.7 交付）。REST 客户端，与 Go SDK 同一 API 面。依赖已以单头
 形式 vendor 在 `sdk/cpp/third_party/`（cpp-httplib v0.58.0、nlohmann/json
 v3.12.0，见 [VENDORED.md](https://github.com/cuihairu/atlas/blob/main/sdk/cpp/third_party/VENDORED.md)），
 无外部系统依赖，C++17 即可编译。

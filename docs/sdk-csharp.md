@@ -1,6 +1,6 @@
 # C# SDK
 
-`sdk/csharp/`（TODO v0.1.11）。HttpClient + System.Text.Json 的 REST
+`sdk/csharp/`（v0.1.11 交付）。HttpClient + System.Text.Json 的 REST
 客户端，与 Go / C++ / Python / JS / Java SDK 同一 API 面。目标
 net8.0 + net10.0，零第三方依赖，NuGet 包名 `Atlas.Client`。
 
