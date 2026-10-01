@@ -40,7 +40,9 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
     "host": "10.0.1.21",
     "port": 30001
   },
-  "capacity": 2000
+  "capacity": 2000,
+  "players": 512,
+  "started_at": "2026-10-01T05:58:00Z"
 }
 ```
 
@@ -66,6 +68,8 @@ version
 endpoint
 capacity
 status
+players     # 初始在线人数，直接写入运行时数据（重注册恢复现场）
+started_at  # 进程启动时间，缺省取注册时刻；重注册刷新（可算 uptime）
 ```
 
 **幂等性**：重复注册同一 `server_id` 视为更新，返回 `200 OK`。
@@ -460,6 +464,110 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ```
 
 服务器注册时可携带 `realm_id` / `shard_id` 关联所属大区与分片（见 Registry），发现过滤支持 `realm` / `shard`（见 Discovery）。
+
+### POST /v1/admin/servers/{id}/maintenance-window
+
+计划维护窗口（v0.1.20）：`start_at` 到达时健康监控自动把服务器置入 `maintenance`，`end_at` 后恢复原状态（详见 lifecycle.md §5）。`start_at` 缺省取当前时刻；`announce` 缺省 `true`，自动创建一条覆盖同时段的服务器级 warning 公告并与窗口关联。
+
+**Request**
+
+```json
+{
+  "start_at": "2026-10-02T02:00:00Z",
+  "end_at": "2026-10-02T04:00:00Z",
+  "announce": true
+}
+```
+
+**Response** `201 Created`
+
+```json
+{
+  "id": "mwin-1759376400000000000",
+  "server_id": "game-1001",
+  "start_at": "2026-10-02T02:00:00Z",
+  "end_at": "2026-10-02T04:00:00Z",
+  "previous_status": "",
+  "announcement_id": "ann-1759376400000000000",
+  "created_at": "2026-10-01T12:00:00Z"
+}
+```
+
+错误：`404 SERVER_NOT_FOUND`（服务器不存在）、`400 INVALID_ARGUMENT`（`end_at` 不晚于 `start_at`）。
+
+### GET /v1/admin/maintenance-windows
+
+列出维护窗口（新→旧）。`?server_id=` 过滤指定服务器，`?limit=` 限制条数。
+
+```json
+{ "maintenance_windows": [ ... ] }
+```
+
+### DELETE /v1/admin/maintenance-windows/{window_id}
+
+取消窗口（`204 No Content`）。已进入维护的服务器不会被自动拉出，需走常规 `enable` / `maintenance` 转移；已自动创建的公告不会被撤回。
+
+### POST /v1/admin/announcements
+
+创建公告。`server_id` 缺省为全局公告；`level` ∈ `info` / `warning` / `critical`（缺省 `info`）。
+
+**Request**
+
+```json
+{
+  "server_id": "game-1001",
+  "title": "双倍掉落周末",
+  "body": "10 月 5 日 00:00 - 10 月 7 日 24:00",
+  "level": "info",
+  "starts_at": "2026-10-04T16:00:00Z",
+  "ends_at": "2026-10-07T16:00:00Z"
+}
+```
+
+**Response** `201 Created`（完整公告对象）。
+
+错误：`404 SERVER_NOT_FOUND`、`400 INVALID_ARGUMENT`（缺 `title`、未知 `level`、`ends_at` 不晚于 `starts_at`）。
+
+### GET /v1/admin/announcements
+
+列出公告（新→旧）。`?server_id=` = 全局 + 指定服务器；`?active=true` 只返回当前生效的；`?limit=` 限制条数。
+
+```json
+{ "announcements": [ ... ] }
+```
+
+### DELETE /v1/admin/announcements/{announcement_id}
+
+删除公告（`204 No Content`）。
+
+### GET /v1/discovery/announcements
+
+玩家客户端拉取**当前生效**的公告：全局 +（可选）`?server_id=` 指定服务器的。只读，无需认证。
+
+**Request**
+
+```text
+GET /v1/discovery/announcements?server_id=game-1001&limit=20
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "announcements": [
+    {
+      "id": "ann-1759376400000000000",
+      "server_id": "game-1001",
+      "title": "维护公告",
+      "body": "Server game-1001 will be under maintenance from ...",
+      "level": "warning",
+      "starts_at": "2026-10-02T02:00:00Z",
+      "ends_at": "2026-10-02T04:00:00Z",
+      "created_at": "2026-10-01T12:00:00Z"
+    }
+  ]
+}
+```
 
 ### GET /metrics
 

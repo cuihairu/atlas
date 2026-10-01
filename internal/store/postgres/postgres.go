@@ -788,6 +788,7 @@ func scanShard(row scannable) (*model.Shard, error) {
 	}
 	return &sh, nil
 }
+
 // ── Maintenance windows & announcements (TODO v0.1.20) ──────────
 
 func (s *Store) CreateMaintenanceWindow(ctx context.Context, w *model.MaintenanceWindow) error {

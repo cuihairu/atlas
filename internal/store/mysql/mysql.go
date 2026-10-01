@@ -768,6 +768,7 @@ func conflictIfExists(execErr error, lookupErr error, op, id string) error {
 	}
 	return fmt.Errorf("%s %s: %w", op, id, execErr)
 }
+
 // ── Maintenance windows & announcements (TODO v0.1.20) ──────────
 
 func (s *Store) CreateMaintenanceWindow(ctx context.Context, w *model.MaintenanceWindow) error {

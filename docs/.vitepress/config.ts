@@ -39,6 +39,7 @@ export default defineConfig({
           { text: '数据同步', link: '/sync' },
           { text: '安全', link: '/security' },
           { text: '高可用', link: '/ha' },
+          { text: '部署拓扑', link: '/topology' },
         ],
       },
       { text: '路线图', link: '/roadmap' },
@@ -76,6 +77,7 @@ export default defineConfig({
           { text: '数据同步', link: '/sync' },
           { text: '安全', link: '/security' },
           { text: '高可用', link: '/ha' },
+          { text: '部署拓扑', link: '/topology' },
         ],
       },
       {

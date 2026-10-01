@@ -82,6 +82,7 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	// Discovery
 	mux.HandleFunc("GET /v1/discovery/servers", h.handleListServers)
 	mux.HandleFunc("GET /v1/discovery/servers/{id}", h.handleGetServer)
+	mux.HandleFunc("GET /v1/discovery/announcements", h.handleListAnnouncements)
 
 	// Routing
 	mux.HandleFunc("GET /v1/routing/recommended", h.handleRecommended)
@@ -112,6 +113,13 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/realms", h.handleAdminListRealms)
 	mux.HandleFunc("POST /v1/admin/shards", h.handleAdminCreateShard)
 	mux.HandleFunc("GET /v1/admin/shards", h.handleAdminListShards)
+	// Maintenance windows & announcements (TODO v0.1.20).
+	mux.HandleFunc("POST /v1/admin/servers/{id}/maintenance-window", h.handleAdminCreateMaintenanceWindow)
+	mux.HandleFunc("GET /v1/admin/maintenance-windows", h.handleAdminListMaintenanceWindows)
+	mux.HandleFunc("DELETE /v1/admin/maintenance-windows/{id}", h.handleAdminDeleteMaintenanceWindow)
+	mux.HandleFunc("POST /v1/admin/announcements", h.handleAdminCreateAnnouncement)
+	mux.HandleFunc("GET /v1/admin/announcements", h.handleAdminListAnnouncements)
+	mux.HandleFunc("DELETE /v1/admin/announcements/{id}", h.handleAdminDeleteAnnouncement)
 	if h.audit != nil {
 		mux.HandleFunc("GET /v1/admin/audit", h.handleAdminAudit)
 	}
@@ -205,9 +213,9 @@ func (h *Handler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"server_id":          id,
-		"status":             "online",
-		"next_heartbeat_in":  10,
+		"server_id":         id,
+		"status":            "online",
+		"next_heartbeat_in": 10,
 	})
 }
 
@@ -469,8 +477,8 @@ func (h *Handler) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		AccountID int64  `json:"account_id"`
-		ServerID  string `json:"server_id"`
+		AccountID int64   `json:"account_id"`
+		ServerID  string  `json:"server_id"`
 		Name      *string `json:"name,omitempty"`
 		Level     *int    `json:"level,omitempty"`
 		ClassID   *int    `json:"class_id,omitempty"`
@@ -932,5 +940,143 @@ func CORSMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// ── Maintenance windows & announcements (TODO v0.1.20) ──────────
+
+func (h *Handler) handleAdminCreateMaintenanceWindow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req admin.CreateMaintenanceWindowRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	mw, err := h.admin.CreateMaintenanceWindow(r.Context(), id, req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if store.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, mw)
+}
+
+func (h *Handler) handleAdminListMaintenanceWindows(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	windows, err := h.admin.ListMaintenanceWindows(r.Context(), r.URL.Query().Get("server_id"), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"maintenance_windows": windows,
+	})
+}
+
+func (h *Handler) handleAdminDeleteMaintenanceWindow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.DeleteMaintenanceWindow(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleAdminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
+	var req admin.CreateAnnouncementRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	a, err := h.admin.CreateAnnouncement(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if store.IsNotFound(err) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, a)
+}
+
+func (h *Handler) handleAdminListAnnouncements(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	f := store.AnnouncementFilter{
+		ServerID:   r.URL.Query().Get("server_id"),
+		ActiveOnly: r.URL.Query().Get("active") == "true",
+		Limit:      limit,
+	}
+
+	announcements, err := h.admin.ListAnnouncements(r.Context(), f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"announcements": announcements,
+	})
+}
+
+func (h *Handler) handleAdminDeleteAnnouncement(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.DeleteAnnouncement(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleListAnnouncements serves active announcements to game clients: global
+// plus, when server_id is given, that server's own notices.
+func (h *Handler) handleListAnnouncements(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	f := store.AnnouncementFilter{
+		ServerID:   r.URL.Query().Get("server_id"),
+		ActiveOnly: true,
+		Limit:      limit,
+	}
+
+	announcements, err := h.admin.ListAnnouncements(r.Context(), f)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"announcements": announcements,
 	})
 }

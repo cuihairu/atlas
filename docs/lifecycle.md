@@ -195,9 +195,50 @@ webhook 载荷示例：
 
 webhook 投递失败只记错误日志，不影响巡检循环。
 
+### 4.2 心跳节奏指引（3:1 法则，v0.1.20）
+
+阈值设定遵循 **3:1:6 节奏**——心跳间隔 : suspect 阈值 : offline 阈值 = 1 : 3 : 6（默认 10s / 30s / 60s）：
+
+- **3×** 心跳间隔进入 suspect：容忍连续丢两个心跳再标记，避免单次网络抖动造成客户端列表闪烁；
+- **6×** 进入 offline：给监控方一整个 suspect 窗口去确认，而不是直接判死；
+- 心跳间隔改变时按比例缩放阈值（如 5s 心跳 → 15s suspect / 30s offline），保持容错语义不变。
+
+心跳间隔越大，故障转移（如 [ha.md](ha.md) 中 Atlas 副本宕机）后客户端感知越慢；不建议超过 offline 阈值的三分之一。
+
+### 4.3 注册元数据（v0.1.20）
+
+注册请求新增两个可选字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `players` | 注册时的初始在线人数，直接写入运行时数据；Atlas 重启后游戏服务器重注册不会上报 0 |
+| `started_at` | 游戏服务器进程启动时间；缺省取注册时刻。重注册（进程重启）会刷新，Discovery 侧可据此展示 uptime |
+
 ---
 
-## 5. 与 API 的对应
+## 5. 计划维护窗口（v0.1.20）
+
+运维可以预先安排维护时段，健康监控在窗口开启时自动把服务器置入 `maintenance`，结束后恢复原状态：
+
+```text
+POST /v1/admin/servers/{id}/maintenance-window
+{ "start_at": "...", "end_at": "...", "announce": true }
+```
+
+应用规则：
+
+| 时机 | 行为 |
+| --- | --- |
+| `start_at` 到达 | auto-managed 状态（starting / online / suspect）→ `maintenance`，并把原状态记入窗口的 `previous_status` |
+| `end_at` 到达 | 若服务器仍在 `maintenance`（窗口放进去的）→ 恢复 `previous_status`，随后删除窗口记录 |
+| 服务器处于 operator 状态（draining / disabled）或 offline | 不动它，窗口标记为已应用（无恢复目标） |
+| 窗口期间运维手动转移 | 以运维操作为准，窗口结束不回滚 |
+
+窗口默认（`announce` 缺省为 `true`）自动创建一条覆盖同时段、server 范围、warning 级别的公告并与窗口关联（见 §6 与 api.md）。窗口取消（DELETE）不会撤回已创建的公告，也不会把已在维护中的服务器拉出来。
+
+---
+
+## 6. 与 API 的对应
 
 | 状态操作 | API |
 | --- | --- |
@@ -208,12 +249,15 @@ webhook 投递失败只记错误日志，不影响巡检循环。
 | 排水 | `POST /v1/admin/servers/{id}/drain` |
 | 启用 | `POST /v1/admin/servers/{id}/enable` |
 | 禁用 | `POST /v1/admin/servers/{id}/disable` |
+| 计划维护窗口 | `POST /v1/admin/servers/{id}/maintenance-window` |
+| 维护窗口列表 | `GET /v1/admin/maintenance-windows` |
+| 取消维护窗口 | `DELETE /v1/admin/maintenance-windows/{id}` |
 
 完整定义见 [api.md](api.md)。
 
 ---
 
-## 6. 客户端可见性规则
+## 7. 客户端可见性规则
 
 Discovery 接口的默认行为：
 

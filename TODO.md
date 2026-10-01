@@ -209,14 +209,14 @@
 - [x] Connection pool tuning documentation（ATLAS_PG_POOL_MAX_CONNS/MIN_CONNS/LIFETIME/IDLE_TIME/HEALTH_CHECK_PERIOD 叠加 pgxpool.ParseConfig（MinConns>MaxConns 钳制），ATLAS_REDIS_POOL_SIZE；docs/ha.md §5 容量经验公式）
 - [x] Lab stack：deploy/docker-compose.ha.yaml（2× Atlas + HAProxy + PG 主从 + Redis 主从 + 3 Sentinel 一键起）
 
-## v0.1.20 — Server Metadata, Maintenance Windows & Announcements
+## v0.1.20 — Server Metadata, Maintenance Windows & Announcements ✅
 
-- [ ] Register metadata extension: initial `players`, `started_at` (server uptime metadata)
-- [ ] Heartbeat cadence guidance: report interval vs suspect/offline thresholds (3:1, e.g. 10s / 30s / 60s)
-- [ ] Scheduled maintenance windows — `POST /v1/admin/servers/{id}/maintenance-window {start_at, end_at}`; health monitor auto-enters `maintenance` at start, restores previous status at end
-- [ ] Announcements resource — server-scoped or global, active time range, `GET /v1/discovery/announcements` for clients
-- [ ] Maintenance window ↔ announcement linkage (optionally auto-create a maintenance announcement)
-- [ ] `docs/topology.md` — deployment topology: client → APISIX (public LB + auth) → game servers / Atlas public; game servers → (HAProxy) → Atlas registry; Atlas → Redis / PostgreSQL; Prometheus → Grafana
+- [x] Register metadata extension: initial `players`, `started_at` (server uptime metadata)（注册请求新增 players 种子初始心跳、started_at 缺省注册时刻并随重注册刷新，Discovery 可展示 uptime；迁移 0003 三库同步）
+- [x] Heartbeat cadence guidance: report interval vs suspect/offline thresholds (3:1, e.g. 10s / 30s / 60s)（lifecycle.md §4.2 心跳节奏 3:1:6 法则与按比例缩放指引）
+- [x] Scheduled maintenance windows — `POST /v1/admin/servers/{id}/maintenance-window {start_at, end_at}`; health monitor auto-enters `maintenance` at start, restores previous status at end（健康巡检 start_at 自动置 maintenance 并记 previous_status，end_at 仅恢复窗口放入的状态——运维手动转移不被回滚；operator 状态/offline 不动、窗口标记已应用不重试，到期删除窗口记录）
+- [x] Announcements resource — server-scoped or global, active time range, `GET /v1/discovery/announcements` for clients（全局/服务器范围公告，半开 [starts_at, ends_at) 生效区间，info/warning/critical 级别校验；Discovery 只读接口仅返回生效公告，服务器的全局公告始终可见）
+- [x] Maintenance window ↔ announcement linkage (optionally auto-create a maintenance announcement)（announce 缺省 true 自动创建同时段 warning 级公告并与窗口双向关联；删除窗口不撤回公告）
+- [x] `docs/topology.md` — deployment topology: client → APISIX (public LB + auth) → game servers / Atlas public; game servers → (HAProxy) → Atlas registry; Atlas → Redis / PostgreSQL; Prometheus → Grafana（分层职责表 + 端口矩阵 + 单机/标准生产/大规模三档部署形态；VitePress 导航新增）
 
 ---
 

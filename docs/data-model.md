@@ -287,3 +287,39 @@ Redis 数据丢失
     ▼
   各服务器下次心跳自动补全 players / load
 ```
+
+
+## 7. 维护窗口与公告（v0.1.20）
+
+两张补充表（`migrations/0003_maintenance_announcements.sql`），都偏运维侧、数据量小：
+
+```sql
+-- 计划维护窗口（瞬态：监控应用完毕即删除，不存历史）
+CREATE TABLE maintenance_windows (
+    id              TEXT PRIMARY KEY,
+    server_id       TEXT NOT NULL,
+    start_at        TIMESTAMPTZ NOT NULL,
+    end_at          TIMESTAMPTZ NOT NULL,
+    previous_status TEXT NOT NULL DEFAULT '',   -- 应用后记录恢复目标；'' = 无需恢复
+    announcement_id TEXT,                       -- 关联的自动公告
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 客户端公告（server_id NULL = 全局）
+CREATE TABLE announcements (
+    id         TEXT PRIMARY KEY,
+    server_id  TEXT,
+    title      TEXT NOT NULL,
+    body       TEXT NOT NULL DEFAULT '',
+    level      TEXT NOT NULL DEFAULT 'info',    -- info | warning | critical
+    starts_at  TIMESTAMPTZ NOT NULL,
+    ends_at    TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+要点：
+
+- **窗口是瞬态的**：健康监控在窗口结束后恢复状态并 `DELETE`，表里只会出现「尚未开始 / 进行中」的窗口；公告则是持久记录。
+- **`servers.started_at`**（0003 新增列）：注册时上报的进程启动时间，重注册刷新；Discovery 响应携带，用于展示 uptime。
+- 公告的时间区间是**半开区间** `[starts_at, ends_at)`，与维护窗口的判定一致。
