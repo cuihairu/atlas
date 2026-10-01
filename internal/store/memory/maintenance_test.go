@@ -118,6 +118,49 @@ func TestAnnouncementFiltering(t *testing.T) {
 	}
 }
 
+func TestCreatedAtStamp(t *testing.T) {
+	ctx := context.Background()
+	s := New()
+	now := time.Now()
+
+	w := &model.MaintenanceWindow{
+		ID:       "mwin-createdat",
+		ServerID: "srv-1",
+		StartAt:  now.Add(-time.Minute),
+		EndAt:    now.Add(time.Hour),
+	}
+	if err := s.CreateMaintenanceWindow(ctx, w); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if w.CreatedAt.IsZero() {
+		t.Errorf("caller object CreatedAt is zero after CreateMaintenanceWindow")
+	}
+	got, _ := s.GetMaintenanceWindow(ctx, "mwin-createdat")
+	if got.CreatedAt.IsZero() {
+		t.Errorf("stored object CreatedAt is zero")
+	}
+
+	// Same for announcements.
+	a := &model.Announcement{
+		ID:        "ann-createdat",
+		ServerID:  nil,
+		Title:     "test",
+		Level:     "info",
+		StartsAt:  now.Add(-time.Hour),
+		EndsAt:    now.Add(time.Hour),
+	}
+	if err := s.CreateAnnouncement(ctx, a); err != nil {
+		t.Fatalf("create announcement: %v", err)
+	}
+	if a.CreatedAt.IsZero() {
+		t.Errorf("caller object CreatedAt is zero after CreateAnnouncement")
+	}
+	gotA, _ := s.GetAnnouncement(ctx, "ann-createdat")
+	if gotA.CreatedAt.IsZero() {
+		t.Errorf("stored announcement CreatedAt is zero")
+	}
+}
+
 func ids(anns []*model.Announcement) []string {
 	out := make([]string, len(anns))
 	for i, a := range anns {
