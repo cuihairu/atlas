@@ -28,9 +28,9 @@
 - `govulncheck` 检出 **GO-2026-6443**：gRPC 服务端在缺失 authority / Host 头时
   panic（远程 DoS），`google.golang.org/grpc@v1.84.0`，可达路径
   `cmd/atlas/main.go → grpc.Server.Serve → http2Server.HandleStreams`（:9090 内网端口，暴露面有限但真实）。
-- 处置：升级至修复版本 `v1.85.0-dev.0.20260825072537-93e31b48545e`（修复已入库、
-  稳定 tag 尚未发布，按伪版本锁定；同时带动 `protobuf v1.36.12`）。修复后
-  `govulncheck` 通过，全部测试门禁通过。
+- 处置：先按伪版本锁定修复（`v1.85.0-dev.0.20260825072537-93e31b48545e`），
+  2026-10-02 巡检经 Dependabot PR #6 升至 `v1.86.0-dev`（含修复，解除伪版本
+  锁定；带动 `protobuf v1.36.12`）。修复后 `govulncheck` 通过，全部测试门禁通过。
 
 已确认（抽查 + 全量 `go vet` / `go test`）：
 
