@@ -628,8 +628,10 @@ func (s *Store) CreateRealm(_ context.Context, r *model.Realm) error {
 	if _, ok := s.realms[r.ID]; ok {
 		return fmt.Errorf("realm %s: %w", r.ID, store.ErrConflict)
 	}
+	// Stamp on the caller's object too (parity with the SQL stores) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	r.CreatedAt = time.Now()
 	cp := *r
-	cp.CreatedAt = time.Now()
 	s.realms[r.ID] = &cp
 	return nil
 }
@@ -671,8 +673,10 @@ func (s *Store) CreateShard(_ context.Context, sh *model.Shard) error {
 	if _, ok := s.shards[sh.ID]; ok {
 		return fmt.Errorf("shard %s: %w", sh.ID, store.ErrConflict)
 	}
+	// Stamp on the caller's object too (parity with the SQL stores) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	sh.CreatedAt = time.Now()
 	cp := *sh
-	cp.CreatedAt = time.Now()
 	s.shards[sh.ID] = &cp
 	return nil
 }

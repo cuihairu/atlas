@@ -658,10 +658,13 @@ func (s *Store) CreateRealm(ctx context.Context, r *model.Realm) error {
 	if r.Status == "" {
 		r.Status = "active"
 	}
+	// Stamp on the caller's object (parity with maintenance windows) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	r.CreatedAt = time.Now()
 	const q = `
 INSERT INTO realms (id, name, region, status, created_at)
 VALUES (?, ?, ?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, q, r.ID, r.Name, r.Region, r.Status, time.Now()); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, r.ID, r.Name, r.Region, r.Status, r.CreatedAt); err != nil {
 		_, lookupErr := s.GetRealm(ctx, r.ID)
 		return conflictIfExists(err, lookupErr, "create realm", r.ID)
 	}
@@ -709,10 +712,13 @@ func (s *Store) CreateShard(ctx context.Context, sh *model.Shard) error {
 	if sh.Status == "" {
 		sh.Status = "active"
 	}
+	// Stamp on the caller's object (parity with maintenance windows) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	sh.CreatedAt = time.Now()
 	const q = `
 INSERT INTO shards (id, realm_id, name, status, created_at)
 VALUES (?, ?, ?, ?, ?)`
-	if _, err := s.db.ExecContext(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, time.Now()); err != nil {
+	if _, err := s.db.ExecContext(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, sh.CreatedAt); err != nil {
 		_, lookupErr := s.GetShard(ctx, sh.ID)
 		return conflictIfExists(err, lookupErr, "create shard", sh.ID)
 	}

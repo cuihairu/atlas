@@ -672,11 +672,14 @@ func (s *Store) CreateRealm(ctx context.Context, r *model.Realm) error {
 	if r.Status == "" {
 		r.Status = "active"
 	}
+	// Stamp on the caller's object (parity with maintenance windows) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	r.CreatedAt = time.Now()
 	const q = `
 INSERT INTO realms (id, name, region, status, created_at)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO NOTHING`
-	tag, err := s.pool.Exec(ctx, q, r.ID, r.Name, r.Region, r.Status, time.Now())
+	tag, err := s.pool.Exec(ctx, q, r.ID, r.Name, r.Region, r.Status, r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create realm: %w", err)
 	}
@@ -720,11 +723,14 @@ func (s *Store) CreateShard(ctx context.Context, sh *model.Shard) error {
 	if sh.Status == "" {
 		sh.Status = "active"
 	}
+	// Stamp on the caller's object (parity with maintenance windows) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	sh.CreatedAt = time.Now()
 	const q = `
 INSERT INTO shards (id, realm_id, name, status, created_at)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO NOTHING`
-	tag, err := s.pool.Exec(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, time.Now())
+	tag, err := s.pool.Exec(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, sh.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create shard: %w", err)
 	}
