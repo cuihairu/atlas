@@ -186,10 +186,11 @@
 
 ## v0.1.17 — Security Hardening
 
-- [ ] mTLS for service-to-service (Registry API)
-- [ ] RBAC for Admin API (role-based access control)
-- [ ] Audit log — all Admin API operations with actor + timestamp + diff
-- [ ] Rate limiting middleware in Atlas itself (token bucket, per-endpoint)
+- [x] mTLS for service-to-service (Registry API)（`ATLAS_REGISTRY_TLS_CERT/_KEY`，配 `ATLAS_REGISTRY_CLIENT_CA` 升级双向 TLS；握手层拒绝无证客户端）
+- [x] RBAC for Admin API（admin/operator/viewer 三角色，`ATLAS_ADMIN_ROLES`，未列出的 key 默认 admin 向后兼容；viewer 写操作 403 ROLE_NOT_ALLOWED）
+- [x] Audit log — actor（role:key 指纹）+ RFC3339 时间 + method/path/status + 变更请求体（diff），结构化日志 + 内存环 + `GET /v1/admin/audit`
+- [x] Rate limiting middleware（令牌桶，路径前缀最长匹配 × 客户端 IP 分桶，`ATLAS_RATE_LIMITS`/`ATLAS_RATE_LIMIT_DEFAULT`，429 + Retry-After，桶表上限防 XFF 伪造）
+- [x] docs/security.md 四层防护说明 + 测试 18 例（含真实 mTLS 握手）
 
 ## v0.1.18 — Dashboard Enhancements
 

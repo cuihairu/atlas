@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log/slog"
 	"net"
 	"net/http"
@@ -41,6 +42,7 @@ import (
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
 	redisStore "github.com/cuihairu/atlas/internal/store/redisstore"
 	"github.com/cuihairu/atlas/internal/store/sharded"
+	"github.com/cuihairu/atlas/internal/tlsutil"
 	"github.com/cuihairu/atlas/internal/version"
 )
 
@@ -235,8 +237,65 @@ func main() {
 	// Parse auth config.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
 	adminIPs, _ := httpapi.ParseIPWhitelist(cfg.AdminIPWhitelist)
+	adminRoles, err := httpapi.ParseAdminRoles(cfg.AdminRoles)
+	if err != nil {
+		logger.Error("invalid admin roles", "error", err)
+		os.Exit(1)
+	}
 	regTokens := httpapi.ParseAPIKeys(cfg.RegistryTokens)
 	regIPs, _ := httpapi.ParseIPWhitelist(cfg.RegistryIPWhitelist)
+
+	// Registry TLS / mTLS (TODO v0.1.17).
+	regTLSOpts := tlsutil.Options{
+		CertFile:     cfg.RegistryTLSCert,
+		KeyFile:      cfg.RegistryTLSKey,
+		ClientCAFile: cfg.RegistryClientCA,
+	}
+	var regTLS *tls.Config
+	if regTLSOpts.Enabled() {
+		regTLS, err = tlsutil.ServerConfig(tlsutil.Options{
+			CertFile:     cfg.RegistryTLSCert,
+			KeyFile:      cfg.RegistryTLSKey,
+			ClientCAFile: cfg.RegistryClientCA,
+		})
+		if err != nil {
+			logger.Error("invalid registry TLS config", "error", err)
+			os.Exit(1)
+		}
+		if cfg.RegistryClientCA != "" {
+			logger.Info("registry mTLS enabled (client certificates required)")
+		} else {
+			logger.Info("registry TLS enabled")
+		}
+	}
+
+	// Admin API audit log (TODO v0.1.17).
+	var auditLog *httpapi.AuditLog
+	if cfg.AuditEnabled {
+		auditLog = httpapi.NewAuditLog(1000, 4096, logger)
+		handler = handler.WithAudit(auditLog)
+	}
+
+	// Rate limiting (TODO v0.1.17): opt-in via ATLAS_RATE_LIMITS or
+	// ATLAS_RATE_LIMIT_DEFAULT.
+	var limiter *httpapi.RateLimiter
+	if cfg.RateLimits != "" || cfg.RateLimitDefault != "" {
+		rules, err := httpapi.ParseRateLimitRules(cfg.RateLimits)
+		if err != nil {
+			logger.Error("invalid rate limit rules", "error", err)
+			os.Exit(1)
+		}
+		def := httpapi.RateRule{RPS: 100, Burst: 200}
+		if cfg.RateLimitDefault != "" {
+			def, err = httpapi.ParseRateDefault(cfg.RateLimitDefault)
+			if err != nil {
+				logger.Error("invalid rate limit default", "error", err)
+				os.Exit(1)
+			}
+		}
+		limiter = httpapi.NewRateLimiter(rules, def)
+		logger.Info("rate limiting enabled", "rules", len(rules), "default_rps", def.RPS, "default_burst", def.Burst)
+	}
 
 	// ── Public API (Discovery + Directory) ─────────────────
 	publicMux := http.NewServeMux()
@@ -260,13 +319,16 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	var regHandler http.Handler = regMux
+	var regHandler http.Handler = http.Handler(regMux)
 	if len(regTokens) > 0 || len(regIPs) > 0 {
 		regHandler = httpapi.RegistryAuth(httpapi.RegistryAuthConfig{
 			Tokens:      regTokens,
 			IPWhitelist: regIPs,
 			Logger:      logger,
-		})(regMux)
+		})(regHandler)
+	}
+	if limiter != nil {
+		regHandler = limiter.Middleware(regHandler)
 	}
 	regSrv := &http.Server{
 		Addr:         cfg.RegistryAddr,
@@ -290,13 +352,22 @@ func main() {
 	})
 	adminMux.Handle("GET /metrics", prom.Handler())
 
-	var adminHandler http.Handler = adminMux
+	var adminHandler http.Handler = http.Handler(adminMux)
+	// Audit inside auth (records the resolved actor), rate limit outside
+	// (cheap per-IP rejection before any key check).
+	if auditLog != nil {
+		adminHandler = auditLog.Middleware(adminHandler)
+	}
 	if len(adminKeys) > 0 || len(adminIPs) > 0 {
 		adminHandler = httpapi.AdminAuth(httpapi.AuthConfig{
 			APIKeys:     adminKeys,
+			Roles:       adminRoles,
 			IPWhitelist: adminIPs,
 			Logger:      logger,
-		})(adminMux)
+		})(adminHandler)
+	}
+	if limiter != nil {
+		adminHandler = limiter.Middleware(adminHandler)
 	}
 	adminHandler = metrics.RequestCounter(prom.AdminRequests)(adminHandler)
 	adminSrv := &http.Server{
@@ -323,8 +394,20 @@ func main() {
 		}
 	}()
 	go func() {
-		logger.Info("registry API listening", "addr", cfg.RegistryAddr)
-		if err := regSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		scheme := "http"
+		if regTLS != nil {
+			scheme = "tls"
+		}
+		logger.Info("registry API listening", "addr", cfg.RegistryAddr, "scheme", scheme)
+		regLn, err := net.Listen("tcp", cfg.RegistryAddr)
+		if err != nil {
+			logger.Error("registry API listen failed", "error", err)
+			os.Exit(1)
+		}
+		if regTLS != nil {
+			regLn = tls.NewListener(regLn, regTLS)
+		}
+		if err := regSrv.Serve(regLn); err != nil && err != http.ErrServerClosed {
 			logger.Error("registry API error", "error", err)
 			os.Exit(1)
 		}

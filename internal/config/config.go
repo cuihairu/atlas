@@ -125,6 +125,40 @@ type Config struct {
 	// with per-shard stores splits storage physically.
 	// Env: ATLAS_CHAR_SHARDS, default 1.
 	CharShards int
+
+	// RegistryTLSCert / RegistryTLSKey enable TLS on the Registry listener
+	// (server certificate + private key, PEM). TODO v0.1.17.
+	// Env: ATLAS_REGISTRY_TLS_CERT / ATLAS_REGISTRY_TLS_KEY, default "".
+	RegistryTLSCert string
+	RegistryTLSKey  string
+
+	// RegistryClientCA upgrades Registry TLS to mutual TLS: clients must
+	// present a certificate signed by this CA bundle. Requires the server
+	// cert/key above.
+	// Env: ATLAS_REGISTRY_CLIENT_CA, default "".
+	RegistryClientCA string
+
+	// AdminRoles configures RBAC as "key:role" pairs (admin/operator/viewer,
+	// comma-separated). Keys not listed here default to admin. TODO v0.1.17.
+	// Env: ATLAS_ADMIN_ROLES, default "".
+	AdminRoles string
+
+	// AuditEnabled toggles the Admin API audit log (structured log + in-memory
+	// ring served at GET /v1/admin/audit). TODO v0.1.17.
+	// Env: ATLAS_AUDIT_ENABLED, default true.
+	AuditEnabled bool
+
+	// RateLimits configures per-endpoint token buckets as
+	// "prefix=rps[:burst]" pairs (semicolon-separated), matched by longest
+	// prefix, bucketed per client IP. Empty disables rate limiting.
+	// Env: ATLAS_RATE_LIMITS, default "".
+	RateLimits string
+
+	// RateLimitDefault is the fallback "rps[:burst]" rule for paths no
+	// ATLAS_RATE_LIMITS prefix matches. Only applies when rate limiting is
+	// enabled via ATLAS_RATE_LIMITS or this field.
+	// Env: ATLAS_RATE_LIMIT_DEFAULT, default "".
+	RateLimitDefault string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -153,6 +187,13 @@ func Load() Config {
 		AlertOfflineRatio:   0.2,
 		AlertWebhookURL:     os.Getenv("ATLAS_ALERT_WEBHOOK_URL"),
 		CharShards:          1,
+		RegistryTLSCert:     os.Getenv("ATLAS_REGISTRY_TLS_CERT"),
+		RegistryTLSKey:      os.Getenv("ATLAS_REGISTRY_TLS_KEY"),
+		RegistryClientCA:    os.Getenv("ATLAS_REGISTRY_CLIENT_CA"),
+		AdminRoles:          os.Getenv("ATLAS_ADMIN_ROLES"),
+		AuditEnabled:        os.Getenv("ATLAS_AUDIT_ENABLED") != "0",
+		RateLimits:          os.Getenv("ATLAS_RATE_LIMITS"),
+		RateLimitDefault:    os.Getenv("ATLAS_RATE_LIMIT_DEFAULT"),
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {

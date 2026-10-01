@@ -1,17 +1,64 @@
 package httpapi
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 )
 
+// Admin roles (TODO v0.1.17), from most to least privileged.
+const (
+	// RoleAdmin has full access to every Admin endpoint.
+	RoleAdmin = "admin"
+	// RoleOperator may read everything and perform lifecycle mutations
+	// (server state, migrations, realms/shards).
+	RoleOperator = "operator"
+	// RoleViewer may read Admin endpoints but never mutate.
+	RoleViewer = "viewer"
+)
+
+type ctxKey int
+
+const actorKey ctxKey = 1
+
+// Actor identifies the authenticated caller for audit purposes.
+type Actor struct {
+	// Role is one of admin/operator/viewer ("admin" when RBAC is disabled).
+	Role string
+	// KeyFingerprint is the first 12 hex chars of the API key's SHA-256 —
+	// enough to correlate audit entries, never reversible to the key.
+	KeyFingerprint string
+}
+
+// String renders the actor for logs: "role:fingerprint".
+func (a Actor) String() string {
+	if a.KeyFingerprint == "" {
+		return a.Role + ":anonymous"
+	}
+	return a.Role + ":" + a.KeyFingerprint
+}
+
+// ActorFrom returns the authenticated actor, or the zero actor when the
+// request never passed through AdminAuth (e.g. RBAC disabled).
+func ActorFrom(ctx context.Context) Actor {
+	a, _ := ctx.Value(actorKey).(Actor)
+	return a
+}
+
 // AuthConfig controls access to Admin endpoints.
 type AuthConfig struct {
 	// APIKeys is the set of valid API keys. Clients must send one in the
 	// Authorization header: "Bearer <key>".
 	APIKeys map[string]struct{}
+	// Roles maps API key → role (admin/operator/viewer). Keys absent from
+	// the map — and every key when Roles is nil — act as admin (backwards
+	// compatible with deployments that only configure APIKeys).
+	Roles map[string]string
 	// IPWhitelist, when non-empty, restricts Admin access to these CIDR
 	// ranges. An empty list means "allow all".
 	IPWhitelist []*net.IPNet
@@ -19,14 +66,16 @@ type AuthConfig struct {
 	Logger *slog.Logger
 }
 
-// AdminAuth returns middleware that enforces API key + IP whitelist on all
-// /v1/admin/* routes.
+// AdminAuth returns middleware that enforces API key + IP whitelist + RBAC on
+// all /v1/admin/* routes.
 //
-// Checks run in order: IP whitelist first (cheap), then API key (constant-time
-// comparison). Both must pass.
+// Checks run in order: IP whitelist first (cheap), then API key
+// (constant-time comparison), then role. The resolved Actor is stored in the
+// request context for downstream audit logging.
 func AdminAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 	hasKeys := len(cfg.APIKeys) > 0
 	hasIPs := len(cfg.IPWhitelist) > 0
+	hasRoles := len(cfg.Roles) > 0
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +93,8 @@ func AdminAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 				}
 			}
 
-			// ── API key ───────────────────────────────────────
+			// ── API key + RBAC ────────────────────────────────
+			actor := Actor{Role: RoleAdmin}
 			if hasKeys {
 				key := extractBearerToken(r)
 				if key == "" {
@@ -60,11 +110,58 @@ func AdminAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 						"the provided API key is not valid")
 					return
 				}
+				sum := sha256.Sum256([]byte(key))
+				actor.KeyFingerprint = hex.EncodeToString(sum[:])[:12]
+				if hasRoles {
+					if role, ok := cfg.Roles[key]; ok {
+						actor.Role = role
+					}
+				}
 			}
 
-			next.ServeHTTP(w, r)
+			// ── Role check ────────────────────────────────────
+			if actor.Role == RoleViewer && r.Method != http.MethodGet && r.Method != http.MethodHead {
+				cfg.Logger.Warn("admin: role not allowed",
+					"actor", actor.String(),
+					"method", r.Method,
+					"path", r.URL.Path,
+				)
+				writeError(w, http.StatusForbidden, "ROLE_NOT_ALLOWED",
+					"role "+actor.Role+" may only read Admin endpoints")
+				return
+			}
+
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), actorKey, actor)))
 		})
 	}
+}
+
+// ParseAdminRoles parses "key:role" pairs (comma-separated) into a key →
+// role map. Unknown roles are rejected; entries without a colon default to
+// admin (equivalent to listing the key in ATLAS_ADMIN_API_KEYS).
+func ParseAdminRoles(raw string) (map[string]string, error) {
+	roles := make(map[string]string)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, role, found := strings.Cut(part, ":")
+		key = strings.TrimSpace(key)
+		role = strings.TrimSpace(strings.ToLower(role))
+		if !found || role == "" {
+			role = RoleAdmin
+		}
+		switch role {
+		case RoleAdmin, RoleOperator, RoleViewer:
+		default:
+			return nil, fmt.Errorf("unknown role %q (expected admin, operator or viewer)", role)
+		}
+		if key != "" {
+			roles[key] = role
+		}
+	}
+	return roles, nil
 }
 
 // extractIP parses the client IP from the request, respecting X-Forwarded-For

@@ -37,6 +37,7 @@ export default defineConfig({
           { text: '服务器生命周期', link: '/lifecycle' },
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '数据同步', link: '/sync' },
+          { text: '安全', link: '/security' },
         ],
       },
       { text: '路线图', link: '/roadmap' },
@@ -72,6 +73,7 @@ export default defineConfig({
           { text: '服务器生命周期', link: '/lifecycle' },
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '数据同步', link: '/sync' },
+          { text: '安全', link: '/security' },
         ],
       },
       {

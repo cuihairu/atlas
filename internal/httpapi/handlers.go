@@ -32,6 +32,7 @@ type Handler struct {
 	store     store.Store
 	events    event.EventAdapter
 	logger    *slog.Logger
+	audit     *AuditLog
 }
 
 // New creates a new Handler.
@@ -46,6 +47,14 @@ func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service,
 		events:    events,
 		logger:    logger,
 	}
+}
+
+// WithAudit attaches the Admin API audit log (TODO v0.1.17). When set,
+// RegisterAdminRoutes exposes GET /v1/admin/audit over the recent-entries
+// ring; wrap the admin mux in AuditLog.Middleware to record operations.
+func (h *Handler) WithAudit(a *AuditLog) *Handler {
+	h.audit = a
+	return h
 }
 
 // RegisterRoutes registers all Atlas routes on a single mux (legacy, for
@@ -103,6 +112,22 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/realms", h.handleAdminListRealms)
 	mux.HandleFunc("POST /v1/admin/shards", h.handleAdminCreateShard)
 	mux.HandleFunc("GET /v1/admin/shards", h.handleAdminListShards)
+	if h.audit != nil {
+		mux.HandleFunc("GET /v1/admin/audit", h.handleAdminAudit)
+	}
+}
+
+// handleAdminAudit serves the recent audit ring (TODO v0.1.17).
+func (h *Handler) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"entries": h.audit.Recent(limit),
+	})
 }
 
 // ---------------------------------------------------------------------------
