@@ -125,21 +125,34 @@ Atlas v0.1.0 暴露 11 个 REST 端点，分为三组：
 atlas/
 ├── cmd/atlas/              主服务入口
 ├── internal/
-│   ├── model/              领域模型（Server, Character, Status）
+│   ├── model/              领域模型（Server, Character, Status…）
 │   ├── store/              存储接口
 │   │   ├── memory/         内存实现（测试 + 开发）
 │   │   ├── postgres/       PostgreSQL 实现
-│   │   └── redisstore/     Redis 运行时状态
+│   │   ├── mysql/          MySQL 实现
+│   │   ├── redisstore/     Redis 运行时状态
+│   │   └── sharded/        一致性哈希分片包装
 │   ├── registry/           注册 / 心跳 / 注销
 │   ├── discovery/          服务器发现
 │   ├── directory/          角色目录
-│   ├── health/             健康监控（自动掉线）
+│   ├── routing/            接入推荐
+│   ├── admin/              Admin 服务（Realm/Shard/迁移/审计…）
+│   ├── health/             健康监控（自动掉线 + 占比告警）
+│   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers
+│   ├── grpc/               gRPC 服务
+│   ├── metrics/            Prometheus 指标
+│   ├── tlsutil/            mTLS 辅助
 │   ├── config/             环境变量配置
 │   └── version/            版本信息
+├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
+├── sdk/                    六语言 SDK（go/cpp/python/js/java/csharp）
+├── plugins/apisix/         APISIX 接入插件
+├── examples/               各语言可运行示例
+├── deploy/                 haproxy / postgres / redis 部署配置
 ├── deployments/docker/     Dockerfile + docker-compose
-├── docs/                   设计文档
+├── docs/                   设计文档（VitePress 站点）
 ├── Makefile
 ├── .env.example
 └── go.mod
@@ -155,13 +168,21 @@ Atlas
 ├── Registry    服务器注册 / 心跳 / 注销
 ├── Discovery   服务器发现 / 查询 / 推荐
 ├── Directory   账号-角色目录（跨服索引）
-└── Routing     接入推荐
+├── Routing     接入推荐
+├── Admin       Realm / Shard 管理、维护窗口、公告、迁移、审计
+└── Events      角色索引事件同步（Redis Streams / Kafka / NATS / RabbitMQ）
 ```
 
 - **[Registry](docs/api.md#registry)** — 服务器启动注册、周期心跳、主动注销
-- **[Discovery](docs/api.md#discovery)** — 按区域 / 版本 / 状态 / 平台筛选服务器
+- **[Discovery](docs/api.md#discovery)** — 按区域 / 大区 / 分片 / 版本 / 状态 / 平台筛选服务器
 - **[Directory](docs/api.md#directory)** — 账号下所有角色的跨服索引
-- **[Routing](docs/api.md#routing)** — 基于负载与容量推荐接入目标
+- **[Routing](docs/api.md#routing)** — 基于负载与容量推荐接入目标（同账号角色粘滞）
+- **[Admin](docs/api.md#admin)** — Realm / Shard 管理、维护窗口与公告联动、迁移、审计日志
+- **[事件同步](docs/sync.md)** — 角色索引经 Redis Streams / Kafka / NATS / RabbitMQ 解耦写入
+- **[六语言 SDK](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#，自动心跳内置
+- **[APISIX 插件](docs/apisix.md)** — 玩家 token 鉴权注入 + 端点组限流
+- **[健康告警](docs/lifecycle.md)** — suspect / offline 占比阈值告警 + webhook 通知
+- **[gRPC](docs/api.md#grpc-api)** — 与 REST 同一 API 面的双传输
 
 ---
 
@@ -204,6 +225,13 @@ Atlas Core
 | [docs/lifecycle.md](docs/lifecycle.md) | 服务器生命周期状态机 |
 | [docs/migration.md](docs/migration.md) | 合服 / 转服 / 迁服 |
 | [docs/sync.md](docs/sync.md) | 游戏服务器到 Atlas 的数据同步 |
+| [docs/apisix.md](docs/apisix.md) | APISIX 接入插件：玩家 token 鉴权注入 + 端点组限流 |
+| [docs/topology.md](docs/topology.md) | 部署拓扑：单机 / 标准生产 / 大规模三档形态 |
+| [docs/ha.md](docs/ha.md) | 高可用：心跳扇入 LB 与存储冗余 |
+| [docs/benchmarks.md](docs/benchmarks.md) | 性能基准与回归警戒线 |
+| [docs/security.md](docs/security.md) | 安全模型：认证、限流、审计 |
+| [docs/security-audit.md](docs/security-audit.md) | 安全审计记录与周期清单 |
+| [docs/sdk-go.md](docs/sdk-go.md) | SDK 文档（六语言：Go / C++ / Python / JS / [Java](docs/sdk-java.md) / [C#](docs/sdk-csharp.md)） |
 | [docs/roadmap.md](docs/roadmap.md) | MVP 范围与演进路线 |
 
 ---
