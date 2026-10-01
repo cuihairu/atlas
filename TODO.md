@@ -155,13 +155,13 @@
 - [x] Adapter selection guide in docs/sync.md（五种适配器连接配置 + 重投语义对照 + 运维选型参照）
 - [x] Tests — kafka/rabbitmq 接口注入 fake（发布编解码/拓扑声明/投递 ack/失败重投/poison 丢弃/Close），nats 用嵌入式 nats-server 端到端（JetStream 真实发布-消费-确认）
 
-## v0.1.13 — APISIX Plugin
+## v0.1.13 — APISIX Plugin ✅
 
-- [ ] `plugins/apisix/` — Lua plugin
-- [ ] Route Atlas requests to Atlas backend
-- [ ] Inject player token into Atlas headers
-- [ ] Rate limit config per endpoint group
-- [ ] Installation and config guide
+- [x] `plugins/apisix/` — Lua plugin（`atlas-auth.lua` + `atlas-ratelimit.lua`，标准 APISIX schema/access 结构）
+- [x] Route Atlas requests to Atlas backend（`/v1/*` → atlas:8080，config-example.yaml 一条路由覆盖全 API 面）
+- [x] Inject player token into Atlas headers（token 头/Bearer 校验 → 注入 `X-Atlas-Player-ID`，可剥离原 token，匿名模式可选）
+- [x] Rate limit config per endpoint group（discovery/directory/routing/registry 四组最长前缀匹配 + 固定窗口 + fail open）
+- [x] Installation and config guide（README：安装/启用/共享字典/路由配置/验证 curl；mock 测试 13 例全过，luac 语法检查通过）
 
 ## v0.1.14 — Realm / Shard Management
 

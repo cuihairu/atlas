@@ -1,0 +1,53 @@
+# APISIX 示例配置：Atlas 公网入口（TODO v0.1.13）
+#
+# 1) 启用插件（APISIX config.yaml）：
+#
+#    plugins:                          # add to the existing list
+#      - atlas-auth
+#      - atlas-ratelimit
+#
+#    nginx_config:
+#      http:
+#        shared_dicts:                 # atlas-ratelimit 计数器
+#          - atlas_ratelimit: 10m
+#
+#    plugin_attr:                      # 可选：全局默认不可用时兜底
+#      ...
+#
+# 2) 路由（此文件可 etcd 初始化或 Admin API 逐条创建）：
+#
+#    curl http://127.0.0.1:9180/apisix/admin/routes/atlas -X PUT -H "X-API-KEY: $ADMIN_KEY" -d @config-example.yaml
+#
+#    （内容由 data: 键承载；也可直接粘贴到 Admin API 请求体）
+
+name: atlas
+uri: /v1/*
+upstream:
+  nodes:
+    "atlas:8080": 1          # Atlas public port (merged proxy also serves registry/admin)
+  type: roundrobin
+plugins:
+  atlas-auth:
+    token_header: X-Player-Token
+    account_header: X-Atlas-Player-ID
+    required: true
+    strip_token: true
+    accounts:                 # 静态映射示例；生产环境替换为 token 服务校验
+      demo-token-alice: 1001
+      demo-token-bob: 1002
+  atlas-ratelimit:
+    groups:
+      - prefix: /v1/registry   # 写路径收紧
+        rate: 50
+        window: 60
+      - prefix: /v1/directory
+        rate: 300
+        window: 60
+      - prefix: /v1/routing    # 登录高峰高频路径
+        rate: 1000
+        window: 60
+      - prefix: /v1/discovery
+        rate: 600
+        window: 60
+    default_rate: 0            # 未列出的路径不限流
+    rejected_code: 429
