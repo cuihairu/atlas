@@ -47,6 +47,12 @@ export default defineConfig({
         ],
       },
       {
+        text: 'SDK',
+        items: [
+          { text: 'Go SDK', link: '/sdk-go' },
+        ],
+      },
+      {
         text: '设计文档',
         items: [
           { text: '架构设计', link: '/architecture' },

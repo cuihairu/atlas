@@ -14,7 +14,7 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
 
 `GET /v1/discovery/servers` 回答"有哪些服务器"，`GET /v1/routing/recommended` 回答"我该去哪个"。两者语义不同，不合并成一个接口。
 
-除 REST 外，同一套能力也以 gRPC 暴露（见下方 [gRPC API](#grpc-api)），proto 定义在 [`api/proto/atlas.proto`](../api/proto/atlas.proto)。
+除 REST 外，同一套能力也以 gRPC 暴露（见下方 [gRPC API](#grpc-api)），proto 定义在 [`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)。
 
 ---
 
@@ -435,7 +435,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 REST 之外的第二种传输方式，与 REST **完全同源**：五个服务一一对应五组端点，共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
-- **proto 定义**：[`api/proto/atlas.proto`](../api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
+- **proto 定义**：[`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
 - **与 REST 的关系**：gRPC 不是替代品——SDK（v0.1.6+）双传输都可选，游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
 
 ```protobuf

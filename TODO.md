@@ -79,16 +79,17 @@
 - [x] Feature parity: Registry, Discovery, Directory, Routing, Admin
 - [x] bufconn end-to-end tests (register → heartbeat → list → character → recommend → admin)
 
-## v0.1.6 — Go SDK
+## v0.1.6 — Go SDK ✅
 
-- [ ] `sdk/go/` — Go client library
-- [ ] `Register` / `Heartbeat` / `Unregister`
-- [ ] `ListServers` / `GetServer`
-- [ ] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`
-- [ ] Auto-heartbeat goroutine with configurable interval
-- [ ] Retry with exponential backoff
-- [ ] Both REST and gRPC transport
-- [ ] Example: `examples/go/`
+- [x] `sdk/go/` — Go client library
+- [x] `Register` / `Heartbeat` / `Unregister`
+- [x] `ListServers` / `GetServer`
+- [x] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`（Directory + Admin 全量方法）
+- [x] Auto-heartbeat goroutine with configurable interval（`StartHeartbeat`，启动即报、`Set` 并发更新负载）
+- [x] Retry with exponential backoff（全抖动；网络错误 + 5xx / gRPC Unavailable，4xx 不重试）
+- [x] Both REST and gRPC transport（同一 `Client` API，`Options.Transport` 切换）
+- [x] Example: `examples/go/`（注册 → 心跳 → 推荐 → 角色 → 注销）
+- [x] Docs: `docs/sdk-go.md` + VitePress 侧边栏
 
 ## v0.1.7 — C++ SDK
 
