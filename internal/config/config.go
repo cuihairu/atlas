@@ -37,18 +37,36 @@ type Config struct {
 	// HealthInterval is how often the health monitor sweeps.
 	// Env: ATLAS_HEALTH_INTERVAL, default 10s.
 	HealthInterval time.Duration
+
+	// AdminAPIKeys is a comma-separated list of valid API keys for Admin
+	// endpoints. Empty means Admin API is open (development only).
+	// Env: ATLAS_ADMIN_API_KEYS, default "".
+	AdminAPIKeys string
+
+	// AdminIPWhitelist is a comma-separated list of CIDR ranges allowed to
+	// call Admin endpoints. Empty means no IP restriction.
+	// Env: ATLAS_ADMIN_IP_WHITELIST, default "".
+	AdminIPWhitelist string
+
+	// CORSAllowedOrigins is a comma-separated list of allowed origins for
+	// CORS. Empty means no CORS headers. Use "*" for development.
+	// Env: ATLAS_CORS_ORIGINS, default "".
+	CORSAllowedOrigins string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() Config {
 	cfg := Config{
-		HTTPAddr:       envOr("ATLAS_HTTP_ADDR", ":8080"),
-		DatabaseURL:    envOr("ATLAS_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable"),
-		RedisURL:       envOr("ATLAS_REDIS_URL", "redis://localhost:6379/0"),
-		StoreType:      envOr("ATLAS_STORE", "memory"),
-		SuspectAfter:   30 * time.Second,
-		OfflineAfter:   60 * time.Second,
-		HealthInterval: 10 * time.Second,
+		HTTPAddr:           envOr("ATLAS_HTTP_ADDR", ":8080"),
+		DatabaseURL:        envOr("ATLAS_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable"),
+		RedisURL:           envOr("ATLAS_REDIS_URL", "redis://localhost:6379/0"),
+		StoreType:          envOr("ATLAS_STORE", "memory"),
+		SuspectAfter:       30 * time.Second,
+		OfflineAfter:       60 * time.Second,
+		HealthInterval:     10 * time.Second,
+		AdminAPIKeys:       os.Getenv("ATLAS_ADMIN_API_KEYS"),
+		AdminIPWhitelist:   os.Getenv("ATLAS_ADMIN_IP_WHITELIST"),
+		CORSAllowedOrigins: envOr("ATLAS_CORS_ORIGINS", ""),
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {

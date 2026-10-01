@@ -1,17 +1,16 @@
-// Package postgres provides a PostgreSQL implementation of store.ServerStore
-// and store.CharacterStore using pgxpool.
-package postgres
+// Package mysql provides a MySQL implementation of store.ServerStore,
+// store.CharacterStore, store.MigrationStore, and store.StatsStore
+// using database/sql with go-sql-driver/mysql.
+package mysql
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
@@ -25,25 +24,24 @@ var (
 	_ store.StatsStore     = (*Store)(nil)
 )
 
-// Store implements store.ServerStore and store.CharacterStore on PostgreSQL.
+// Store implements the Atlas store interfaces on MySQL.
 type Store struct {
-	pool *pgxpool.Pool
+	db *sql.DB
 }
 
-// New creates a new PostgreSQL store from an existing pgxpool.Pool.
-func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+// New creates a new MySQL store from an existing *sql.DB.
+func New(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 // Ping checks the database connection.
 func (s *Store) Ping(ctx context.Context) error {
-	return s.pool.Ping(ctx)
+	return s.db.PingContext(ctx)
 }
 
 // Close closes the underlying connection pool.
 func (s *Store) Close() error {
-	s.pool.Close()
-	return nil
+	return s.db.Close()
 }
 
 // ---------------------------------------------------------------------------
@@ -61,26 +59,26 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
                      endpoint_host, endpoint_port, capacity, status, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-ON CONFLICT (id) DO UPDATE SET
-    name          = EXCLUDED.name,
-    type          = EXCLUDED.type,
-    region        = EXCLUDED.region,
-    realm_id      = EXCLUDED.realm_id,
-    shard_id      = EXCLUDED.shard_id,
-    version       = EXCLUDED.version,
-    platform      = EXCLUDED.platform,
-    endpoint_host = EXCLUDED.endpoint_host,
-    endpoint_port = EXCLUDED.endpoint_port,
-    capacity      = EXCLUDED.capacity,
-    status        = CASE WHEN EXCLUDED.status = 'starting' THEN servers.status ELSE EXCLUDED.status END,
-    updated_at    = EXCLUDED.updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+    name          = VALUES(name),
+    type          = VALUES(type),
+    region        = VALUES(region),
+    realm_id      = VALUES(realm_id),
+    shard_id      = VALUES(shard_id),
+    version       = VALUES(version),
+    platform      = VALUES(platform),
+    endpoint_host = VALUES(endpoint_host),
+    endpoint_port = VALUES(endpoint_port),
+    capacity      = VALUES(capacity),
+    status        = CASE WHEN VALUES(status) = 'starting' THEN servers.status ELSE VALUES(status) END,
+    updated_at    = VALUES(updated_at)
 `
-	_, err := s.pool.Exec(ctx, q,
+	_, err := s.db.ExecContext(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
-		srv.Status, srv.CreatedAt, srv.UpdatedAt,
+		string(srv.Status), srv.CreatedAt, srv.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -92,9 +90,9 @@ func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error)
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, created_at, updated_at
-FROM servers WHERE id = $1
+FROM servers WHERE id = ?
 `
-	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
+	srv, err := scanServer(s.db.QueryRowContext(ctx, q, id))
 	if err != nil {
 		return nil, fmt.Errorf("get server %s: %w", id, err)
 	}
@@ -114,49 +112,40 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
        endpoint_host, endpoint_port, capacity, status, created_at, updated_at
 FROM servers WHERE 1=1`
 	args := []any{}
-	n := 1
 
 	if f.Region != "" {
-		q += fmt.Sprintf(" AND region = $%d", n)
+		q += " AND region = ?"
 		args = append(args, f.Region)
-		n++
 	}
 	if f.Realm != "" {
-		q += fmt.Sprintf(" AND realm_id = $%d", n)
+		q += " AND realm_id = ?"
 		args = append(args, f.Realm)
-		n++
 	}
 	if f.Shard != "" {
-		q += fmt.Sprintf(" AND shard_id = $%d", n)
+		q += " AND shard_id = ?"
 		args = append(args, f.Shard)
-		n++
 	}
 	if f.Version != "" {
-		q += fmt.Sprintf(" AND version = $%d", n)
+		q += " AND version = ?"
 		args = append(args, f.Version)
-		n++
 	}
 	if f.Platform != "" {
-		q += fmt.Sprintf(" AND platform = $%d", n)
+		q += " AND platform = ?"
 		args = append(args, f.Platform)
-		n++
 	}
 	if f.Status != "" {
-		q += fmt.Sprintf(" AND status = $%d", n)
+		q += " AND status = ?"
 		args = append(args, string(f.Status))
-		n++
 	}
 	if f.Cursor != "" {
-		q += fmt.Sprintf(" AND id > $%d", n)
+		q += " AND id > ?"
 		args = append(args, f.Cursor)
-		n++
 	}
 
-	q += " ORDER BY id"
-	q += fmt.Sprintf(" LIMIT $%d", n)
+	q += " ORDER BY id LIMIT ?"
 	args = append(args, limit)
 
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list servers: %w", err)
 	}
@@ -177,24 +166,26 @@ FROM servers WHERE 1=1`
 }
 
 func (s *Store) UpdateServerStatus(ctx context.Context, id string, status model.ServerStatus) error {
-	const q = `UPDATE servers SET status = $1, updated_at = $2 WHERE id = $3`
-	tag, err := s.pool.Exec(ctx, q, string(status), time.Now(), id)
+	const q = `UPDATE servers SET status = ?, updated_at = ? WHERE id = ?`
+	tag, err := s.db.ExecContext(ctx, q, string(status), time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("update server status %s: %w", id, err)
 	}
-	if tag.RowsAffected() == 0 {
+	n, _ := tag.RowsAffected()
+	if n == 0 {
 		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
 	}
 	return nil
 }
 
 func (s *Store) DeleteServer(ctx context.Context, id string) error {
-	const q = `DELETE FROM servers WHERE id = $1`
-	tag, err := s.pool.Exec(ctx, q, id)
+	const q = `DELETE FROM servers WHERE id = ?`
+	tag, err := s.db.ExecContext(ctx, q, id)
 	if err != nil {
 		return fmt.Errorf("delete server %s: %w", id, err)
 	}
-	if tag.RowsAffected() == 0 {
+	n, _ := tag.RowsAffected()
+	if n == 0 {
 		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
 	}
 	return nil
@@ -211,16 +202,16 @@ func (s *Store) UpsertCharacter(ctx context.Context, ch *model.Character) error 
 
 	const q = `
 INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-ON CONFLICT (account_id, server_id, character_id) DO UPDATE SET
-    name          = EXCLUDED.name,
-    level         = EXCLUDED.level,
-    class_id      = EXCLUDED.class_id,
-    avatar        = EXCLUDED.avatar,
-    last_login_at = EXCLUDED.last_login_at,
-    updated_at    = EXCLUDED.updated_at
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+    name          = VALUES(name),
+    level         = VALUES(level),
+    class_id      = VALUES(class_id),
+    avatar        = VALUES(avatar),
+    last_login_at = VALUES(last_login_at),
+    updated_at    = VALUES(updated_at)
 `
-	_, err := s.pool.Exec(ctx, q,
+	_, err := s.db.ExecContext(ctx, q,
 		ch.AccountID, ch.ServerID, ch.CharacterID,
 		ch.Name, ch.Level, ch.ClassID, ch.Avatar,
 		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt,
@@ -235,9 +226,9 @@ func (s *Store) GetCharacter(ctx context.Context, accountID int64, serverID stri
 	const q = `
 SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
 FROM character_index
-WHERE account_id = $1 AND server_id = $2 AND character_id = $3
+WHERE account_id = ? AND server_id = ? AND character_id = ?
 `
-	ch, err := scanCharacter(s.pool.QueryRow(ctx, q, accountID, serverID, characterID))
+	ch, err := scanCharacter(s.db.QueryRowContext(ctx, q, accountID, serverID, characterID))
 	if err != nil {
 		return nil, fmt.Errorf("get character: %w", err)
 	}
@@ -248,9 +239,9 @@ func (s *Store) GetCharacterByCharacterID(ctx context.Context, characterID int64
 	const q = `
 SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
 FROM character_index
-WHERE character_id = $1
+WHERE character_id = ?
 `
-	ch, err := scanCharacter(s.pool.QueryRow(ctx, q, characterID))
+	ch, err := scanCharacter(s.db.QueryRowContext(ctx, q, characterID))
 	if err != nil {
 		return nil, fmt.Errorf("get character by id: %w", err)
 	}
@@ -258,66 +249,60 @@ WHERE character_id = $1
 }
 
 func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, patch store.CharacterPatch) error {
-	// Build dynamic SET clause.
 	setClauses := []string{}
 	args := []any{}
-	n := 1
 
 	if patch.Name != nil {
-		setClauses = append(setClauses, fmt.Sprintf("name = $%d", n))
+		setClauses = append(setClauses, "name = ?")
 		args = append(args, *patch.Name)
-		n++
 	}
 	if patch.Level != nil {
-		setClauses = append(setClauses, fmt.Sprintf("level = $%d", n))
+		setClauses = append(setClauses, "level = ?")
 		args = append(args, *patch.Level)
-		n++
 	}
 	if patch.ClassID != nil {
-		setClauses = append(setClauses, fmt.Sprintf("class_id = $%d", n))
+		setClauses = append(setClauses, "class_id = ?")
 		args = append(args, *patch.ClassID)
-		n++
 	}
 	if patch.Avatar != nil {
-		setClauses = append(setClauses, fmt.Sprintf("avatar = $%d", n))
+		setClauses = append(setClauses, "avatar = ?")
 		args = append(args, *patch.Avatar)
-		n++
 	}
 	if patch.LastLoginAt != nil {
-		setClauses = append(setClauses, fmt.Sprintf("last_login_at = $%d", n))
+		setClauses = append(setClauses, "last_login_at = ?")
 		args = append(args, *patch.LastLoginAt)
-		n++
 	}
 
 	if len(setClauses) == 0 {
-		return nil // nothing to update
+		return nil
 	}
 
-	setClauses = append(setClauses, fmt.Sprintf("updated_at = $%d", n))
+	setClauses = append(setClauses, "updated_at = ?")
 	args = append(args, time.Now())
-	n++
 
-	q := fmt.Sprintf("UPDATE character_index SET %s WHERE account_id = $%d AND server_id = $%d AND character_id = $%d",
-		joinStrings(setClauses, ", "), n, n+1, n+2)
+	q := fmt.Sprintf("UPDATE character_index SET %s WHERE account_id = ? AND server_id = ? AND character_id = ?",
+		joinStrings(setClauses, ", "))
 	args = append(args, accountID, serverID, characterID)
 
-	tag, err := s.pool.Exec(ctx, q, args...)
+	tag, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return fmt.Errorf("update character: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	n, _ := tag.RowsAffected()
+	if n == 0 {
 		return fmt.Errorf("character (account=%d, server=%s, char=%d): %w", accountID, serverID, characterID, store.ErrNotFound)
 	}
 	return nil
 }
 
 func (s *Store) DeleteCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) error {
-	const q = `DELETE FROM character_index WHERE account_id = $1 AND server_id = $2 AND character_id = $3`
-	tag, err := s.pool.Exec(ctx, q, accountID, serverID, characterID)
+	const q = `DELETE FROM character_index WHERE account_id = ? AND server_id = ? AND character_id = ?`
+	tag, err := s.db.ExecContext(ctx, q, accountID, serverID, characterID)
 	if err != nil {
 		return fmt.Errorf("delete character: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
+	n, _ := tag.RowsAffected()
+	if n == 0 {
 		return fmt.Errorf("character (account=%d, server=%s, char=%d): %w", accountID, serverID, characterID, store.ErrNotFound)
 	}
 	return nil
@@ -327,10 +312,10 @@ func (s *Store) ListCharactersByAccount(ctx context.Context, accountID int64) ([
 	const q = `
 SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
 FROM character_index
-WHERE account_id = $1
+WHERE account_id = ?
 ORDER BY server_id, character_id
 `
-	rows, err := s.pool.Query(ctx, q, accountID)
+	rows, err := s.db.QueryContext(ctx, q, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("list characters by account: %w", err)
 	}
@@ -350,21 +335,18 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	q := `
 SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
 FROM character_index
-WHERE server_id = $1`
+WHERE server_id = ?`
 	args := []any{serverID}
-	n := 2
 
 	if cursor != "" {
-		q += fmt.Sprintf(" AND character_id > $%d", n)
+		q += " AND character_id > ?"
 		args = append(args, cursor)
-		n++
 	}
 
-	q += " ORDER BY character_id"
-	q += fmt.Sprintf(" LIMIT $%d", n)
+	q += " ORDER BY character_id LIMIT ?"
 	args = append(args, limit)
 
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list characters by server: %w", err)
 	}
@@ -388,46 +370,37 @@ func (s *Store) SearchCharacters(ctx context.Context, filter store.CharacterSear
 	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
 FROM character_index WHERE 1=1`
 	args := []any{}
-	n := 1
 
 	if filter.Name != "" {
-		q += fmt.Sprintf(" AND LOWER(name) LIKE LOWER($%d)", n)
+		q += " AND LOWER(name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Name+"%")
-		n++
 	}
 	if filter.ServerID != "" {
-		q += fmt.Sprintf(" AND server_id = $%d", n)
+		q += " AND server_id = ?"
 		args = append(args, filter.ServerID)
-		n++
 	}
 	if filter.ClassID != nil {
-		q += fmt.Sprintf(" AND class_id = $%d", n)
+		q += " AND class_id = ?"
 		args = append(args, *filter.ClassID)
-		n++
 	}
 	if filter.MinLevel != nil {
-		q += fmt.Sprintf(" AND level >= $%d", n)
+		q += " AND level >= ?"
 		args = append(args, *filter.MinLevel)
-		n++
 	}
 	if filter.MaxLevel != nil {
-		q += fmt.Sprintf(" AND level <= $%d", n)
+		q += " AND level <= ?"
 		args = append(args, *filter.MaxLevel)
-		n++
 	}
 	if filter.Cursor != "" {
-		// Cursor format: "server_id:character_id"
-		q += fmt.Sprintf(" AND (server_id, character_id) > ($%d, $%d)", n, n+1)
+		q += " AND (server_id, character_id) > (?, ?)"
 		parts := splitCursor(filter.Cursor)
 		args = append(args, parts[0], parts[1])
-		n += 2
 	}
 
-	q += " ORDER BY server_id, character_id"
-	q += fmt.Sprintf(" LIMIT $%d", n)
+	q += " ORDER BY server_id, character_id LIMIT ?"
 	args = append(args, filter.Limit)
 
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("search characters: %w", err)
 	}
@@ -452,12 +425,18 @@ FROM character_index WHERE 1=1`
 // ---------------------------------------------------------------------------
 
 func (s *Store) CreateMigration(ctx context.Context, m *model.Migration) error {
+	// MySQL doesn't have a native array type; store source_servers as JSON.
+	serversJSON, err := json.Marshal(m.SourceServers)
+	if err != nil {
+		return fmt.Errorf("marshal source_servers: %w", err)
+	}
+
 	const q = `
 INSERT INTO server_migrations (id, source_servers, target_server, status, started_at, completed_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+VALUES (?, ?, ?, ?, ?, ?)
 `
-	_, err := s.pool.Exec(ctx, q,
-		m.ID, m.SourceServers, m.TargetServer,
+	_, err = s.db.ExecContext(ctx, q,
+		m.ID, string(serversJSON), m.TargetServer,
 		string(m.Status), m.StartedAt, m.CompletedAt,
 	)
 	if err != nil {
@@ -469,31 +448,36 @@ VALUES ($1, $2, $3, $4, $5, $6)
 func (s *Store) GetMigration(ctx context.Context, id string) (*model.Migration, error) {
 	const q = `
 SELECT id, source_servers, target_server, status, started_at, completed_at
-FROM server_migrations WHERE id = $1
+FROM server_migrations WHERE id = ?
 `
 	var m model.Migration
 	var status string
-	err := s.pool.QueryRow(ctx, q, id).Scan(
-		&m.ID, &m.SourceServers, &m.TargetServer,
+	var serversJSON string
+	err := s.db.QueryRowContext(ctx, q, id).Scan(
+		&m.ID, &serversJSON, &m.TargetServer,
 		&status, &m.StartedAt, &m.CompletedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("migration %s: %w", id, store.ErrNotFound)
 		}
 		return nil, fmt.Errorf("get migration %s: %w", id, err)
 	}
 	m.Status = model.MigrationStatus(status)
+	if err := json.Unmarshal([]byte(serversJSON), &m.SourceServers); err != nil {
+		return nil, fmt.Errorf("unmarshal source_servers: %w", err)
+	}
 	return &m, nil
 }
 
 func (s *Store) UpdateMigrationStatus(ctx context.Context, id string, status model.MigrationStatus, completedAt *time.Time) error {
-	const q = `UPDATE server_migrations SET status = $1, completed_at = $2 WHERE id = $3`
-	tag, err := s.pool.Exec(ctx, q, string(status), completedAt, id)
+	const q = `UPDATE server_migrations SET status = ?, completed_at = ? WHERE id = ?`
+	tag, err := s.db.ExecContext(ctx, q, string(status), completedAt, id)
 	if err != nil {
 		return fmt.Errorf("update migration status %s: %w", id, err)
 	}
-	if tag.RowsAffected() == 0 {
+	n, _ := tag.RowsAffected()
+	if n == 0 {
 		return fmt.Errorf("migration %s: %w", id, store.ErrNotFound)
 	}
 	return nil
@@ -511,9 +495,9 @@ func (s *Store) ListMigrations(ctx context.Context, limit int) ([]*model.Migrati
 SELECT id, source_servers, target_server, status, started_at, completed_at
 FROM server_migrations
 ORDER BY started_at DESC
-LIMIT $1
+LIMIT ?
 `
-	rows, err := s.pool.Query(ctx, q, limit)
+	rows, err := s.db.QueryContext(ctx, q, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list migrations: %w", err)
 	}
@@ -523,10 +507,14 @@ LIMIT $1
 	for rows.Next() {
 		var m model.Migration
 		var status string
-		if err := rows.Scan(&m.ID, &m.SourceServers, &m.TargetServer, &status, &m.StartedAt, &m.CompletedAt); err != nil {
+		var serversJSON string
+		if err := rows.Scan(&m.ID, &serversJSON, &m.TargetServer, &status, &m.StartedAt, &m.CompletedAt); err != nil {
 			return nil, fmt.Errorf("list migrations scan: %w", err)
 		}
 		m.Status = model.MigrationStatus(status)
+		if err := json.Unmarshal([]byte(serversJSON), &m.SourceServers); err != nil {
+			return nil, fmt.Errorf("unmarshal source_servers: %w", err)
+		}
 		result = append(result, &m)
 	}
 	if err := rows.Err(); err != nil {
@@ -546,9 +534,8 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 		ServersByVersion: make(map[string]int),
 	}
 
-	// Total servers and aggregates.
 	const serverQ = `SELECT status, region, version, capacity FROM servers`
-	rows, err := s.pool.Query(ctx, serverQ)
+	rows, err := s.db.QueryContext(ctx, serverQ)
 	if err != nil {
 		return nil, fmt.Errorf("get stats servers: %w", err)
 	}
@@ -570,9 +557,8 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 		return nil, fmt.Errorf("get stats iteration: %w", err)
 	}
 
-	// Total characters.
 	var totalChars int
-	err = s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM character_index`).Scan(&totalChars)
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_index`).Scan(&totalChars)
 	if err != nil {
 		return nil, fmt.Errorf("get stats character count: %w", err)
 	}
@@ -598,7 +584,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.Status, &srv.CreatedAt, &srv.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
@@ -614,7 +600,7 @@ func scanCharacter(row scannable) (*model.Character, error) {
 		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
@@ -622,7 +608,7 @@ func scanCharacter(row scannable) (*model.Character, error) {
 	return &ch, nil
 }
 
-func scanCharacters(rows pgx.Rows) ([]*model.Character, error) {
+func scanCharacters(rows *sql.Rows) ([]*model.Character, error) {
 	var result []*model.Character
 	for rows.Next() {
 		ch, err := scanCharacter(rows)
@@ -648,7 +634,6 @@ func joinStrings(ss []string, sep string) string {
 	return result
 }
 
-// splitCursor splits a "server_id:character_id" cursor into its parts.
 func splitCursor(cursor string) []any {
 	parts := strings.SplitN(cursor, ":", 2)
 	if len(parts) == 2 {

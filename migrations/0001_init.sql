@@ -1,4 +1,4 @@
--- Atlas v0.1.0 initial schema
+-- Atlas v0.1.1 initial schema
 -- See docs/data-model.md for design rationale.
 
 BEGIN;
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS servers (
     endpoint_host TEXT        NOT NULL,
     endpoint_port INTEGER     NOT NULL,
     capacity      INTEGER     NOT NULL DEFAULT 0,
+    metadata      JSONB       NOT NULL DEFAULT '{}',
     status        TEXT        NOT NULL DEFAULT 'starting',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS character_index (
     level         INTEGER     NOT NULL DEFAULT 1,
     class_id      INTEGER     NOT NULL DEFAULT 0,
     avatar        TEXT        NOT NULL DEFAULT '',
+    metadata      JSONB       NOT NULL DEFAULT '{}',
     last_login_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -67,12 +69,12 @@ CREATE INDEX IF NOT EXISTS idx_char_by_server  ON character_index (server_id);
 
 -- Server migrations (merge / transfer tracking)
 CREATE TABLE IF NOT EXISTS server_migrations (
-    id            TEXT PRIMARY KEY,
-    source_server TEXT        NOT NULL,
-    target_server TEXT        NOT NULL,
-    status        TEXT        NOT NULL DEFAULT 'pending',
-    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ
+    id             TEXT PRIMARY KEY,
+    source_servers JSONB       NOT NULL DEFAULT '[]',
+    target_server  TEXT        NOT NULL,
+    status         TEXT        NOT NULL DEFAULT 'pending',
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at   TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_migration_status ON server_migrations (status);

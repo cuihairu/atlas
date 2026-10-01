@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +26,7 @@ type Store struct {
 	servers    map[string]*model.Server
 	characters map[string]*model.Character // key: "accountID:serverID:characterID"
 	runtimes   map[string]model.Runtime
+	migrations map[string]*model.Migration
 }
 
 // New creates a new in-memory store.
@@ -33,6 +35,7 @@ func New() *Store {
 		servers:    make(map[string]*model.Server),
 		characters: make(map[string]*model.Character),
 		runtimes:   make(map[string]model.Runtime),
+		migrations: make(map[string]*model.Migration),
 	}
 }
 
@@ -379,8 +382,190 @@ func (s *Store) DeleteRuntime(_ context.Context, id string) error {
 }
 
 // ---------------------------------------------------------------------------
+// SearchCharacters
+// ---------------------------------------------------------------------------
+
+func (s *Store) SearchCharacters(_ context.Context, filter store.CharacterSearchFilter) ([]*model.Character, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	var result []*model.Character
+	for _, ch := range s.characters {
+		if !matchCharacter(ch, filter) {
+			continue
+		}
+		cp := *ch
+		result = append(result, &cp)
+	}
+
+	// Sort by (server_id, character_id) for stable pagination.
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ServerID != result[j].ServerID {
+			return result[i].ServerID < result[j].ServerID
+		}
+		return result[i].CharacterID < result[j].CharacterID
+	})
+
+	// Apply cursor: skip entries with composite key <= cursor.
+	if filter.Cursor != "" {
+		start := 0
+		for i, ch := range result {
+			cKey := ch.ServerID + ":" + strconv.FormatInt(ch.CharacterID, 10)
+			if cKey > filter.Cursor {
+				start = i
+				break
+			}
+			start = i + 1
+		}
+		result = result[start:]
+	}
+
+	nextCursor := ""
+	if len(result) > limit {
+		result = result[:limit]
+	}
+	if len(result) > 0 {
+		last := result[len(result)-1]
+		nextCursor = last.ServerID + ":" + strconv.FormatInt(last.CharacterID, 10)
+	}
+
+	return result, nextCursor, nil
+}
+
+// ---------------------------------------------------------------------------
+// MigrationStore
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateMigration(_ context.Context, m *model.Migration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Store a copy.
+	cp := *m
+	cp.SourceServers = make([]string, len(m.SourceServers))
+	copy(cp.SourceServers, m.SourceServers)
+	s.migrations[m.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetMigration(_ context.Context, id string) (*model.Migration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	m, ok := s.migrations[id]
+	if !ok {
+		return nil, fmt.Errorf("migration %s: %w", id, store.ErrNotFound)
+	}
+	cp := *m
+	cp.SourceServers = make([]string, len(m.SourceServers))
+	copy(cp.SourceServers, m.SourceServers)
+	return &cp, nil
+}
+
+func (s *Store) UpdateMigrationStatus(_ context.Context, id string, status model.MigrationStatus, completedAt *time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	m, ok := s.migrations[id]
+	if !ok {
+		return fmt.Errorf("migration %s: %w", id, store.ErrNotFound)
+	}
+	m.Status = status
+	m.CompletedAt = completedAt
+	return nil
+}
+
+func (s *Store) ListMigrations(_ context.Context, limit int) ([]*model.Migration, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+
+	var result []*model.Migration
+	for _, m := range s.migrations {
+		cp := *m
+		cp.SourceServers = make([]string, len(m.SourceServers))
+		copy(cp.SourceServers, m.SourceServers)
+		result = append(result, &cp)
+	}
+
+	// Sort by StartedAt descending.
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].StartedAt.After(result[j].StartedAt)
+	})
+
+	if len(result) > limit {
+		result = result[:limit]
+	}
+	return result, nil
+}
+
+// ---------------------------------------------------------------------------
+// StatsStore
+// ---------------------------------------------------------------------------
+
+func (s *Store) GetStats(_ context.Context) (*model.Stats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	stats := &model.Stats{
+		ServersByStatus:  make(map[string]int),
+		ServersByRegion:  make(map[string]int),
+		ServersByVersion: make(map[string]int),
+	}
+
+	for _, srv := range s.servers {
+		stats.TotalServers++
+		stats.ServersByStatus[string(srv.Status)]++
+		stats.ServersByRegion[srv.Region]++
+		stats.ServersByVersion[srv.Version]++
+		stats.TotalCapacity += srv.Capacity
+	}
+
+	for _, rt := range s.runtimes {
+		stats.TotalPlayers += rt.Players
+	}
+
+	stats.TotalCharacters = len(s.characters)
+
+	return stats, nil
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+func matchCharacter(ch *model.Character, f store.CharacterSearchFilter) bool {
+	if f.Name != "" && !strings.Contains(strings.ToLower(ch.Name), strings.ToLower(f.Name)) {
+		return false
+	}
+	if f.ServerID != "" && ch.ServerID != f.ServerID {
+		return false
+	}
+	if f.ClassID != nil && ch.ClassID != *f.ClassID {
+		return false
+	}
+	if f.MinLevel != nil && ch.Level < *f.MinLevel {
+		return false
+	}
+	if f.MaxLevel != nil && ch.Level > *f.MaxLevel {
+		return false
+	}
+	return true
+}
 
 func matchServer(srv *model.Server, f store.ServerFilter) bool {
 	if f.Region != "" && srv.Region != f.Region {

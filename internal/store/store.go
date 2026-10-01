@@ -37,7 +37,19 @@ type CharacterPatch struct {
 	Level       *int
 	ClassID     *int
 	Avatar      *string
+	Metadata    *map[string]string
 	LastLoginAt *time.Time
+}
+
+// CharacterSearchFilter controls which characters are returned by SearchCharacters.
+type CharacterSearchFilter struct {
+	Name     string
+	ServerID string
+	ClassID  *int
+	MinLevel *int
+	MaxLevel *int
+	Limit    int
+	Cursor   string
 }
 
 // ServerStore persists game server records.
@@ -85,6 +97,31 @@ type CharacterStore interface {
 	// ListCharactersByServer returns characters on a given server, with
 	// cursor-based pagination.
 	ListCharactersByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, error)
+
+	// SearchCharacters searches characters with filters and cursor pagination.
+	// Returns the matching characters and a cursor for the next page.
+	SearchCharacters(ctx context.Context, filter CharacterSearchFilter) ([]*model.Character, string, error)
+}
+
+// MigrationStore persists server migration records.
+type MigrationStore interface {
+	// CreateMigration inserts a new migration record.
+	CreateMigration(ctx context.Context, m *model.Migration) error
+
+	// GetMigration returns a migration by ID.
+	GetMigration(ctx context.Context, id string) (*model.Migration, error)
+
+	// UpdateMigrationStatus changes the status of a migration.
+	UpdateMigrationStatus(ctx context.Context, id string, status model.MigrationStatus, completedAt *time.Time) error
+
+	// ListMigrations returns recent migrations, ordered by start time descending.
+	ListMigrations(ctx context.Context, limit int) ([]*model.Migration, error)
+}
+
+// StatsStore provides aggregate statistics about servers and characters.
+type StatsStore interface {
+	// GetStats returns aggregated counts across all servers and characters.
+	GetStats(ctx context.Context) (*model.Stats, error)
 }
 
 // RuntimeStore persists volatile server runtime data (heartbeat, load, etc.).
@@ -104,6 +141,8 @@ type Store interface {
 	ServerStore
 	CharacterStore
 	RuntimeStore
+	MigrationStore
+	StatsStore
 
 	// Ping verifies the store is reachable.
 	Ping(ctx context.Context) error

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/model"
@@ -24,16 +25,18 @@ type Handler struct {
 	registry  *registry.Service
 	discovery *discovery.Service
 	directory *directory.Service
+	admin     *admin.Service
 	store     store.Store
 	logger    *slog.Logger
 }
 
 // New creates a new Handler.
-func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, s store.Store, logger *slog.Logger) *Handler {
+func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, s store.Store, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry:  reg,
 		discovery: disc,
 		directory: dir,
+		admin:     adm,
 		store:     s,
 		logger:    logger,
 	}
@@ -57,6 +60,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/directory/servers/{id}/characters", h.handleListCharactersByServer)
 	mux.HandleFunc("PATCH /v1/directory/characters/{character_id}", h.handlePatchCharacter)
 	mux.HandleFunc("DELETE /v1/directory/characters/{character_id}", h.handleDeleteCharacter)
+
+	// Admin
+	mux.HandleFunc("POST /v1/admin/servers/{id}/maintenance", h.handleAdminMaintenance)
+	mux.HandleFunc("POST /v1/admin/servers/{id}/drain", h.handleAdminDrain)
+	mux.HandleFunc("POST /v1/admin/servers/{id}/enable", h.handleAdminEnable)
+	mux.HandleFunc("POST /v1/admin/servers/{id}/disable", h.handleAdminDisable)
+	mux.HandleFunc("GET /v1/admin/stats", h.handleAdminStats)
+	mux.HandleFunc("GET /v1/admin/characters/search", h.handleAdminSearchCharacters)
+	mux.HandleFunc("POST /v1/admin/migrations", h.handleAdminCreateMigration)
+	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
+	mux.HandleFunc("GET /v1/admin/migrations/{id}", h.handleAdminGetMigration)
+	mux.HandleFunc("POST /v1/admin/migrations/{id}/rollback", h.handleAdminRollbackMigration)
 
 	// Health
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
@@ -393,6 +408,230 @@ func (h *Handler) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) 
 }
 
 // ---------------------------------------------------------------------------
+// Admin handlers
+// ---------------------------------------------------------------------------
+
+func (h *Handler) handleAdminMaintenance(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.SetMaintenance(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"status":    "maintenance",
+	})
+}
+
+func (h *Handler) handleAdminDrain(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.SetDrain(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"status":    "draining",
+	})
+}
+
+func (h *Handler) handleAdminEnable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.Enable(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"status":    "online",
+	})
+}
+
+func (h *Handler) handleAdminDisable(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.Disable(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"status":    "disabled",
+	})
+}
+
+func (h *Handler) handleAdminStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := h.admin.GetStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *Handler) handleAdminSearchCharacters(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	filter := store.CharacterSearchFilter{
+		Name:     q.Get("q"),
+		ServerID: q.Get("server_id"),
+		Cursor:   q.Get("cursor"),
+	}
+
+	if classStr := q.Get("class_id"); classStr != "" {
+		n, err := strconv.Atoi(classStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid class_id")
+			return
+		}
+		filter.ClassID = &n
+	}
+	if minStr := q.Get("min_level"); minStr != "" {
+		n, err := strconv.Atoi(minStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid min_level")
+			return
+		}
+		filter.MinLevel = &n
+	}
+	if maxStr := q.Get("max_level"); maxStr != "" {
+		n, err := strconv.Atoi(maxStr)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid max_level")
+			return
+		}
+		filter.MaxLevel = &n
+	}
+	if l := q.Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid limit")
+			return
+		}
+		filter.Limit = n
+	}
+
+	chars, nextCursor, err := h.admin.SearchCharacters(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	resp := map[string]any{
+		"characters": chars,
+	}
+	if nextCursor != "" {
+		resp["next_cursor"] = nextCursor
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleAdminCreateMigration(w http.ResponseWriter, r *http.Request) {
+	var req admin.CreateMigrationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	m, err := h.admin.CreateMigration(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (h *Handler) handleAdminListMigrations(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	migrations, err := h.admin.ListMigrations(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"migrations": migrations,
+	})
+}
+
+func (h *Handler) handleAdminGetMigration(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	m, err := h.admin.GetMigration(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "MIGRATION_NOT_FOUND", fmt.Sprintf("migration %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+func (h *Handler) handleAdminRollbackMigration(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.RollbackMigration(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "MIGRATION_NOT_FOUND", fmt.Sprintf("migration %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":     id,
+		"status": "rolled_back",
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Health handlers
 // ---------------------------------------------------------------------------
 
@@ -437,3 +676,20 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 
 // ensure time import is used
 var _ = time.Now
+
+// CORSMiddleware adds CORS headers for cross-origin requests from the dashboard.
+func CORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}

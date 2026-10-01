@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/model"
@@ -24,8 +25,9 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 	regSvc := registry.New(mem, mem, logger)
 	discSvc := discovery.New(mem, mem)
 	dirSvc := directory.New(mem)
+	admSvc := admin.New(mem)
 
-	handler := New(regSvc, discSvc, dirSvc, mem, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, mem, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -329,4 +331,394 @@ func TestReadyz(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Admin: server state management
+// ---------------------------------------------------------------------------
+
+func TestAdminMaintenance(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	// Heartbeat to promote to online.
+	resp := postJSON(t, ts, "/v1/registry/servers/game-1001/heartbeat", map[string]any{
+		"players": 100, "load": 0.5,
+	})
+	resp.Body.Close()
+
+	// Set maintenance.
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/maintenance", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("maintenance: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Verify status changed.
+	resp = getJSON(t, ts, "/v1/discovery/servers/game-1001")
+	var srv model.Server
+	json.NewDecoder(resp.Body).Decode(&srv)
+	resp.Body.Close()
+	if srv.Status != model.StatusMaintenance {
+		t.Errorf("expected maintenance, got %s", srv.Status)
+	}
+}
+
+func TestAdminDrain(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	resp := postJSON(t, ts, "/v1/registry/servers/game-1001/heartbeat", map[string]any{
+		"players": 100, "load": 0.5,
+	})
+	resp.Body.Close()
+
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/drain", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("drain: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminEnable(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	// First set to maintenance.
+	resp := postJSON(t, ts, "/v1/registry/servers/game-1001/heartbeat", map[string]any{
+		"players": 100, "load": 0.5,
+	})
+	resp.Body.Close()
+
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/maintenance", nil)
+	resp.Body.Close()
+
+	// Now enable.
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/enable", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("enable: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminDisable(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	resp := postJSON(t, ts, "/v1/admin/servers/game-1001/disable", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("disable: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminMaintenance_NotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp := postJSON(t, ts, "/v1/admin/servers/nonexistent/maintenance", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminDisable_NotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp := postJSON(t, ts, "/v1/admin/servers/nonexistent/disable", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// ---------------------------------------------------------------------------
+// Admin: stats
+// ---------------------------------------------------------------------------
+
+func TestAdminStats(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-1002")
+
+	resp := getJSON(t, ts, "/v1/admin/stats")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stats: expected 200, got %d", resp.StatusCode)
+	}
+
+	var stats struct {
+		TotalServers int            `json:"total_servers"`
+		ServersByStatus map[string]int `json:"servers_by_status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&stats)
+	resp.Body.Close()
+
+	if stats.TotalServers != 2 {
+		t.Errorf("expected 2 servers, got %d", stats.TotalServers)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Admin: character search
+// ---------------------------------------------------------------------------
+
+func TestAdminSearchCharacters(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Create a character first.
+	chBody := map[string]any{
+		"account_id":   10001,
+		"server_id":    "game-1001",
+		"character_id": 823712,
+		"name":         "剑无尘",
+		"level":        50,
+		"class_id":     3,
+	}
+	resp := postJSON(t, ts, "/v1/directory/characters", chBody)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create char: expected 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Search by name.
+	resp = getJSON(t, ts, "/v1/admin/characters/search?q=剑无尘")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("search: expected 200, got %d", resp.StatusCode)
+	}
+
+	var searchResp struct {
+		Characters []model.Character `json:"characters"`
+	}
+	json.NewDecoder(resp.Body).Decode(&searchResp)
+	resp.Body.Close()
+
+	if len(searchResp.Characters) != 1 {
+		t.Fatalf("expected 1 character, got %d", len(searchResp.Characters))
+	}
+	if searchResp.Characters[0].Name != "剑无尘" {
+		t.Errorf("expected name 剑无尘, got %s", searchResp.Characters[0].Name)
+	}
+}
+
+func TestAdminSearchCharacters_ByLevel(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Create characters with different levels.
+	for i, level := range []int{10, 50, 100} {
+		chBody := map[string]any{
+			"account_id":   10000 + i,
+			"server_id":    "game-1001",
+			"character_id": 823710 + i,
+			"name":         "Char",
+			"level":        level,
+			"class_id":     3,
+		}
+		resp := postJSON(t, ts, "/v1/directory/characters", chBody)
+		resp.Body.Close()
+	}
+
+	// Search by level range.
+	resp := getJSON(t, ts, "/v1/admin/characters/search?min_level=30&max_level=60")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("search: expected 200, got %d", resp.StatusCode)
+	}
+
+	var searchResp struct {
+		Characters []model.Character `json:"characters"`
+	}
+	json.NewDecoder(resp.Body).Decode(&searchResp)
+	resp.Body.Close()
+
+	if len(searchResp.Characters) != 1 {
+		t.Fatalf("expected 1 character, got %d", len(searchResp.Characters))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Admin: migrations
+// ---------------------------------------------------------------------------
+
+func TestAdminCreateMigration(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-1002")
+	registerTestServer(t, ts, "game-2001")
+
+	body := map[string]any{
+		"source_servers": []string{"game-1001", "game-1002"},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create migration: expected 201, got %d", resp.StatusCode)
+	}
+
+	var mig struct {
+		ID            string   `json:"id"`
+		SourceServers []string `json:"source_servers"`
+		TargetServer  string   `json:"target_server"`
+		Status        string   `json:"status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&mig)
+	resp.Body.Close()
+
+	if mig.Status != "pending" {
+		t.Errorf("expected pending, got %s", mig.Status)
+	}
+	if mig.TargetServer != "game-2001" {
+		t.Errorf("expected game-2001, got %s", mig.TargetServer)
+	}
+}
+
+func TestAdminCreateMigration_Invalid(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Missing source servers.
+	body := map[string]any{
+		"source_servers": []string{},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminGetMigration(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-2001")
+
+	// Create migration.
+	body := map[string]any{
+		"source_servers": []string{"game-1001"},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	var mig struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&mig)
+	resp.Body.Close()
+
+	// Get migration.
+	resp = getJSON(t, ts, "/v1/admin/migrations/"+mig.ID)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get migration: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminGetMigration_NotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp := getJSON(t, ts, "/v1/admin/migrations/nonexistent")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminListMigrations(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-2001")
+
+	// Create a migration.
+	body := map[string]any{
+		"source_servers": []string{"game-1001"},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	resp.Body.Close()
+
+	// List migrations.
+	resp = getJSON(t, ts, "/v1/admin/migrations")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list migrations: expected 200, got %d", resp.StatusCode)
+	}
+
+	var listResp struct {
+		Migrations []struct {
+			ID string `json:"id"`
+		} `json:"migrations"`
+	}
+	json.NewDecoder(resp.Body).Decode(&listResp)
+	resp.Body.Close()
+
+	if len(listResp.Migrations) != 1 {
+		t.Fatalf("expected 1 migration, got %d", len(listResp.Migrations))
+	}
+}
+
+func TestAdminRollbackMigration(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-2001")
+
+	// Create migration.
+	body := map[string]any{
+		"source_servers": []string{"game-1001"},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	var mig struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&mig)
+	resp.Body.Close()
+
+	// Rollback.
+	resp = postJSON(t, ts, "/v1/admin/migrations/"+mig.ID+"/rollback", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rollback: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Verify status.
+	resp = getJSON(t, ts, "/v1/admin/migrations/"+mig.ID)
+	var got struct {
+		Status string `json:"status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	resp.Body.Close()
+	if got.Status != "rolled_back" {
+		t.Errorf("expected rolled_back, got %s", got.Status)
+	}
+}
+
+func TestAdminRollbackMigration_NotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp := postJSON(t, ts, "/v1/admin/migrations/nonexistent/rollback", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/config"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
@@ -100,17 +101,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create composite store for health checks / ping / close.
-	composite := &compositeStore{
-		ServerStore:  serverStore,
-		CharacterStore: charStore,
-		RuntimeStore: runtimeStore,
-	}
-
 	// Create services.
 	regSvc := registry.New(serverStore, runtimeStore, logger)
 	discSvc := discovery.New(serverStore, runtimeStore)
 	dirSvc := directory.New(charStore)
+
+	// Create composite store for health checks / ping / close.
+	composite := &compositeStore{
+		ServerStore:    serverStore,
+		CharacterStore: charStore,
+		RuntimeStore:   runtimeStore,
+	}
+
+	admSvc := admin.New(composite)
 
 	// Start health monitor.
 	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger)
@@ -119,7 +122,7 @@ func main() {
 	go monitor.Run(monitorCtx)
 
 	// Set up HTTP server.
-	handler := httpapi.New(regSvc, discSvc, dirSvc, composite, logger)
+	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, composite, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -187,6 +190,8 @@ type compositeStore struct {
 	store.ServerStore
 	store.CharacterStore
 	store.RuntimeStore
+	store.MigrationStore
+	store.StatsStore
 }
 
 func (c *compositeStore) Ping(ctx context.Context) error {
