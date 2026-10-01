@@ -41,6 +41,7 @@ export default defineConfig({
           { text: '安全审计', link: '/security-audit' },
           { text: '高可用', link: '/ha' },
           { text: '部署拓扑', link: '/topology' },
+          { text: '性能基准', link: '/benchmarks' },
         ],
       },
       { text: '路线图', link: '/roadmap' },
@@ -80,6 +81,7 @@ export default defineConfig({
           { text: '安全审计', link: '/security-audit' },
           { text: '高可用', link: '/ha' },
           { text: '部署拓扑', link: '/topology' },
+          { text: '性能基准', link: '/benchmarks' },
         ],
       },
       {

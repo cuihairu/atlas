@@ -224,6 +224,6 @@
 
 - [ ] Dependency updates — Dependabot auto-merge for patch versions
 - [ ] Security audits — periodic review of auth and storage layers
-- [ ] Performance benchmarks — Registry and Discovery QPS
+- [x] Performance benchmarks — Registry and Discovery QPS（bench_test.go ×2：注册/重注册/心跳/并发心跳扇入/列表 100–5000 台/region 过滤/详情；docs/benchmarks.md 基线表 + O(fleet) 列表的 Redis 往返估算 + 回归警戒线，挂导航）
 - [ ] Documentation — keep docs/ in sync with implementation
 - [ ] Test coverage — aim for >80% on service and handler layers
