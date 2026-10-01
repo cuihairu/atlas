@@ -88,9 +88,21 @@ func TestHandlerFailureLeavesMessageUnacked(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 
+	// Wait for the handler first: it is the cause of the unacked state, so
+	// asserting on pending counters before it runs is racy — NumPending is
+	// already 1 once the message lands in the stream, while the pull fetch
+	// may not have delivered it to the handler yet.
+	deadline := time.Now().Add(3 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if calls.Load() == 0 {
+		t.Fatal("handler should have been called once")
+	}
+
 	// The message must stay pending (unacked) after the handler fails —
 	// fetched-but-unacked shows up in NumAckPending.
-	deadline := time.Now().Add(3 * time.Second)
+	deadline = time.Now().Add(3 * time.Second)
 	var pending int64
 	for time.Now().Before(deadline) {
 		info, err := a.js.ConsumerInfo(a.stream, a.durable)
@@ -103,20 +115,31 @@ func TestHandlerFailureLeavesMessageUnacked(t *testing.T) {
 	if pending == 0 {
 		t.Fatal("expected unacked pending message after handler failure")
 	}
-	if calls.Load() == 0 {
-		t.Fatal("handler should have been called once")
-	}
 }
 
 func TestPoisonPayloadIsDroppedAndAcked(t *testing.T) {
 	a := openAdapter(t)
 
-	called := 0
+	var called atomic.Int32
 	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
-		called++
+		called.Add(1)
 		return nil
 	}); err != nil {
 		t.Fatalf("subscribe: %v", err)
+	}
+
+	// Probe with a well-formed event first: it proves the consume loop is
+	// live, so the "poison never reached the handler" assertion below
+	// cannot pass vacuously by racing ahead of the consumer.
+	if err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterUpdated, CharacterID: 1}); err != nil {
+		t.Fatalf("probe publish: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for called.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if called.Load() != 1 {
+		t.Fatalf("probe handler calls = %d, want 1", called.Load())
 	}
 
 	// Raw-publish an undecodable payload on the same subject.
@@ -124,18 +147,22 @@ func TestPoisonPayloadIsDroppedAndAcked(t *testing.T) {
 		t.Fatalf("raw publish: %v", err)
 	}
 
-	deadline := time.Now().Add(3 * time.Second)
+	// The poison message must be acked (drained to zero pending) without
+	// ever reaching the handler.
+	deadline = time.Now().Add(3 * time.Second)
 	var pending uint64
 	for time.Now().Before(deadline) {
 		info, err := a.js.ConsumerInfo(a.stream, a.durable)
-		if err == nil && info.NumAckPending == 0 && info.NumPending == 0 {
-			pending = 0
-			break
+		if err == nil {
+			pending = uint64(info.NumAckPending) + info.NumPending
+			if pending == 0 {
+				break
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if called != 0 {
-		t.Fatalf("handler called %d times for poison payload, want 0", called)
+	if n := called.Load(); n != 1 {
+		t.Fatalf("handler called %d times, want 1 (poison payload must not be delivered)", n)
 	}
 	if pending != 0 {
 		t.Fatalf("poison payload still pending: %d", pending)
