@@ -159,6 +159,41 @@ type Config struct {
 	// enabled via ATLAS_RATE_LIMITS or this field.
 	// Env: ATLAS_RATE_LIMIT_DEFAULT, default "".
 	RateLimitDefault string
+
+	// RedisSentinelAddrs is a comma-separated list of Sentinel host:port
+	// addresses. When set, Redis clients use failover mode (monitoring
+	// RedisMasterName) instead of connecting to RedisURL directly. TODO
+	// v0.1.19.
+	// Env: ATLAS_REDIS_SENTINELS, default "".
+	RedisSentinelAddrs string
+
+	// RedisMasterName is the master set name the Sentinels monitor. Only
+	// used with ATLAS_REDIS_SENTINELS.
+	// Env: ATLAS_REDIS_MASTER_NAME, default "mymaster".
+	RedisMasterName string
+
+	// RedisClusterAddrs is a comma-separated list of cluster seed nodes
+	// (host:port). Takes precedence over Sentinel and single-node config.
+	// TODO v0.1.19.
+	// Env: ATLAS_REDIS_CLUSTER, default "".
+	RedisClusterAddrs string
+
+	// RedisPoolSize caps the per-instance Redis connection pool. 0 keeps the
+	// go-redis default (10 × GOMAXPROCS).
+	// Env: ATLAS_REDIS_POOL_SIZE, default 0.
+	RedisPoolSize int
+
+	// PostgreSQL connection-pool tuning layered on pgxpool.ParseConfig.
+	// Zero values keep the DSN / library defaults (MaxConns = max(4,
+	// NumCPU)). TODO v0.1.19.
+	// Env: ATLAS_PG_POOL_MAX_CONNS / ATLAS_PG_POOL_MIN_CONNS /
+	// ATLAS_PG_POOL_MAX_CONN_LIFETIME / ATLAS_PG_POOL_MAX_CONN_IDLE_TIME /
+	// ATLAS_PG_POOL_HEALTH_CHECK_PERIOD.
+	PGPoolMaxConns          int
+	PGPoolMinConns          int
+	PGPoolMaxConnLifetime   time.Duration
+	PGPoolMaxConnIdleTime   time.Duration
+	PGPoolHealthCheckPeriod time.Duration
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -224,6 +259,39 @@ func Load() Config {
 	if v := os.Getenv("ATLAS_CHAR_SHARDS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.CharShards = n
+		}
+	}
+	cfg.RedisSentinelAddrs = os.Getenv("ATLAS_REDIS_SENTINELS")
+	cfg.RedisMasterName = envOr("ATLAS_REDIS_MASTER_NAME", "mymaster")
+	cfg.RedisClusterAddrs = os.Getenv("ATLAS_REDIS_CLUSTER")
+	if v := os.Getenv("ATLAS_REDIS_POOL_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.RedisPoolSize = n
+		}
+	}
+	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.PGPoolMaxConns = n
+		}
+	}
+	if v := os.Getenv("ATLAS_PG_POOL_MIN_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			cfg.PGPoolMinConns = n
+		}
+	}
+	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONN_LIFETIME"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.PGPoolMaxConnLifetime = d
+		}
+	}
+	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONN_IDLE_TIME"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.PGPoolMaxConnIdleTime = d
+		}
+	}
+	if v := os.Getenv("ATLAS_PG_POOL_HEALTH_CHECK_PERIOD"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.PGPoolHealthCheckPeriod = d
 		}
 	}
 

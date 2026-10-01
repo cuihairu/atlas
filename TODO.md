@@ -202,11 +202,12 @@
 
 ## v0.1.19 — High Availability
 
-- [ ] Atlas multi-replica deployment guide (stateless, horizontal scaling)
-- [ ] Internal LB (HAProxy TCP mode / APISIX) in front of the Registry port for heartbeat fan-in
-- [ ] Redis Sentinel / Cluster config
-- [ ] PostgreSQL primary-replica with streaming replication
-- [ ] Connection pool tuning documentation
+- [x] Atlas multi-replica deployment guide (stateless, horizontal scaling)（docs/ha.md：状态归属表 + 每副本健康巡检/审计环的告警去重与 admin 粘性说明）
+- [x] Internal LB (HAProxy TCP mode / APISIX) in front of the Registry port for heartbeat fan-in（deploy/haproxy/haproxy.cfg：registry 扇入 round-robin + 主动 TCP 健康检查，admin source 粘性，stats 面板）
+- [x] Redis Sentinel / Cluster config（ATLAS_REDIS_CLUSTER > ATLAS_REDIS_SENTINELS + ATLAS_REDIS_MASTER_NAME > 单节点；URL 密码/DB 全模式生效；runtime store 与 Redis Streams 事件适配器共用拓扑，go-redis UniversalClient）
+- [x] PostgreSQL primary-replica with streaming replication（docs/ha.md §4：pg_hba + pg_basebackup -R + hot_standby，故障晋升 runbook；deploy/postgres/init-replica.sh）
+- [x] Connection pool tuning documentation（ATLAS_PG_POOL_MAX_CONNS/MIN_CONNS/LIFETIME/IDLE_TIME/HEALTH_CHECK_PERIOD 叠加 pgxpool.ParseConfig（MinConns>MaxConns 钳制），ATLAS_REDIS_POOL_SIZE；docs/ha.md §5 容量经验公式）
+- [x] Lab stack：deploy/docker-compose.ha.yaml（2× Atlas + HAProxy + PG 主从 + Redis 主从 + 3 Sentinel 一键起）
 
 ## v0.1.20 — Server Metadata, Maintenance Windows & Announcements
 

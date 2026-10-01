@@ -21,11 +21,12 @@ const runtimeTTL = 120 * time.Second
 
 // Store implements store.RuntimeStore on Redis.
 type Store struct {
-	client *redis.Client
+	client redis.UniversalClient
 }
 
-// New creates a new Redis-backed runtime store.
-func New(client *redis.Client) *Store {
+// New creates a new Redis-backed runtime store. Any go-redis topology works
+// (single node, Sentinel failover, cluster).
+func New(client redis.UniversalClient) *Store {
 	return &Store{client: client}
 }
 

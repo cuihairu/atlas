@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -94,6 +95,14 @@ func main() {
 			logger.Error("invalid database URL", "error", err)
 			os.Exit(1)
 		}
+		applyPGPoolOptions(poolCfg, cfg)
+		logger.Info("postgres pool configured",
+			"max_conns", poolCfg.MaxConns,
+			"min_conns", poolCfg.MinConns,
+			"max_conn_lifetime", poolCfg.MaxConnLifetime,
+			"max_conn_idle_time", poolCfg.MaxConnIdleTime,
+			"health_check_period", poolCfg.HealthCheckPeriod,
+		)
 		pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 		if err != nil {
 			logger.Error("failed to connect to PostgreSQL", "error", err)
@@ -111,9 +120,9 @@ func main() {
 		realmStore = pg
 		shardStore = pg
 
-		// Redis for runtime/heartbeat storage.
-		redisAddr := parseRedisAddr(cfg.RedisURL)
-		rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
+		// Redis for runtime/heartbeat storage. Topology follows the config:
+		// cluster seeds > Sentinel failover > single node (TODO v0.1.19).
+		rdb := buildRedisClient(cfg)
 		if err := rdb.Ping(ctx).Err(); err != nil {
 			logger.Error("failed to ping Redis", "error", err)
 			os.Exit(1)
@@ -150,12 +159,12 @@ func main() {
 	// Event adapter: transports character index writes into the directory
 	// projection (docs/sync.md §4).
 	var evtAdapter event.EventAdapter
-	var evtRdb *redis.Client
+	var evtRdb redis.UniversalClient
 	switch cfg.EventAdapter {
 	case "", "http":
 		evtAdapter = httpEvent.New()
 	case "redis":
-		evtRdb = redis.NewClient(&redis.Options{Addr: parseRedisAddr(cfg.RedisURL)})
+		evtRdb = buildRedisClient(cfg)
 		if err := evtRdb.Ping(ctx).Err(); err != nil {
 			logger.Error("failed to ping Redis for event adapter", "error", err)
 			os.Exit(1)
@@ -476,11 +485,115 @@ func main() {
 	logger.Info("Atlas stopped")
 }
 
-// parseRedisAddr extracts "host:port" from a redis:// URL.
-func parseRedisAddr(rawURL string) string {
+// applyPGPoolOptions layers ATLAS_PG_POOL_* tuning on top of the DSN
+// parsed config. Zero values leave the library defaults in place
+// (TODO v0.1.19).
+func applyPGPoolOptions(poolCfg *pgxpool.Config, cfg config.Config) {
+	if cfg.PGPoolMaxConns > 0 {
+		poolCfg.MaxConns = int32(cfg.PGPoolMaxConns)
+	}
+	if cfg.PGPoolMinConns > 0 {
+		poolCfg.MinConns = int32(cfg.PGPoolMinConns)
+	}
+	if cfg.PGPoolMaxConnLifetime > 0 {
+		poolCfg.MaxConnLifetime = cfg.PGPoolMaxConnLifetime
+	}
+	if cfg.PGPoolMaxConnIdleTime > 0 {
+		poolCfg.MaxConnIdleTime = cfg.PGPoolMaxConnIdleTime
+	}
+	if cfg.PGPoolHealthCheckPeriod > 0 {
+		poolCfg.HealthCheckPeriod = cfg.PGPoolHealthCheckPeriod
+	}
+	// MinConns must not exceed MaxConns; pgx would otherwise error at connect.
+	if poolCfg.MinConns > 0 && poolCfg.MaxConns > 0 && poolCfg.MinConns > poolCfg.MaxConns {
+		poolCfg.MinConns = poolCfg.MaxConns
+	}
+}
+
+// redisTopology describes the resolved Redis deployment shape.
+type redisTopology struct {
+	mode                     string // "cluster", "sentinel" or "single"
+	seeds                    []string
+	master                   string
+	addr, username, password string
+	db                       int
+	poolSize                 int
+}
+
+// resolveRedisTopology picks the Redis topology from config, in precedence
+// order: cluster seeds > Sentinel failover > single node from
+// ATLAS_REDIS_URL (TODO v0.1.19). Password and logical DB from the URL
+// apply to every mode.
+func resolveRedisTopology(cfg config.Config) redisTopology {
+	topo := redisTopology{
+		mode:     "single",
+		poolSize: cfg.RedisPoolSize,
+	}
+	topo.addr, topo.username, topo.password, topo.db = redisURLParts(cfg.RedisURL)
+
+	if seeds := splitAddrs(cfg.RedisClusterAddrs); len(seeds) > 0 {
+		topo.mode = "cluster"
+		topo.seeds = seeds
+		return topo
+	}
+	if sentinels := splitAddrs(cfg.RedisSentinelAddrs); len(sentinels) > 0 {
+		topo.mode = "sentinel"
+		topo.seeds = sentinels
+		topo.master = cfg.RedisMasterName
+	}
+	return topo
+}
+
+// buildRedisClient instantiates the go-redis client for the resolved
+// topology. The returned client is owned by the caller.
+func buildRedisClient(cfg config.Config) redis.UniversalClient {
+	topo := resolveRedisTopology(cfg)
+	switch topo.mode {
+	case "cluster":
+		return redis.NewClusterClient(&redis.ClusterOptions{
+			Addrs:    topo.seeds,
+			Username: topo.username,
+			Password: topo.password,
+			PoolSize: topo.poolSize,
+		})
+	case "sentinel":
+		return redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:    topo.master,
+			SentinelAddrs: topo.seeds,
+			Username:      topo.username,
+			Password:      topo.password,
+			DB:            topo.db,
+			PoolSize:      topo.poolSize,
+		})
+	default:
+		return redis.NewClient(&redis.Options{
+			Addr:     topo.addr,
+			Username: topo.username,
+			Password: topo.password,
+			DB:       topo.db,
+			PoolSize: topo.poolSize,
+		})
+	}
+}
+
+// splitAddrs splits a comma-separated address list, dropping blanks.
+func splitAddrs(raw string) []string {
+	var out []string
+	for _, a := range strings.Split(raw, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// redisURLParts splits a redis://[user:pass@]host:port/db URL into go-redis
+// connection parts, with localhost:6379 / anonymous / DB 0 defaults.
+func redisURLParts(rawURL string) (addr, username, password string, db int) {
+	addr = "localhost:6379"
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "localhost:6379"
+		return
 	}
 	host := u.Hostname()
 	port := u.Port()
@@ -490,7 +603,17 @@ func parseRedisAddr(rawURL string) string {
 	if port == "" {
 		port = "6379"
 	}
-	return host + ":" + port
+	addr = host + ":" + port
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+	if p := strings.TrimPrefix(u.Path, "/"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n >= 0 {
+			db = n
+		}
+	}
+	return
 }
 
 // compositeStore combines separate store implementations into a single store.Store.

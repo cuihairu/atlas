@@ -49,7 +49,7 @@ type Options struct {
 
 // Adapter delivers events over Redis Streams.
 type Adapter struct {
-	client   *redis.Client
+	client   redis.UniversalClient
 	group    string
 	consumer string
 	block    time.Duration
@@ -62,7 +62,8 @@ type Adapter struct {
 
 // New creates a Redis Streams adapter. The client is not owned by the
 // adapter: Close stops consumption but leaves the connection to the caller.
-func New(client *redis.Client, opts Options) *Adapter {
+// Any go-redis topology works (single node, Sentinel failover, cluster).
+func New(client redis.UniversalClient, opts Options) *Adapter {
 	a := &Adapter{
 		client:   client,
 		group:    opts.Group,

@@ -1,0 +1,154 @@
+# Atlas HA stack (TODO v0.1.19): 2× stateless Atlas replicas behind HAProxy,
+# PostgreSQL primary + streaming replica, Redis master + replica + 3 Sentinels.
+# Companion to docs/ha.md. Intended for a lab / staging environment — tune
+# passwords, TLS and resource limits for production.
+#
+#   docker compose -f deploy/docker-compose.ha.yaml up -d
+#
+# Endpoints after startup:
+#   public   :8080 (HAProxy → atlas1/atlas2)
+#   registry :8081 (HAProxy → atlas1/atlas2, heartbeat fan-in)
+#   admin    :8082 (HAProxy, sticky)
+#   stats    :8404/stats (HAProxy)
+
+version: "3.9"
+
+x-atlas-common: &atlas-common
+  image: ghcr.io/cuihairu/atlas:latest
+  build: ..
+  depends_on:
+    postgres-primary:
+      condition: service_healthy
+    redis-master:
+      condition: service_started
+    redis-sentinel-1:
+      condition: service_started
+  environment: &atlas-env
+    ATLAS_STORE: postgres
+    ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres-primary:5432/atlas?sslmode=disable
+    # Sentinel topology (go-redis failover): Atlas discovers the current
+    # master via the sentinels — ATLAS_REDIS_URL only supplies credentials/DB.
+    ATLAS_REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+    ATLAS_REDIS_MASTER_NAME: mymaster
+    ATLAS_REDIS_URL: redis://redis-master:6379/0
+    # Connection pool tuning (see docs/ha.md §5).
+    ATLAS_PG_POOL_MAX_CONNS: "32"
+    ATLAS_PG_POOL_MIN_CONNS: "4"
+    ATLAS_PG_POOL_MAX_CONN_LIFETIME: 30m
+    ATLAS_PG_POOL_MAX_CONN_IDLE_TIME: 5m
+    ATLAS_PG_POOL_HEALTH_CHECK_PERIOD: 15s
+    ATLAS_REDIS_POOL_SIZE: "32"
+
+services:
+  atlas1:
+    <<: *atlas-common
+    environment:
+      <<: *atlas-env
+      ATLAS_HTTP_ADDR: ":8080"
+      ATLAS_REGISTRY_ADDR: ":8081"
+      ATLAS_ADMIN_ADDR: ":8082"
+    hostname: atlas1
+
+  atlas2:
+    <<: *atlas-common
+    environment:
+      <<: *atlas-env
+      ATLAS_HTTP_ADDR: ":8080"
+      ATLAS_REGISTRY_ADDR: ":8081"
+      ATLAS_ADMIN_ADDR: ":8082"
+    hostname: atlas2
+
+  haproxy:
+    image: haproxy:2.9-alpine
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "8082:8082"
+      - "8404:8404"
+    depends_on:
+      - atlas1
+      - atlas2
+
+  # ── PostgreSQL: primary + streaming replica ───────────────────────────
+  postgres-primary:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+      # Streaming replication account (docs/ha.md §4).
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    command: |
+      postgres
+        -c wal_level=replica
+        -c max_wal_senders=5
+        -c max_replication_slots=5
+        -c hot_standby=on
+    volumes:
+      - pg-primary-data:/var/lib/postgresql/data
+      - ./postgres/init-replica.sh:/docker-entrypoint-initdb.d/init-replica.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-replica:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    command: |
+      bash -c "
+        until pg_basebackup -h postgres-primary -U atlas -D /var/lib/postgresql/data -R -P -X stream --waldir=/var/lib/postgresql/data/pg_wal; do
+          sleep 2
+        done
+        exec postgres -c hot_standby=on
+      "
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # ── Redis: master + replica + 3 Sentinels ─────────────────────────────
+  redis-master:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+
+  redis-replica:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    depends_on:
+      - redis-master
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel-1.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel-2.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+      - redis-replica
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./redis/sentinel-3.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+      - redis-replica
+
+volumes:
+  pg-primary-data:

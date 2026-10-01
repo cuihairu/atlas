@@ -38,6 +38,7 @@ export default defineConfig({
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '数据同步', link: '/sync' },
           { text: '安全', link: '/security' },
+          { text: '高可用', link: '/ha' },
         ],
       },
       { text: '路线图', link: '/roadmap' },
@@ -74,6 +75,7 @@ export default defineConfig({
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '数据同步', link: '/sync' },
           { text: '安全', link: '/security' },
+          { text: '高可用', link: '/ha' },
         ],
       },
       {
