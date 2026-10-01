@@ -116,14 +116,17 @@
 - [x] Example: `examples/python/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
 - [x] Docs: `docs/sdk-python.md` + VitePress 侧边栏
 
-## v0.1.9 — JavaScript/TypeScript SDK
+## v0.1.9 — JavaScript/TypeScript SDK ✅
 
-- [ ] `sdk/js/` — TypeScript client library
-- [ ] `AtlasClient` — sync/fetch based client
-- [ ] Same API surface as Go SDK
-- [ ] npm package config (`package.json`)
-- [ ] Works in Node.js and browser
-- [ ] Example: `examples/js/`
+- [x] `sdk/js/` — TypeScript client library
+- [x] `AtlasClient` — fetch based client（Node 18+ 与浏览器通用，零运行时依赖）
+- [x] Same API surface as Go SDK（五组方法全量，传输 snake_case / SDK camelCase）
+- [x] npm package config (`package.json`，`@cuihairu/atlas-client`，ESM + CJS 双产物 + 类型)
+- [x] Works in Node.js and browser（fetch / AbortSignal.timeout / URL 全平台内置）
+- [x] Tests — node:test 真实 socket 假 Atlas（12 例，Node 类型剥离直接跑 TS 源码）
+- [x] Example: `examples/js/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
+- [x] Docs: `docs/sdk-js.md` + VitePress 侧边栏
+- [x] 示例竞态修复（Go/Python/JS 同步）：首发心跳改同步，在线后才推荐
 
 ## v0.1.10 — Java SDK
 

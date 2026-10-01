@@ -53,8 +53,12 @@ func main() {
 	}
 	fmt.Printf("registered: %s (status=%s)\n", reg.ServerID, reg.Status)
 
-	// 2. Auto-heartbeat: immediate first report, then every 10s. Update
-	// the payload as load changes; Atlas suspects at 3x the interval.
+	// 2. Heartbeat: one synchronous beat first — discovery/routing only
+	// see this server once it is online — then the auto loop every 10s.
+	// Update the payload as load changes; Atlas suspects at 3x the interval.
+	if _, err := cli.Heartbeat(ctx, serverID, atlas.HeartbeatRequest{}); err != nil {
+		log.Printf("first heartbeat: %v", err)
+	}
 	loop := cli.StartHeartbeat(serverID, 10*time.Second, atlas.HeartbeatRequest{})
 	defer loop.Stop()
 	loop.OnError(func(err error) { log.Printf("heartbeat failed: %v", err) })

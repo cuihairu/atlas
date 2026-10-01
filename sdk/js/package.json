@@ -1,0 +1,46 @@
+{
+  "name": "@cuihairu/atlas-client",
+  "version": "0.1.9",
+  "description": "Atlas game server registry / discovery / directory client SDK (Node.js & browser)",
+  "license": "MIT",
+  "author": "cuihairu",
+  "homepage": "https://github.com/cuihairu/atlas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuihairu/atlas.git",
+    "directory": "sdk/js"
+  },
+  "keywords": [
+    "game",
+    "server",
+    "registry",
+    "discovery",
+    "atlas",
+    "sdk"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && printf '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
+    "test": "node --test \"test/*.test.ts\"",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

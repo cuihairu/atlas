@@ -57,8 +57,10 @@ def main() -> None:
     ))
     log.info("registered: %s (status=%s)", reg.server_id, reg.status)
 
-    # 2. Auto-heartbeat: immediate first report, then every 10s. Update
-    # the payload as load changes; Atlas suspects at 3x the interval.
+    # 2. Heartbeat: one synchronous beat first — discovery/routing only
+    # see this server once it is online — then the auto loop every 10s.
+    # Update the payload as load changes; Atlas suspects at 3x the interval.
+    client.heartbeat(server_id, HeartbeatRequest())
     loop = client.start_heartbeat(server_id, interval=10.0)
     loop.on_error = lambda err: log.warning("heartbeat failed: %s", err)
 
