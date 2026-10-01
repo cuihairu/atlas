@@ -99,7 +99,44 @@
 - [ ] CMake build system
 - [ ] Example: `examples/cpp/`
 
-## v0.1.8 — Message Bus Adapters
+## v0.1.8 — Python SDK
+
+- [ ] `sdk/python/` — Python client library
+- [ ] `atlas_client.py` — sync client using httpx
+- [ ] `AtlasAsyncClient` — async client using httpx + asyncio
+- [ ] `Register` / `Heartbeat` / `Unregister`
+- [ ] `ListServers` / `GetServer`
+- [ ] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`
+- [ ] Auto-heartbeat background task
+- [ ] PyPI package config (`pyproject.toml`)
+- [ ] Example: `examples/python/`
+
+## v0.1.9 — JavaScript/TypeScript SDK
+
+- [ ] `sdk/js/` — TypeScript client library
+- [ ] `AtlasClient` — sync/fetch based client
+- [ ] Same API surface as Go SDK
+- [ ] npm package config (`package.json`)
+- [ ] Works in Node.js and browser
+- [ ] Example: `examples/js/`
+
+## v0.1.10 — Java SDK
+
+- [ ] `sdk/java/` — Java client library
+- [ ] `AtlasClient` — OkHttp + Gson
+- [ ] Same API surface as Go SDK
+- [ ] Maven + Gradle config
+- [ ] Example: `examples/java/`
+
+## v0.1.11 — C# SDK
+
+- [ ] `sdk/csharp/` — C# client library
+- [ ] `AtlasClient` — HttpClient + System.Text.Json
+- [ ] Same API surface as Go SDK
+- [ ] NuGet package config
+- [ ] Example: `examples/csharp/`
+
+## v0.1.12 — Message Bus Adapters
 
 - [ ] Implement `internal/event/kafka/` (sarama or confluent-kafka-go)
 - [ ] Implement `internal/event/nats/` (nats.go)
@@ -107,7 +144,7 @@
 - [ ] Config: `ATLAS_EVENT_ADAPTER=kafka|nats|rabbitmq`
 - [ ] Adapter selection guide in docs/sync.md
 
-## v0.1.9 — APISIX Plugin
+## v0.1.13 — APISIX Plugin
 
 - [ ] `plugins/apisix/` — Lua plugin
 - [ ] Route Atlas requests to Atlas backend
@@ -115,39 +152,34 @@
 - [ ] Rate limit config per endpoint group
 - [ ] Installation and config guide
 
-## v0.1.10 — Realm / Shard Management
+## v0.1.14 — Realm / Shard Management
 
 - [ ] `POST /v1/admin/realms` / `GET /v1/admin/realms`
 - [ ] `POST /v1/admin/shards` / `GET /v1/admin/shards`
 - [ ] Wire into store interfaces and all implementations
 - [ ] Tests
 
-## v0.1.11 — Health Alerts
+## v0.1.15 — Health Alerts
 
 - [ ] Alert thresholds in config (`ATLAS_ALERT_SUSPECT_RATIO`, `ATLAS_ALERT_OFFLINE_RATIO`)
 - [ ] Structured log alert when suspect/offline exceeds threshold
 - [ ] Optional: webhook notification (`ATLAS_ALERT_WEBHOOK_URL`)
 
-## v0.1.12 — Character Index Sharding
+## v0.1.16 — Character Index Sharding
 
 - [ ] Sharding strategy interface in `internal/store/`
 - [ ] Hash-based sharding by `account_id`
 - [ ] Cross-shard query for admin search
 - [ ] Migration tool for resharding
 
-## v0.1.13 — Multi-language SDK (Java + C#)
-
-- [ ] `sdk/java/` — Java client (OkHttp + Gson)
-- [ ] `sdk/csharp/` — C# client (HttpClient + System.Text.Json)
-
-## v0.1.14 — Security Hardening
+## v0.1.17 — Security Hardening
 
 - [ ] mTLS for service-to-service (Registry API)
 - [ ] RBAC for Admin API (role-based access control)
 - [ ] Audit log — all Admin API operations with actor + timestamp + diff
 - [ ] Rate limiting middleware in Atlas itself (token bucket, per-endpoint)
 
-## v0.1.15 — Dashboard Enhancements
+## v0.1.18 — Dashboard Enhancements
 
 - [ ] Real-time server map (geographic distribution)
 - [ ] Player trend charts (daily/weekly active)
@@ -155,7 +187,7 @@
 - [ ] Dark/light theme toggle
 - [ ] i18n (English + Chinese)
 
-## v0.1.16 — High Availability
+## v0.1.19 — High Availability
 
 - [ ] Atlas multi-replica deployment guide (stateless, horizontal scaling)
 - [ ] Redis Sentinel / Cluster config
