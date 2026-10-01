@@ -178,10 +178,11 @@
 
 ## v0.1.16 — Character Index Sharding
 
-- [ ] Sharding strategy interface in `internal/store/`
-- [ ] Hash-based sharding by `account_id`
-- [ ] Cross-shard query for admin search
-- [ ] Migration tool for resharding
+- [x] Sharding strategy interface in `internal/store/`（`CharacterShardStrategy`）
+- [x] Hash-based sharding by `account_id`（FNV-1a，`HashShardStrategy` + `store/sharded` 组合：键路由一跳，扇出查询归并；`ATLAS_CHAR_SHARDS` 接线）
+- [x] Cross-shard query for admin search（SearchCharacters 全分片扇出 + 全局游标序归并，分页跨分片正确）
+- [x] Migration tool for resharding（`sharded.Reshard` + `cmd/atlas-reshard` CLI：单库→N 库 / N→M 重切 / 逻辑分片验证，幂等续传）
+- [x] 顺带修复 memory 存储搜索游标的词法比较 bug（跨位数翻页丢行，postgres 语义为类型化元组比较）
 
 ## v0.1.17 — Security Hardening
 

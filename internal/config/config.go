@@ -116,6 +116,15 @@ type Config struct {
 	// fires or recovers. Empty disables webhook delivery.
 	// Env: ATLAS_ALERT_WEBHOOK_URL, default "".
 	AlertWebhookURL string
+
+	// CharShards is the logical shard count for the character index
+	// (TODO v0.1.16). Values > 1 wrap the backing character store in an
+	// account-hash sharded composite (store/sharded): key-routed operations
+	// cost one shard hop, global lookups and admin search fan out. With a
+	// single physical store this exercises the routing paths; embedding Atlas
+	// with per-shard stores splits storage physically.
+	// Env: ATLAS_CHAR_SHARDS, default 1.
+	CharShards int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -143,6 +152,7 @@ func Load() Config {
 		AlertSuspectRatio:   0.3,
 		AlertOfflineRatio:   0.2,
 		AlertWebhookURL:     os.Getenv("ATLAS_ALERT_WEBHOOK_URL"),
+		CharShards:          1,
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
@@ -168,6 +178,11 @@ func Load() Config {
 	if v := os.Getenv("ATLAS_ALERT_OFFLINE_RATIO"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.AlertOfflineRatio = f
+		}
+	}
+	if v := os.Getenv("ATLAS_CHAR_SHARDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.CharShards = n
 		}
 	}
 

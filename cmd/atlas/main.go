@@ -40,6 +40,7 @@ import (
 	"github.com/cuihairu/atlas/internal/store/memory"
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
 	redisStore "github.com/cuihairu/atlas/internal/store/redisstore"
+	"github.com/cuihairu/atlas/internal/store/sharded"
 	"github.com/cuihairu/atlas/internal/version"
 )
 
@@ -126,6 +127,17 @@ func main() {
 	default:
 		logger.Error("unknown store type (expected 'memory' or 'postgres')", "type", cfg.StoreType)
 		os.Exit(1)
+	}
+
+	// Character index sharding (TODO v0.1.16): ATLAS_CHAR_SHARDS > 1 routes
+	// every character operation through an account-hash sharded composite.
+	if cfg.CharShards > 1 {
+		shardStores := make([]store.CharacterStore, cfg.CharShards)
+		for i := range shardStores {
+			shardStores[i] = charStore
+		}
+		charStore = sharded.New(shardStores, store.HashShardStrategy{})
+		logger.Info("character index sharding enabled", "shards", cfg.CharShards)
 	}
 
 	// Create services.

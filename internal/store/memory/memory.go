@@ -418,12 +418,14 @@ func (s *Store) SearchCharacters(_ context.Context, filter store.CharacterSearch
 		return result[i].CharacterID < result[j].CharacterID
 	})
 
-	// Apply cursor: skip entries with composite key <= cursor.
+	// Apply cursor: skip entries at or before the cursor. The comparison must
+	// mirror the sort order above — server ID lexicographically, character ID
+	// numerically — matching the typed tuple comparison in postgres.
 	if filter.Cursor != "" {
+		curServer, curCharID := splitSearchCursor(filter.Cursor)
 		start := 0
 		for i, ch := range result {
-			cKey := ch.ServerID + ":" + strconv.FormatInt(ch.CharacterID, 10)
-			if cKey > filter.Cursor {
+			if ch.ServerID > curServer || (ch.ServerID == curServer && ch.CharacterID > curCharID) {
 				start = i
 				break
 			}
@@ -595,6 +597,18 @@ func matchServer(srv *model.Server, f store.ServerFilter) bool {
 		return false
 	}
 	return true
+}
+
+// splitSearchCursor parses the "serverID:characterID" search cursor the same
+// way postgres does (typed: character ID as int64).
+func splitSearchCursor(cursor string) (string, int64) {
+	parts := strings.SplitN(cursor, ":", 2)
+	if len(parts) == 2 {
+		if id, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+			return parts[0], id
+		}
+	}
+	return "", 0
 }
 // ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
 

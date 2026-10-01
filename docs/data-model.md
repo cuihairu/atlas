@@ -262,7 +262,14 @@ Game Server
 | 角色索引 | 5,000 万行 | PG |
 | 角色点查 | 2,000 QPS | PG（走 `idx_char_by_account`） |
 
-角色索引是唯一有规模压力的表，分片策略（按 `account_id` hash）预留为 v2.0 能力，见 [roadmap.md](roadmap.md)。
+角色索引是唯一有规模压力的表。分片基础设施（v0.1.16）已就位：
+
+- **策略接口** `store.CharacterShardStrategy` + 默认实现 `HashShardStrategy`（`account_id` 的 FNV-1a hash 对分片数取模，纯函数、跨进程稳定）；
+- **分片组合** `store/sharded` 实现 `CharacterStore`：按 `account_id` 路由的读写一跳到达；无法路由的查询（全局 `character_id` 点查、按服列表、Admin 搜索）扇出全部分片后按游标序归并；
+- **迁移工具** `cmd/atlas-reshard`（或 `sharded.Reshard`）：游标分页读源、幂等 upsert 写目标，支持单库 → N 库、N 分片 → M 分片重切；
+- **启用方式** `ATLAS_CHAR_SHARDS`（默认 1）：单物理库时逻辑分片（验证路由路径），多库部署时按库拆分物理存储。
+
+物理拆分（每分片独立 PG 实例）属于部署运维决策，接口与迁移工具已按 v2.0 目标预留，见 [roadmap.md](roadmap.md)。
 
 ---
 
