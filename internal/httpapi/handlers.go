@@ -99,6 +99,10 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
 	mux.HandleFunc("GET /v1/admin/migrations/{id}", h.handleAdminGetMigration)
 	mux.HandleFunc("POST /v1/admin/migrations/{id}/rollback", h.handleAdminRollbackMigration)
+	mux.HandleFunc("POST /v1/admin/realms", h.handleAdminCreateRealm)
+	mux.HandleFunc("GET /v1/admin/realms", h.handleAdminListRealms)
+	mux.HandleFunc("POST /v1/admin/shards", h.handleAdminCreateShard)
+	mux.HandleFunc("GET /v1/admin/shards", h.handleAdminListShards)
 }
 
 // ---------------------------------------------------------------------------
@@ -747,6 +751,99 @@ func (h *Handler) handleAdminRollbackMigration(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id":     id,
 		"status": "rolled_back",
+	})
+}
+
+// ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
+
+func (h *Handler) handleAdminCreateRealm(w http.ResponseWriter, r *http.Request) {
+	var req admin.CreateRealmRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	realm, err := h.admin.CreateRealm(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrConflict) {
+			writeError(w, http.StatusConflict, "REALM_EXISTS", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, realm)
+}
+
+func (h *Handler) handleAdminListRealms(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	realms, err := h.admin.ListRealms(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"realms": realms,
+	})
+}
+
+func (h *Handler) handleAdminCreateShard(w http.ResponseWriter, r *http.Request) {
+	var req admin.CreateShardRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	shard, err := h.admin.CreateShard(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "REALM_NOT_FOUND", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrConflict) {
+			writeError(w, http.StatusConflict, "SHARD_EXISTS", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, shard)
+}
+
+func (h *Handler) handleAdminListShards(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	realmID := r.URL.Query().Get("realm_id")
+
+	shards, err := h.admin.ListShards(r.Context(), realmID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"shards": shards,
 	})
 }
 

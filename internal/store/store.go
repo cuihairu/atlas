@@ -124,6 +124,34 @@ type StatsStore interface {
 	GetStats(ctx context.Context) (*model.Stats, error)
 }
 
+// RealmStore manages realm records (administrative server groupings,
+// TODO v0.1.14).
+type RealmStore interface {
+	// CreateRealm inserts a realm. ErrConflict when the ID already exists.
+	CreateRealm(ctx context.Context, r *model.Realm) error
+
+	// GetRealm returns a realm by ID (ErrNotFound when absent).
+	GetRealm(ctx context.Context, id string) (*model.Realm, error)
+
+	// ListRealms returns realms ordered by created_at descending, capped
+	// at limit (<= 0 means no cap).
+	ListRealms(ctx context.Context, limit int) ([]*model.Realm, error)
+}
+
+// ShardStore manages shard records (realm subdivisions, TODO v0.1.14).
+type ShardStore interface {
+	// CreateShard inserts a shard. ErrConflict when the ID already exists.
+	CreateShard(ctx context.Context, s *model.Shard) error
+
+	// GetShard returns a shard by ID (ErrNotFound when absent).
+	GetShard(ctx context.Context, id string) (*model.Shard, error)
+
+	// ListShards returns shards ordered by created_at descending, capped
+	// at limit (<= 0 means no cap). A non-empty realmID narrows to that
+	// realm's shards.
+	ListShards(ctx context.Context, realmID string, limit int) ([]*model.Shard, error)
+}
+
 // RuntimeStore persists volatile server runtime data (heartbeat, load, etc.).
 type RuntimeStore interface {
 	// RecordHeartbeat writes the runtime snapshot for a server.
@@ -143,6 +171,8 @@ type Store interface {
 	RuntimeStore
 	MigrationStore
 	StatsStore
+	RealmStore
+	ShardStore
 
 	// Ping verifies the store is reachable.
 	Ping(ctx context.Context) error

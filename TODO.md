@@ -165,10 +165,10 @@
 
 ## v0.1.14 — Realm / Shard Management
 
-- [ ] `POST /v1/admin/realms` / `GET /v1/admin/realms`
-- [ ] `POST /v1/admin/shards` / `GET /v1/admin/shards`
-- [ ] Wire into store interfaces and all implementations
-- [ ] Tests
+- [x] `POST /v1/admin/realms` / `GET /v1/admin/realms`
+- [x] `POST /v1/admin/shards` / `GET /v1/admin/shards`（`?realm_id=` 过滤）
+- [x] Wire into store interfaces and all implementations（memory / postgres / mysql；`0002_realms_shards_indexes` 迁移补 created_at / status 索引）
+- [x] Tests（admin service 9 例 + httpapi 端到端 1 例）
 
 ## v0.1.15 — Health Alerts
 

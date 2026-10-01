@@ -265,3 +265,24 @@ type Stats struct {
 	TotalCapacity    int            `json:"total_capacity"`
 	TotalCharacters  int            `json:"total_characters"`
 }
+
+// Realm is an administrative grouping of servers (a logical game world or
+// region above servers). Servers reference realms via RealmID; the schema
+// lives in migrations/0001_init.sql.
+type Realm struct {
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Region    string    `json:"region"`
+	Status    string    `json:"status"` // active | ...
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Shard is a subdivision of a realm (a content shard servers can join).
+// Servers reference shards via ShardID.
+type Shard struct {
+	ID        string    `json:"id"`
+	RealmID   string    `json:"realm_id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"` // active | ...
+	CreatedAt time.Time `json:"created_at"`
+}

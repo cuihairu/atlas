@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -460,5 +461,161 @@ func TestRollbackMigration_NotFound(t *testing.T) {
 	err := svc.RollbackMigration(context.Background(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent migration")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Realms & Shards (TODO v0.1.14)
+// ---------------------------------------------------------------------------
+
+func TestCreateRealm(t *testing.T) {
+	svc, mem := setupService(t)
+
+	realm, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-01", Name: "华东", Region: "cn-east"})
+	if err != nil {
+		t.Fatalf("CreateRealm: %v", err)
+	}
+	if realm.Status != "active" {
+		t.Errorf("expected default status active, got %q", realm.Status)
+	}
+
+	stored, err := mem.GetRealm(context.Background(), "realm-01")
+	if err != nil {
+		t.Fatalf("GetRealm: %v", err)
+	}
+	if stored.Name != "华东" || stored.Region != "cn-east" {
+		t.Errorf("unexpected realm: %+v", stored)
+	}
+	if stored.CreatedAt.IsZero() {
+		t.Error("expected CreatedAt to be set")
+	}
+}
+
+func TestCreateRealm_Conflict(t *testing.T) {
+	svc, _ := setupService(t)
+
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-01", Name: "华东"}); err != nil {
+		t.Fatalf("first CreateRealm: %v", err)
+	}
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-01", Name: "dup"}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("expected ErrConflict, got %v", err)
+	}
+}
+
+func TestCreateRealm_MissingFields(t *testing.T) {
+	svc, _ := setupService(t)
+
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "", Name: "no-id"}); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("missing id: expected ErrInvalid, got %v", err)
+	}
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "r", Name: ""}); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("missing name: expected ErrInvalid, got %v", err)
+	}
+}
+
+func TestListRealms(t *testing.T) {
+	svc, _ := setupService(t)
+
+	for _, id := range []string{"realm-01", "realm-02", "realm-03"} {
+		if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: id, Name: id}); err != nil {
+			t.Fatalf("CreateRealm %s: %v", id, err)
+		}
+	}
+
+	realms, err := svc.ListRealms(context.Background(), 2)
+	if err != nil {
+		t.Fatalf("ListRealms: %v", err)
+	}
+	if len(realms) != 2 {
+		t.Fatalf("expected 2 realms with limit, got %d", len(realms))
+	}
+
+	all, err := svc.ListRealms(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("ListRealms(all): %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 realms, got %d", len(all))
+	}
+}
+
+func TestCreateShard(t *testing.T) {
+	svc, mem := setupService(t)
+
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-01", Name: "华东"}); err != nil {
+		t.Fatalf("CreateRealm: %v", err)
+	}
+
+	shard, err := svc.CreateShard(context.Background(), CreateShardRequest{ID: "shard-0101", RealmID: "realm-01", Name: "一区"})
+	if err != nil {
+		t.Fatalf("CreateShard: %v", err)
+	}
+	if shard.RealmID != "realm-01" || shard.Status != "active" {
+		t.Errorf("unexpected shard: %+v", shard)
+	}
+
+	stored, err := mem.GetShard(context.Background(), "shard-0101")
+	if err != nil {
+		t.Fatalf("GetShard: %v", err)
+	}
+	if stored.Name != "一区" {
+		t.Errorf("unexpected shard name %q", stored.Name)
+	}
+}
+
+func TestCreateShard_RealmNotFound(t *testing.T) {
+	svc, _ := setupService(t)
+
+	_, err := svc.CreateShard(context.Background(), CreateShardRequest{ID: "shard-0101", RealmID: "missing", Name: "一区"})
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestCreateShard_MissingFields(t *testing.T) {
+	svc, _ := setupService(t)
+
+	if _, err := svc.CreateShard(context.Background(), CreateShardRequest{ID: "s", RealmID: "", Name: "n"}); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("missing realm_id: expected ErrInvalid, got %v", err)
+	}
+}
+
+func TestListShards_ByRealm(t *testing.T) {
+	svc, _ := setupService(t)
+
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-01", Name: "华东"}); err != nil {
+		t.Fatalf("CreateRealm: %v", err)
+	}
+	if _, err := svc.CreateRealm(context.Background(), CreateRealmRequest{ID: "realm-02", Name: "华北"}); err != nil {
+		t.Fatalf("CreateRealm: %v", err)
+	}
+	for _, id := range []string{"shard-0101", "shard-0102"} {
+		if _, err := svc.CreateShard(context.Background(), CreateShardRequest{ID: id, RealmID: "realm-01", Name: id}); err != nil {
+			t.Fatalf("CreateShard %s: %v", id, err)
+		}
+	}
+	if _, err := svc.CreateShard(context.Background(), CreateShardRequest{ID: "shard-0201", RealmID: "realm-02", Name: "x"}); err != nil {
+		t.Fatalf("CreateShard: %v", err)
+	}
+
+	shards, err := svc.ListShards(context.Background(), "realm-01", 0)
+	if err != nil {
+		t.Fatalf("ListShards: %v", err)
+	}
+	if len(shards) != 2 {
+		t.Fatalf("expected 2 shards for realm-01, got %d", len(shards))
+	}
+	for _, sh := range shards {
+		if sh.RealmID != "realm-01" {
+			t.Errorf("unexpected realm_id %q", sh.RealmID)
+		}
+	}
+
+	all, err := svc.ListShards(context.Background(), "", 0)
+	if err != nil {
+		t.Fatalf("ListShards(all): %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 shards overall, got %d", len(all))
 	}
 }

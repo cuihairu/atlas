@@ -66,6 +66,8 @@ func main() {
 		runtimeStore   store.RuntimeStore
 		migrationStore store.MigrationStore
 		statsStore     store.StatsStore
+		realmStore     store.RealmStore
+		shardStore     store.ShardStore
 		pingCloser     func()
 	)
 
@@ -79,6 +81,8 @@ func main() {
 		runtimeStore = mem
 		migrationStore = mem
 		statsStore = mem
+		realmStore = mem
+		shardStore = mem
 
 	case "postgres":
 		// PostgreSQL for server + character storage.
@@ -101,6 +105,8 @@ func main() {
 		charStore = pg
 		migrationStore = pg
 		statsStore = pg
+		realmStore = pg
+		shardStore = pg
 
 		// Redis for runtime/heartbeat storage.
 		redisAddr := parseRedisAddr(cfg.RedisURL)
@@ -187,6 +193,8 @@ func main() {
 		RuntimeStore:   runtimeStore,
 		MigrationStore: migrationStore,
 		StatsStore:     statsStore,
+		RealmStore:     realmStore,
+		ShardStore:     shardStore,
 	}
 
 	admSvc := admin.New(composite)
@@ -390,6 +398,8 @@ type compositeStore struct {
 	store.RuntimeStore
 	store.MigrationStore
 	store.StatsStore
+	store.RealmStore
+	store.ShardStore
 }
 
 func (c *compositeStore) Ping(ctx context.Context) error {

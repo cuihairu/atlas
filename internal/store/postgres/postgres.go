@@ -657,3 +657,133 @@ func splitCursor(cursor string) []any {
 	}
 	return []any{"", int64(0)}
 }
+
+// ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
+
+var (
+	_ store.RealmStore = (*Store)(nil)
+	_ store.ShardStore = (*Store)(nil)
+)
+
+func (s *Store) CreateRealm(ctx context.Context, r *model.Realm) error {
+	if r.Status == "" {
+		r.Status = "active"
+	}
+	const q = `
+INSERT INTO realms (id, name, region, status, created_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (id) DO NOTHING`
+	tag, err := s.pool.Exec(ctx, q, r.ID, r.Name, r.Region, r.Status, time.Now())
+	if err != nil {
+		return fmt.Errorf("create realm: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("realm %s: %w", r.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetRealm(ctx context.Context, id string) (*model.Realm, error) {
+	row := s.pool.QueryRow(ctx, `
+SELECT id, name, region, status, created_at FROM realms WHERE id = $1`, id)
+	return scanRealm(row)
+}
+
+func (s *Store) ListRealms(ctx context.Context, limit int) ([]*model.Realm, error) {
+	q := `SELECT id, name, region, status, created_at FROM realms ORDER BY created_at DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT $1`
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list realms: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Realm
+	for rows.Next() {
+		r, err := scanRealm(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateShard(ctx context.Context, sh *model.Shard) error {
+	if sh.Status == "" {
+		sh.Status = "active"
+	}
+	const q = `
+INSERT INTO shards (id, realm_id, name, status, created_at)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (id) DO NOTHING`
+	tag, err := s.pool.Exec(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, time.Now())
+	if err != nil {
+		return fmt.Errorf("create shard: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("shard %s: %w", sh.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetShard(ctx context.Context, id string) (*model.Shard, error) {
+	row := s.pool.QueryRow(ctx, `
+SELECT id, realm_id, name, status, created_at FROM shards WHERE id = $1`, id)
+	return scanShard(row)
+}
+
+func (s *Store) ListShards(ctx context.Context, realmID string, limit int) ([]*model.Shard, error) {
+	q := `SELECT id, realm_id, name, status, created_at FROM shards`
+	args := []any{}
+	if realmID != "" {
+		q += ` WHERE realm_id = $1`
+		args = append(args, realmID)
+	}
+	q += ` ORDER BY created_at DESC`
+	if limit > 0 {
+		args = append(args, limit)
+		q += fmt.Sprintf(` LIMIT $%d`, len(args))
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list shards: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Shard
+	for rows.Next() {
+		sh, err := scanShard(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sh)
+	}
+	return out, rows.Err()
+}
+
+func scanRealm(row scannable) (*model.Realm, error) {
+	var r model.Realm
+	if err := row.Scan(&r.ID, &r.Name, &r.Region, &r.Status, &r.CreatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("realm: %w", store.ErrNotFound)
+		}
+		return nil, err
+	}
+	return &r, nil
+}
+
+func scanShard(row scannable) (*model.Shard, error) {
+	var sh model.Shard
+	if err := row.Scan(&sh.ID, &sh.RealmID, &sh.Name, &sh.Status, &sh.CreatedAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("shard: %w", store.ErrNotFound)
+		}
+		return nil, err
+	}
+	return &sh, nil
+}

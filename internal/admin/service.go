@@ -190,3 +190,77 @@ func (s *Service) ListMigrations(ctx context.Context, limit int) ([]*model.Migra
 	}
 	return migrations, nil
 }
+
+// ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
+
+// CreateRealmRequest is the DTO for creating a realm.
+type CreateRealmRequest struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Region string `json:"region"`
+	Status string `json:"status"`
+}
+
+// CreateShardRequest is the DTO for creating a shard.
+type CreateShardRequest struct {
+	ID      string `json:"id"`
+	RealmID string `json:"realm_id"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+}
+
+// CreateRealm inserts a new realm. Name and ID are required; status defaults
+// to "active". Returns model.ErrConflict when the ID already exists.
+func (s *Service) CreateRealm(ctx context.Context, req CreateRealmRequest) (*model.Realm, error) {
+	if req.ID == "" || req.Name == "" {
+		return nil, fmt.Errorf("%w: realm id and name are required", model.ErrInvalid)
+	}
+	status := req.Status
+	if status == "" {
+		status = "active"
+	}
+	r := &model.Realm{ID: req.ID, Name: req.Name, Region: req.Region, Status: status}
+	if err := s.store.CreateRealm(ctx, r); err != nil {
+		return nil, fmt.Errorf("create realm %s: %w", req.ID, err)
+	}
+	return r, nil
+}
+
+// ListRealms returns realms ordered by creation time descending.
+func (s *Service) ListRealms(ctx context.Context, limit int) ([]*model.Realm, error) {
+	realms, err := s.store.ListRealms(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list realms: %w", err)
+	}
+	return realms, nil
+}
+
+// CreateShard inserts a new shard under an existing realm. Name, ID and
+// realm_id are required; the realm must exist (model.ErrNotFound otherwise).
+func (s *Service) CreateShard(ctx context.Context, req CreateShardRequest) (*model.Shard, error) {
+	if req.ID == "" || req.Name == "" || req.RealmID == "" {
+		return nil, fmt.Errorf("%w: shard id, realm_id and name are required", model.ErrInvalid)
+	}
+	if _, err := s.store.GetRealm(ctx, req.RealmID); err != nil {
+		return nil, fmt.Errorf("create shard %s: %w", req.ID, err)
+	}
+	status := req.Status
+	if status == "" {
+		status = "active"
+	}
+	sh := &model.Shard{ID: req.ID, RealmID: req.RealmID, Name: req.Name, Status: status}
+	if err := s.store.CreateShard(ctx, sh); err != nil {
+		return nil, fmt.Errorf("create shard %s: %w", req.ID, err)
+	}
+	return sh, nil
+}
+
+// ListShards returns shards ordered by creation time descending, optionally
+// narrowed to a single realm.
+func (s *Service) ListShards(ctx context.Context, realmID string, limit int) ([]*model.Shard, error) {
+	shards, err := s.store.ListShards(ctx, realmID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list shards: %w", err)
+	}
+	return shards, nil
+}

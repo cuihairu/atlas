@@ -643,3 +643,127 @@ func splitCursor(cursor string) []any {
 	}
 	return []any{"", int64(0)}
 }
+
+// ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
+
+var (
+	_ store.RealmStore = (*Store)(nil)
+	_ store.ShardStore = (*Store)(nil)
+)
+
+func (s *Store) CreateRealm(ctx context.Context, r *model.Realm) error {
+	if r.Status == "" {
+		r.Status = "active"
+	}
+	const q = `
+INSERT INTO realms (id, name, region, status, created_at)
+VALUES (?, ?, ?, ?, ?)`
+	if _, err := s.db.ExecContext(ctx, q, r.ID, r.Name, r.Region, r.Status, time.Now()); err != nil {
+		_, lookupErr := s.GetRealm(ctx, r.ID)
+		return conflictIfExists(err, lookupErr, "create realm", r.ID)
+	}
+	return nil
+}
+
+func (s *Store) GetRealm(ctx context.Context, id string) (*model.Realm, error) {
+	const q = `SELECT id, name, region, status, created_at FROM realms WHERE id = ?`
+	var r model.Realm
+	err := s.db.QueryRowContext(ctx, q, id).Scan(&r.ID, &r.Name, &r.Region, &r.Status, &r.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("realm %s: %w", id, store.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get realm %s: %w", id, err)
+	}
+	return &r, nil
+}
+
+func (s *Store) ListRealms(ctx context.Context, limit int) ([]*model.Realm, error) {
+	q := `SELECT id, name, region, status, created_at FROM realms ORDER BY created_at DESC`
+	args := []any{}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list realms: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Realm
+	for rows.Next() {
+		var r model.Realm
+		if err := rows.Scan(&r.ID, &r.Name, &r.Region, &r.Status, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan realm: %w", err)
+		}
+		out = append(out, &r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CreateShard(ctx context.Context, sh *model.Shard) error {
+	if sh.Status == "" {
+		sh.Status = "active"
+	}
+	const q = `
+INSERT INTO shards (id, realm_id, name, status, created_at)
+VALUES (?, ?, ?, ?, ?)`
+	if _, err := s.db.ExecContext(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, time.Now()); err != nil {
+		_, lookupErr := s.GetShard(ctx, sh.ID)
+		return conflictIfExists(err, lookupErr, "create shard", sh.ID)
+	}
+	return nil
+}
+
+func (s *Store) GetShard(ctx context.Context, id string) (*model.Shard, error) {
+	const q = `SELECT id, realm_id, name, status, created_at FROM shards WHERE id = ?`
+	var sh model.Shard
+	err := s.db.QueryRowContext(ctx, q, id).Scan(&sh.ID, &sh.RealmID, &sh.Name, &sh.Status, &sh.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("shard %s: %w", id, store.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get shard %s: %w", id, err)
+	}
+	return &sh, nil
+}
+
+func (s *Store) ListShards(ctx context.Context, realmID string, limit int) ([]*model.Shard, error) {
+	q := `SELECT id, realm_id, name, status, created_at FROM shards`
+	args := []any{}
+	if realmID != "" {
+		q += ` WHERE realm_id = ?`
+		args = append(args, realmID)
+	}
+	q += ` ORDER BY created_at DESC`
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list shards: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Shard
+	for rows.Next() {
+		var sh model.Shard
+		if err := rows.Scan(&sh.ID, &sh.RealmID, &sh.Name, &sh.Status, &sh.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan shard: %w", err)
+		}
+		out = append(out, &sh)
+	}
+	return out, rows.Err()
+}
+
+// conflictIfExists maps an INSERT failure to ErrConflict when a follow-up
+// lookup finds the row (driver-neutral duplicate detection: the sql driver
+// is supplied by the embedding application, not this package).
+func conflictIfExists(execErr error, lookupErr error, op, id string) error {
+	if lookupErr == nil {
+		return fmt.Errorf("%s %s: %w", op, id, store.ErrConflict)
+	}
+	return fmt.Errorf("%s %s: %w", op, id, execErr)
+}

@@ -802,3 +802,107 @@ func TestRoutingRecommended_InvalidAccountID(t *testing.T) {
 		t.Errorf("expected 400, got %d", resp.StatusCode)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Admin: realms & shards (TODO v0.1.14)
+// ---------------------------------------------------------------------------
+
+func TestAdminRealmsAndShards(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Create a realm.
+	resp := postJSON(t, ts, "/v1/admin/realms", map[string]any{
+		"id": "realm-01", "name": "华东", "region": "cn-east",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create realm: expected 201, got %d", resp.StatusCode)
+	}
+	var realm struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&realm)
+	resp.Body.Close()
+	if realm.ID != "realm-01" || realm.Status != "active" {
+		t.Errorf("unexpected realm: %+v", realm)
+	}
+
+	// Duplicate realm → 409.
+	resp = postJSON(t, ts, "/v1/admin/realms", map[string]any{
+		"id": "realm-01", "name": "dup",
+	})
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("duplicate realm: expected 409, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Missing name → 400.
+	resp = postJSON(t, ts, "/v1/admin/realms", map[string]any{"id": "realm-02"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing name: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Create a shard under the realm.
+	resp = postJSON(t, ts, "/v1/admin/shards", map[string]any{
+		"id": "shard-0101", "realm_id": "realm-01", "name": "一区",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create shard: expected 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Shard referencing a missing realm → 404.
+	resp = postJSON(t, ts, "/v1/admin/shards", map[string]any{
+		"id": "shard-9901", "realm_id": "missing", "name": "x",
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("shard with missing realm: expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// List realms.
+	resp = getJSON(t, ts, "/v1/admin/realms")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list realms: expected 200, got %d", resp.StatusCode)
+	}
+	var realmList struct {
+		Realms []struct {
+			ID string `json:"id"`
+		} `json:"realms"`
+	}
+	json.NewDecoder(resp.Body).Decode(&realmList)
+	resp.Body.Close()
+	if len(realmList.Realms) != 1 || realmList.Realms[0].ID != "realm-01" {
+		t.Errorf("unexpected realm list: %+v", realmList.Realms)
+	}
+
+	// List shards filtered by realm.
+	resp = getJSON(t, ts, "/v1/admin/shards?realm_id=realm-01")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list shards: expected 200, got %d", resp.StatusCode)
+	}
+	var shardList struct {
+		Shards []struct {
+			ID      string `json:"id"`
+			RealmID string `json:"realm_id"`
+		} `json:"shards"`
+	}
+	json.NewDecoder(resp.Body).Decode(&shardList)
+	resp.Body.Close()
+	if len(shardList.Shards) != 1 || shardList.Shards[0].ID != "shard-0101" {
+		t.Errorf("unexpected shard list: %+v", shardList.Shards)
+	}
+
+	// List shards for an empty realm → empty (non-null) array.
+	resp = getJSON(t, ts, "/v1/admin/shards?realm_id=realm-none")
+	var emptyList struct {
+		Shards []json.RawMessage `json:"shards"`
+	}
+	json.NewDecoder(resp.Body).Decode(&emptyList)
+	resp.Body.Close()
+	if emptyList.Shards == nil || len(emptyList.Shards) != 0 {
+		t.Errorf("expected empty shards array, got %v", emptyList.Shards)
+	}
+}

@@ -415,6 +415,52 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 
 状态机语义详见 [lifecycle.md](lifecycle.md)。
 
+### POST /v1/admin/realms
+
+创建大区（Realm）。ID 冲突返回 `409 REALM_EXISTS`，缺少 `id` / `name` 返回 `400`。
+
+```json
+{
+  "id": "realm-01",
+  "name": "华东大区",
+  "region": "cn-east",
+  "status": "active"
+}
+```
+
+`status` 省略时默认 `active`。返回 `201` 与完整 Realm 对象。
+
+### GET /v1/admin/realms
+
+按 `created_at` 倒序列出大区。`?limit=` 限制条数（默认 50）。
+
+```json
+{ "realms": [ ... ] }
+```
+
+### POST /v1/admin/shards
+
+在大区下创建分片（Shard）。`realm_id` 必须指向已存在的大区，否则返回 `404 REALM_NOT_FOUND`；ID 冲突返回 `409 SHARD_EXISTS`。
+
+```json
+{
+  "id": "shard-0101",
+  "realm_id": "realm-01",
+  "name": "一区",
+  "status": "active"
+}
+```
+
+### GET /v1/admin/shards
+
+按 `created_at` 倒序列出分片。`?realm_id=` 过滤指定大区，`?limit=` 限制条数。
+
+```json
+{ "shards": [ ... ] }
+```
+
+服务器注册时可携带 `realm_id` / `shard_id` 关联所属大区与分片（见 Registry），发现过滤支持 `realm` / `shard`（见 Discovery）。
+
 ### GET /metrics
 
 Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴露：

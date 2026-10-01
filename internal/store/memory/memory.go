@@ -27,6 +27,8 @@ type Store struct {
 	characters map[string]*model.Character // key: "accountID:serverID:characterID"
 	runtimes   map[string]model.Runtime
 	migrations map[string]*model.Migration
+	realms     map[string]*model.Realm
+	shards     map[string]*model.Shard
 }
 
 // New creates a new in-memory store.
@@ -36,6 +38,8 @@ func New() *Store {
 		characters: make(map[string]*model.Character),
 		runtimes:   make(map[string]model.Runtime),
 		migrations: make(map[string]*model.Migration),
+		realms:     make(map[string]*model.Realm),
+		shards:     make(map[string]*model.Shard),
 	}
 }
 
@@ -591,4 +595,94 @@ func matchServer(srv *model.Server, f store.ServerFilter) bool {
 		return false
 	}
 	return true
+}
+// ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
+
+func (s *Store) CreateRealm(_ context.Context, r *model.Realm) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.realms[r.ID]; ok {
+		return fmt.Errorf("realm %s: %w", r.ID, store.ErrConflict)
+	}
+	cp := *r
+	cp.CreatedAt = time.Now()
+	s.realms[r.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetRealm(_ context.Context, id string) (*model.Realm, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	r, ok := s.realms[id]
+	if !ok {
+		return nil, fmt.Errorf("realm %s: %w", id, store.ErrNotFound)
+	}
+	cp := *r
+	return &cp, nil
+}
+
+func (s *Store) ListRealms(_ context.Context, limit int) ([]*model.Realm, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*model.Realm, 0, len(s.realms))
+	for _, r := range s.realms {
+		cp := *r
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) CreateShard(_ context.Context, sh *model.Shard) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.shards[sh.ID]; ok {
+		return fmt.Errorf("shard %s: %w", sh.ID, store.ErrConflict)
+	}
+	cp := *sh
+	cp.CreatedAt = time.Now()
+	s.shards[sh.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetShard(_ context.Context, id string) (*model.Shard, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sh, ok := s.shards[id]
+	if !ok {
+		return nil, fmt.Errorf("shard %s: %w", id, store.ErrNotFound)
+	}
+	cp := *sh
+	return &cp, nil
+}
+
+func (s *Store) ListShards(_ context.Context, realmID string, limit int) ([]*model.Shard, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*model.Shard, 0, len(s.shards))
+	for _, sh := range s.shards {
+		if realmID != "" && sh.RealmID != realmID {
+			continue
+		}
+		cp := *sh
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
