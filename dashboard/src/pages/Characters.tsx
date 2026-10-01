@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Form, Input, Select, InputNumber, Button, Table, Card, Row, Col } from 'antd';
+import { Form, Input, Select, InputNumber, Button, Table, Card } from 'antd';
 import { searchCharacters } from '../api/client';
 import type { Character } from '../types';
 
