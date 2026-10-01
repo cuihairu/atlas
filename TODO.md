@@ -137,13 +137,14 @@
 - [x] Tests — JUnit 5 + JDK httpserver 假 Atlas（13 例，含显式 null 集合兜底）
 - [x] Example: `examples/java/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
 
-## v0.1.11 — C# SDK
+## v0.1.11 — C# SDK ✅
 
-- [ ] `sdk/csharp/` — C# client library
-- [ ] `AtlasClient` — HttpClient + System.Text.Json
-- [ ] Same API surface as Go SDK
-- [ ] NuGet package config
-- [ ] Example: `examples/csharp/`
+- [x] `sdk/csharp/` — C# client library（`Atlas.Client`，net8.0 + net10.0 multi-target，零第三方依赖）
+- [x] `AtlasClient` — HttpClient + System.Text.Json（SnakeCaseLower 双向映射，DateTimeOffset 时间戳）
+- [x] Same API surface as Go SDK（五组方法全量 + StartHeartbeat/AutoHeartbeat + 重试）
+- [x] NuGet package config（csproj 打包配置，dotnet pack 产出 nupkg 验证通过）
+- [x] Tests — xUnit + TcpListener 假 Atlas（23 例，含重试耗尽/端口拆分/心跳循环/OnError）
+- [x] Example: `examples/csharp/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过；PosixSignalRegistration 处理 Ctrl+C，stdin 重定向时可用 ATLAS_RUN_SECONDS 退出）
 
 ## v0.1.12 — Message Bus Adapters
 

@@ -54,6 +54,7 @@ export default defineConfig({
           { text: 'Python SDK', link: '/sdk-python' },
           { text: 'JavaScript SDK', link: '/sdk-js' },
           { text: 'Java SDK', link: '/sdk-java' },
+          { text: 'C# SDK', link: '/sdk-csharp' },
         ],
       },
       {

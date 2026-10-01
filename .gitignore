@@ -48,3 +48,8 @@ target/
 
 # Gradle 本地缓存
 .gradle/
+
+# .NET 构建产物（C# SDK / examples）
+bin/
+obj/
+*.user
