@@ -716,8 +716,10 @@ func (s *Store) CreateMaintenanceWindow(_ context.Context, w *model.MaintenanceW
 	if _, ok := s.maintWindows[w.ID]; ok {
 		return fmt.Errorf("maintenance window %s: %w", w.ID, store.ErrConflict)
 	}
+	// Stamp on the caller's object too (parity with the SQL stores) so the
+	// HTTP response carries the real created_at instead of a zero time.
+	w.CreatedAt = time.Now()
 	cp := *w
-	cp.CreatedAt = time.Now()
 	s.maintWindows[w.ID] = &cp
 	return nil
 }
@@ -782,8 +784,9 @@ func (s *Store) CreateAnnouncement(_ context.Context, a *model.Announcement) err
 	if _, ok := s.announcements[a.ID]; ok {
 		return fmt.Errorf("announcement %s: %w", a.ID, store.ErrConflict)
 	}
+	// Stamp on the caller's object too (parity with the SQL stores).
+	a.CreatedAt = time.Now()
 	cp := *a
-	cp.CreatedAt = time.Now()
 	s.announcements[a.ID] = &cp
 	return nil
 }
