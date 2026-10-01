@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/grpc"
+
+	atlasgrpc "github.com/cuihairu/atlas/internal/grpc"
 
 	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/config"
@@ -49,6 +53,7 @@ func main() {
 		"public", cfg.HTTPAddr,
 		"registry", cfg.RegistryAddr,
 		"admin", cfg.AdminAddr,
+		"grpc", cfg.GRPCAddr,
 	)
 
 	// Create stores.
@@ -248,6 +253,10 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// ── gRPC API (all five services, TODO v0.1.5) ──────────
+	grpcSrv := grpc.NewServer()
+	atlasgrpc.New(regSvc, discSvc, dirSvc, rtSvc, admSvc, evtAdapter).RegisterServices(grpcSrv)
+
 	// Graceful shutdown on SIGINT/SIGTERM.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -273,6 +282,21 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+	go func() {
+		if cfg.GRPCAddr == "" {
+			logger.Info("gRPC API disabled (ATLAS_GRPC_ADDR empty)")
+			return
+		}
+		lis, err := net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			logger.Error("gRPC listen error", "addr", cfg.GRPCAddr, "error", err)
+			os.Exit(1)
+		}
+		logger.Info("gRPC API listening", "addr", cfg.GRPCAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			logger.Error("gRPC API error", "error", err)
+		}
+	}()
 
 	sig := <-sigCh
 	logger.Info("shutting down", "signal", sig)
@@ -287,6 +311,18 @@ func main() {
 	publicSrv.Shutdown(shutdownCtx)
 	regSrv.Shutdown(shutdownCtx)
 	adminSrv.Shutdown(shutdownCtx)
+
+	// Graceful-stop gRPC (fall back to hard stop on timeout).
+	grpcDone := make(chan struct{})
+	go func() {
+		grpcSrv.GracefulStop()
+		close(grpcDone)
+	}()
+	select {
+	case <-grpcDone:
+	case <-shutdownCtx.Done():
+		grpcSrv.Stop()
+	}
 
 	// Stop event pipeline.
 	evtCancel()

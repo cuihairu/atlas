@@ -70,14 +70,14 @@
 - [x] Response: `{server, reason}` (lowest_load / highest_capacity / has_character / fallback)
 - [x] Tests
 
-## v0.1.5 — gRPC API
+## v0.1.5 — gRPC API ✅
 
-- [ ] Define `api/proto/atlas.proto` — all service definitions
-- [ ] Generate Go code (protoc / buf)
-- [ ] Implement gRPC server in `internal/grpc/`
-- [ ] Start on `:9090` (configurable `ATLAS_GRPC_ADDR`)
-- [ ] Feature parity: Registry, Discovery, Directory, Routing, Admin
-- [ ] Tests
+- [x] Define `api/proto/atlas.proto` — all service definitions
+- [x] Generate Go code (protoc / buf)
+- [x] Implement gRPC server in `internal/grpc/`
+- [x] Start on `:9090` (configurable `ATLAS_GRPC_ADDR`; empty disables)
+- [x] Feature parity: Registry, Discovery, Directory, Routing, Admin
+- [x] bufconn end-to-end tests (register → heartbeat → list → character → recommend → admin)
 
 ## v0.1.6 — Go SDK
 
@@ -190,9 +190,19 @@
 ## v0.1.19 — High Availability
 
 - [ ] Atlas multi-replica deployment guide (stateless, horizontal scaling)
+- [ ] Internal LB (HAProxy TCP mode / APISIX) in front of the Registry port for heartbeat fan-in
 - [ ] Redis Sentinel / Cluster config
 - [ ] PostgreSQL primary-replica with streaming replication
 - [ ] Connection pool tuning documentation
+
+## v0.1.20 — Server Metadata, Maintenance Windows & Announcements
+
+- [ ] Register metadata extension: initial `players`, `started_at` (server uptime metadata)
+- [ ] Heartbeat cadence guidance: report interval vs suspect/offline thresholds (3:1, e.g. 10s / 30s / 60s)
+- [ ] Scheduled maintenance windows — `POST /v1/admin/servers/{id}/maintenance-window {start_at, end_at}`; health monitor auto-enters `maintenance` at start, restores previous status at end
+- [ ] Announcements resource — server-scoped or global, active time range, `GET /v1/discovery/announcements` for clients
+- [ ] Maintenance window ↔ announcement linkage (optionally auto-create a maintenance announcement)
+- [ ] `docs/topology.md` — deployment topology: client → APISIX (public LB + auth) → game servers / Atlas public; game servers → (HAProxy) → Atlas registry; Atlas → Redis / PostgreSQL; Prometheus → Grafana
 
 ---
 

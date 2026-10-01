@@ -14,6 +14,8 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
 
 `GET /v1/discovery/servers` 回答"有哪些服务器"，`GET /v1/routing/recommended` 回答"我该去哪个"。两者语义不同，不合并成一个接口。
 
+除 REST 外，同一套能力也以 gRPC 暴露（见下方 [gRPC API](#grpc-api)），proto 定义在 [`api/proto/atlas.proto`](../api/proto/atlas.proto)。
+
 ---
 
 ## Registry
@@ -427,6 +429,70 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 | `atlas_health_transitions_total{from,to}` | counter | 服务器生命周期状态迁移 |
 
 ---
+
+## gRPC API
+
+REST 之外的第二种传输方式，与 REST **完全同源**：五个服务一一对应五组端点，共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。
+
+- **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
+- **proto 定义**：[`api/proto/atlas.proto`](../api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
+- **与 REST 的关系**：gRPC 不是替代品——SDK（v0.1.6+）双传输都可选，游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
+
+```protobuf
+package atlas.v1;
+
+service RegistryService {    // 对应 /v1/registry/*
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc Unregister(UnregisterRequest) returns (OkResponse);
+}
+
+service DiscoveryService {   // 对应 /v1/discovery/*
+  rpc ListServers(ListServersRequest) returns (ListServersResponse);
+  rpc GetServer(GetServerRequest) returns (GetServerResponse);
+}
+
+service DirectoryService {   // 对应 /v1/directory/*
+  rpc CreateCharacter(CreateCharacterRequest) returns (CreateCharacterResponse);
+  rpc GetCharacter(GetCharacterRequest) returns (GetCharacterResponse);
+  rpc ListCharactersByAccount(ListCharactersByAccountRequest) returns (ListCharactersByAccountResponse);
+  rpc ListCharactersByServer(ListCharactersByServerRequest) returns (ListCharactersByServerResponse);
+  rpc UpdateCharacter(UpdateCharacterRequest) returns (UpdateCharacterResponse);
+  rpc DeleteCharacter(DeleteCharacterRequest) returns (DeleteCharacterResponse);
+}
+
+service RoutingService {     // 对应 /v1/routing/recommended
+  rpc Recommend(RecommendRequest) returns (RecommendResponse);
+}
+
+service AdminService {       // 对应 /v1/admin/*
+  rpc SetMaintenance(ServerIdRequest) returns (OkResponse);
+  rpc SetDrain(ServerIdRequest) returns (OkResponse);
+  rpc Enable(ServerIdRequest) returns (OkResponse);
+  rpc Disable(ServerIdRequest) returns (OkResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc SearchCharacters(SearchCharactersRequest) returns (SearchCharactersResponse);
+  rpc CreateMigration(CreateMigrationRequest) returns (CreateMigrationResponse);
+  rpc GetMigration(GetMigrationRequest) returns (GetMigrationResponse);
+  rpc ListMigrations(ListMigrationsRequest) returns (ListMigrationsResponse);
+  rpc RollbackMigration(RollbackMigrationRequest) returns (RollbackMigrationResponse);
+}
+```
+
+### 错误映射
+
+| REST | gRPC status | 场景 |
+| --- | --- | --- |
+| 400 `INVALID_ARGUMENT` | `InvalidArgument` | 参数缺失或格式错误 |
+| 404 `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND` | `NotFound` | 服务器 / 角色 / 迁移不存在 |
+| 409 `ALREADY_REGISTERED` | `AlreadyExists` | 注册冲突 |
+| 500 / 503 | `Internal` | 存储层错误 |
+
+### 字段约定
+
+- 时间戳为 RFC3339 字符串，与 REST 的 JSON 表示一致
+- 可选更新字段使用 proto3 `optional`（`UpdateCharacterRequest` 的 `name` / `level` / `class_id` / `avatar`），未设置的字段不会被修改——语义与 `PATCH` 一致
+- Directory 写 RPC 与 REST 写端点一样经过事件适配器：同步适配器返回 `{"character": ...}` + `status: "created|updated|deleted"`，异步适配器（如 Redis Streams）返回 `status: "queued"`
 
 ## 通用约定
 
