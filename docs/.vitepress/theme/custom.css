@@ -48,6 +48,11 @@ html {
 
 /* ── Nav bar ─────────────────────────────────────────────── */
 
+.VPNavBar .logo {
+  width: 28px;
+  height: 28px;
+}
+
 .VPNav .title {
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -59,6 +64,11 @@ html {
 }
 
 /* ── Hero ────────────────────────────────────────────────── */
+
+.VPHero .VPImage {
+  max-width: 120px;
+  max-height: 120px;
+}
 
 .VPHero .name {
   font-weight: 800;
