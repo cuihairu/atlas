@@ -95,16 +95,30 @@ EventAdapter
 ```
 
 Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不改业务代码。
-当前已内置两种实现，通过 `ATLAS_EVENT_ADAPTER` 选择：
+当前内置五种实现，通过 `ATLAS_EVENT_ADAPTER` 选择：
 
-| 适配器 | 值 | 语义 |
-| --- | --- | --- |
-| 进程内同步 | `http`（默认） | 事件在请求内同步落地，保留 v0.1 行为，响应含投影结果 |
-| Redis Streams | `redis` | `XADD` 入流，消费组 `atlas` 经 `XREADGROUP` 异步消费后 `XACK`；写端点返回 202 |
+| 适配器 | 值 | 连接配置 | 语义 |
+| --- | --- | --- | --- |
+| 进程内同步 | `http`（默认） | — | 事件在请求内同步落地，保留 v0.1 行为，响应含投影结果 |
+| Redis Streams | `redis` | `ATLAS_REDIS_URL` | `XADD` 入流，消费组 `atlas` 经 `XREADGROUP` 异步消费后 `XACK`；写端点返回 202 |
+| Kafka | `kafka` | `ATLAS_KAFKA_BROKERS`（逗号分隔，默认 `localhost:9092`） | 写入 topic `atlas.characters`（segmentio/kafka-go，纯 Go）；消费组 `atlas` 手动提交 offset |
+| NATS | `nats` | `ATLAS_NATS_URL`（默认 `nats://localhost:4222`） | JetStream 流 `ATLAS`（subject `atlas.characters`），durable pull consumer `atlas` 显式 Ack |
+| RabbitMQ | `rabbitmq` | `ATLAS_RABBITMQ_URL`（默认 `amqp://localhost:5672/`） | durable topic exchange `atlas`，队列按 topic 命名；persistent 消息 + 手动 Ack |
 
-Redis Streams 为 at-least-once 投递：处理失败的事件留在 PEL，30 秒后被
-`XAUTOCLAIM` 重投；超过 5 次投递记日志死信。因此消费端必须幂等——
-`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
+除 `http` 外全部为 at-least-once 投递，处理失败的事件会重投：
+
+- **redis**：失败事件留在 PEL，30 秒后被 `XAUTOCLAIM` 重投；超过 5 次投递
+  记日志死信。
+- **kafka**：失败事件的 offset 不提交，下一次 fetch/rebalance 重新投递。
+- **nats**：失败消息不 Ack，超过 AckWait（默认 30s）由 durable consumer 重投。
+- **rabbitmq**：失败消息 `Nack(requeue=true)` 立即回队。
+
+因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
+
+选型补充（§4 推荐表）之外的运维参照：已有 Redis 用 `redis`（零新增组件）；
+日志/审计类大吞吐、需要回放与多消费组用 `kafka`；云原生内网低延迟、
+多机广播用 `nats`；已有 AMQP 运维体系或需要复杂路由用 `rabbitmq`；
+单机开发/小规模直连用 `http`（同步，行为最直观）。
 
 ---
 

@@ -27,6 +27,9 @@ import (
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
 	httpEvent "github.com/cuihairu/atlas/internal/event/http"
+	kafkaEvent "github.com/cuihairu/atlas/internal/event/kafka"
+	natsEvent "github.com/cuihairu/atlas/internal/event/nats"
+	rabbitEvent "github.com/cuihairu/atlas/internal/event/rabbitmq"
 	redisEvent "github.com/cuihairu/atlas/internal/event/redis"
 	"github.com/cuihairu/atlas/internal/health"
 	"github.com/cuihairu/atlas/internal/httpapi"
@@ -138,8 +141,32 @@ func main() {
 			os.Exit(1)
 		}
 		evtAdapter = redisEvent.New(evtRdb, redisEvent.Options{Logger: logger})
+	case "kafka":
+		ka, err := kafkaEvent.Open(ctx, kafkaEvent.Options{
+			Brokers: strings.Split(cfg.KafkaBrokers, ","),
+			Logger:  logger,
+		})
+		if err != nil {
+			logger.Error("failed to connect Kafka for event adapter", "error", err)
+			os.Exit(1)
+		}
+		evtAdapter = ka
+	case "nats":
+		na, err := natsEvent.Open(natsEvent.Options{URL: cfg.NATSURL, Logger: logger})
+		if err != nil {
+			logger.Error("failed to connect NATS for event adapter", "error", err)
+			os.Exit(1)
+		}
+		evtAdapter = na
+	case "rabbitmq":
+		ra, err := rabbitEvent.Open(rabbitEvent.Options{URL: cfg.RabbitURL, Logger: logger})
+		if err != nil {
+			logger.Error("failed to connect RabbitMQ for event adapter", "error", err)
+			os.Exit(1)
+		}
+		evtAdapter = ra
 	default:
-		logger.Error("unknown event adapter (expected 'http' or 'redis')", "adapter", cfg.EventAdapter)
+		logger.Error("unknown event adapter (expected 'http', 'redis', 'kafka', 'nats' or 'rabbitmq')", "adapter", cfg.EventAdapter)
 		os.Exit(1)
 	}
 

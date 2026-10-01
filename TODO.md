@@ -146,13 +146,14 @@
 - [x] Tests — xUnit + TcpListener 假 Atlas（23 例，含重试耗尽/端口拆分/心跳循环/OnError）
 - [x] Example: `examples/csharp/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过；PosixSignalRegistration 处理 Ctrl+C，stdin 重定向时可用 ATLAS_RUN_SECONDS 退出）
 
-## v0.1.12 — Message Bus Adapters
+## v0.1.12 — Message Bus Adapters ✅
 
-- [ ] Implement `internal/event/kafka/` (sarama or confluent-kafka-go)
-- [ ] Implement `internal/event/nats/` (nats.go)
-- [ ] Implement `internal/event/rabbitmq/` (amqp091-go)
-- [ ] Config: `ATLAS_EVENT_ADAPTER=kafka|nats|rabbitmq`
-- [ ] Adapter selection guide in docs/sync.md
+- [x] Implement `internal/event/kafka/`（segmentio/kafka-go，纯 Go；消费组手动提交 offset，at-least-once）
+- [x] Implement `internal/event/nats/`（nats.go JetStream：流 `ATLAS` + durable pull consumer 显式 Ack）
+- [x] Implement `internal/event/rabbitmq/`（amqp091-go：durable topic exchange + persistent 消息 + Nack requeue）
+- [x] Config: `ATLAS_EVENT_ADAPTER=kafka|nats|rabbitmq`（+ `ATLAS_KAFKA_BROKERS` / `ATLAS_NATS_URL` / `ATLAS_RABBITMQ_URL`）
+- [x] Adapter selection guide in docs/sync.md（五种适配器连接配置 + 重投语义对照 + 运维选型参照）
+- [x] Tests — kafka/rabbitmq 接口注入 fake（发布编解码/拓扑声明/投递 ack/失败重投/poison 丢弃/Close），nats 用嵌入式 nats-server 端到端（JetStream 真实发布-消费-确认）
 
 ## v0.1.13 — APISIX Plugin
 

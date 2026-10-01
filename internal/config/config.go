@@ -82,10 +82,24 @@ type Config struct {
 	RegistryIPWhitelist string
 
 	// EventAdapter selects the transport for character index events
-	// (docs/sync.md §4): "http" (synchronous in-process, the v0.1 behavior)
-	// or "redis" (Redis Streams with a consumer group).
+	// (docs/sync.md §4): "http" (synchronous in-process, the v0.1 behavior),
+	// "redis" (Redis Streams with a consumer group), "kafka", "nats"
+	// (JetStream) or "rabbitmq".
 	// Env: ATLAS_EVENT_ADAPTER, default "http".
 	EventAdapter string
+
+	// KafkaBrokers is a comma-separated list of seed brokers for the Kafka
+	// event adapter.
+	// Env: ATLAS_KAFKA_BROKERS, default "localhost:9092".
+	KafkaBrokers string
+
+	// NATSURL is the NATS server URL for the JetStream event adapter.
+	// Env: ATLAS_NATS_URL, default "nats://localhost:4222".
+	NATSURL string
+
+	// RabbitURL is the AMQP endpoint for the RabbitMQ event adapter.
+	// Env: ATLAS_RABBITMQ_URL, default "amqp://localhost:5672/".
+	RabbitURL string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -95,18 +109,21 @@ func Load() Config {
 		RegistryAddr:        envOr("ATLAS_REGISTRY_ADDR", ":8081"),
 		AdminAddr:           envOr("ATLAS_ADMIN_ADDR", ":8082"),
 		GRPCAddr:            envOr("ATLAS_GRPC_ADDR", ":9090"),
-		DatabaseURL:        envOr("ATLAS_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable"),
-		RedisURL:           envOr("ATLAS_REDIS_URL", "redis://localhost:6379/0"),
-		StoreType:          envOr("ATLAS_STORE", "memory"),
-		SuspectAfter:       30 * time.Second,
-		OfflineAfter:       60 * time.Second,
-		HealthInterval:     10 * time.Second,
+		DatabaseURL:         envOr("ATLAS_DATABASE_URL", "postgres://atlas:atlas@localhost:5432/atlas?sslmode=disable"),
+		RedisURL:            envOr("ATLAS_REDIS_URL", "redis://localhost:6379/0"),
+		StoreType:           envOr("ATLAS_STORE", "memory"),
+		SuspectAfter:        30 * time.Second,
+		OfflineAfter:        60 * time.Second,
+		HealthInterval:      10 * time.Second,
 		AdminAPIKeys:        os.Getenv("ATLAS_ADMIN_API_KEYS"),
 		AdminIPWhitelist:    os.Getenv("ATLAS_ADMIN_IP_WHITELIST"),
 		CORSAllowedOrigins:  envOr("ATLAS_CORS_ORIGINS", ""),
 		RegistryTokens:      os.Getenv("ATLAS_REGISTRY_TOKENS"),
 		RegistryIPWhitelist: os.Getenv("ATLAS_REGISTRY_IP_WHITELIST"),
 		EventAdapter:        envOr("ATLAS_EVENT_ADAPTER", "http"),
+		KafkaBrokers:        envOr("ATLAS_KAFKA_BROKERS", "localhost:9092"),
+		NATSURL:             envOr("ATLAS_NATS_URL", "nats://localhost:4222"),
+		RabbitURL:           envOr("ATLAS_RABBITMQ_URL", "amqp://localhost:5672/"),
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
