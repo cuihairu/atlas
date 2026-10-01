@@ -31,6 +31,11 @@
 - 处置：先按伪版本锁定修复（`v1.85.0-dev.0.20260825072537-93e31b48545e`），
   2026-10-02 巡检经 Dependabot PR #6 升至 `v1.86.0-dev`（含修复，解除伪版本
   锁定；带动 `protobuf v1.36.12`）。修复后 `govulncheck` 通过，全部测试门禁通过。
+- 残留（不可修复，不可达）：**GO-2026-5932**——`golang.org/x/crypto/openpgp`
+  已废弃且不再维护（`Found in v0.57.0`，`Fixed in: N/A`）。Atlas 不 import
+  `openpgp`，govulncheck 判定「模块级存在、调用路径不涉及」（affected = 0）。
+  `x/crypto` 仍被 `tlsutil` 等处间接依赖，无法移除；每次复扫确认该条从
+  「affected」降级为「required only」即可。
 
 已确认（抽查 + 全量 `go vet` / `go test`）：
 
