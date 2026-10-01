@@ -76,6 +76,12 @@ type Config struct {
 	// gateway already restricts access).
 	// Env: ATLAS_REGISTRY_IP_WHITELIST, default "".
 	RegistryIPWhitelist string
+
+	// EventAdapter selects the transport for character index events
+	// (docs/sync.md §4): "http" (synchronous in-process, the v0.1 behavior)
+	// or "redis" (Redis Streams with a consumer group).
+	// Env: ATLAS_EVENT_ADAPTER, default "http".
+	EventAdapter string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -95,6 +101,7 @@ func Load() Config {
 		CORSAllowedOrigins:  envOr("ATLAS_CORS_ORIGINS", ""),
 		RegistryTokens:      os.Getenv("ATLAS_REGISTRY_TOKENS"),
 		RegistryIPWhitelist: os.Getenv("ATLAS_REGISTRY_IP_WHITELIST"),
+		EventAdapter:        envOr("ATLAS_EVENT_ADAPTER", "http"),
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {

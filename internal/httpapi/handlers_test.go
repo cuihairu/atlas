@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
+	"github.com/cuihairu/atlas/internal/event"
+	httpadapter "github.com/cuihairu/atlas/internal/event/http"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/store/memory"
@@ -26,8 +29,13 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 	discSvc := discovery.New(mem, mem)
 	dirSvc := directory.New(mem)
 	admSvc := admin.New(mem)
+	events := httpadapter.New()
+	_ = events.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		_, err := dirSvc.ApplyEvent(context.Background(), e)
+		return err
+	})
 
-	handler := New(regSvc, discSvc, dirSvc, admSvc, mem, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, mem, events, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 

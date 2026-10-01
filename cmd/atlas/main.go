@@ -21,6 +21,8 @@ import (
 	"github.com/cuihairu/atlas/internal/config"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
+	"github.com/cuihairu/atlas/internal/event"
+	httpEvent "github.com/cuihairu/atlas/internal/event/http"
 	"github.com/cuihairu/atlas/internal/health"
 	"github.com/cuihairu/atlas/internal/httpapi"
 	"github.com/cuihairu/atlas/internal/registry"
@@ -108,6 +110,27 @@ func main() {
 	discSvc := discovery.New(serverStore, runtimeStore)
 	dirSvc := directory.New(charStore)
 
+	// Event adapter: transports character index writes into the directory
+	// projection (docs/sync.md §4).
+	var evtAdapter event.EventAdapter
+	switch cfg.EventAdapter {
+	case "", "http":
+		evtAdapter = httpEvent.New()
+	default:
+		logger.Error("unknown event adapter (expected 'http')", "adapter", cfg.EventAdapter)
+		os.Exit(1)
+	}
+
+	evtCtx, evtCancel := context.WithCancel(context.Background())
+	defer evtCancel()
+	if err := evtAdapter.Subscribe(evtCtx, event.TopicCharacters, func(ctx context.Context, e *event.Event) error {
+		_, err := dirSvc.ApplyEvent(ctx, e)
+		return err
+	}); err != nil {
+		logger.Error("failed to subscribe event adapter", "error", err)
+		os.Exit(1)
+	}
+
 	// Create composite store for health checks / ping / close.
 	composite := &compositeStore{
 		ServerStore:    serverStore,
@@ -124,7 +147,7 @@ func main() {
 	go monitor.Run(monitorCtx)
 
 	// Set up HTTP handlers.
-	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, composite, logger)
+	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, composite, evtAdapter, logger)
 
 	// Parse auth config.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
@@ -237,6 +260,10 @@ func main() {
 	publicSrv.Shutdown(shutdownCtx)
 	regSrv.Shutdown(shutdownCtx)
 	adminSrv.Shutdown(shutdownCtx)
+
+	// Stop event pipeline.
+	evtCancel()
+	evtAdapter.Close()
 
 	// Close stores.
 	if pingCloser != nil {

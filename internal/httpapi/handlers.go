@@ -15,6 +15,7 @@ import (
 	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
+	"github.com/cuihairu/atlas/internal/event"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/store"
@@ -27,17 +28,19 @@ type Handler struct {
 	directory *directory.Service
 	admin     *admin.Service
 	store     store.Store
+	events    event.EventAdapter
 	logger    *slog.Logger
 }
 
 // New creates a new Handler.
-func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, s store.Store, logger *slog.Logger) *Handler {
+func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, s store.Store, events event.EventAdapter, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry:  reg,
 		discovery: disc,
 		directory: dir,
 		admin:     adm,
 		store:     s,
+		events:    events,
 		logger:    logger,
 	}
 }
@@ -270,17 +273,53 @@ func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ch, err := h.directory.CreateCharacter(r.Context(), req.AccountID, req.ServerID, req.CharacterID, req.Name, req.Level, req.ClassID)
-	if err != nil {
-		if errors.Is(err, model.ErrInvalid) {
-			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+	// Validate before enqueueing: asynchronous adapters would otherwise
+	// accept events that only fail at consumption time.
+	if req.AccountID <= 0 || req.ServerID == "" || req.CharacterID <= 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "account_id, server_id and character_id are required")
 		return
 	}
 
+	level, classID := req.Level, req.ClassID
+	evt := &event.Event{
+		Type:        event.EventCharacterCreated,
+		AccountID:   req.AccountID,
+		ServerID:    req.ServerID,
+		CharacterID: req.CharacterID,
+		Name:        req.Name,
+		Level:       &level,
+		ClassID:     &classID,
+		Timestamp:   time.Now(),
+	}
+	if err := h.events.Publish(r.Context(), evt); err != nil {
+		h.writeEventError(w, err)
+		return
+	}
+
+	if !h.events.Synchronous() {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+		return
+	}
+
+	ch, err := h.directory.GetCharacterByCharacterID(r.Context(), req.CharacterID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusCreated, ch)
+}
+
+// writeEventError maps event application errors to API error responses.
+func (h *Handler) writeEventError(w http.ResponseWriter, err error) {
+	if errors.Is(err, model.ErrInvalid) {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "CHARACTER_NOT_FOUND", err.Error())
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 }
 
 func (h *Handler) handleListCharactersByAccount(w http.ResponseWriter, r *http.Request) {
@@ -374,24 +413,39 @@ func (h *Handler) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patch := store.CharacterPatch{
-		Name:    req.Name,
-		Level:   req.Level,
-		ClassID: req.ClassID,
-		Avatar:  req.Avatar,
+	evt := &event.Event{
+		Type:        event.EventCharacterUpdated,
+		AccountID:   req.AccountID,
+		ServerID:    req.ServerID,
+		CharacterID: charID,
+		Name:        deref(req.Name),
+		Level:       req.Level,
+		ClassID:     req.ClassID,
+		Avatar:      req.Avatar,
 	}
-
-	ch, err := h.directory.UpdateCharacter(r.Context(), req.AccountID, req.ServerID, charID, patch)
-	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "CHARACTER_NOT_FOUND", fmt.Sprintf("character %d not found", charID))
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+	if err := h.events.Publish(r.Context(), evt); err != nil {
+		h.writeEventError(w, err)
 		return
 	}
 
+	if !h.events.Synchronous() {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+		return
+	}
+
+	ch, err := h.directory.GetCharacterByCharacterID(r.Context(), charID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, ch)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (h *Handler) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) {
@@ -402,7 +456,8 @@ func (h *Handler) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// We need account_id and server_id to delete. Try to look up the character first.
+	// We need account_id and server_id to delete. Try to look up the character
+	// first so async adapters don't enqueue deletes for missing characters.
 	ch, err := h.directory.GetCharacterByCharacterID(r.Context(), charID)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
@@ -413,11 +468,21 @@ func (h *Handler) handleDeleteCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.directory.DeleteCharacter(r.Context(), ch.AccountID, ch.ServerID, charID); err != nil {
-		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+	evt := &event.Event{
+		Type:        event.EventCharacterDeleted,
+		AccountID:   ch.AccountID,
+		ServerID:    ch.ServerID,
+		CharacterID: charID,
+	}
+	if err := h.events.Publish(r.Context(), evt); err != nil {
+		h.writeEventError(w, err)
 		return
 	}
 
+	if !h.events.Synchronous() {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
