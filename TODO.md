@@ -172,9 +172,9 @@
 
 ## v0.1.15 — Health Alerts
 
-- [ ] Alert thresholds in config (`ATLAS_ALERT_SUSPECT_RATIO`, `ATLAS_ALERT_OFFLINE_RATIO`)
-- [ ] Structured log alert when suspect/offline exceeds threshold
-- [ ] Optional: webhook notification (`ATLAS_ALERT_WEBHOOK_URL`)
+- [x] Alert thresholds in config (`ATLAS_ALERT_SUSPECT_RATIO`，默认 0.3；`ATLAS_ALERT_OFFLINE_RATIO`，默认 0.2；0 关闭)
+- [x] Structured log alert when suspect/offline exceeds threshold（锁存语义：越限 firing 一次，回落 recovered 一次）
+- [x] Optional: webhook notification (`ATLAS_ALERT_WEBHOOK_URL`，5s 超时，投递失败不影响巡检)
 
 ## v0.1.16 — Character Index Sharding
 

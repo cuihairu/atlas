@@ -167,6 +167,34 @@ Atlas 用 Redis TTL 做第一层判定，定时任务做第二层状态推进：
 
 阈值应可配置，不同部署环境（同机房 vs 跨地域）差异较大。
 
+### 4.1 健康警报（TODO v0.1.15）
+
+每次巡检结束后，Atlas 会对「监控接管」的服务器集合（starting / online / suspect / offline；维护、禁用由运维设置，不参与分母）计算不健康占比，越阈值即告警：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ATLAS_ALERT_SUSPECT_RATIO` | `0.3` | suspect 占比 ≥ 该值触发告警；`0` 关闭 |
+| `ATLAS_ALERT_OFFLINE_RATIO` | `0.2` | offline 占比 ≥ 该值触发告警；`0` 关闭 |
+| `ATLAS_ALERT_WEBHOOK_URL` | （空） | 告警触发 / 恢复时 POST 一条 JSON 通知 |
+
+告警为**锁存语义**：占比越限时记一条 `health alert`（state=firing）结构化 Warn 日志并回调 webhook，持续越限不重复发送；回落到阈值以下时发送一条 state=recovered。
+
+webhook 载荷示例：
+
+```json
+{
+  "alert": "offline_ratio",
+  "state": "firing",
+  "count": 5,
+  "auto_managed_total": 20,
+  "ratio": 0.25,
+  "threshold": 0.2,
+  "fired_at": "2026-10-01T12:00:00Z"
+}
+```
+
+webhook 投递失败只记错误日志，不影响巡检循环。
+
 ---
 
 ## 5. 与 API 的对应

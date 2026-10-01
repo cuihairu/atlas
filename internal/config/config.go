@@ -3,6 +3,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -100,6 +101,21 @@ type Config struct {
 	// RabbitURL is the AMQP endpoint for the RabbitMQ event adapter.
 	// Env: ATLAS_RABBITMQ_URL, default "amqp://localhost:5672/".
 	RabbitURL string
+
+	// AlertSuspectRatio fires a health alert when the fraction of auto-managed
+	// servers in "suspect" status reaches this value. 0 disables the alert.
+	// Env: ATLAS_ALERT_SUSPECT_RATIO, default 0.3.
+	AlertSuspectRatio float64
+
+	// AlertOfflineRatio fires a health alert when the fraction of auto-managed
+	// servers in "offline" status reaches this value. 0 disables the alert.
+	// Env: ATLAS_ALERT_OFFLINE_RATIO, default 0.2.
+	AlertOfflineRatio float64
+
+	// AlertWebhookURL optionally receives a JSON POST when a health alert
+	// fires or recovers. Empty disables webhook delivery.
+	// Env: ATLAS_ALERT_WEBHOOK_URL, default "".
+	AlertWebhookURL string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -124,6 +140,9 @@ func Load() Config {
 		KafkaBrokers:        envOr("ATLAS_KAFKA_BROKERS", "localhost:9092"),
 		NATSURL:             envOr("ATLAS_NATS_URL", "nats://localhost:4222"),
 		RabbitURL:           envOr("ATLAS_RABBITMQ_URL", "amqp://localhost:5672/"),
+		AlertSuspectRatio:   0.3,
+		AlertOfflineRatio:   0.2,
+		AlertWebhookURL:     os.Getenv("ATLAS_ALERT_WEBHOOK_URL"),
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
@@ -139,6 +158,16 @@ func Load() Config {
 	if v := os.Getenv("ATLAS_HEALTH_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.HealthInterval = d
+		}
+	}
+	if v := os.Getenv("ATLAS_ALERT_SUSPECT_RATIO"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.AlertSuspectRatio = f
+		}
+	}
+	if v := os.Getenv("ATLAS_ALERT_OFFLINE_RATIO"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.AlertOfflineRatio = f
 		}
 	}
 

@@ -205,6 +205,13 @@ func main() {
 
 	// Start health monitor.
 	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger).WithMetrics(prom)
+	if cfg.AlertSuspectRatio > 0 || cfg.AlertOfflineRatio > 0 {
+		monitor = monitor.WithAlerts(health.NewAlerter(health.AlertConfig{
+			SuspectRatio: cfg.AlertSuspectRatio,
+			OfflineRatio: cfg.AlertOfflineRatio,
+			WebhookURL:   cfg.AlertWebhookURL,
+		}, logger))
+	}
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go monitor.Run(monitorCtx)

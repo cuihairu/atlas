@@ -23,6 +23,7 @@ type Monitor struct {
 	logger       *slog.Logger
 	now          func() time.Time // injectable clock for testing
 	metrics      *metrics.Metrics
+	alerter      *Alerter
 }
 
 // New creates a new health monitor.
@@ -40,6 +41,12 @@ func New(s store.Store, suspectAfter, offlineAfter, interval time.Duration, logg
 // WithMetrics attaches Prometheus instrumentation (optional).
 func (m *Monitor) WithMetrics(mm *metrics.Metrics) *Monitor {
 	m.metrics = mm
+	return m
+}
+
+// WithAlerts attaches fleet-level ratio alerting (optional, TODO v0.1.15).
+func (m *Monitor) WithAlerts(a *Alerter) *Monitor {
+	m.alerter = a
 	return m
 }
 
@@ -128,6 +135,12 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		}
 	}
 
+	// Fleet-level alerting on the post-sweep status distribution.
+	if m.alerter != nil {
+		total, suspect, offline := countStatuses(servers)
+		m.alerter.Evaluate(ctx, total, suspect, offline)
+	}
+
 	return nil
 }
 
@@ -138,5 +151,26 @@ func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus m
 		"to", newStatus,
 	)
 	m.metrics.CountHealthTransition(srv.Status, newStatus)
+	srv.Status = newStatus // keep the in-memory copy fresh for alert counting
 	return m.store.UpdateServerStatus(ctx, srv.ID, newStatus)
+}
+
+// countStatuses tallies monitor-owned servers by post-sweep status for
+// alerting. The denominator includes offline servers — the monitor took them
+// down — but excludes operator-set statuses (maintenance / disabled) that it
+// does not manage.
+func countStatuses(servers []*model.Server) (total, suspect, offline int) {
+	for _, srv := range servers {
+		switch srv.Status {
+		case model.StatusStarting, model.StatusOnline, model.StatusSuspect, model.StatusOffline:
+			total++
+			switch srv.Status {
+			case model.StatusSuspect:
+				suspect++
+			case model.StatusOffline:
+				offline++
+			}
+		}
+	}
+	return total, suspect, offline
 }
