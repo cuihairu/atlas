@@ -264,3 +264,126 @@ func (s *Service) ListShards(ctx context.Context, realmID string, limit int) ([]
 	}
 	return shards, nil
 }
+
+// ── Maintenance windows & announcements (TODO v0.1.20) ──────────
+
+// CreateMaintenanceWindowRequest is the DTO for scheduling a maintenance
+// window. Announce defaults to true: a window creates a matching server-
+// scoped announcement unless explicitly disabled.
+type CreateMaintenanceWindowRequest struct {
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
+	Announce *bool     `json:"announce,omitempty"`
+}
+
+// CreateAnnouncementRequest is the DTO for creating an announcement. A nil
+// ServerID means global.
+type CreateAnnouncementRequest struct {
+	ServerID *string   `json:"server_id,omitempty"`
+	Title    string    `json:"title"`
+	Body     string    `json:"body,omitempty"`
+	Level    string    `json:"level,omitempty"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+}
+
+// CreateMaintenanceWindow schedules a maintenance window for a server. The
+// health monitor applies it automatically when it opens (docs/lifecycle.md
+// §5). With announce (default true) a warning-level announcement covering
+// the window is created and linked.
+func (s *Service) CreateMaintenanceWindow(ctx context.Context, serverID string, req CreateMaintenanceWindowRequest) (*model.MaintenanceWindow, error) {
+	if _, err := s.store.GetServer(ctx, serverID); err != nil {
+		return nil, fmt.Errorf("maintenance window for unknown server %s: %w", serverID, err)
+	}
+
+	now := time.Now()
+	// An omitted start_at means "now" — the common "maintenance tonight until
+	// done" flow.
+	startAt := req.StartAt
+	if startAt.IsZero() {
+		startAt = now
+	}
+	w := &model.MaintenanceWindow{
+		ID:       fmt.Sprintf("mwin-%d", now.UnixNano()),
+		ServerID: serverID,
+		StartAt:  startAt,
+		EndAt:    req.EndAt,
+	}
+	if err := w.Validate(); err != nil {
+		return nil, err
+	}
+
+	if req.Announce == nil || *req.Announce {
+		a := &model.Announcement{
+			ID:       fmt.Sprintf("ann-%d", now.UnixNano()),
+			ServerID: &serverID,
+			Title:    fmt.Sprintf("Maintenance scheduled: %s", serverID),
+			Body: fmt.Sprintf("Server %s will be under maintenance from %s to %s.",
+				serverID, w.StartAt.UTC().Format(time.RFC3339), w.EndAt.UTC().Format(time.RFC3339)),
+			Level:    model.AnnouncementWarning,
+			StartsAt: w.StartAt,
+			EndsAt:   w.EndAt,
+		}
+		if err := s.store.CreateAnnouncement(ctx, a); err != nil {
+			return nil, fmt.Errorf("create maintenance announcement: %w", err)
+		}
+		w.AnnouncementID = &a.ID
+	}
+
+	if err := s.store.CreateMaintenanceWindow(ctx, w); err != nil {
+		return nil, fmt.Errorf("create maintenance window: %w", err)
+	}
+	return w, nil
+}
+
+// ListMaintenanceWindows returns windows, newest first. A non-empty serverID
+// narrows to that server.
+func (s *Service) ListMaintenanceWindows(ctx context.Context, serverID string, limit int) ([]*model.MaintenanceWindow, error) {
+	return s.store.ListMaintenanceWindows(ctx, serverID, limit)
+}
+
+// DeleteMaintenanceWindow cancels a scheduled window. A window already in
+// progress keeps the server in maintenance — use the normal enable/maintenance
+// transitions to move it out.
+func (s *Service) DeleteMaintenanceWindow(ctx context.Context, id string) error {
+	return s.store.DeleteMaintenanceWindow(ctx, id)
+}
+
+// CreateAnnouncement publishes a client-facing announcement.
+func (s *Service) CreateAnnouncement(ctx context.Context, req CreateAnnouncementRequest) (*model.Announcement, error) {
+	if req.ServerID != nil && *req.ServerID != "" {
+		if _, err := s.store.GetServer(ctx, *req.ServerID); err != nil {
+			return nil, fmt.Errorf("announcement for unknown server %s: %w", *req.ServerID, err)
+		}
+	}
+	level := req.Level
+	if level == "" {
+		level = model.AnnouncementInfo
+	}
+	a := &model.Announcement{
+		ID:       fmt.Sprintf("ann-%d", time.Now().UnixNano()),
+		ServerID: req.ServerID,
+		Title:    req.Title,
+		Body:     req.Body,
+		Level:    level,
+		StartsAt: req.StartsAt,
+		EndsAt:   req.EndsAt,
+	}
+	if err := a.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.store.CreateAnnouncement(ctx, a); err != nil {
+		return nil, fmt.Errorf("create announcement: %w", err)
+	}
+	return a, nil
+}
+
+// ListAnnouncements returns announcements matching the filter.
+func (s *Service) ListAnnouncements(ctx context.Context, f store.AnnouncementFilter) ([]*model.Announcement, error) {
+	return s.store.ListAnnouncements(ctx, f)
+}
+
+// DeleteAnnouncement removes an announcement.
+func (s *Service) DeleteAnnouncement(ctx context.Context, id string) error {
+	return s.store.DeleteAnnouncement(ctx, id)
+}

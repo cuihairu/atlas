@@ -72,6 +72,8 @@ func main() {
 		statsStore     store.StatsStore
 		realmStore     store.RealmStore
 		shardStore     store.ShardStore
+		mainWinStore   store.MaintenanceWindowStore
+		annStore       store.AnnouncementStore
 		pingCloser     func()
 	)
 
@@ -87,6 +89,8 @@ func main() {
 		statsStore = mem
 		realmStore = mem
 		shardStore = mem
+		mainWinStore = mem
+		annStore = mem
 
 	case "postgres":
 		// PostgreSQL for server + character storage.
@@ -119,6 +123,8 @@ func main() {
 		statsStore = pg
 		realmStore = pg
 		shardStore = pg
+		mainWinStore = pg
+		annStore = pg
 
 		// Redis for runtime/heartbeat storage. Topology follows the config:
 		// cluster seeds > Sentinel failover > single node (TODO v0.1.19).
@@ -211,13 +217,15 @@ func main() {
 
 	// Create composite store for health checks / ping / close.
 	composite := &compositeStore{
-		ServerStore:    serverStore,
-		CharacterStore: charStore,
-		RuntimeStore:   runtimeStore,
-		MigrationStore: migrationStore,
-		StatsStore:     statsStore,
-		RealmStore:     realmStore,
-		ShardStore:     shardStore,
+		ServerStore:            serverStore,
+		CharacterStore:         charStore,
+		RuntimeStore:           runtimeStore,
+		MigrationStore:         migrationStore,
+		StatsStore:             statsStore,
+		RealmStore:             realmStore,
+		ShardStore:             shardStore,
+		MaintenanceWindowStore: mainWinStore,
+		AnnouncementStore:      annStore,
 	}
 
 	admSvc := admin.New(composite)
@@ -625,6 +633,8 @@ type compositeStore struct {
 	store.StatsStore
 	store.RealmStore
 	store.ShardStore
+	store.MaintenanceWindowStore
+	store.AnnouncementStore
 }
 
 func (c *compositeStore) Ping(ctx context.Context) error {

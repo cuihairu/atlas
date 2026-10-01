@@ -164,6 +164,55 @@ type RuntimeStore interface {
 	DeleteRuntime(ctx context.Context, id string) error
 }
 
+// MaintenanceWindowStore manages scheduled maintenance intervals
+// (TODO v0.1.20). Windows are transient: the health monitor deletes them
+// once they expire, so no history table is needed.
+type MaintenanceWindowStore interface {
+	// CreateMaintenanceWindow inserts a window. ErrConflict when the ID
+	// already exists.
+	CreateMaintenanceWindow(ctx context.Context, w *model.MaintenanceWindow) error
+
+	// GetMaintenanceWindow returns a window by ID (ErrNotFound when absent).
+	GetMaintenanceWindow(ctx context.Context, id string) (*model.MaintenanceWindow, error)
+
+	// DeleteMaintenanceWindow removes a window (no error when absent).
+	DeleteMaintenanceWindow(ctx context.Context, id string) error
+
+	// ListMaintenanceWindows returns windows, newest first. A non-empty
+	// serverID narrows to that server; limit <= 0 means no cap.
+	ListMaintenanceWindows(ctx context.Context, serverID string, limit int) ([]*model.MaintenanceWindow, error)
+
+	// MarkMaintenanceWindowApplied records that the monitor entered the
+	// window, storing the status to restore when it ends.
+	MarkMaintenanceWindowApplied(ctx context.Context, id string, previous model.ServerStatus) error
+}
+
+// AnnouncementFilter narrows announcement listings. ServerID empty means
+// global + every server; non-empty means global + that specific server.
+// ActiveOnly keeps only windows covering time.Now().
+type AnnouncementFilter struct {
+	ServerID   string
+	ActiveOnly bool
+	Limit      int
+}
+
+// AnnouncementStore manages client-facing notices (TODO v0.1.20).
+type AnnouncementStore interface {
+	// CreateAnnouncement inserts an announcement. ErrConflict when the ID
+	// already exists.
+	CreateAnnouncement(ctx context.Context, a *model.Announcement) error
+
+	// GetAnnouncement returns an announcement by ID (ErrNotFound when absent).
+	GetAnnouncement(ctx context.Context, id string) (*model.Announcement, error)
+
+	// DeleteAnnouncement removes an announcement (no error when absent).
+	DeleteAnnouncement(ctx context.Context, id string) error
+
+	// ListAnnouncements returns announcements matching the filter, newest
+	// first. ActiveOnly evaluates against time.Now().
+	ListAnnouncements(ctx context.Context, f AnnouncementFilter) ([]*model.Announcement, error)
+}
+
 // Store composes all storage interfaces.
 type Store interface {
 	ServerStore
@@ -173,6 +222,8 @@ type Store interface {
 	StatsStore
 	RealmStore
 	ShardStore
+	MaintenanceWindowStore
+	AnnouncementStore
 
 	// Ping verifies the store is reachable.
 	Ping(ctx context.Context) error

@@ -58,7 +58,7 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
-                     endpoint_host, endpoint_port, capacity, status, created_at, updated_at)
+                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
@@ -72,13 +72,14 @@ ON DUPLICATE KEY UPDATE
     endpoint_port = VALUES(endpoint_port),
     capacity      = VALUES(capacity),
     status        = CASE WHEN VALUES(status) = 'starting' THEN servers.status ELSE VALUES(status) END,
+    started_at    = VALUES(started_at),
     updated_at    = VALUES(updated_at)
 `
 	_, err := s.db.ExecContext(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
-		string(srv.Status), srv.CreatedAt, srv.UpdatedAt,
+		string(srv.Status), srv.StartedAt, srv.CreatedAt, srv.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -89,7 +90,7 @@ ON DUPLICATE KEY UPDATE
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
 FROM servers WHERE id = ?
 `
 	srv, err := scanServer(s.db.QueryRowContext(ctx, q, id))
@@ -109,7 +110,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
 FROM servers WHERE 1=1`
 	args := []any{}
 
@@ -581,7 +582,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
-		&srv.Status, &srv.CreatedAt, &srv.UpdatedAt,
+		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -766,4 +767,173 @@ func conflictIfExists(execErr error, lookupErr error, op, id string) error {
 		return fmt.Errorf("%s %s: %w", op, id, store.ErrConflict)
 	}
 	return fmt.Errorf("%s %s: %w", op, id, execErr)
+}
+// ── Maintenance windows & announcements (TODO v0.1.20) ──────────
+
+func (s *Store) CreateMaintenanceWindow(ctx context.Context, w *model.MaintenanceWindow) error {
+	w.CreatedAt = time.Now()
+	const q = `
+INSERT INTO maintenance_windows (id, server_id, start_at, end_at, previous_status, announcement_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE id = id`
+	res, err := s.db.ExecContext(ctx, q,
+		w.ID, w.ServerID, w.StartAt, w.EndAt, string(w.PreviousStatus), w.AnnouncementID, w.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create maintenance window %s: %w", w.ID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("maintenance window %s: %w", w.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetMaintenanceWindow(ctx context.Context, id string) (*model.MaintenanceWindow, error) {
+	const q = `
+SELECT id, server_id, start_at, end_at, previous_status, announcement_id, created_at
+FROM maintenance_windows WHERE id = ?`
+	return scanMaintenanceWindow(s.db.QueryRowContext(ctx, q, id))
+}
+
+func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM maintenance_windows WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete maintenance window %s: %w", id, err)
+	}
+	return nil
+}
+
+func (s *Store) ListMaintenanceWindows(ctx context.Context, serverID string, limit int) ([]*model.MaintenanceWindow, error) {
+	q := `SELECT id, server_id, start_at, end_at, previous_status, announcement_id, created_at
+FROM maintenance_windows WHERE 1=1`
+	args := []any{}
+	if serverID != "" {
+		q += " AND server_id = ?"
+		args = append(args, serverID)
+	}
+	q += " ORDER BY created_at DESC"
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list maintenance windows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.MaintenanceWindow
+	for rows.Next() {
+		w, err := scanMaintenanceWindow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) MarkMaintenanceWindowApplied(ctx context.Context, id string, previous model.ServerStatus) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE maintenance_windows SET previous_status = ? WHERE id = ?`, string(previous), id)
+	if err != nil {
+		return fmt.Errorf("mark maintenance window %s applied: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("maintenance window %s: %w", id, store.ErrNotFound)
+	}
+	return nil
+}
+
+func scanMaintenanceWindow(row scannable) (*model.MaintenanceWindow, error) {
+	var w model.MaintenanceWindow
+	var prev string
+	err := row.Scan(&w.ID, &w.ServerID, &w.StartAt, &w.EndAt, &prev, &w.AnnouncementID, &w.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	w.PreviousStatus = model.ServerStatus(prev)
+	return &w, nil
+}
+
+func (s *Store) CreateAnnouncement(ctx context.Context, a *model.Announcement) error {
+	a.CreatedAt = time.Now()
+	const q = `
+INSERT INTO announcements (id, server_id, title, body, level, starts_at, ends_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE id = id`
+	res, err := s.db.ExecContext(ctx, q,
+		a.ID, a.ServerID, a.Title, a.Body, a.Level, a.StartsAt, a.EndsAt, a.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create announcement %s: %w", a.ID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("announcement %s: %w", a.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetAnnouncement(ctx context.Context, id string) (*model.Announcement, error) {
+	const q = `
+SELECT id, server_id, title, body, level, starts_at, ends_at, created_at
+FROM announcements WHERE id = ?`
+	return scanAnnouncement(s.db.QueryRowContext(ctx, q, id))
+}
+
+func (s *Store) DeleteAnnouncement(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM announcements WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete announcement %s: %w", id, err)
+	}
+	return nil
+}
+
+func (s *Store) ListAnnouncements(ctx context.Context, f store.AnnouncementFilter) ([]*model.Announcement, error) {
+	q := `SELECT id, server_id, title, body, level, starts_at, ends_at, created_at
+FROM announcements WHERE 1=1`
+	args := []any{}
+	if f.ServerID != "" {
+		// Global + the requested server.
+		q += " AND (server_id IS NULL OR server_id = ?)"
+		args = append(args, f.ServerID)
+	}
+	if f.ActiveOnly {
+		q += " AND starts_at <= NOW(6) AND ends_at > NOW(6)"
+	}
+	q += " ORDER BY created_at DESC"
+	if f.Limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, f.Limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list announcements: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Announcement
+	for rows.Next() {
+		a, err := scanAnnouncement(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func scanAnnouncement(row scannable) (*model.Announcement, error) {
+	var a model.Announcement
+	err := row.Scan(&a.ID, &a.ServerID, &a.Title, &a.Body, &a.Level, &a.StartsAt, &a.EndsAt, &a.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
 }

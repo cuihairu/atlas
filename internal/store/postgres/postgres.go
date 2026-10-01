@@ -59,7 +59,7 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
-                     endpoint_host, endpoint_port, capacity, status, created_at, updated_at)
+                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
@@ -73,13 +73,14 @@ ON CONFLICT (id) DO UPDATE SET
     endpoint_port = EXCLUDED.endpoint_port,
     capacity      = EXCLUDED.capacity,
     status        = CASE WHEN EXCLUDED.status = 'starting' THEN servers.status ELSE EXCLUDED.status END,
+    started_at    = EXCLUDED.started_at,
     updated_at    = EXCLUDED.updated_at
 `
 	_, err := s.pool.Exec(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
-		srv.Status, srv.CreatedAt, srv.UpdatedAt,
+		srv.Status, srv.StartedAt, srv.CreatedAt, srv.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -90,7 +91,7 @@ ON CONFLICT (id) DO UPDATE SET
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
 FROM servers WHERE id = $1
 `
 	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
@@ -110,7 +111,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
 FROM servers WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -594,7 +595,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
-		&srv.Status, &srv.CreatedAt, &srv.UpdatedAt,
+		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -786,4 +787,177 @@ func scanShard(row scannable) (*model.Shard, error) {
 		return nil, err
 	}
 	return &sh, nil
+}
+// ── Maintenance windows & announcements (TODO v0.1.20) ──────────
+
+func (s *Store) CreateMaintenanceWindow(ctx context.Context, w *model.MaintenanceWindow) error {
+	w.CreatedAt = time.Now()
+	const q = `
+INSERT INTO maintenance_windows (id, server_id, start_at, end_at, previous_status, announcement_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (id) DO NOTHING`
+	tag, err := s.pool.Exec(ctx, q,
+		w.ID, w.ServerID, w.StartAt, w.EndAt, string(w.PreviousStatus), w.AnnouncementID, w.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create maintenance window %s: %w", w.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("maintenance window %s: %w", w.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetMaintenanceWindow(ctx context.Context, id string) (*model.MaintenanceWindow, error) {
+	const q = `
+SELECT id, server_id, start_at, end_at, previous_status, announcement_id, created_at
+FROM maintenance_windows WHERE id = $1`
+	return scanMaintenanceWindow(s.pool.QueryRow(ctx, q, id))
+}
+
+func (s *Store) DeleteMaintenanceWindow(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM maintenance_windows WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete maintenance window %s: %w", id, err)
+	}
+	return nil
+}
+
+func (s *Store) ListMaintenanceWindows(ctx context.Context, serverID string, limit int) ([]*model.MaintenanceWindow, error) {
+	q := `SELECT id, server_id, start_at, end_at, previous_status, announcement_id, created_at
+FROM maintenance_windows WHERE 1=1`
+	args := []any{}
+	n := 1
+	if serverID != "" {
+		q += fmt.Sprintf(" AND server_id = $%d", n)
+		args = append(args, serverID)
+		n++
+	}
+	q += " ORDER BY created_at DESC"
+	if limit > 0 {
+		q += fmt.Sprintf(" LIMIT $%d", n)
+		args = append(args, limit)
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list maintenance windows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.MaintenanceWindow
+	for rows.Next() {
+		w, err := scanMaintenanceWindow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) MarkMaintenanceWindowApplied(ctx context.Context, id string, previous model.ServerStatus) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE maintenance_windows SET previous_status = $2 WHERE id = $1`, id, string(previous))
+	if err != nil {
+		return fmt.Errorf("mark maintenance window %s applied: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("maintenance window %s: %w", id, store.ErrNotFound)
+	}
+	return nil
+}
+
+func scanMaintenanceWindow(row scannable) (*model.MaintenanceWindow, error) {
+	var w model.MaintenanceWindow
+	var prev string
+	err := row.Scan(&w.ID, &w.ServerID, &w.StartAt, &w.EndAt, &prev, &w.AnnouncementID, &w.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	w.PreviousStatus = model.ServerStatus(prev)
+	return &w, nil
+}
+
+func (s *Store) CreateAnnouncement(ctx context.Context, a *model.Announcement) error {
+	a.CreatedAt = time.Now()
+	const q = `
+INSERT INTO announcements (id, server_id, title, body, level, starts_at, ends_at, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (id) DO NOTHING`
+	tag, err := s.pool.Exec(ctx, q,
+		a.ID, a.ServerID, a.Title, a.Body, a.Level, a.StartsAt, a.EndsAt, a.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("create announcement %s: %w", a.ID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("announcement %s: %w", a.ID, store.ErrConflict)
+	}
+	return nil
+}
+
+func (s *Store) GetAnnouncement(ctx context.Context, id string) (*model.Announcement, error) {
+	const q = `
+SELECT id, server_id, title, body, level, starts_at, ends_at, created_at
+FROM announcements WHERE id = $1`
+	return scanAnnouncement(s.pool.QueryRow(ctx, q, id))
+}
+
+func (s *Store) DeleteAnnouncement(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM announcements WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete announcement %s: %w", id, err)
+	}
+	return nil
+}
+
+func (s *Store) ListAnnouncements(ctx context.Context, f store.AnnouncementFilter) ([]*model.Announcement, error) {
+	q := `SELECT id, server_id, title, body, level, starts_at, ends_at, created_at
+FROM announcements WHERE 1=1`
+	args := []any{}
+	n := 1
+	if f.ServerID != "" {
+		// Global + the requested server.
+		q += fmt.Sprintf(" AND (server_id IS NULL OR server_id = $%d)", n)
+		args = append(args, f.ServerID)
+		n++
+	}
+	if f.ActiveOnly {
+		q += fmt.Sprintf(" AND starts_at <= now() AND ends_at > now()")
+	}
+	q += " ORDER BY created_at DESC"
+	if f.Limit > 0 {
+		q += fmt.Sprintf(" LIMIT $%d", n)
+		args = append(args, f.Limit)
+	}
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list announcements: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*model.Announcement
+	for rows.Next() {
+		a, err := scanAnnouncement(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func scanAnnouncement(row scannable) (*model.Announcement, error) {
+	var a model.Announcement
+	err := row.Scan(&a.ID, &a.ServerID, &a.Title, &a.Body, &a.Level, &a.StartsAt, &a.EndsAt, &a.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, err
+	}
+	return &a, nil
 }

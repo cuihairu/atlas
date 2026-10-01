@@ -22,24 +22,28 @@ var _ store.Store = (*Store)(nil)
 
 // Store is an in-memory implementation of store.Store.
 type Store struct {
-	mu         sync.RWMutex
-	servers    map[string]*model.Server
-	characters map[string]*model.Character // key: "accountID:serverID:characterID"
-	runtimes   map[string]model.Runtime
-	migrations map[string]*model.Migration
-	realms     map[string]*model.Realm
-	shards     map[string]*model.Shard
+	mu            sync.RWMutex
+	servers       map[string]*model.Server
+	characters    map[string]*model.Character // key: "accountID:serverID:characterID"
+	runtimes      map[string]model.Runtime
+	migrations    map[string]*model.Migration
+	realms        map[string]*model.Realm
+	shards        map[string]*model.Shard
+	maintWindows  map[string]*model.MaintenanceWindow
+	announcements map[string]*model.Announcement
 }
 
 // New creates a new in-memory store.
 func New() *Store {
 	return &Store{
-		servers:    make(map[string]*model.Server),
-		characters: make(map[string]*model.Character),
-		runtimes:   make(map[string]model.Runtime),
-		migrations: make(map[string]*model.Migration),
-		realms:     make(map[string]*model.Realm),
-		shards:     make(map[string]*model.Shard),
+		servers:       make(map[string]*model.Server),
+		characters:    make(map[string]*model.Character),
+		runtimes:      make(map[string]model.Runtime),
+		migrations:    make(map[string]*model.Migration),
+		realms:        make(map[string]*model.Realm),
+		shards:        make(map[string]*model.Shard),
+		maintWindows:  make(map[string]*model.MaintenanceWindow),
+		announcements: make(map[string]*model.Announcement),
 	}
 }
 
@@ -73,6 +77,7 @@ func (s *Store) RegisterServer(_ context.Context, srv *model.Server) error {
 		existing.Platform = srv.Platform
 		existing.Endpoint = srv.Endpoint
 		existing.Capacity = srv.Capacity
+		existing.StartedAt = srv.StartedAt
 		if srv.Status != "" {
 			existing.Status = srv.Status
 		}
@@ -610,6 +615,7 @@ func splitSearchCursor(cursor string) (string, int64) {
 	}
 	return "", 0
 }
+
 // ── Realms & Shards (TODO v0.1.14) ──────────────────────────────
 
 func (s *Store) CreateRealm(_ context.Context, r *model.Realm) error {
@@ -697,6 +703,134 @@ func (s *Store) ListShards(_ context.Context, realmID string, limit int) ([]*mod
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ── Maintenance windows & announcements (TODO v0.1.20) ──────────
+
+func (s *Store) CreateMaintenanceWindow(_ context.Context, w *model.MaintenanceWindow) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.maintWindows[w.ID]; ok {
+		return fmt.Errorf("maintenance window %s: %w", w.ID, store.ErrConflict)
+	}
+	cp := *w
+	cp.CreatedAt = time.Now()
+	s.maintWindows[w.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetMaintenanceWindow(_ context.Context, id string) (*model.MaintenanceWindow, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	w, ok := s.maintWindows[id]
+	if !ok {
+		return nil, fmt.Errorf("maintenance window %s: %w", id, store.ErrNotFound)
+	}
+	cp := *w
+	return &cp, nil
+}
+
+func (s *Store) DeleteMaintenanceWindow(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.maintWindows, id)
+	return nil
+}
+
+func (s *Store) ListMaintenanceWindows(_ context.Context, serverID string, limit int) ([]*model.MaintenanceWindow, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]*model.MaintenanceWindow, 0, len(s.maintWindows))
+	for _, w := range s.maintWindows {
+		if serverID != "" && w.ServerID != serverID {
+			continue
+		}
+		cp := *w
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].StartAt.After(out[j].StartAt)
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) MarkMaintenanceWindowApplied(_ context.Context, id string, previous model.ServerStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	w, ok := s.maintWindows[id]
+	if !ok {
+		return fmt.Errorf("maintenance window %s: %w", id, store.ErrNotFound)
+	}
+	w.PreviousStatus = previous
+	return nil
+}
+
+func (s *Store) CreateAnnouncement(_ context.Context, a *model.Announcement) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.announcements[a.ID]; ok {
+		return fmt.Errorf("announcement %s: %w", a.ID, store.ErrConflict)
+	}
+	cp := *a
+	cp.CreatedAt = time.Now()
+	s.announcements[a.ID] = &cp
+	return nil
+}
+
+func (s *Store) GetAnnouncement(_ context.Context, id string) (*model.Announcement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	a, ok := s.announcements[id]
+	if !ok {
+		return nil, fmt.Errorf("announcement %s: %w", id, store.ErrNotFound)
+	}
+	cp := *a
+	return &cp, nil
+}
+
+func (s *Store) DeleteAnnouncement(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.announcements, id)
+	return nil
+}
+
+func (s *Store) ListAnnouncements(_ context.Context, f store.AnnouncementFilter) ([]*model.Announcement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	out := make([]*model.Announcement, 0, len(s.announcements))
+	for _, a := range s.announcements {
+		// Empty ServerID = global + every server; non-empty = global + that
+		// one server (globals always pass the server filter).
+		if f.ServerID != "" && (a.ServerID != nil && *a.ServerID != f.ServerID) {
+			continue
+		}
+		if f.ActiveOnly && !a.Active(now) {
+			continue
+		}
+		cp := *a
+		out = append(out, &cp)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	if f.Limit > 0 && len(out) > f.Limit {
+		out = out[:f.Limit]
 	}
 	return out, nil
 }

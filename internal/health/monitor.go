@@ -85,6 +85,13 @@ func (m *Monitor) sweep(ctx context.Context) error {
 
 	now := m.now()
 
+	// Scheduled maintenance windows (TODO v0.1.20) run before the stale-
+	// heartbeat pass: entering a window moves the server to maintenance,
+	// which the pass below then leaves alone (operator-set status).
+	if err := m.applyMaintenanceWindows(ctx, servers, now); err != nil {
+		m.logger.Error("maintenance window application failed", "error", err)
+	}
+
 	for _, srv := range servers {
 		if !srv.Status.AutoManaged() {
 			continue
@@ -153,6 +160,68 @@ func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus m
 	m.metrics.CountHealthTransition(srv.Status, newStatus)
 	srv.Status = newStatus // keep the in-memory copy fresh for alert counting
 	return m.store.UpdateServerStatus(ctx, srv.ID, newStatus)
+}
+
+// applyMaintenanceWindows applies due maintenance windows (TODO v0.1.20):
+//
+//   - A window that has ended restores the server's pre-window status — but
+//     only if the server is still in maintenance where the window left it;
+//     an operator's move in the meantime wins. The window is then deleted.
+//   - A window that just opened moves an auto-managed server
+//     (starting/online/suspect) to maintenance and records what to restore.
+//     Servers in operator-owned states (draining/maintenance/disabled) or
+//     offline are left alone; the window is marked applied with an empty
+//     previous status so the monitor does not retry every sweep.
+func (m *Monitor) applyMaintenanceWindows(ctx context.Context, servers []*model.Server, now time.Time) error {
+	windows, err := m.store.ListMaintenanceWindows(ctx, "", 0)
+	if err != nil {
+		return fmt.Errorf("list maintenance windows: %w", err)
+	}
+	if len(windows) == 0 {
+		return nil
+	}
+
+	byID := make(map[string]*model.Server, len(servers))
+	for _, srv := range servers {
+		byID[srv.ID] = srv
+	}
+
+	for _, w := range windows {
+		srv := byID[w.ServerID]
+		switch {
+		case !now.Before(w.EndAt):
+			// Window over: restore, then drop the window.
+			if srv != nil && w.PreviousStatus != "" && srv.Status == model.StatusMaintenance {
+				if err := m.transition(ctx, srv, w.PreviousStatus,
+					"maintenance window %s ended, restoring status", w.ID); err != nil {
+					m.logger.Error("failed to exit maintenance window",
+						"window_id", w.ID, "server_id", w.ServerID, "error", err)
+					continue // keep the window so the restore can be retried
+				}
+			}
+			if err := m.store.DeleteMaintenanceWindow(ctx, w.ID); err != nil {
+				m.logger.Warn("failed to delete expired maintenance window",
+					"window_id", w.ID, "error", err)
+			}
+		case w.Active(now) && w.PreviousStatus == "":
+			// Window open, not applied yet.
+			previous := model.ServerStatus("")
+			if srv != nil && srv.Status.AutoManaged() {
+				previous = srv.Status
+				if err := m.transition(ctx, srv, model.StatusMaintenance,
+					"maintenance window %s started", w.ID); err != nil {
+					m.logger.Error("failed to enter maintenance window",
+						"window_id", w.ID, "server_id", w.ServerID, "error", err)
+					continue // unapplied: retry next sweep
+				}
+			}
+			if err := m.store.MarkMaintenanceWindowApplied(ctx, w.ID, previous); err != nil {
+				m.logger.Error("failed to mark maintenance window applied",
+					"window_id", w.ID, "error", err)
+			}
+		}
+	}
+	return nil
 }
 
 // countStatuses tallies monitor-owned servers by post-sweep status for

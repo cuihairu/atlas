@@ -25,6 +25,13 @@ type RegisterRequest struct {
 	Platform string         `json:"platform"`
 	Endpoint model.Endpoint `json:"endpoint"`
 	Capacity int            `json:"capacity"`
+	// Players seeds the initial player count (runtime data), so a server that
+	// re-registers mid-session (Atlas restart) does not report 0 players
+	// until its next heartbeat. TODO v0.1.20.
+	Players int `json:"players,omitempty"`
+	// StartedAt is the game server process start time. Zero means "now" —
+	// the registration time is used. TODO v0.1.20.
+	StartedAt *time.Time `json:"started_at,omitempty"`
 }
 
 // Service manages server registration and heartbeats.
@@ -46,18 +53,23 @@ func New(servers store.ServerStore, runtime store.RuntimeStore, logger *slog.Log
 // Register registers a game server. It is idempotent: re-registering the same
 // server ID updates its fields rather than returning ErrConflict.
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Server, error) {
+	startedAt := time.Now()
+	if req.StartedAt != nil {
+		startedAt = *req.StartedAt
+	}
 	srv := &model.Server{
-		ID:       req.ID,
-		Name:     req.Name,
-		Type:     req.Type,
-		Region:   req.Region,
-		RealmID:  req.RealmID,
-		ShardID:  req.ShardID,
-		Version:  req.Version,
-		Platform: req.Platform,
-		Endpoint: req.Endpoint,
-		Capacity: req.Capacity,
-		Status:   model.StatusStarting,
+		ID:        req.ID,
+		Name:      req.Name,
+		Type:      req.Type,
+		Region:    req.Region,
+		RealmID:   req.RealmID,
+		ShardID:   req.ShardID,
+		Version:   req.Version,
+		Platform:  req.Platform,
+		Endpoint:  req.Endpoint,
+		Capacity:  req.Capacity,
+		StartedAt: &startedAt,
+		Status:    model.StatusStarting,
 	}
 
 	if err := srv.Validate(); err != nil {
@@ -70,7 +82,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 
 	// Record an initial heartbeat so runtime data is available immediately.
 	hb := model.Heartbeat{
-		Players: 0,
+		Players: req.Players,
 		Load:    0,
 		Status:  model.StatusStarting,
 	}

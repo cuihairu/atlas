@@ -131,8 +131,12 @@ type Server struct {
 	Players    int               `json:"players"`
 	Load       float64           `json:"load"`
 	LastSeenAt *time.Time        `json:"last_seen_at,omitempty"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
+	// StartedAt is the game server process start time reported at register
+	// (TODO v0.1.20); re-registration (process restart) updates it, so
+	// discovery can surface uptime. Nil on records registered before v0.1.20.
+	StartedAt *time.Time `json:"started_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // Heartbeat is the periodic report a game server sends to Atlas.
@@ -285,4 +289,96 @@ type Shard struct {
 	Name      string    `json:"name"`
 	Status    string    `json:"status"` // active | ...
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// MaintenanceWindow is a scheduled maintenance interval for a server
+// (TODO v0.1.20). The health monitor applies it automatically: at StartAt
+// the server transitions to "maintenance" (PreviousStatus records where to
+// return), and at EndAt the previous status is restored — unless an operator
+// moved the server somewhere else in the meantime.
+type MaintenanceWindow struct {
+	ID       string    `json:"id"`
+	ServerID string    `json:"server_id"`
+	StartAt  time.Time `json:"start_at"`
+	EndAt    time.Time `json:"end_at"`
+	// PreviousStatus is empty until the monitor applies the window. An empty
+	// value after applying means the server was already in "maintenance" (or
+	// not auto-managed), so there is nowhere to return to.
+	PreviousStatus ServerStatus `json:"previous_status,omitempty"`
+	// AnnouncementID links the announcement auto-created for this window
+	// (see AnnouncementStore). Optional.
+	AnnouncementID *string   `json:"announcement_id,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// Validate checks a maintenance window for structural correctness.
+func (w *MaintenanceWindow) Validate() error {
+	if strings.TrimSpace(w.ID) == "" {
+		return fmt.Errorf("%w: maintenance window id is required", ErrInvalid)
+	}
+	if strings.TrimSpace(w.ServerID) == "" {
+		return fmt.Errorf("%w: maintenance window server_id is required", ErrInvalid)
+	}
+	if !w.StartAt.Before(w.EndAt) {
+		return fmt.Errorf("%w: maintenance window end_at must be after start_at", ErrInvalid)
+	}
+	return nil
+}
+
+// Active reports whether the window covers now.
+func (w *MaintenanceWindow) Active(now time.Time) bool {
+	return !now.Before(w.StartAt) && now.Before(w.EndAt)
+}
+
+// Announcement levels.
+const (
+	AnnouncementInfo     = "info"
+	AnnouncementWarning  = "warning"
+	AnnouncementCritical = "critical"
+)
+
+// Announcement is a time-ranged notice for clients, either global or scoped
+// to one server (TODO v0.1.20). Discovery exposes currently active ones; the
+// Admin API manages the full set.
+type Announcement struct {
+	ID string `json:"id"`
+	// ServerID scopes the announcement to a server; nil means global.
+	ServerID  *string   `json:"server_id,omitempty"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body,omitempty"`
+	Level     string    `json:"level,omitempty"` // info | warning | critical, "" = info
+	StartsAt  time.Time `json:"starts_at"`
+	EndsAt    time.Time `json:"ends_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ValidAnnouncementLevel reports whether lvl is a known level.
+func ValidAnnouncementLevel(lvl string) bool {
+	switch lvl {
+	case "", AnnouncementInfo, AnnouncementWarning, AnnouncementCritical:
+		return true
+	}
+	return false
+}
+
+// Validate checks an announcement for structural correctness.
+func (a *Announcement) Validate() error {
+	if strings.TrimSpace(a.ID) == "" {
+		return fmt.Errorf("%w: announcement id is required", ErrInvalid)
+	}
+	if strings.TrimSpace(a.Title) == "" {
+		return fmt.Errorf("%w: announcement title is required", ErrInvalid)
+	}
+	if !ValidAnnouncementLevel(a.Level) {
+		return fmt.Errorf("%w: unknown announcement level %q", ErrInvalid, a.Level)
+	}
+	if !a.StartsAt.Before(a.EndsAt) {
+		return fmt.Errorf("%w: announcement end_at must be after starts_at", ErrInvalid)
+	}
+	return nil
+}
+
+// Active reports whether the announcement covers now.
+func (a *Announcement) Active(now time.Time) bool {
+	return !now.Before(a.StartsAt) && now.Before(a.EndsAt)
 }
