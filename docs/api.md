@@ -350,41 +350,42 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 ### GET /v1/routing/recommended
 
-**Request**
+**Query 参数**（均可选）
 
-```json
-{
-  "region": "cn-east",
-  "platform": "android",
-  "version": "1.8.2",
-  "mode": "pvp"
-}
+| 参数 | 说明 |
+| --- | --- |
+| `region` | 目标大区，精确匹配 |
+| `version` | 客户端版本，精确匹配 |
+| `platform` | 平台，精确匹配 |
+| `account_id` | 玩家账号；提供时优先推荐已有角色的服务器 |
+
+未指定 `status` 时只推荐 `online` 的服务器。
+
+```text
+GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ```
 
 **Response** `200 OK`
 
 ```json
 {
-  "server": {
-    "id": "game-1001",
-    "endpoint": "game-1001.example.com:30001"
-  },
+  "server": { "id": "game-1001", "endpoint": {"host": "10.0.0.1", "port": 30001} },
   "reason": "lowest_load"
 }
 ```
 
-**决策依据**
+`server` 为完整 Server 对象（见 Discovery）。无可用服务器时返回 `404 NO_SERVER_AVAILABLE`。
+
+**决策依据**（依次比较）
 
 ```text
-Region
-Version
-Capacity
-Load
-Maintenance
-Player Character
+1. Player Character   account_id 已有角色的服务器优先
+2. Load               负载低者优先
+3. Capacity           负载相同时，剩余容量高者优先
+4. Server ID          确定性兜底
 ```
 
-`reason` 字段取值：`lowest_load` / `highest_capacity` / `nearest_region` / `has_character` / `fallback`，用于排查推荐异常。
+`reason` 字段取值：`lowest_load` / `highest_capacity` / `has_character` / `fallback`（严格过滤无命中、放宽为仅按状态推荐时），用于排查推荐异常。
 
 **与 Discovery 的区别**：Discovery 返回**候选集合**，Routing 返回**单一决策**。客户端选服界面走 Discovery，"开始游戏"按钮走 Routing。
 

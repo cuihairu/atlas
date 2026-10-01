@@ -28,6 +28,7 @@ import (
 	"github.com/cuihairu/atlas/internal/httpapi"
 	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/registry"
+	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
@@ -169,7 +170,8 @@ func main() {
 	go monitor.Run(monitorCtx)
 
 	// Set up HTTP handlers.
-	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, composite, evtAdapter, logger)
+	rtSvc := routing.New(serverStore, runtimeStore, charStore)
+	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, composite, evtAdapter, logger)
 
 	// Parse auth config.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)

@@ -18,6 +18,7 @@ import (
 	"github.com/cuihairu/atlas/internal/event"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
+	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/store"
 )
 
@@ -27,18 +28,20 @@ type Handler struct {
 	discovery *discovery.Service
 	directory *directory.Service
 	admin     *admin.Service
+	routing   *routing.Service
 	store     store.Store
 	events    event.EventAdapter
 	logger    *slog.Logger
 }
 
 // New creates a new Handler.
-func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, s store.Store, events event.EventAdapter, logger *slog.Logger) *Handler {
+func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, rt *routing.Service, s store.Store, events event.EventAdapter, logger *slog.Logger) *Handler {
 	return &Handler{
 		registry:  reg,
 		discovery: disc,
 		directory: dir,
 		admin:     adm,
+		routing:   rt,
 		store:     s,
 		events:    events,
 		logger:    logger,
@@ -70,6 +73,9 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	// Discovery
 	mux.HandleFunc("GET /v1/discovery/servers", h.handleListServers)
 	mux.HandleFunc("GET /v1/discovery/servers/{id}", h.handleGetServer)
+
+	// Routing
+	mux.HandleFunc("GET /v1/routing/recommended", h.handleRecommended)
 
 	// Directory
 	mux.HandleFunc("POST /v1/directory/characters", h.handleCreateCharacter)
@@ -307,6 +313,40 @@ func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusCreated, ch)
+}
+
+// handleRecommended answers GET /v1/routing/recommended with the best
+// server for the requested filters and a reason string.
+func (h *Handler) handleRecommended(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	req := routing.Request{
+		Region:   q.Get("region"),
+		Version:  q.Get("version"),
+		Platform: q.Get("platform"),
+	}
+	if v := q.Get("account_id"); v != "" {
+		accountID, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid account_id")
+			return
+		}
+		req.AccountID = accountID
+	}
+
+	srv, reason, err := h.routing.Recommend(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "NO_SERVER_AVAILABLE", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server": srv,
+		"reason": reason,
+	})
 }
 
 // writeEventError maps event application errors to API error responses.

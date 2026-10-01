@@ -60,15 +60,15 @@
 - [x] `atlas_health_transitions_total{from,to}` — counter (d6742b1)
 - [x] Grafana dashboard JSON in `deployments/grafana/`
 
-## v0.1.4 — Server Routing
+## v0.1.4 — Server Routing ✅
 
-- [ ] Add `internal/routing/service.go` — recommendation logic
-- [ ] Filter: region, version, platform, status=online
-- [ ] Score: load (lower better), capacity remaining (higher better)
-- [ ] Tiebreak: has existing character (account_id optional)
-- [ ] `GET /v1/routing/recommended` on public port (:8080)
-- [ ] Response: `{server, reason}` (lowest_load / highest_capacity / has_character / fallback)
-- [ ] Tests
+- [x] Add `internal/routing/service.go` — recommendation logic
+- [x] Filter: region, version, platform, status=online
+- [x] Score: load (lower better), capacity remaining (higher better)
+- [x] Tiebreak: has existing character (account_id optional)
+- [x] `GET /v1/routing/recommended` on public port (:8080)
+- [x] Response: `{server, reason}` (lowest_load / highest_capacity / has_character / fallback)
+- [x] Tests
 
 ## v0.1.5 — gRPC API
 

@@ -17,6 +17,7 @@ import (
 	httpadapter "github.com/cuihairu/atlas/internal/event/http"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
+	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/store/memory"
 )
 
@@ -35,7 +36,8 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 		return err
 	})
 
-	handler := New(regSvc, discSvc, dirSvc, admSvc, mem, events, logger)
+	rtSvc := routing.New(mem, mem, mem)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, rtSvc, mem, events, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 
@@ -467,7 +469,7 @@ func TestAdminStats(t *testing.T) {
 	}
 
 	var stats struct {
-		TotalServers int            `json:"total_servers"`
+		TotalServers    int            `json:"total_servers"`
 		ServersByStatus map[string]int `json:"servers_by_status"`
 	}
 	json.NewDecoder(resp.Body).Decode(&stats)
@@ -729,4 +731,74 @@ func TestAdminRollbackMigration_NotFound(t *testing.T) {
 		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+// ---------------------------------------------------------------------------
+// Routing
+// ---------------------------------------------------------------------------
+
+func TestRoutingRecommended(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	resp := postJSON(t, ts, "/v1/registry/servers/game-1001/heartbeat", map[string]any{
+		"players": 10,
+		"load":    0.25,
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("heartbeat: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/v1/routing/recommended?region=cn-east")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var out struct {
+		Server model.Server `json:"server"`
+		Reason string       `json:"reason"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Server.ID != "game-1001" {
+		t.Errorf("expected game-1001, got %q", out.Server.ID)
+	}
+	if out.Reason != routing.ReasonLowestLoad {
+		t.Errorf("expected %q, got %q", routing.ReasonLowestLoad, out.Reason)
+	}
+}
+
+func TestRoutingRecommended_NoServerAvailable(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/v1/routing/recommended?region=nowhere")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestRoutingRecommended_InvalidAccountID(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp, err := ts.Client().Get(ts.URL + "/v1/routing/recommended?account_id=abc")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", resp.StatusCode)
+	}
 }
