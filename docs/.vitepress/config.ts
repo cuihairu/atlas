@@ -17,6 +17,11 @@ export default defineConfig({
 
   base: '/atlas/',
 
+  markdown: {
+    // 代码块行号（高亮由 VitePress 内置 shiki 提供）。
+    lineNumbers: true,
+  },
+
   themeConfig: {
     logo: '/logo.svg',
 
