@@ -65,4 +65,6 @@ QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映�
   不含网络、TLS、JSON 编解码与存储 I/O。
 - `-benchtime 1s` 的单次运行有 ±5% 噪声；对比优化效果请用 `-count=5` +
   `benchstat`。
+- 基线表测量于机器空载时。复测若机器有并发负载（编译、CI），ns/op 会整体
+  放大数倍而 **allocs/op / B/op 不变**——回归判断以分配数为准，或等空载复测。
 - 心跳 / 注册数字来自唯一 ID 的全新写入；幂等重注册单独列出。
