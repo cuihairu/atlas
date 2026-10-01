@@ -17,6 +17,12 @@ type Options struct {
 	// gRPC expects "host:port" (ATLAS_GRPC_ADDR).
 	Addr string
 
+	// RegistryAddr overrides the REST base for Registry calls only.
+	// Atlas splits the Registry API onto its own port
+	// (ATLAS_REGISTRY_ADDR, default :8081); point this there when
+	// calling it directly. Empty = Addr (merged behind a proxy).
+	RegistryAddr string
+
 	// Transport selects REST (default) or gRPC.
 	Transport Transport
 
@@ -135,6 +141,7 @@ func New(opts Options) (*Client, error) {
 		}
 		c.backend = &restBackend{
 			base:          base,
+			registryBase:  restBase(opts.RegistryAddr, base),
 			http:          httpClient,
 			policy:        policy,
 			registryToken: opts.RegistryToken,
@@ -157,6 +164,17 @@ func (c *Client) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return c.backend.close(ctx)
+}
+
+// restBase normalizes an optional base override, falling back to def.
+func restBase(addr, def string) string {
+	if addr == "" {
+		return def
+	}
+	if !strings.Contains(addr, "://") {
+		addr = "http://" + addr
+	}
+	return strings.TrimRight(addr, "/")
 }
 
 // decodeJSON decodes a response body into v, translating error envelopes.

@@ -23,8 +23,11 @@ func main() {
 	defer cancel()
 
 	// REST by default; switch with atlas.TransportGRPC and the gRPC addr.
+	// RegistryAddr points at the split registry port when not behind a
+	// merged proxy (local dev: ATLAS_REGISTRY_ADDR=localhost:8081).
 	cli, err := atlas.New(atlas.Options{
 		Addr:          envOr("ATLAS_ADDR", "localhost:8080"),
+		RegistryAddr:  os.Getenv("ATLAS_REGISTRY_ADDR"),
 		Transport:     atlas.Transport(envOr("ATLAS_TRANSPORT", string(atlas.TransportREST))),
 		RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKEN"),
 	})

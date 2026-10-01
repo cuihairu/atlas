@@ -91,14 +91,16 @@
 - [x] Example: `examples/go/`（注册 → 心跳 → 推荐 → 角色 → 注销）
 - [x] Docs: `docs/sdk-go.md` + VitePress 侧边栏
 
-## v0.1.7 — C++ SDK
+## v0.1.7 — C++ SDK ✅
 
-- [ ] `sdk/cpp/` — C++ client library
-- [ ] HTTP client (libcurl or cpp-httplib)
-- [ ] JSON serialization (nlohmann/json)
-- [ ] Same API surface as Go SDK
-- [ ] CMake build system
-- [ ] Example: `examples/cpp/`
+- [x] `sdk/cpp/` — C++ client library
+- [x] HTTP client (cpp-httplib v0.58.0, vendored single header)
+- [x] JSON serialization (nlohmann/json v3.12.0, vendored single header)
+- [x] Same API surface as Go SDK（五组方法全量 + AutoHeartbeat 线程 + 重试）
+- [x] CMake build system（`atlas_sdk` 目标 + ctest；`ATLAS_SDK_BUILD_TESTS`）
+- [x] Example: `examples/cpp/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
+- [x] `registry_base_url` 覆盖 Registry 独立端口（Go SDK 同步补 `RegistryAddr`）
+- [x] 扁平/嵌套目录写回复归一化（Go `CharacterWriteResult.UnmarshalJSON` + C++ `ParseCharacterWrite`）
 
 ## v0.1.8 — Python SDK
 

@@ -52,6 +52,11 @@ func TestRESTLifecycle(t *testing.T) {
 		gotQuery.Store(r.URL.RawQuery)
 		json.NewEncoder(w).Encode(map[string]any{"servers": []Server{{ID: "game-1", Status: "online"}}}) //nolint:errcheck
 	})
+	// Synchronous REST creates return the flat character object (201).
+	mux.HandleFunc("POST /v1/directory/characters", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(Character{AccountID: 7, ServerID: "game-1", CharacterID: 1001, Name: "Hero", Level: 1}) //nolint:errcheck
+	})
 	mux.HandleFunc("GET /v1/discovery/servers/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{
@@ -81,6 +86,15 @@ func TestRESTLifecycle(t *testing.T) {
 	apiErr, ok := err.(*Error)
 	if !ok || apiErr.Code != "SERVER_NOT_FOUND" || apiErr.StatusCode != 404 {
 		t.Fatalf("expected *Error SERVER_NOT_FOUND/404, got %#v", err)
+	}
+
+	// Flat synchronous reply parses into Character + derived status.
+	wr, err := c.CreateCharacter(ctx, CreateCharacterRequest{AccountID: 7, ServerID: "game-1", CharacterID: 1001})
+	if err != nil {
+		t.Fatalf("CreateCharacter: %v", err)
+	}
+	if wr.Status != "created" || wr.Character == nil || wr.Character.CharacterID != 1001 {
+		t.Fatalf("unexpected write result: %+v", wr)
 	}
 }
 

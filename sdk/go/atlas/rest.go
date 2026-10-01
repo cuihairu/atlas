@@ -13,20 +13,27 @@ import (
 	"time"
 )
 
-// restBackend speaks the REST API (docs/api.md). All groups share one
-// base address — split ports sit behind the deployment's reverse proxy.
+// restBackend speaks the REST API (docs/api.md). Discovery, Directory,
+// Routing and Admin share the main base; Registry may target its own
+// split port via registryBase.
 type restBackend struct {
-	base   string
-	http   *http.Client
-	policy retryPolicy
+	base         string
+	registryBase string
+	http         *http.Client
+	policy       retryPolicy
 
 	registryToken string
 	adminAPIKey   string
 }
 
-// do performs one JSON round trip, retrying transient failures
-// (network errors and 5xx) with full-jitter exponential backoff.
+// do performs one JSON round trip against the main base, retrying
+// transient failures (network errors and 5xx) with full-jitter
+// exponential backoff.
 func (b *restBackend) do(ctx context.Context, method, path string, body, out any, bearer string) error {
+	return b.doBase(ctx, b.base, method, path, body, out, bearer)
+}
+
+func (b *restBackend) doBase(ctx context.Context, base, method, path string, body, out any, bearer string) error {
 	var payload []byte
 	if body != nil {
 		var err error
@@ -37,7 +44,7 @@ func (b *restBackend) do(ctx context.Context, method, path string, body, out any
 
 	var resp *http.Response
 	err := b.retry(ctx, func() error {
-		return b.attempt(ctx, method, path, payload, bearer, &resp)
+		return b.attempt(ctx, base, method, path, payload, bearer, &resp)
 	})
 	if err != nil {
 		return err
@@ -65,12 +72,12 @@ func (b *restBackend) retry(ctx context.Context, fn func() error) error {
 	}
 }
 
-func (b *restBackend) attempt(ctx context.Context, method, path string, payload []byte, bearer string, out **http.Response) error {
+func (b *restBackend) attempt(ctx context.Context, base, method, path string, payload []byte, bearer string, out **http.Response) error {
 	var body io.Reader
 	if payload != nil {
 		body = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, b.base+path, body)
+	req, err := http.NewRequestWithContext(ctx, method, base+path, body)
 	if err != nil {
 		return err
 	}
@@ -100,19 +107,19 @@ func (b *restBackend) close(_ context.Context) error { return nil }
 
 func (b *restBackend) register(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
 	var out RegisterResult
-	err := b.do(ctx, http.MethodPost, "/v1/registry/servers/register", req, &out, b.registryToken)
+	err := b.doBase(ctx, b.registryBase, http.MethodPost, "/v1/registry/servers/register", req, &out, b.registryToken)
 	return &out, err
 }
 
 func (b *restBackend) heartbeat(ctx context.Context, serverID string, req HeartbeatRequest) (*HeartbeatResult, error) {
 	var out HeartbeatResult
-	err := b.do(ctx, http.MethodPost, "/v1/registry/servers/"+url.PathEscape(serverID)+"/heartbeat", req, &out, b.registryToken)
+	err := b.doBase(ctx, b.registryBase, http.MethodPost, "/v1/registry/servers/"+url.PathEscape(serverID)+"/heartbeat", req, &out, b.registryToken)
 	return &out, err
 }
 
 func (b *restBackend) unregister(ctx context.Context, serverID string) (*StatusResult, error) {
 	var out StatusResult
-	err := b.do(ctx, http.MethodPost, "/v1/registry/servers/"+url.PathEscape(serverID)+"/unregister", nil, &out, b.registryToken)
+	err := b.doBase(ctx, b.registryBase, http.MethodPost, "/v1/registry/servers/"+url.PathEscape(serverID)+"/unregister", nil, &out, b.registryToken)
 	return &out, err
 }
 
@@ -153,6 +160,9 @@ func (b *restBackend) getServer(ctx context.Context, id string) (*Server, error)
 func (b *restBackend) createCharacter(ctx context.Context, req CreateCharacterRequest) (*CharacterWriteResult, error) {
 	var out CharacterWriteResult
 	err := b.do(ctx, http.MethodPost, "/v1/directory/characters", req, &out, "")
+	if out.Status == "" && out.Character != nil {
+		out.Status = "created" // flat synchronous reply carries no status
+	}
 	return &out, err
 }
 
@@ -189,6 +199,9 @@ func (b *restBackend) listCharactersByServer(ctx context.Context, serverID strin
 func (b *restBackend) updateCharacter(ctx context.Context, characterID int64, req UpdateCharacterRequest) (*CharacterWriteResult, error) {
 	var out CharacterWriteResult
 	err := b.do(ctx, http.MethodPatch, "/v1/directory/characters/"+strconv.FormatInt(characterID, 10), req, &out, "")
+	if out.Status == "" && out.Character != nil {
+		out.Status = "updated" // flat synchronous reply carries no status
+	}
 	return &out, err
 }
 

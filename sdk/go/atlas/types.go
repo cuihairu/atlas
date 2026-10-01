@@ -5,7 +5,10 @@
 // Registry, Discovery, Directory, Routing and Admin.
 package atlas
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Transport selects the wire protocol the Client uses.
 type Transport string
@@ -130,6 +133,34 @@ type UpdateCharacterRequest struct {
 type CharacterWriteResult struct {
 	Character *Character `json:"character,omitempty"`
 	Status    string     `json:"status"` // created | updated | deleted | queued
+}
+
+// UnmarshalJSON accepts both reply shapes Atlas produces: the nested
+// {"character":...,"status":...} envelope (gRPC-style payloads) and the
+// flat character object the synchronous REST path returns. Callers fill
+// in Status for the flat shape ("created"/"updated" by endpoint).
+func (r *CharacterWriteResult) UnmarshalJSON(data []byte) error {
+	var probe struct {
+		Character   *Character `json:"character"`
+		CharacterID *int64     `json:"character_id"`
+		Status      string     `json:"status"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return err
+	}
+	switch {
+	case probe.Character != nil:
+		r.Character, r.Status = probe.Character, probe.Status
+	case probe.CharacterID != nil:
+		var ch Character
+		if err := json.Unmarshal(data, &ch); err != nil {
+			return err
+		}
+		r.Character = &ch
+	default:
+		r.Status = probe.Status
+	}
+	return nil
 }
 
 // CharacterPage is a cursor-paginated character listing.
