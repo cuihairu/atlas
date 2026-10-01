@@ -1,10 +1,17 @@
-# Atlas
+<p align="center">
+  <img src="static/logo.svg" alt="Atlas" width="160" height="160" />
+</p>
 
-> **Atlas — Service Discovery and Character Directory for Online Games**
+<h1 align="center">Atlas</h1>
 
-> **Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施。**
+<p align="center">
+  <strong>Atlas — Service Discovery and Character Directory for Online Games</strong><br/>
+  <em>Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施。</em>
+</p>
 
-Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.
+<p align="center">
+  Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.
+</p>
 
 ---
 
@@ -63,6 +70,83 @@ Atlas 的核心目标不是"返回一份服务器列表"，而是建立游戏后
 
 ---
 
+## Quick Start
+
+```bash
+# Run with in-memory store (no dependencies)
+make run
+
+# Run with PostgreSQL + Redis
+docker compose -f deployments/docker/docker-compose.yml up --build
+
+# Run tests
+make test
+```
+
+---
+
+## API Quick Reference
+
+Atlas v0.1.0 暴露 11 个 REST 端点，分为三组：
+
+### Registry（服务器注册）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `POST` | `/v1/registry/servers/register` | 服务器上线注册（幂等） |
+| `POST` | `/v1/registry/servers/{id}/heartbeat` | 周期心跳上报 |
+| `POST` | `/v1/registry/servers/{id}/unregister` | 服务器主动下线 |
+
+### Discovery（服务器发现）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `GET` | `/v1/discovery/servers` | 按区域/版本/状态筛选服务器列表 |
+| `GET` | `/v1/discovery/servers/{id}` | 获取单个服务器详情 |
+
+### Directory（角色目录）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `GET` | `/v1/directory/accounts/{account_id}/characters` | 查询账号下所有角色（跨服） |
+| `GET` | `/v1/directory/characters/{character_id}` | 查询单个角色索引 |
+| `GET` | `/v1/directory/servers/{server_id}/characters` | 查询服务器上的角色索引 |
+| `POST` | `/v1/directory/characters` | 写入角色索引（幂等） |
+| `PATCH` | `/v1/directory/characters/{character_id}` | 更新角色索引 |
+| `DELETE` | `/v1/directory/characters/{character_id}` | 删除角色索引 |
+
+完整请求/响应示例见 [docs/api.md](docs/api.md)，快速上手见 [docs/api-quickstart.md](docs/api-quickstart.md)。
+
+---
+
+## Project Structure
+
+```text
+atlas/
+├── cmd/atlas/              主服务入口
+├── internal/
+│   ├── model/              领域模型（Server, Character, Status）
+│   ├── store/              存储接口
+│   │   ├── memory/         内存实现（测试 + 开发）
+│   │   ├── postgres/       PostgreSQL 实现
+│   │   └── redisstore/     Redis 运行时状态
+│   ├── registry/           注册 / 心跳 / 注销
+│   ├── discovery/          服务器发现
+│   ├── directory/          角色目录
+│   ├── health/             健康监控（自动掉线）
+│   ├── httpapi/            REST API handlers
+│   ├── config/             环境变量配置
+│   └── version/            版本信息
+├── migrations/             SQL migration
+├── deployments/docker/     Dockerfile + docker-compose
+├── docs/                   设计文档
+├── Makefile
+├── .env.example
+└── go.mod
+```
+
+---
+
 ## 核心能力
 
 ```text
@@ -115,6 +199,7 @@ Atlas Core
 | [docs/architecture.md](docs/architecture.md) | 整体架构、组件职责、与 APISIX 的边界 |
 | [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
 | [docs/api.md](docs/api.md) | 四组 REST API 的完整定义 |
+| [docs/api-quickstart.md](docs/api-quickstart.md) | API 快速上手指南（curl 示例） |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
 | [docs/lifecycle.md](docs/lifecycle.md) | 服务器生命周期状态机 |
 | [docs/migration.md](docs/migration.md) | 合服 / 转服 / 迁服 |
@@ -125,16 +210,16 @@ Atlas Core
 
 ## 路线图
 
-**v0.1（MVP）**
+**v0.1.0（MVP）✅ 已完成**
 
 ```text
 Atlas v0.1
 │
-├── Server Registry      Register / Heartbeat / Unregister
-├── Server Discovery     List / Get
-├── Character Directory  Create / Update / Delete / Account → Characters
-├── Health               Automatic Offline
-└── REST API
+├── ✅ Server Registry      Register / Heartbeat / Unregister
+├── ✅ Server Discovery     List / Get
+├── ✅ Character Directory  Create / Update / Delete / Account → Characters
+├── ✅ Health               Automatic Offline
+└── ✅ REST API
 ```
 
 **明确不在 v0.1 范围内**

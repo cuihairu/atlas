@@ -1,0 +1,79 @@
+// Package discovery implements the server discovery service described in
+// docs/api.md §Discovery.
+package discovery
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/cuihairu/atlas/internal/model"
+	"github.com/cuihairu/atlas/internal/store"
+)
+
+// Service provides read-only server discovery.
+type Service struct {
+	servers store.ServerStore
+	runtime store.RuntimeStore
+}
+
+// New creates a new discovery service.
+func New(servers store.ServerStore, runtime store.RuntimeStore) *Service {
+	return &Service{
+		servers: servers,
+		runtime: runtime,
+	}
+}
+
+// ListServers returns servers matching the filter, with runtime data merged in.
+//
+// By default (when filter.Status is empty), only visible servers are returned.
+// If filter.Status is explicitly set, that exact status is used.
+func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*model.Server, error) {
+	servers, err := s.servers.ListServers(ctx, f)
+	if err != nil {
+		return nil, fmt.Errorf("list servers: %w", err)
+	}
+
+	// Default visibility: only return servers with Visible() status unless
+	// the caller explicitly requested a status.
+	if f.Status == "" {
+		filtered := servers[:0]
+		for _, srv := range servers {
+			if srv.Status.Visible() {
+				filtered = append(filtered, srv)
+			}
+		}
+		servers = filtered
+	}
+
+	// Merge runtime data into each server.
+	for _, srv := range servers {
+		rt, err := s.runtime.GetRuntime(ctx, srv.ID)
+		if err != nil {
+			// Runtime data may not exist yet; that's OK.
+			continue
+		}
+		srv.Players = rt.Players
+		srv.Load = rt.Load
+		srv.LastSeenAt = &rt.LastSeenAt
+	}
+
+	return servers, nil
+}
+
+// GetServer returns a single server by ID with runtime data merged in.
+func (s *Service) GetServer(ctx context.Context, id string) (*model.Server, error) {
+	srv, err := s.servers.GetServer(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get server: %w", err)
+	}
+
+	rt, err := s.runtime.GetRuntime(ctx, id)
+	if err == nil {
+		srv.Players = rt.Players
+		srv.Load = rt.Load
+		srv.LastSeenAt = &rt.LastSeenAt
+	}
+
+	return srv, nil
+}

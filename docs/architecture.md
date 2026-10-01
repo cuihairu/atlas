@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../static/logo.svg" alt="Atlas" width="100" height="100" />
+</p>
+
 # 架构设计
 
 ## 1. 总览

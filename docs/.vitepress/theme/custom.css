@@ -1,0 +1,241 @@
+/**
+ * Atlas — VitePress theme overrides
+ *
+ * Brand palette derived from the logo SVG fill #e98f36.
+ * Mode: Read — structure for comprehension, make reading worth staying.
+ */
+
+:root {
+  /* ── Brand ─────────────────────────────────────────────── */
+  --vp-c-brand-1: #d97706;
+  --vp-c-brand-2: #b45309;
+  --vp-c-brand-3: #92400e;
+  --vp-c-brand-soft: rgba(217, 119, 6, 0.12);
+
+  /* ── Typography ────────────────────────────────────────── */
+  --vp-font-family-base: 'Inter', 'Noto Sans SC', ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', ui-monospace,
+    SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+
+  /* ── Layout ────────────────────────────────────────────── */
+  --vp-layout-max-width: 1360px;
+
+  /* ── Nav ───────────────────────────────────────────────── */
+  --vp-nav-height: 64px;
+
+  /* ── Sidebar ───────────────────────────────────────────── */
+  --vp-sidebar-width: 260px;
+}
+
+.dark {
+  --vp-c-brand-1: #f59e0b;
+  --vp-c-brand-2: #d97706;
+  --vp-c-brand-3: #b45309;
+  --vp-c-brand-soft: rgba(245, 158, 11, 0.12);
+}
+
+/* ── Global resets ───────────────────────────────────────── */
+
+html {
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Nav bar ─────────────────────────────────────────────── */
+
+.VPNav .title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.VPNav .VPNavBarMenuLink .text {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+
+.VPHero .name {
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.VPHero .text {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.VPHero .tagline {
+  font-weight: 400;
+  line-height: 1.6;
+  max-width: 520px;
+}
+
+/* ── Feature cards (landing) ─────────────────────────────── */
+
+.VPFeature {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1);
+  box-shadow: 0 2px 12px var(--vp-c-brand-soft);
+}
+
+.VPFeature .title {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+
+.VPSidebar .text {
+  font-weight: 450;
+}
+
+.VPSidebar .link.active .text {
+  font-weight: 600;
+}
+
+/* ── Content area ────────────────────────────────────────── */
+
+.vp-doc h1 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.vp-doc h2 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vp-doc p {
+  line-height: 1.75;
+  max-width: 72ch;
+}
+
+.vp-doc a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--vp-c-brand-soft);
+  transition: text-decoration-color 0.15s ease;
+}
+
+.vp-doc a:hover {
+  text-decoration-color: var(--vp-c-brand-1);
+}
+
+/* ── Code blocks ─────────────────────────────────────────── */
+
+.vp-doc div[class*='language-'] {
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Tables ──────────────────────────────────────────────── */
+
+.vp-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.vp-doc th {
+  font-weight: 600;
+  text-align: left;
+  background: var(--vp-c-bg-soft);
+}
+
+.vp-doc th,
+.vp-doc td {
+  padding: 10px 14px;
+  border: 1px solid var(--vp-c-divider);
+}
+
+/* ── Blockquotes / tips ──────────────────────────────────── */
+
+.vp-doc blockquote {
+  border-left: 3px solid var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 16px;
+}
+
+/* ── Custom scrollbar ────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-text-3);
+}
+
+/* ── Selection ───────────────────────────────────────────── */
+
+::selection {
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+
+.VPFooter {
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.VPFooter .message,
+.VPFooter .copyright {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* ── Dark mode specifics ─────────────────────────────────── */
+
+.dark .vp-doc div[class*='language-'] {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .VPFeature {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .VPFeature:hover {
+  border-color: var(--vp-c-brand-2);
+}

@@ -19,32 +19,32 @@
 
 ---
 
-## v0.1 — MVP
+## v0.1 — MVP ✅ 已完成
 
-**目标：把核心模型跑通。**
+**目标：把核心模型跑通。** ✅
 
 ```text
 Atlas v0.1
 │
-├── Server Registry
-│   ├── Register
-│   ├── Heartbeat
-│   └── Unregister
+├── ✅ Server Registry
+│   ├── ✅ Register
+│   ├── ✅ Heartbeat
+│   └── ✅ Unregister
 │
-├── Server Discovery
-│   ├── List
-│   └── Get
+├── ✅ Server Discovery
+│   ├── ✅ List
+│   └── ✅ Get
 │
-├── Character Directory
-│   ├── Create
-│   ├── Update
-│   ├── Delete
-│   └── Account → Characters
+├── ✅ Character Directory
+│   ├── ✅ Create
+│   ├── ✅ Update
+│   ├── ✅ Delete
+│   └── ✅ Account → Characters
 │
-├── Health
-│   └── Automatic Offline
+├── ✅ Health
+│   └── ✅ Automatic Offline
 │
-└── REST API
+└── ✅ REST API
 ```
 
 ### 技术栈
@@ -52,7 +52,7 @@ Atlas v0.1
 | 组件 | 选型 |
 | --- | --- |
 | 语言 | Go |
-| 存储 | PostgreSQL + Redis |
+| 存储 | PostgreSQL + Redis（含内存实现用于开发/测试） |
 | API | REST (HTTP/1.1 + JSON) |
 | 部署 | Docker Compose |
 | 测试 | Go `testing` + testcontainers |
@@ -201,49 +201,30 @@ Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、
 
 ---
 
-## 项目结构（规划）
+## 项目结构
 
 ```text
 atlas/
-├── cmd/
-│   ├── atlas/                 主服务
-│   └── atlas-agent/           可选的边缘 agent
-│
+├── cmd/atlas/              主服务入口
 ├── internal/
-│   ├── registry/              注册 / 心跳
-│   ├── discovery/             发现
-│   ├── directory/             角色目录
-│   ├── routing/               推荐
-│   ├── health/                健康判定
-│   ├── migration/             合服转服
-│   └── storage/               PG + Redis 抽象
-│
-├── api/
-│   ├── http/                  REST 路由与 handler
-│   └── proto/                 gRPC 定义
-│
-├── sdk/
-│   ├── cpp/
-│   └── go/
-│
-├── plugins/
-│   └── apisix/                APISIX 集成
-│
-├── deployments/
-│   ├── docker/
-│   └── kubernetes/
-│
-├── docs/                      ← 当前已完成
-│   ├── architecture.md
-│   ├── concepts.md
-│   ├── api.md
-│   ├── data-model.md
-│   ├── lifecycle.md
-│   ├── migration.md
-│   ├── sync.md
-│   └── roadmap.md
-│
-└── README.md
+│   ├── model/              领域模型（Server, Character, Status）
+│   ├── store/              存储接口
+│   │   ├── memory/         内存实现（测试 + 开发）
+│   │   ├── postgres/       PostgreSQL 实现
+│   │   └── redisstore/     Redis 运行时状态
+│   ├── registry/           注册 / 心跳 / 注销
+│   ├── discovery/          服务器发现
+│   ├── directory/          角色目录
+│   ├── health/             健康监控（自动掉线）
+│   ├── httpapi/            REST API handlers
+│   ├── config/             环境变量配置
+│   └── version/            版本信息
+├── migrations/             SQL migration
+├── deployments/docker/     Dockerfile + docker-compose
+├── docs/                   设计文档
+├── Makefile
+├── .env.example
+└── go.mod
 ```
 
-**当前状态**：文档阶段已完成。下一步是实现 v0.1。
+**当前状态**：v0.1 MVP 已完成。下一步是 v0.2 事件驱动 + 生命周期。
