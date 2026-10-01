@@ -31,18 +31,18 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
 ```json
 {
   "server_id": "game-1001",
+  "name": "一区·青龙",
   "type": "game",
   "region": "cn-east",
-  "realm": "realm-01",
-  "shard": "shard-1001",
+  "realm_id": "realm-01",
+  "shard_id": "shard-1001",
   "version": "1.8.2",
+  "platform": "android",
   "endpoint": {
     "host": "10.0.1.21",
     "port": 30001
   },
-  "capacity": 2000,
-  "players": 512,
-  "started_at": "2026-10-01T05:58:00Z"
+  "capacity": 2000
 }
 ```
 
@@ -51,8 +51,7 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
 ```json
 {
   "server_id": "game-1001",
-  "status": "online",
-  "registered_at": "2026-10-01T06:00:00Z"
+  "status": "starting"
 }
 ```
 
@@ -60,19 +59,22 @@ Atlas 保存的字段：
 
 ```text
 server_id
+name
 type
 region
-realm
-shard
+realm_id    # 关联大区（见 Admin Realms），发现过滤 ?realm= 依赖它
+shard_id    # 关联分片（见 Admin Shards），发现过滤 ?shard= 依赖它
 version
+platform
 endpoint
 capacity
-status
-players     # 初始在线人数，直接写入运行时数据（重注册恢复现场）
-started_at  # 进程启动时间，缺省取注册时刻；重注册刷新（可算 uptime）
+status      # 注册即 starting，首个有效心跳自动提升 online
 ```
 
-**幂等性**：重复注册同一 `server_id` 视为更新，返回 `200 OK`。
+**幂等性**：重复注册同一 `server_id` 视为更新（幂等 upsert，可变字段被覆盖），
+同样返回 `201 Created`。在线服务器重复注册不会被打回 `starting`；
+`offline` / `suspect` 服务器重新注册会重置为 `starting`，以此恢复上线
+（见 [lifecycle.md](lifecycle.md)）。
 
 ---
 

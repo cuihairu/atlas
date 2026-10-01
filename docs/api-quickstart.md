@@ -35,10 +35,11 @@ curl -X POST http://localhost:8080/v1/registry/servers/register \
 ```json
 {
   "server_id": "game-1001",
-  "status": "online",
-  "registered_at": "2026-10-01T06:00:00Z"
+  "status": "starting"
 }
 ```
+
+> 注册后状态为 `starting`，发送首个有效心跳后自动提升为 `online`（见下一步）。
 
 ### 2. 发送心跳
 
