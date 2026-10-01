@@ -3,7 +3,7 @@ module github.com/cuihairu/atlas
 go 1.27
 
 require (
-	github.com/jackc/pgx/v5 v5.7.5
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/redis/go-redis/v9 v9.7.3
 )
 
