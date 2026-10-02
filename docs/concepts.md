@@ -134,7 +134,29 @@ Realm 内的分区。MMORPG 中的"一区""二区"。
 | `players` | 当前在线人数 |
 | `capacity` | 最大容量 |
 | `load` | 负载系数，0.0 ~ 1.0 |
+| `tags` | 运营标记列表，见[下文 §服务器标记](#服务器标记) |
 | `created_at` / `updated_at` | 创建 / 最近更新时间 |
+
+### 服务器标记 {#服务器标记}
+
+一台服务器可挂**多个运营标记**，每个标记四个字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `code` | 标记代码，`[a-z0-9][a-z0-9_-]{0,31}`，同服务器内唯一 |
+| `label` | 展示文案（角标上显示的字，如「火热」） |
+| `tier` | 样式档位：`hot` 火爆红 / `new` 新服绿 / `warning` 警示黄 / `info` 信息蓝 / `neutral` 中性 |
+| `public` | 是否对外：`true` 才会出现在玩家可见的发现/推荐响应里 |
+
+**预设标记**（自带文案与档位，`public` 默认 true）：`hot` 火热、`full` 爆满、`no_register` 禁止注册、`maintenance` 维护中、`new` 新服、`recommended` 推荐。自定义标记默认 `public=false`（内部标记，不出前端）。
+
+三条硬规则：
+
+1. **管理台独占维护**：`GET/POST /v1/admin/servers/{id}/tags`、`DELETE …/tags/{code}`。游戏服的注册 upsert 在 SQL 里**省略 tags 列**，重新注册/心跳永远不覆盖、不清空标记——它们是运营资产，不是游戏服的自我描述。
+2. **对外面只出 public 标记**：发现列表/详情与推荐接口统一过滤（仅视图层），内部标记（如运营备注）只存在于管理台。
+3. **`no_register` 是行为不只是显示**：注册管控判定 `registry.CheckRegistration` 同时管 REST（`POST /v1/directory/characters` → 403 `REGISTRATION_FORBIDDEN`）与 gRPC（PermissionDenied）。`maintenance` 标记与维护状态同权：`ATLAS_MAINTENANCE_ENFORCE=block`（默认）拒绝并返回 `SERVER_IN_MAINTENANCE`，`=warn` 放行但附 `Warning: 299` 告警头。
+
+真实走查（打「火热+禁止注册」→ 玩家侧角标 → 创角 403 → 摘除恢复 201）见[场景导览 §2](/scenarios#scenario-tags)。
 
 ---
 

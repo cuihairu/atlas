@@ -27,6 +27,24 @@ features:
     details: 运维声明、Atlas 执行——紧急故障一条 API 发公告，计划维护提前建窗口：start_at 到点自动进入维护、end_at 自动恢复，维护公告同时段自动挂出，客户端登录即见。
 ---
 
+## 界面速览
+
+管理台（Dashboard）长什么样，一眼看全——自动轮播，也可用两侧箭头、下方圆点或键盘 ←/→ 翻看：
+
+<script setup>
+const showcaseSlides = [
+  { image: '/screenshots/overview.png', title: '总览', caption: '总览 — 在线服务器 / 玩家 / 容量与状态分布', link: '/scenarios#scenario-overview' },
+  { image: '/screenshots/servers.png', title: '服务器列表', caption: '服务器列表 — 状态、角标（火热/新服/爆满）与容量水位', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/server-detail-tags.png', title: '服务器详情', caption: '服务器详情 — 标记管理（对外/内部）与实时指标', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/characters.png', title: '角色搜索', caption: '角色搜索 — 跨服角色索引，按名字/服务器/等级过滤', link: '/scenarios#scenario-characters' },
+  { image: '/screenshots/migrations.png', title: '迁移管理', caption: '迁移管理 — 合服/转服编排与回滚', link: '/scenarios#scenario-migration' },
+]
+</script>
+
+<ShowcaseCarousel :slides="showcaseSlides" />
+
+每张截图都来自真实运行的 Atlas + 管理台（数据为演示集群）。按场景一步步走一遍，见 **[场景导览](/scenarios)**；实现层面的取舍见 **[性能设计](/performance)**。
+
 ## 一条命令跑起来
 
 ```bash

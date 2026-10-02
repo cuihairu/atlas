@@ -28,6 +28,7 @@ export default withMermaid({
 
     nav: [
       { text: '快速上手', link: '/api-quickstart' },
+      { text: '场景导览', link: '/scenarios' },
       {
         text: '接入',
         items: [
@@ -46,6 +47,7 @@ export default withMermaid({
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '高可用', link: '/ha' },
           { text: '部署拓扑', link: '/topology' },
+          { text: '性能设计', link: '/performance' },
           { text: '性能基准', link: '/benchmarks' },
           { text: '安全', link: '/security' },
         ],
@@ -70,6 +72,7 @@ export default withMermaid({
         items: [
           { text: '简介', link: '/' },
           { text: '快速上手', link: '/api-quickstart' },
+          { text: '场景导览', link: '/scenarios' },
           { text: '概念模型', link: '/concepts' },
         ],
       },
@@ -101,6 +104,7 @@ export default withMermaid({
           { text: '合服 / 转服 / 迁服', link: '/migration' },
           { text: '高可用', link: '/ha' },
           { text: '部署拓扑', link: '/topology' },
+          { text: '性能设计', link: '/performance' },
           { text: '性能基准', link: '/benchmarks' },
           { text: '安全', link: '/security' },
         ],
