@@ -55,4 +55,9 @@ jobs:
       - uses: codecov/codecov-action@v7
         with:
           files: coverage.out
+          # 受保护分支（main）强制要求 token：tokenless 上传会被 Codecov
+          # 以 "Token required because branch is protected" 拒绝（实测）。
+          # 在仓库 Secrets 配置 CODECOV_TOKEN（codecov.io 免费获取）即生效；
+          # 未配置时保持空值，行为同 tokenless（失败不阻断门禁）。
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false

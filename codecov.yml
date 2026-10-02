@@ -1,4 +1,7 @@
-# Codecov 配置 —— 公共仓库 tokenless 上传，覆盖率口径由本文件驱动。
+# Codecov 配置 —— 覆盖率口径由本文件驱动。
+# 注意：main 为受保护分支，Codecov 强制要求上传带 token（tokenless 会被
+# "Token required because branch is protected" 拒绝，实测）。仓库 Secrets 配置
+# CODECOV_TOKEN（公共仓库免费）后上传即生效；未配置前徽章显示 unknown。
 # 覆盖率定位为趋势信号（informational）：只报告，不因全局数字波动阻断合入；
 # 提交前的硬门禁仍是本地 go build / vet / test（见 .github/workflows/ci.yml）。
 
