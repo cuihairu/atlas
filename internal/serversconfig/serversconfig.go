@@ -87,9 +87,9 @@ func Load(path, profileOverride string) (*Profile, string, error) {
 	}
 
 	switch {
-	case len(f.Profiles) > 0 && len(f.Servers) > 0:
+	case f.Profiles != nil && len(f.Servers) > 0:
 		return nil, "", fmt.Errorf("servers config %s: use either \"profiles\" or \"servers\", not both", path)
-	case len(f.Profiles) > 0:
+	case f.Profiles != nil:
 		name, prof, err := selectProfile(path, f, profileOverride)
 		if err != nil {
 			return nil, "", err

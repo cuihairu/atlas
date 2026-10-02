@@ -2,6 +2,7 @@ package nats
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -195,5 +196,23 @@ func TestPayloadRoundTripPreservesOptionalFields(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("handler not called")
+	}
+}
+
+func TestOpenConnectFailureAndAccessors(t *testing.T) {
+	if _, err := Open(Options{URL: "nats://127.0.0.1:1"}); err == nil ||
+		!strings.Contains(err.Error(), "nats connect") {
+		t.Errorf("Open to closed port = %v, want connect failure", err)
+	}
+
+	a := New(nil, nil, Options{})
+	if a.Name() != "nats" {
+		t.Errorf("Name = %q", a.Name())
+	}
+	if a.Synchronous() {
+		t.Error("Synchronous = true, want false")
+	}
+	if err := a.Ack(context.Background(), &event.Event{}); err != nil {
+		t.Errorf("Ack (no-op) = %v", err)
 	}
 }

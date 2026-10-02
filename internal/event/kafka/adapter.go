@@ -86,6 +86,9 @@ func Open(ctx context.Context, opts Options) (*Adapter, error) {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     brokers,
 		GroupID:     groupOf(opts),
+		// kafka-go requires the topic up front for group consumption, and
+		// TopicFor routes every event type to this one topic.
+		Topic:       event.TopicCharacters,
 		MaxWait:     blockOf(opts),
 		StartOffset: kafka.FirstOffset,
 	})

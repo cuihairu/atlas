@@ -2,6 +2,11 @@
 # Dependabot 的自动合并 workflow 会单独重跑这些门禁；本 workflow 面向所有
 # push / PR。覆盖率目标：service 与 handler 层 >80%（docs/benchmarks.md 的
 # 回归警戒线之外的另一条质量线，见 docs/security-audit.md 的范围表）。
+#
+# 三个 store 契约套件（postgres / mysql / redisstore）通过环境变量门控，
+# 指向下方 service containers —— 与本地一致：
+#   ATLAS_TEST_DATABASE_URL / ATLAS_TEST_MYSQL_DSN / ATLAS_TEST_REDIS_URL
+# 未设置时套件自动 skip，本地 `go test ./...` 保持零依赖。
 name: ci
 
 on:
@@ -15,6 +20,51 @@ permissions:
 jobs:
   go:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: atlas_test
+          MYSQL_USER: atlas
+          MYSQL_PASSWORD: atlas
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -hatlas -patlas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
+      ATLAS_TEST_MYSQL_DSN: atlas:atlas@tcp(127.0.0.1:3306)/atlas_test
+      # 专用逻辑库（15）：套件每次 FlushDB，不与任何真实数据共存。
+      ATLAS_TEST_REDIS_URL: redis://localhost:6379/15
+
     steps:
       - uses: actions/checkout@v4
 
@@ -28,8 +78,21 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # -coverpkg 让跨包执行的代码（storetest 契约套件在三个 store 包的
+      # 测试二进制里跑）如实计入覆盖；随后按块去重（保留最大计数）得到
+      # 标准格式 profile，`go tool cover` 与 Codecov 均可直接解析。
       - name: Test with coverage
-        run: go test ./... -coverprofile=coverage.out -count=1
+        run: |
+          go test ./internal/... -coverprofile=coverage.raw -count=1 -coverpkg=./internal/...
+          go test ./cmd/... ./sdk/... ./api/... ./examples/... -count=1
+          awk 'NR==1 {next} {
+            if (!($1 in stmt)) {order[++n]=$1; stmt[$1]=$2; cnt[$1]=0}
+            if ($3+0 > cnt[$1]) cnt[$1]=$3
+          } END {
+            print "mode: set"
+            for (i=1;i<=n;i++) print order[i] " " stmt[order[i]] " " cnt[order[i]]
+          }' coverage.raw > coverage.out
+          go tool cover -func=coverage.out | tail -1
 
       - name: Coverage report
         run: |

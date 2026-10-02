@@ -246,3 +246,30 @@ func TestCloseStopsConsumption(t *testing.T) {
 	r.push(kafka.Message{Topic: event.TopicCharacters, Value: []byte("{}")})
 	time.Sleep(100 * time.Millisecond)
 }
+
+// Open dials lazily in kafka-go, so it must succeed (and Close cleanly) even
+// with an unreachable broker; the accessors pin the interface contract.
+func TestOpenWithoutBrokerAndAccessors(t *testing.T) {
+	a, err := Open(context.Background(), Options{Brokers: []string{"127.0.0.1:1"}})
+	if err != nil {
+		t.Fatalf("Open (lazy dial): %v", err)
+	}
+	if a.Name() != "kafka" {
+		t.Errorf("Name = %q", a.Name())
+	}
+	if a.Synchronous() {
+		t.Error("Synchronous = true, want false")
+	}
+	if err := a.Ack(context.Background(), &event.Event{}); err != nil {
+		t.Errorf("Ack (no-op) = %v", err)
+	}
+	if err := a.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+
+	// Zero Options select the documented defaults.
+	d := New(nil, nil, Options{})
+	if d.group != DefaultGroup || d.block != defaultBlock || d.logger == nil {
+		t.Errorf("defaults = group %q block %v logger %v", d.group, d.block, d.logger)
+	}
+}

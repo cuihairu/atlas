@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -291,5 +292,23 @@ func TestPublishRejectsUnknownType(t *testing.T) {
 	}
 	if published, _, _ := ch.stats(); published != 0 {
 		t.Fatalf("published = %d, want 0", published)
+	}
+}
+
+func TestOpenDialFailureAndAccessors(t *testing.T) {
+	if _, err := Open(Options{URL: "amqp://127.0.0.1:1/"}); err == nil ||
+		!strings.Contains(err.Error(), "amqp dial") {
+		t.Errorf("Open to closed port = %v, want dial failure", err)
+	}
+
+	a := New(nil, Options{})
+	if a.Name() != "rabbitmq" {
+		t.Errorf("Name = %q", a.Name())
+	}
+	if a.Synchronous() {
+		t.Error("Synchronous = true, want false")
+	}
+	if err := a.Ack(context.Background(), &event.Event{}); err != nil {
+		t.Errorf("Ack (no-op) = %v", err)
 	}
 }
