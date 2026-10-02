@@ -180,6 +180,10 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 			return
 		}
+		if errors.Is(err, model.ErrConflict) {
+			writeError(w, http.StatusConflict, "SERVER_MANAGED_BY_CONFIG", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}

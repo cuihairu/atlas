@@ -4,6 +4,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -76,6 +77,18 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 		return nil, err
 	}
 
+	// Config-managed servers (ATLAS_SERVERS_CONFIG) reject API registration:
+	// their profile fields are owned by the config file, so an API update
+	// would be silently reverted at the next Atlas restart. Heartbeats and
+	// lifecycle operations remain the way a declared server participates.
+	if existing, err := s.servers.GetServer(ctx, req.ID); err == nil {
+		if existing.Source == "config" {
+			return nil, fmt.Errorf("%w: server %s is managed by the servers config; update the declaration there (heartbeat is still accepted)", model.ErrConflict, req.ID)
+		}
+	} else if !errors.Is(err, model.ErrNotFound) {
+		return nil, fmt.Errorf("lookup server %s: %w", req.ID, err)
+	}
+
 	if err := s.servers.RegisterServer(ctx, srv); err != nil {
 		return nil, fmt.Errorf("register server: %w", err)
 	}
@@ -130,6 +143,19 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 			return "", fmt.Errorf("promote to online: %w", err)
 		}
 		s.logger.Info("server promoted to online", "server_id", serverID)
+		return model.StatusOnline, nil
+	}
+
+	// Config-managed servers (ATLAS_SERVERS_CONFIG) cannot re-register — the
+	// register API rejects them — so a valid heartbeat is their proof of
+	// life: it re-enters rotation from dead-ish states the same way a
+	// re-register does for API servers. Without this, a declared server
+	// aged offline before its instance booted could never come back.
+	if srv.Source == "config" && (srv.Status == model.StatusSuspect || srv.Status == model.StatusOffline) {
+		if err := s.servers.UpdateServerStatus(ctx, serverID, model.StatusOnline); err != nil {
+			return "", fmt.Errorf("promote to online: %w", err)
+		}
+		s.logger.Info("config-managed server re-entered rotation", "server_id", serverID, "from", srv.Status)
 		return model.StatusOnline, nil
 	}
 

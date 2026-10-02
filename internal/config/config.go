@@ -194,6 +194,19 @@ type Config struct {
 	PGPoolMaxConnLifetime   time.Duration
 	PGPoolMaxConnIdleTime   time.Duration
 	PGPoolHealthCheckPeriod time.Duration
+
+	// ServersConfigFile points at a JSON file declaring config-managed
+	// servers (docs/server-config.md). When set, the declared fleet is
+	// upserted at startup — no register call needed — and the register API
+	// rejects updates for declared IDs. Empty disables the feature.
+	// Env: ATLAS_SERVERS_CONFIG, default "".
+	ServersConfigFile string
+
+	// ServersProfile selects the active profile when the servers config file
+	// declares multiple profiles. Overrides the file's own "profile" field;
+	// leaving both empty selects the "default" profile when present.
+	// Env: ATLAS_SERVERS_PROFILE, default "".
+	ServersProfile string
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -294,6 +307,9 @@ func Load() Config {
 			cfg.PGPoolHealthCheckPeriod = d
 		}
 	}
+
+	cfg.ServersConfigFile = os.Getenv("ATLAS_SERVERS_CONFIG")
+	cfg.ServersProfile = os.Getenv("ATLAS_SERVERS_PROFILE")
 
 	return cfg
 }

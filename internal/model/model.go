@@ -127,7 +127,13 @@ type Server struct {
 	Endpoint   Endpoint          `json:"endpoint"`
 	Capacity   int               `json:"capacity"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
-	Status     ServerStatus      `json:"status"`
+	// Source marks who owns the profile fields of this record. Empty and
+	// "api" mean API-registered (the default); "config" means the record is
+	// declared in the servers config file (ATLAS_SERVERS_CONFIG) — its
+	// profile fields are config-owned and the register API rejects updates
+	// for it (heartbeats and lifecycle operations still apply).
+	Source    string       `json:"source,omitempty"`
+	Status    ServerStatus `json:"status"`
 	Players    int               `json:"players"`
 	Load       float64           `json:"load"`
 	LastSeenAt *time.Time        `json:"last_seen_at,omitempty"`

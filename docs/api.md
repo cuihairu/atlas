@@ -76,6 +76,10 @@ status      # 注册即 starting，首个有效心跳自动提升 online
 `offline` / `suspect` 服务器重新注册会重置为 `starting`，以此恢复上线
 （见 [lifecycle.md](lifecycle.md)）。
 
+> **配置托管例外**：`ATLAS_SERVERS_CONFIG` 声明的服务器不走注册 API——对其调用返回
+> `409 SERVER_MANAGED_BY_CONFIG`，档案字段由配置文件所有（心跳照常）。静态舰队可用
+> 配置声明起服，见 [server-config.md](server-config.md)。
+
 ---
 
 ### POST /v1/registry/servers/{id}/heartbeat
@@ -645,6 +649,7 @@ service AdminService {       // 对应 /v1/admin/*
 | 400 `INVALID_ARGUMENT` | `InvalidArgument` | 参数缺失或格式错误 |
 | 404 `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND` | `NotFound` | 服务器 / 角色 / 迁移不存在 |
 | 409 `ALREADY_REGISTERED` | `AlreadyExists` | 注册冲突 |
+| 409 `SERVER_MANAGED_BY_CONFIG` | `AlreadyExists` | 注册对象由服务器配置文件托管（见 [server-config.md](server-config.md)） |
 | 500 / 503 | `Internal` | 存储层错误 |
 
 ### 字段约定
@@ -710,6 +715,7 @@ Atlas 将 API 划分为三个安全域，各自独立配置：
 | 404 | `SERVER_NOT_FOUND` | 服务器不存在 |
 | 404 | `CHARACTER_NOT_FOUND` | 角色索引不存在 |
 | 409 | `ALREADY_REGISTERED` | 注册冲突（保留给未来的强校验场景） |
+| 409 | `SERVER_MANAGED_BY_CONFIG` | 注册对象由服务器配置文件托管（见 [server-config.md](server-config.md)） |
 | 429 | `RATE_LIMITED` | 触发 APISIX 限流 |
 | 503 | `STORAGE_UNAVAILABLE` | Redis / PostgreSQL 不可用 |
 

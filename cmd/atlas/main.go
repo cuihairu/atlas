@@ -38,6 +38,7 @@ import (
 	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
+	"github.com/cuihairu/atlas/internal/serversconfig"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
@@ -155,6 +156,31 @@ func main() {
 		}
 		charStore = sharded.New(shardStores, store.HashShardStrategy{})
 		logger.Info("character index sharding enabled", "shards", cfg.CharShards)
+	}
+
+	// Config-declared servers (docs/server-config.md): a JSON file declares a
+	// fleet that exists as soon as Atlas starts — no register call needed.
+	// Any validation failure aborts startup; a declared set is applied as a
+	// whole (create / refresh / release-back), and live status is untouched.
+	if cfg.ServersConfigFile != "" {
+		prof, profileName, err := serversconfig.Load(cfg.ServersConfigFile, cfg.ServersProfile)
+		if err != nil {
+			logger.Error("invalid servers config", "file", cfg.ServersConfigFile, "error", err)
+			os.Exit(1)
+		}
+		res, err := serversconfig.Apply(ctx, serverStore, prof)
+		if err != nil {
+			logger.Error("failed to apply servers config", "file", cfg.ServersConfigFile, "error", err)
+			os.Exit(1)
+		}
+		logger.Info("servers config applied",
+			"file", cfg.ServersConfigFile,
+			"profile", profileName,
+			"declared", len(prof.Servers),
+			"created", res.Created,
+			"updated", res.Updated,
+			"released", res.Released,
+		)
 	}
 
 	// Create services.

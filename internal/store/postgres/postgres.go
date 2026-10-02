@@ -59,8 +59,8 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
-                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
     type          = EXCLUDED.type,
@@ -76,13 +76,14 @@ ON CONFLICT (id) DO UPDATE SET
     -- server can recover; keep active and operator-set statuses untouched.
     status        = CASE WHEN servers.status IN ('suspect', 'offline') THEN EXCLUDED.status ELSE servers.status END,
     started_at    = EXCLUDED.started_at,
-    updated_at    = EXCLUDED.updated_at
+    updated_at    = EXCLUDED.updated_at,
+    source        = EXCLUDED.source
 `
 	_, err := s.pool.Exec(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
-		srv.Status, srv.StartedAt, srv.CreatedAt, srv.UpdatedAt,
+		srv.Status, srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -93,7 +94,7 @@ ON CONFLICT (id) DO UPDATE SET
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
 FROM servers WHERE id = $1
 `
 	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
@@ -113,7 +114,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
 FROM servers WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -597,7 +598,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
-		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt,
+		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

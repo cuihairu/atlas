@@ -77,6 +77,7 @@ func (s *Store) RegisterServer(_ context.Context, srv *model.Server) error {
 		existing.Platform = srv.Platform
 		existing.Endpoint = srv.Endpoint
 		existing.Capacity = srv.Capacity
+		existing.Source = srv.Source
 		existing.StartedAt = srv.StartedAt
 		// A fresh registration proves a (re)boot: reset only a dead-ish
 		// lifecycle (suspect / offline) so the next heartbeat can promote it
