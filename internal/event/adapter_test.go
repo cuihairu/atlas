@@ -53,3 +53,27 @@ func TestEventTypeConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestTopicFor(t *testing.T) {
+	// Every character.* event routes through the single characters topic.
+	for _, evt := range []EventType{
+		EventCharacterCreated,
+		EventCharacterUpdated,
+		EventCharacterDeleted,
+		EventCharacterMoved,
+		EventCharacterLogin,
+	} {
+		topic, err := TopicFor(evt)
+		if err != nil {
+			t.Errorf("TopicFor(%q): %v", evt, err)
+			continue
+		}
+		if topic != TopicCharacters {
+			t.Errorf("TopicFor(%q) = %q, want %q", evt, topic, TopicCharacters)
+		}
+	}
+
+	if _, err := TopicFor(EventType("character.teleported")); err == nil {
+		t.Error("expected error for unknown event type, got nil")
+	}
+}

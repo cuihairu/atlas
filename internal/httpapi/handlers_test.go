@@ -906,3 +906,415 @@ func TestAdminRealmsAndShards(t *testing.T) {
 		t.Errorf("expected empty shards array, got %v", emptyList.Shards)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Edge-branch tests: argument validation, not-found paths, invalid transitions
+// ---------------------------------------------------------------------------
+
+type apiErrorBody struct {
+	Error struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func decodeError(t *testing.T, resp *http.Response) apiErrorBody {
+	t.Helper()
+	var body apiErrorBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	resp.Body.Close()
+	return body
+}
+
+func TestRegisterConfigManagedConflict(t *testing.T) {
+	ts, mem := setupTestServer(t)
+	defer ts.Close()
+
+	// A config-managed server owns its profile fields; the register API
+	// must reject an API-side registration with 409.
+	if err := mem.RegisterServer(nil, &model.Server{
+		ID: "game-cfg", Name: "Declared", Type: "game", Region: "cn-east",
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.9", Port: 30009},
+		Status:   model.StatusOnline, Source: "config",
+	}); err != nil {
+		t.Fatalf("seed config server: %v", err)
+	}
+
+	resp := postJSON(t, ts, "/v1/registry/servers/register", map[string]any{
+		"server_id": "game-cfg", "name": "Hijack", "type": "game", "region": "cn-east",
+		"version": "1.0.0", "platform": "android",
+		"endpoint": map[string]any{"host": "10.0.0.9", "port": 30009},
+		"capacity": 100,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 for config-managed server, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "SERVER_MANAGED_BY_CONFIG" {
+		t.Errorf("expected SERVER_MANAGED_BY_CONFIG, got %q", code)
+	}
+}
+
+func TestRegisterValidation(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Missing endpoint host fails domain validation → 400.
+	resp := postJSON(t, ts, "/v1/registry/servers/register", map[string]any{
+		"server_id": "game-bad", "name": "Bad", "type": "game", "region": "cn-east",
+		"endpoint": map[string]any{"host": "", "port": 30001}, "capacity": 100,
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "INVALID_ARGUMENT" {
+		t.Errorf("expected INVALID_ARGUMENT, got %q", code)
+	}
+}
+
+func TestCharacterInvalidArguments(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+
+	// Create: invalid JSON and missing required fields.
+	resp, err := ts.Client().Post(ts.URL+"/v1/directory/characters", "application/json",
+		bytes.NewReader([]byte("not json")))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("create invalid JSON: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = postJSON(t, ts, "/v1/directory/characters", map[string]any{
+		"account_id": 0, "server_id": "game-1001", "character_id": 0,
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("create missing fields: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// GET: non-numeric ids → 400, missing character → 404.
+	resp = getJSON(t, ts, "/v1/directory/characters/abc")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("get non-numeric id: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = getJSON(t, ts, "/v1/directory/characters/999999")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("get missing character: expected 404, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "CHARACTER_NOT_FOUND" {
+		t.Errorf("expected CHARACTER_NOT_FOUND, got %q", code)
+	}
+
+	resp = getJSON(t, ts, "/v1/directory/accounts/abc/characters")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("list non-numeric account: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// PATCH: bad id, bad body, missing character.
+	patch := func(path string, body any) *http.Response {
+		t.Helper()
+		data, _ := json.Marshal(body)
+		req, _ := http.NewRequest("PATCH", ts.URL+path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("PATCH: %v", err)
+		}
+		return resp
+	}
+
+	if resp := patch("/v1/directory/characters/abc", map[string]any{"level": 2}); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("patch non-numeric id: expected 400, got %d", resp.StatusCode)
+	} else {
+		resp.Body.Close()
+	}
+	if resp := patch("/v1/directory/characters/1", "not json"); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("patch invalid JSON: expected 400, got %d", resp.StatusCode)
+	} else {
+		resp.Body.Close()
+	}
+	if resp := patch("/v1/directory/characters/999999", map[string]any{"level": 2}); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("patch missing character: expected 404, got %d", resp.StatusCode)
+	} else {
+		resp.Body.Close()
+	}
+
+	// DELETE missing character → 404.
+	req, _ := http.NewRequest("DELETE", ts.URL+"/v1/directory/characters/999999", nil)
+	delResp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	if delResp.StatusCode != http.StatusNotFound {
+		t.Errorf("delete missing character: expected 404, got %d", delResp.StatusCode)
+	}
+	delResp.Body.Close()
+}
+
+func TestAdminEnableInvalidTransition(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Enable on a missing server → 404.
+	resp := postJSON(t, ts, "/v1/admin/servers/nonexistent/enable", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("enable missing server: expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Enable only accepts maintenance/disabled; online → 400.
+	registerTestServer(t, ts, "game-1001")
+	resp = postJSON(t, ts, "/v1/registry/servers/game-1001/heartbeat", map[string]any{"players": 1, "load": 0.1})
+	resp.Body.Close()
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/enable", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("enable from online: expected 400, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "INVALID_ARGUMENT" {
+		t.Errorf("expected INVALID_ARGUMENT, got %q", code)
+	}
+}
+
+func TestAdminSearchInvalidFilters(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	for name, q := range map[string]string{
+		"class_id":  "?class_id=abc",
+		"min_level": "?min_level=abc",
+		"max_level": "?max_level=abc",
+		"limit":     "?limit=abc",
+		"limit<=0":  "?limit=0",
+	} {
+		resp := getJSON(t, ts, "/v1/admin/characters/search"+q)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: expected 400, got %d", name, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+}
+
+func TestAdminShardErrors(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp, err := ts.Client().Post(ts.URL+"/v1/admin/shards", "application/json", bytes.NewReader([]byte("not json")))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid JSON: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Missing fields → 400.
+	resp = postJSON(t, ts, "/v1/admin/shards", map[string]any{"id": "shard-1"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing fields: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Unknown realm → 404 REALM_NOT_FOUND.
+	resp = postJSON(t, ts, "/v1/admin/shards", map[string]any{
+		"id": "shard-1", "name": "Shard", "realm_id": "no-such-realm",
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown realm: expected 404, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "REALM_NOT_FOUND" {
+		t.Errorf("expected REALM_NOT_FOUND, got %q", code)
+	}
+
+	// Duplicate shard within a realm → 409 SHARD_EXISTS.
+	resp = postJSON(t, ts, "/v1/admin/realms", map[string]any{"id": "realm-1", "name": "Realm"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create realm: expected 201, got %d", resp.StatusCode)
+	}
+	for i := 0; i < 2; i++ {
+		resp = postJSON(t, ts, "/v1/admin/shards", map[string]any{
+			"id": "shard-1", "name": "Shard", "realm_id": "realm-1",
+		})
+		want := http.StatusCreated
+		if i == 1 {
+			want = http.StatusConflict
+		}
+		if resp.StatusCode != want {
+			t.Fatalf("shard attempt %d: expected %d, got %d", i+1, want, resp.StatusCode)
+		}
+		if i == 1 {
+			if code := decodeError(t, resp).Error.Code; code != "SHARD_EXISTS" {
+				t.Errorf("expected SHARD_EXISTS, got %q", code)
+			}
+			continue
+		}
+		resp.Body.Close()
+	}
+
+	// Duplicate realm → 409 REALM_EXISTS.
+	resp = postJSON(t, ts, "/v1/admin/realms", map[string]any{"id": "realm-1", "name": "Realm"})
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("duplicate realm: expected 409, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// List endpoints tolerate a bad limit (fall back to the default).
+	resp = getJSON(t, ts, "/v1/admin/realms?limit=abc")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("realms with bad limit: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = getJSON(t, ts, "/v1/admin/shards?realm_id=realm-1&limit=0")
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("shards with bad limit: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAdminRollbackInvalidState(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+
+	resp := postJSON(t, ts, "/v1/admin/migrations", map[string]any{
+		"source_servers": []string{"game-1001"}, "target_server": "game-1001",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create migration: expected 201, got %d", resp.StatusCode)
+	}
+	var mig struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&mig)
+	resp.Body.Close()
+
+	// First rollback is fine (pending), a second one is rejected.
+	resp = postJSON(t, ts, "/v1/admin/migrations/"+mig.ID+"/rollback", nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("first rollback: expected 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = postJSON(t, ts, "/v1/admin/migrations/"+mig.ID+"/rollback", nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("second rollback: expected 400, got %d", resp.StatusCode)
+	}
+	if code := decodeError(t, resp).Error.Code; code != "INVALID_ARGUMENT" {
+		t.Errorf("expected INVALID_ARGUMENT, got %q", code)
+	}
+}
+
+func TestMaintenanceWindowLifecycle(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	// Unknown server → 404.
+	resp := postJSON(t, ts, "/v1/admin/servers/no-such/maintenance-window", map[string]any{
+		"start_at": "2030-01-01T00:00:00Z", "end_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown server: expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	// end_at not after start_at → 400.
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/maintenance-window", map[string]any{
+		"start_at": "2030-01-01T02:00:00Z", "end_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("end before start: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Happy path → 201, then listable and deletable.
+	resp = postJSON(t, ts, "/v1/admin/servers/game-1001/maintenance-window", map[string]any{
+		"start_at": "2030-01-01T00:00:00Z", "end_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create window: expected 201, got %d", resp.StatusCode)
+	}
+	var mw struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&mw)
+	resp.Body.Close()
+
+	resp = getJSON(t, ts, "/v1/admin/maintenance-windows?server_id=game-1001&limit=abc")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list windows: expected 200, got %d", resp.StatusCode)
+	}
+	var listResp struct {
+		Windows []model.MaintenanceWindow `json:"maintenance_windows"`
+	}
+	json.NewDecoder(resp.Body).Decode(&listResp)
+	resp.Body.Close()
+	if len(listResp.Windows) != 1 || listResp.Windows[0].ID != mw.ID {
+		t.Fatalf("expected the created window, got %+v", listResp.Windows)
+	}
+
+	req, _ := http.NewRequest("DELETE", ts.URL+"/v1/admin/maintenance-windows/"+mw.ID, nil)
+	delResp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("DELETE: %v", err)
+	}
+	delResp.Body.Close()
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Errorf("delete window: expected 204, got %d", delResp.StatusCode)
+	}
+}
+
+func TestAnnouncementValidation(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+
+	resp, err := ts.Client().Post(ts.URL+"/v1/admin/announcements", "application/json", bytes.NewReader([]byte("not json")))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid JSON: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Missing title → 400.
+	resp = postJSON(t, ts, "/v1/admin/announcements", map[string]any{
+		"body": "b", "starts_at": "2030-01-01T00:00:00Z", "ends_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("missing title: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Unknown level → 400.
+	resp = postJSON(t, ts, "/v1/admin/announcements", map[string]any{
+		"title": "t", "level": "loud", "starts_at": "2030-01-01T00:00:00Z", "ends_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("unknown level: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Unknown server → 404.
+	missing := "no-such-server"
+	resp = postJSON(t, ts, "/v1/admin/announcements", map[string]any{
+		"title": "t", "server_id": missing,
+		"starts_at": "2030-01-01T00:00:00Z", "ends_at": "2030-01-01T02:00:00Z",
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown server: expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

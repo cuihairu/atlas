@@ -5,9 +5,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func newTestService() (*Service, *memory.Store) {
@@ -199,5 +201,30 @@ func TestGetServerNotFound(t *testing.T) {
 
 	if _, err := svc.GetServer(context.Background(), "ghost"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestWithMetrics(t *testing.T) {
+	mem := memory.New()
+	svc := New(mem, mem).WithMetrics(metrics.New(mem))
+
+	seed(t, mem, "game-1001", "cn-east", model.StatusOnline, 100)
+
+	got, err := svc.ListServers(context.Background(), store.ServerFilter{})
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(got))
+	}
+
+	// The instrumentation is wired: one default-filter request counted.
+	var out dto.Metric
+	// Zero filter renders as the "none" label (internal/metrics).
+	if err := svc.metrics.DiscoveryRequests.WithLabelValues("none").Write(&out); err != nil {
+		t.Fatalf("counter write: %v", err)
+	}
+	if n := out.GetCounter().GetValue(); n != 1 {
+		t.Errorf("expected discovery counter = 1, got %v", n)
 	}
 }
