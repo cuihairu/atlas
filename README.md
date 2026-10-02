@@ -105,7 +105,7 @@ make test
 
 ## Docker 快速搭建
 
-官方镜像在 GHCR：**`ghcr.io/cuihairu/atlas`**（`latest` 跟随 main 滚动，另有 `main` / `sha-<短SHA>` / 日期标签；多架构 amd64 + arm64）。
+官方镜像在 GHCR：**`ghcr.io/cuihairu/atlas`**（`latest` 跟随 main 滚动，另有 `main` / 裸短 SHA（如 `e3f802d`） / 日期标签（如 `20261002`）；多架构 amd64 + arm64）。
 
 一条命令起全栈（Atlas + PostgreSQL + Redis，自动建表）：
 
@@ -136,7 +136,7 @@ curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat -H 'Content-
 curl 'localhost:8080/v1/discovery/servers?status=online'
 ```
 
-常用配置都在 `.env` + compose 环境变量里改：换镜像版本改 `ATLAS_IMAGE`（如 `sha-xxxxxxx`，升级可控）；数据库密码改 `ATLAS_PG_PASSWORD`（敏感值只放 `.env`，该文件已被 `.gitignore` 排除）；角色写入切消息总线在 compose 的 `atlas.environment` 加 `ATLAS_EVENT_ADAPTER=redis`（复用本栈 Redis，详见 [数据同步](https://github.com/cuihairu/atlas/blob/main/docs/sync.md)）。停止与清理：`docker compose down`（保留数据）/ `docker compose down -v`（连数据卷一起删）。
+常用配置都在 `.env` + compose 环境变量里改：换镜像版本改 `ATLAS_IMAGE`（如裸短 SHA `e3f802d`，升级可控）；数据库密码改 `ATLAS_PG_PASSWORD`（敏感值只放 `.env`，该文件已被 `.gitignore` 排除）；角色写入切消息总线在 compose 的 `atlas.environment` 加 `ATLAS_EVENT_ADAPTER=redis`（复用本栈 Redis，详见 [数据同步](https://github.com/cuihairu/atlas/blob/main/docs/sync.md)）。停止与清理：`docker compose down`（保留数据）/ `docker compose down -v`（连数据卷一起删）。
 
 > 开发场景想从源码构建（不走 GHCR 镜像）用 `deployments/docker/docker-compose.yml`；多副本高可用见 `deploy/docker-compose.ha.yaml` 与[高可用文档](https://github.com/cuihairu/atlas/blob/main/docs/ha.md)。
 
