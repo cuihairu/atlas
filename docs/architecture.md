@@ -8,34 +8,36 @@
 
 Atlas 是一个面向在线游戏的**控制面（Control Plane）**。它不处理游戏逻辑，不存储角色权威数据，只负责回答"服务器在哪、是否可用、玩家的角色在哪"这一类目录性问题。
 
-```text
-                                      ┌──────────────────┐
-                                      │      Client      │
-                                      └────────┬─────────┘
-                                               │
-                                               ▼
-                                      ┌──────────────────┐
-                                      │      APISIX      │
-                                      │   API Gateway    │
-                                      └────────┬─────────┘
-                                               │
-                         ┌─────────────────────┼─────────────────────┐
-                         │                     │                     │
-                         ▼                     ▼                     ▼
-                 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-                 │    Server    │     │  Character   │     │    Account   │
-                 │   Discovery  │     │   Directory  │     │    Routing   │
-                 └──────┬───────┘     └──────┬───────┘     └──────────────┘
-                        │                    │
-                        ▼                    ▼
-                 ┌──────────────┐     ┌──────────────┐
-                 │    Server    │     │   Character  │
-                 │   Registry   │     │    Index     │
-                 └──────┬───────┘     └──────┬───────┘
-                        │                    │
-             ┌──────────┼──────────┐         │
-             ▼          ▼          ▼         ▼
-          Game-01    Game-02    Game-03   Character DB
+```mermaid
+flowchart TB
+    Player["玩家客户端"]
+    GW["APISIX<br/>API 网关（可选）"]
+
+    subgraph atlas["Atlas 控制面（无状态，可多副本）"]
+        direction TB
+        REG["Registry<br/>注册 / 心跳 / 注销"]
+        DISC["Discovery<br/>服务器发现"]
+        DIR["Directory<br/>角色目录"]
+        ROUT["Routing<br/>接入推荐"]
+        ADMIN["Admin<br/>Realm / Shard / 迁移 / 审计"]
+    end
+
+    subgraph stores["数据层"]
+        direction LR
+        REDIS[("Redis<br/>运行时状态")]
+        PG[("PostgreSQL<br/>持久事实")]
+    end
+
+    GS["Game Server 集群"]
+    BUS["Message Bus<br/>Kafka / NATS / RabbitMQ / Redis Streams"]
+
+    Player -->|HTTPS| GW
+    GW --> DISC & DIR & ROUT
+    GS -->|"register / heartbeat<br/>:8081（内网）"| REG
+    GS -->|角色索引事件| BUS --> DIR
+    REG --> REDIS & PG
+    DISC -->|热点读| REDIS
+    DIR & ROUT & ADMIN --> PG
 ```
 
 ---
@@ -58,30 +60,13 @@ Atlas 是一个面向在线游戏的**控制面（Control Plane）**。它不处
 
 ### APISIX 负责
 
-```text
-TLS
-Authentication
-Rate Limit
-Routing
-Load Balancing
-Observability
-WAF
-```
+TLS 终结、认证鉴权、限流、路由、负载均衡、可观测性、WAF。
 
 这些是**通用网关能力**，与游戏业务语义无关，任何后端服务都需要，不应由 Atlas 重复实现。APISIX、Kong、Envoy、Nginx 都能提供这些能力。
 
 ### Atlas 负责
 
-```text
-Server Registry
-Server Discovery
-Character Directory
-Server Health
-Server Lifecycle
-Realm / Shard
-Server Migration
-Routing Metadata
-```
+服务器注册与发现、角色目录、健康监控与生命周期、Realm / Shard、合服迁移、接入推荐元数据。
 
 这些是**游戏领域语义**，只有 Atlas 理解"什么是 Realm""什么是合服"。
 
@@ -95,13 +80,13 @@ Routing Metadata
 
 正确的形态是：
 
-```text
-Atlas Core
-    │
-    ├── HTTP API              独立服务，标准 REST
-    ├── gRPC API              高性能内部调用
-    ├── SDK                   C++ / Go / Java / C#
-    └── Gateway Integration   APISIX / Kong / Envoy / Nginx，可选
+```mermaid
+flowchart LR
+    CORE["Atlas Core"]
+    CORE --> HTTP["HTTP API<br/>标准 REST"]
+    CORE --> GRPC["gRPC API<br/>高性能内部调用"]
+    CORE --> SDK["六语言 SDK<br/>Go / C++ / Python / JS / Java / C#"]
+    CORE -.->|可选集成| GWI["网关集成<br/>APISIX / Kong / Envoy / Nginx"]
 ```
 
 这样 Atlas 可以脱离任何网关独立存在，网关只是众多部署形态中的一种。
@@ -112,55 +97,55 @@ Atlas Core
 
 ### 4.1 服务器注册与心跳
 
-```text
-Game Server
-     │
-     │ register            POST /v1/registry/servers/register
-     ▼
-   Atlas
-     ▲
-     │
-     │ heartbeat           POST /v1/registry/servers/{id}/heartbeat
-     │
-     └──────────────── every N seconds
+```mermaid
+sequenceDiagram
+    autonumber
+    participant GS as Game Server
+    participant A as Atlas Registry（:8081）
+
+    GS->>A: POST /v1/registry/servers/register
+    A-->>GS: 201 Created（status=starting）
+    loop 每 N 秒（建议 5~15s）
+        GS->>A: POST /v1/registry/servers/{id}/heartbeat
+        A-->>GS: 200 OK（status=当前生效状态）
+    end
+    GS->>A: POST /v1/registry/servers/{id}/unregister（优雅下线）
 ```
 
 Atlas 依据心跳时间戳自动推进健康状态：
 
-```text
-online
-   ↓
-heartbeat timeout
-   ↓
-suspect
-   ↓
-offline
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> starting: register
+    starting --> online: 首个有效心跳
+    online --> suspect: 心跳超时 30s
+    suspect --> online: 心跳恢复
+    suspect --> offline: 心跳超时 60s
+    offline --> starting: 重新注册
 ```
 
 详见 [lifecycle.md](lifecycle.md)。
 
 ### 4.2 客户端查询
 
-```text
-Client → APISIX → Atlas Discovery → Redis (运行时状态) + PostgreSQL (服务器档案)
-Client → APISIX → Atlas Directory  → PostgreSQL (角色索引)
+```mermaid
+flowchart LR
+    C["Client"] --> GW["APISIX"] --> D["Discovery"] --> R[("Redis<br/>运行时状态")]
+    D --> P1[("PostgreSQL<br/>服务器档案")]
+    C2["Client"] --> GW2["APISIX"] --> DIR["Directory"] --> P2[("PostgreSQL<br/>角色索引")]
 ```
 
 Discovery 是高频读路径，Redis 承载热点；Directory 是按 `account_id` 的点查，PostgreSQL 索引足以支撑。
 
 ### 4.3 角色索引同步
 
-```text
-Game Server
-     │
-     │ CharacterCreated / CharacterUpdated / CharacterDeleted
-     ▼
-  Message Bus  （v0.1 直接 HTTP）
-     │
-     ▼
-   Atlas
-     │
-     └──▶ PostgreSQL character_index
+```mermaid
+flowchart LR
+    GS["Game Server<br/>（角色数据 Source of Truth）"]
+    GS -->|CharacterCreated / Updated / Deleted<br/>Login / Moved| BUS["Message Bus<br/>http 同步 / Redis Streams / Kafka / NATS / RabbitMQ"]
+    BUS --> A["Atlas Directory<br/>幂等投影（ApplyEvent）"]
+    A --> PG[("PostgreSQL<br/>character_index")]
 ```
 
 Atlas 只保存投影，不保存权威数据。详见 [sync.md](sync.md)。
@@ -199,26 +184,24 @@ v0.1 采用 **PostgreSQL 为准、Redis 为缓存** 的策略：
 
 ### 最小部署
 
-```text
-┌─────────┐   ┌─────────┐   ┌─────────┐
-│  Atlas  │   │ Postgres │   │  Redis  │
-└─────────┘   └─────────┘   └─────────┘
-     3 个容器，docker-compose 一键拉起
+```mermaid
+flowchart LR
+    A["Atlas"] --- P[("PostgreSQL")] --- R[("Redis")]
 ```
+
+3 个容器，docker-compose 一键拉起。
 
 ### 生产部署
 
-```text
-Internet
-    │
-    ▼
-  APISIX  ──┬── Game API
-            ├── Atlas API  ──▶  Atlas (多副本, 无状态)
-            └── Account API      │
-                           ┌─────┴─────┐
-                           ▼           ▼
-                        Redis       PostgreSQL
-                      (哨兵/集群)    (主从/流复制)
+```mermaid
+flowchart TB
+    IN["Internet"] --> APISIX["APISIX"]
+    APISIX --> GAME["Game API"]
+    APISIX --> ATLAS["Atlas API"]
+    APISIX --> ACCT["Account API"]
+    ATLAS --> A1["Atlas 副本 ×N<br/>（无状态）"]
+    A1 --> R[("Redis<br/>哨兵 / 集群")]
+    A1 --> P[("PostgreSQL<br/>主从 / 流复制")]
 ```
 
 Atlas Core 无状态，可水平扩展；所有状态都在 Redis 与 PostgreSQL 中。
@@ -229,13 +212,13 @@ Atlas Core 无状态，可水平扩展；所有状态都在 Redis 与 PostgreSQL
 
 Atlas 对外暴露的运维指标建议覆盖：
 
-```text
-atlas_registry_servers_total{status}          当前各状态服务器数
-atlas_registry_heartbeat_lag_seconds          心跳延迟分布
-atlas_directory_characters_total              角色索引总量
-atlas_discovery_requests_total{filter}        发现查询量与筛选维度
-atlas_routing_decisions_total{reason}         推荐决策的原因分布
-```
+| 指标 | 含义 |
+| --- | --- |
+| `atlas_registry_servers_total{status}` | 当前各状态服务器数 |
+| `atlas_registry_heartbeat_lag_seconds` | 心跳延迟分布 |
+| `atlas_directory_characters_total` | 角色索引总量 |
+| `atlas_discovery_requests_total{filter}` | 发现查询量与筛选维度 |
+| `atlas_routing_decisions_total{reason}` | 推荐决策的原因分布 |
 
 这些指标同时服务于容量规划与告警（例如 `suspect` 状态服务器数突增）。
 
@@ -276,13 +259,10 @@ Atlas 是标准 HTTP REST 服务，**任何能做反向代理的网关都可以�
 
 **1. 生命周期耦合**
 
-```text
-插件模式：
-  网关进程 crash → Atlas 一起挂 → 所有游戏服务器注册状态丢失
-
-独立服务：
-  网关 crash → Atlas 不受影响 → 游戏服务器心跳继续 → 网关恢复后自动回连
-```
+| 形态 | 网关进程 crash 时 | 后果 |
+| --- | --- | --- |
+| 插件模式 | Atlas 一起挂 | 所有游戏服务器注册状态丢失 |
+| 独立服务 | Atlas 不受影响 | 心跳继续，网关恢复后自动回连 |
 
 游戏服务器的注册和心跳不应该因为网关重启而中断。
 
@@ -297,15 +277,10 @@ Atlas 需要运行后台任务：
 
 **3. 独立扩缩容**
 
-```text
-插件模式：
-  网关扩 10 个副本 → Atlas 逻辑也跟着扩 10 份 → 资源浪费
-
-独立服务：
-  网关扩 10 个副本（处理流量）
-  Atlas 扩 2 个副本（处理注册和查询）
-  各自按需扩缩
-```
+| 形态 | 扩缩行为 | 结果 |
+| --- | --- | --- |
+| 插件模式 | 网关扩 10 副本 → Atlas 逻辑跟着扩 10 份 | 资源浪费 |
+| 独立服务 | 网关扩 10 副本（流量），Atlas 扩 2 副本（注册与查询） | 各自按需扩缩 |
 
 网关的流量峰值和 Atlas 的计算负载是不同的曲线，绑定在一起无法独立优化。
 
