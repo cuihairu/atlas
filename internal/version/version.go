@@ -3,7 +3,7 @@ package version
 
 var (
 	// Version is the semantic version of this build.
-	Version = "v0.1.0"
+	Version = "v0.1.1"
 
 	// GitCommit is the git commit hash, set at build time.
 	GitCommit = "unknown"

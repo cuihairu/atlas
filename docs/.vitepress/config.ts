@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
-export default defineConfig({
+export default withMermaid({
   lang: 'zh-CN',
   title: 'Atlas',
   description: '面向在线游戏的服务器注册、发现与角色目录基础设施',
@@ -46,7 +47,7 @@ export default defineConfig({
         ],
       },
       { text: '路线图', link: '/roadmap' },
-      { text: 'v0.1.0', link: 'https://github.com/cuihairu/atlas/releases/tag/v0.1.0' },
+      { text: 'v0.1.1', link: 'https://github.com/cuihairu/atlas/releases/tag/v0.1.1' },
     ],
 
     sidebar: [

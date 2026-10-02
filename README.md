@@ -32,6 +32,20 @@ Atlas 的核心目标不是"返回一份服务器列表"，而是建立游戏后
 >
 > Atlas 可以独立运行。APISIX、Kong、Envoy、Nginx 都可以作为接入层，负责 TLS、认证、限流、WAF 与可观测性。Atlas 推荐 APISIX（动态路由 + 限流插件 + 国内社区），但不限制网关选型。
 
+## 使用场景
+
+**什么时候需要 Atlas？** 单台服务器或者玩家从不下跨服务器的游戏用不着它。当你出现以下任一情况，就是 Atlas 的用武之地：
+
+| 场景 | 没有 Atlas 时 | 有 Atlas 时 |
+| --- | --- | --- |
+| **玩家登录选服** | 客户端硬编码服务器列表，停机了玩家还在点，挤爆一台无人知 | Discovery 按区域/版本/平台实时筛选在线服务器，Routing 按负载与已有角色推荐接入目标 |
+| **跨服角色查询** | 玩家在多服的角色散落各处，登录后逐服轮询 | Directory 账号 → 角色跨服索引，一次查询返回全部角色 |
+| **计划停机维护** | 运维手动踢人、群里发公告、祈祷没人在这时充值 | 维护窗口定时生效：`start_at` 自动进入维护、`end_at` 自动恢复，同时段自动挂 warning 公告，客户端登录即见 |
+| **紧急故障公告** | 没有统一通道，公告靠客户端热更 | Admin 一条 API 发布全局/服务器级公告（info / warning / critical），生效区间可控 |
+| **服务器掉线自愈** | 半死不活的服务器继续接玩家，投诉炸锅 | 心跳判活：30s 无心跳进 `suspect`、60s 进 `offline` 自动摘除；恢复心跳或重新注册自动回到线上 |
+| **合服 / 迁服** | 人肉搬库、改配置、全服停机 | Migration 编排 + 角色索引事件重放，`rollback` 一键回退 |
+| **多生态 / 大规模舰队** | 数百台服务器的注册表没有一个权威视图 | Registry 幂等注册 + 分片存储 + Prometheus 指标 + 占比告警，舰队状态一目了然 |
+
 ---
 
 ## 架构
@@ -87,22 +101,23 @@ make test
 
 ## API Quick Reference
 
-Atlas v0.1.0 暴露 11 个 REST 端点，分为三组：
+Atlas v0.1.1 暴露 28 个 REST 端点，分为五组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `POST` | `/v1/registry/servers/register` | 服务器上线注册（幂等） |
-| `POST` | `/v1/registry/servers/{id}/heartbeat` | 周期心跳上报 |
+| `POST` | `/v1/registry/servers/register` | 服务器上线注册（幂等 upsert） |
+| `POST` | `/v1/registry/servers/{id}/heartbeat` | 周期心跳上报（响应含真实生效状态） |
 | `POST` | `/v1/registry/servers/{id}/unregister` | 服务器主动下线 |
 
 ### Discovery（服务器发现）
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `GET` | `/v1/discovery/servers` | 按区域/版本/状态筛选服务器列表 |
+| `GET` | `/v1/discovery/servers` | 按 region / realm / shard / 版本 / 状态 / 平台筛选服务器列表 |
 | `GET` | `/v1/discovery/servers/{id}` | 获取单个服务器详情 |
+| `GET` | `/v1/discovery/announcements` | 当前生效公告（全局 + 服务器级，玩家登录时拉取） |
 
 ### Directory（角色目录）
 
@@ -114,6 +129,23 @@ Atlas v0.1.0 暴露 11 个 REST 端点，分为三组：
 | `POST` | `/v1/directory/characters` | 写入角色索引（幂等） |
 | `PATCH` | `/v1/directory/characters/{character_id}` | 更新角色索引 |
 | `DELETE` | `/v1/directory/characters/{character_id}` | 删除角色索引 |
+
+### Routing（接入推荐）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `GET` | `/v1/routing/recommended` | 按负载/容量/已有角色推荐接入目标 |
+
+### Admin（运维管理，:8082，RBAC + 审计）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `POST` | `/v1/admin/servers/{id}/drain` · `enable` · `disable` | 生命周期操作 |
+| `POST/GET/DELETE` | `/v1/admin/servers/{id}/maintenance-window` · `/v1/admin/maintenance-windows…` | 计划维护窗口（到期自动进入维护并恢复） |
+| `POST/GET/DELETE` | `/v1/admin/announcements…` | 公告管理（info / warning / critical） |
+| `POST/GET` | `/v1/admin/realms` · `/v1/admin/shards` | 大区 / 分片管理 |
+| `POST/GET` | `/v1/admin/migrations` · `POST …/rollback` | 合服 / 迁移编排 |
+| `GET` | `/v1/admin/stats` · `/v1/admin/audit` | 舰队统计与审计日志 |
 
 完整请求/响应示例见 [docs/api.md](docs/api.md)，快速上手见 [docs/api-quickstart.md](docs/api-quickstart.md)。
 
@@ -219,7 +251,7 @@ Atlas Core
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | 整体架构、组件职责、与 APISIX 的边界 |
 | [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
-| [docs/api.md](docs/api.md) | 四组 REST API 的完整定义 |
+| [docs/api.md](docs/api.md) | 五组 REST API + gRPC 的完整定义 |
 | [docs/api-quickstart.md](docs/api-quickstart.md) | API 快速上手指南（curl 示例） |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
 | [docs/lifecycle.md](docs/lifecycle.md) | 服务器生命周期状态机 |

@@ -1,6 +1,6 @@
 .PHONY: build run test lint docker docker-compose docs docs-dev docs-build clean
 
-VERSION := v0.1.0
+VERSION := v0.1.1
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD   := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -X github.com/cuihairu/atlas/internal/version.GitCommit=$(COMMIT) \
