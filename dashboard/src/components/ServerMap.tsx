@@ -35,7 +35,7 @@ function summarize(servers: Server[]): RegionSummary[] {
       byRegion.set(key, r);
     }
     r.servers.push(s);
-    r.players += s.player_count;
+    r.players += s.players;
     r.capacity += s.capacity;
     r.byStatus[s.status] = (r.byStatus[s.status] ?? 0) + 1;
   }

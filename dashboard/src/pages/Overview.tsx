@@ -124,7 +124,7 @@ export default function Overview() {
             },
             {
               title: t('players'),
-              render: (_: unknown, r: Server) => `${r.player_count} / ${r.capacity}`,
+              render: (_: unknown, r: Server) => `${r.players} / ${r.capacity}`,
             },
           ]}
         />

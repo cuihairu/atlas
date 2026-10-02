@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Space, Select, Progress, message, Popconfirm } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import StatusTag from '../components/StatusTag';
+import TagBadge from '../components/TagBadge';
 import { useLang, t } from '../i18n';
 import {
   listServers,
@@ -107,10 +108,25 @@ export default function Servers() {
             render: (s: string) => <StatusTag status={s} />,
           },
           {
+            title: t('tags'),
+            dataIndex: 'tags',
+            width: 180,
+            render: (tags: Server['tags']) =>
+              tags && tags.length > 0 ? (
+                <Space size={4} wrap>
+                  {tags.map((tag) => (
+                    <TagBadge key={tag.code} tag={tag} />
+                  ))}
+                </Space>
+              ) : (
+                '-'
+              ),
+          },
+          {
             title: t('playersCapacity'),
             width: 200,
             render: (_: unknown, r: Server) => {
-              const pct = r.capacity > 0 ? Math.round((r.player_count / r.capacity) * 100) : 0;
+              const pct = r.capacity > 0 ? Math.round((r.players / r.capacity) * 100) : 0;
               return (
                 <Space>
                   <Progress
@@ -119,7 +135,7 @@ export default function Servers() {
                     style={{ width: 80 }}
                     strokeColor={pct > 80 ? '#ff4d4f' : '#d97706'}
                   />
-                  <span>{r.player_count}/{r.capacity}</span>
+                  <span>{r.players}/{r.capacity}</span>
                 </Space>
               );
             },

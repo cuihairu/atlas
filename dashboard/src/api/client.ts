@@ -8,12 +8,18 @@ import type {
   CharacterSearchResponse,
   Migration,
   MigrationListResponse,
+  ServerTagListResponse,
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+// Same-origin by default: the vite dev/preview proxy splits the API by path
+// (/v1/admin → :8082, everything else → :8080) because the admin listener
+// deliberately carries no CORS. Deployments behind one origin keep this;
+// anything else sets VITE_API_BASE / VITE_ADMIN_API_BASE.
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+const ADMIN_BASE = (import.meta.env.VITE_ADMIN_API_BASE || '').replace(/\/$/, '');
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
+async function request<T>(path: string, init?: RequestInit, base = API_BASE): Promise<T> {
+  const url = `${base}${path}`;
   try {
     const res = await fetch(url, {
       headers: { 'Content-Type': 'application/json' },
@@ -68,8 +74,32 @@ export function getCharacter(id: string): Promise<Character> {
 
 // ── Admin ────────────────────────────────────────────────────────────
 
+// Admin calls go to the management listener (:8082) — either through the
+// /v1/admin proxy or via VITE_ADMIN_API_BASE.
+
 export function getStats(): Promise<AdminStats> {
-  return request('/v1/admin/stats');
+  return request('/v1/admin/stats', undefined, ADMIN_BASE);
+}
+
+export function getServerTags(id: string): Promise<ServerTagListResponse> {
+  return request(`/v1/admin/servers/${id}/tags`, undefined, ADMIN_BASE);
+}
+
+export function addServerTag(
+  id: string,
+  body: { code: string; label?: string; tier?: string; public?: boolean },
+): Promise<ServerTagListResponse> {
+  return request(`/v1/admin/servers/${id}/tags`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, ADMIN_BASE);
+}
+
+export function removeServerTag(
+  id: string,
+  code: string,
+): Promise<{ server_id: string; removed: string }> {
+  return request(`/v1/admin/servers/${id}/tags/${code}`, { method: 'DELETE' }, ADMIN_BASE);
 }
 
 export function serverMaintenance(id: string): Promise<void> {

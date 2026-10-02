@@ -1,16 +1,42 @@
+/** Tag presentation tiers — model.TagTier on the Go side. */
+export type TagTier = 'hot' | 'new' | 'warning' | 'info' | 'neutral';
+
+/**
+ * One server tag. Presets (hot/full/no_register/maintenance/new/recommended)
+ * carry a Chinese label and default tier; custom tags default to internal
+ * (public=false, never shown on player-facing surfaces).
+ */
+export interface ServerTag {
+  code: string;
+  label: string;
+  tier: TagTier;
+  public?: boolean;
+}
+
+export interface ServerEndpoint {
+  host: string;
+  port: number;
+}
+
 export interface Server {
   id: string;
   name: string;
   region: string;
   version: string;
-  status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining';
-  player_count: number;
+  status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting';
+  /** Player-facing responses expose only public tags. */
+  tags?: ServerTag[];
+  players: number;
   capacity: number;
   load: number;
-  ip?: string;
-  port?: number;
+  endpoint?: ServerEndpoint;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ServerTagListResponse {
+  server_id: string;
+  tags: ServerTag[];
 }
 
 export interface ServerListResponse {
