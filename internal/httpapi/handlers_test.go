@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cuihairu/atlas/internal/admin"
+	"github.com/cuihairu/atlas/internal/crossserver"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
@@ -37,7 +38,8 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 	})
 
 	rtSvc := routing.New(mem, mem, mem)
-	handler := New(regSvc, discSvc, dirSvc, admSvc, rtSvc, mem, events, logger)
+	crossSvc := crossserver.New(mem, mem, events, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, mem, events, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 

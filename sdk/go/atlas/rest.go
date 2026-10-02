@@ -123,6 +123,17 @@ func (b *restBackend) unregister(ctx context.Context, serverID string) (*StatusR
 	return &out, err
 }
 
+func (b *restBackend) fetchCrossServerConfig(ctx context.Context) (*CrossServerConfig, error) {
+	var out CrossServerConfig
+	// The config pull lives on the Registry listener next to register /
+	// heartbeat: it is part of the server-facing control plane, not the
+	// player-facing public API.
+	if err := b.doBase(ctx, b.registryBase, http.MethodGet, "/v1/crossserver/config", nil, &out, b.registryToken); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ── Discovery (public) ──────────────────────────────────────
 
 func (b *restBackend) listServers(ctx context.Context, f ServerFilter) ([]Server, error) {

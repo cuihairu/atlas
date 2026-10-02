@@ -68,8 +68,9 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
-                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source,
+                     notify_mode, notify_callback_url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
     type          = VALUES(type),
@@ -86,13 +87,16 @@ ON DUPLICATE KEY UPDATE
     status        = CASE WHEN servers.status IN ('suspect', 'offline') THEN VALUES(status) ELSE servers.status END,
     started_at    = VALUES(started_at),
     updated_at    = VALUES(updated_at),
-    source        = VALUES(source)
+    source        = VALUES(source),
+    notify_mode   = VALUES(notify_mode),
+    notify_callback_url = VALUES(notify_callback_url)
 `
 	_, err := s.db.ExecContext(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
 		string(srv.Status), srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
+		srv.NotifyMode, srv.NotifyCallbackURL,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -103,7 +107,8 @@ ON DUPLICATE KEY UPDATE
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       notify_mode, notify_callback_url
 FROM servers WHERE id = ?
 `
 	srv, err := scanServer(s.db.QueryRowContext(ctx, q, id))
@@ -123,7 +128,8 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       notify_mode, notify_callback_url
 FROM servers WHERE 1=1`
 	args := []any{}
 
@@ -635,6 +641,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 		&tagsRaw,
+		&srv.NotifyMode, &srv.NotifyCallbackURL,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -1005,4 +1012,59 @@ func scanAnnouncement(row scannable) (*model.Announcement, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// ── Cross-server config (config center) ──────────────────────────
+
+// SaveCrossServerConfig persists spec as the single config row. The version
+// is incremented atomically inside the upsert (version + 1 on duplicate
+// key), so concurrent writers can never regress it.
+func (s *Store) SaveCrossServerConfig(ctx context.Context, cfg *model.CrossServerConfig) (*model.CrossServerConfig, error) {
+	specJSON, err := json.Marshal(cfg.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("encode cross-server config: %w", err)
+	}
+	const q = `
+INSERT INTO crossserver_config (id, version, hash, spec, updated_at)
+VALUES ('default', 1, ?, ?, NOW(6))
+ON DUPLICATE KEY UPDATE
+    version    = crossserver_config.version + 1,
+    hash       = VALUES(hash),
+    spec       = VALUES(spec),
+    updated_at = NOW(6)
+`
+	res, err := s.db.ExecContext(ctx, q, cfg.Hash, string(specJSON))
+	if err != nil {
+		return nil, fmt.Errorf("save cross-server config: %w", err)
+	}
+	_ = res
+	// Read the stored row back: LAST_INSERT_ID(expr) would carry the bumped
+	// version out via the insert ID, but database/sql discards it per-driver;
+	// a read-back on the single row is the portable contract here.
+	got, err := s.GetCrossServerConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	saved := *cfg
+	saved.Version, saved.UpdatedAt = got.Version, got.UpdatedAt
+	return &saved, nil
+}
+
+// GetCrossServerConfig returns the current config (ErrNotFound before the
+// first save).
+func (s *Store) GetCrossServerConfig(ctx context.Context) (*model.CrossServerConfig, error) {
+	const q = `SELECT version, hash, spec, updated_at FROM crossserver_config WHERE id = 'default'`
+	var cfg model.CrossServerConfig
+	var specRaw string
+	err := s.db.QueryRowContext(ctx, q).Scan(&cfg.Version, &cfg.Hash, &specRaw, &cfg.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("get cross-server config: %w", err)
+	}
+	if err := json.Unmarshal([]byte(specRaw), &cfg.Spec); err != nil {
+		return nil, fmt.Errorf("decode cross-server config: %w", err)
+	}
+	return &cfg, nil
 }

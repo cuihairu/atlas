@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cuihairu/atlas/internal/admin"
+	"github.com/cuihairu/atlas/internal/crossserver"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
@@ -37,7 +38,8 @@ func setupTagServer(t *testing.T, enforce string) (*httptest.Server, *memory.Sto
 		return err
 	})
 
-	handler := New(regSvc, discSvc, dirSvc, admSvc, routing.New(mem, mem, mem), mem, events, logger)
+	crossSvc := crossserver.New(mem, mem, events, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, routing.New(mem, mem, mem), crossSvc, mem, events, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	return httptest.NewServer(mux), mem

@@ -26,6 +26,7 @@ import (
 
 	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/config"
+	"github.com/cuihairu/atlas/internal/crossserver"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
@@ -83,6 +84,7 @@ func main() {
 		shardStore     store.ShardStore
 		mainWinStore   store.MaintenanceWindowStore
 		annStore       store.AnnouncementStore
+		crossCfgStore  store.CrossServerConfigStore
 		pingCloser     func()
 	)
 
@@ -100,6 +102,7 @@ func main() {
 		shardStore = mem
 		mainWinStore = mem
 		annStore = mem
+		crossCfgStore = mem
 
 	case "postgres":
 		// PostgreSQL for server + character storage.
@@ -134,6 +137,7 @@ func main() {
 		shardStore = pg
 		mainWinStore = pg
 		annStore = pg
+		crossCfgStore = pg
 
 		// Redis for runtime/heartbeat storage. Topology follows the config:
 		// cluster seeds > Sentinel failover > single node (TODO v0.1.19).
@@ -264,7 +268,13 @@ func main() {
 		ShardStore:             shardStore,
 		MaintenanceWindowStore: mainWinStore,
 		AnnouncementStore:      annStore,
+		CrossServerConfigStore: crossCfgStore,
 	}
+
+	// Cross-server config center (docs/config-center.md): hosts the versioned
+	// coordination config and signals changes over the same event adapter
+	// (subscribe mode) plus callback POSTs (callback mode).
+	crossSvc := crossserver.New(crossCfgStore, serverStore, evtAdapter, logger).WithPublicURL(cfg.PublicURL)
 
 	admSvc := admin.New(composite)
 
@@ -287,7 +297,7 @@ func main() {
 
 	// Set up HTTP handlers.
 	rtSvc := routing.New(serverStore, runtimeStore, charStore)
-	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, composite, evtAdapter, logger)
+	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, composite, evtAdapter, logger)
 
 	// Parse auth config.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
@@ -673,6 +683,7 @@ type compositeStore struct {
 	store.ShardStore
 	store.MaintenanceWindowStore
 	store.AnnouncementStore
+	store.CrossServerConfigStore
 }
 
 func (c *compositeStore) Ping(ctx context.Context) error {

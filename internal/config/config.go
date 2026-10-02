@@ -102,6 +102,13 @@ type Config struct {
 	// Env: ATLAS_RABBITMQ_URL, default "amqp://localhost:5672/".
 	RabbitURL string
 
+	// PublicURL is the externally reachable base URL of the public API
+	// (e.g. "http://atlas.internal:8080"). The config center echoes
+	// PublicURL + /v1/crossserver/config in callback notifications so
+	// receivers know where to pull without hardcoding a second address.
+	// Env: ATLAS_PUBLIC_URL, default "".
+	PublicURL string
+
 	// AlertSuspectRatio fires a health alert when the fraction of auto-managed
 	// servers in "suspect" status reaches this value. 0 disables the alert.
 	// Env: ATLAS_ALERT_SUSPECT_RATIO, default 0.3.
@@ -239,6 +246,7 @@ func Load() Config {
 		KafkaBrokers:        envOr("ATLAS_KAFKA_BROKERS", "localhost:9092"),
 		NATSURL:             envOr("ATLAS_NATS_URL", "nats://localhost:4222"),
 		RabbitURL:           envOr("ATLAS_RABBITMQ_URL", "amqp://localhost:5672/"),
+		PublicURL:           envOr("ATLAS_PUBLIC_URL", ""),
 		AlertSuspectRatio:   0.3,
 		AlertOfflineRatio:   0.2,
 		AlertWebhookURL:     os.Getenv("ATLAS_ALERT_WEBHOOK_URL"),

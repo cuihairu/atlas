@@ -223,6 +223,21 @@ type AnnouncementStore interface {
 	ListAnnouncements(ctx context.Context, f AnnouncementFilter) ([]*model.Announcement, error)
 }
 
+// CrossServerConfigStore persists the cross-server coordination config
+// (config center, see docs/config-center.md). Exactly one config document
+// exists; every save atomically increments its version (monotonic) and
+// stamps UpdatedAt, so a stale writer can never overwrite a newer version.
+type CrossServerConfigStore interface {
+	// SaveCrossServerConfig validates-free persists spec as the new config,
+	// returning the snapshot with the store-assigned (atomically
+	// incremented) Version and UpdatedAt. Hash is taken from the input.
+	SaveCrossServerConfig(ctx context.Context, cfg *model.CrossServerConfig) (*model.CrossServerConfig, error)
+
+	// GetCrossServerConfig returns the current config (ErrNotFound before
+	// anything was ever saved).
+	GetCrossServerConfig(ctx context.Context) (*model.CrossServerConfig, error)
+}
+
 // Store composes all storage interfaces.
 type Store interface {
 	ServerStore
@@ -234,6 +249,7 @@ type Store interface {
 	ShardStore
 	MaintenanceWindowStore
 	AnnouncementStore
+	CrossServerConfigStore
 
 	// Ping verifies the store is reachable.
 	Ping(ctx context.Context) error

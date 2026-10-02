@@ -26,6 +26,12 @@ type RegisterRequest struct {
 	Platform string         `json:"platform"`
 	Endpoint model.Endpoint `json:"endpoint"`
 	Capacity int            `json:"capacity"`
+	// NotifyMode / NotifyCallbackURL declare how this server receives
+	// cross-server config change signals (config center): subscribe |
+	// callback | poll. Callback mode requires an absolute http(s) URL
+	// atlas POSTs the change signal to. See docs/config-center.md.
+	NotifyMode        string `json:"notify_mode,omitempty"`
+	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 	// Players seeds the initial player count (runtime data), so a server that
 	// re-registers mid-session (Atlas restart) does not report 0 players
 	// until its next heartbeat. TODO v0.1.20.
@@ -114,18 +120,20 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 		startedAt = *req.StartedAt
 	}
 	srv := &model.Server{
-		ID:        req.ID,
-		Name:      req.Name,
-		Type:      req.Type,
-		Region:    req.Region,
-		RealmID:   req.RealmID,
-		ShardID:   req.ShardID,
-		Version:   req.Version,
-		Platform:  req.Platform,
-		Endpoint:  req.Endpoint,
-		Capacity:  req.Capacity,
-		StartedAt: &startedAt,
-		Status:    model.StatusStarting,
+		ID:                req.ID,
+		Name:              req.Name,
+		Type:              req.Type,
+		Region:            req.Region,
+		RealmID:           req.RealmID,
+		ShardID:           req.ShardID,
+		Version:           req.Version,
+		Platform:          req.Platform,
+		Endpoint:          req.Endpoint,
+		Capacity:          req.Capacity,
+		NotifyMode:        req.NotifyMode,
+		NotifyCallbackURL: req.NotifyCallbackURL,
+		StartedAt:         &startedAt,
+		Status:            model.StatusStarting,
 	}
 
 	if err := srv.Validate(); err != nil {

@@ -74,8 +74,9 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
-                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                     endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source,
+                     notify_mode, notify_callback_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
     type          = EXCLUDED.type,
@@ -92,13 +93,16 @@ ON CONFLICT (id) DO UPDATE SET
     status        = CASE WHEN servers.status IN ('suspect', 'offline') THEN EXCLUDED.status ELSE servers.status END,
     started_at    = EXCLUDED.started_at,
     updated_at    = EXCLUDED.updated_at,
-    source        = EXCLUDED.source
+    source        = EXCLUDED.source,
+    notify_mode   = EXCLUDED.notify_mode,
+    notify_callback_url = EXCLUDED.notify_callback_url
 `
 	_, err := s.pool.Exec(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
 		srv.Status, srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
+		srv.NotifyMode, srv.NotifyCallbackURL,
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -109,7 +113,8 @@ ON CONFLICT (id) DO UPDATE SET
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       notify_mode, notify_callback_url
 FROM servers WHERE id = $1
 `
 	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
@@ -129,7 +134,8 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       notify_mode, notify_callback_url
 FROM servers WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -647,6 +653,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 		&tagsRaw,
+		&srv.NotifyMode, &srv.NotifyCallbackURL,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -1030,4 +1037,51 @@ func scanAnnouncement(row scannable) (*model.Announcement, error) {
 		return nil, err
 	}
 	return &a, nil
+}
+
+// ── Cross-server config (config center) ──────────────────────────
+
+// SaveCrossServerConfig persists spec as the single config row. The version
+// is incremented atomically inside the upsert (version + 1 on conflict), so
+// concurrent writers can never regress it and stale snapshots can't win.
+func (s *Store) SaveCrossServerConfig(ctx context.Context, cfg *model.CrossServerConfig) (*model.CrossServerConfig, error) {
+	specJSON, err := json.Marshal(cfg.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("encode cross-server config: %w", err)
+	}
+	const q = `
+INSERT INTO crossserver_config (id, version, hash, spec, updated_at)
+VALUES ('default', 1, $1, $2, now())
+ON CONFLICT (id) DO UPDATE SET
+    version    = crossserver_config.version + 1,
+    hash       = EXCLUDED.hash,
+    spec       = EXCLUDED.spec,
+    updated_at = now()
+RETURNING version, updated_at
+`
+	saved := *cfg
+	err = s.pool.QueryRow(ctx, q, cfg.Hash, specJSON).Scan(&saved.Version, &saved.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("save cross-server config: %w", err)
+	}
+	return &saved, nil
+}
+
+// GetCrossServerConfig returns the current config (ErrNotFound before the
+// first save).
+func (s *Store) GetCrossServerConfig(ctx context.Context) (*model.CrossServerConfig, error) {
+	const q = `SELECT version, hash, spec, updated_at FROM crossserver_config WHERE id = 'default'`
+	var cfg model.CrossServerConfig
+	var specRaw []byte
+	err := s.pool.QueryRow(ctx, q).Scan(&cfg.Version, &cfg.Hash, &specRaw, &cfg.UpdatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, store.ErrNotFound
+		}
+		return nil, fmt.Errorf("get cross-server config: %w", err)
+	}
+	if err := json.Unmarshal(specRaw, &cfg.Spec); err != nil {
+		return nil, fmt.Errorf("decode cross-server config: %w", err)
+	}
+	return &cfg, nil
 }

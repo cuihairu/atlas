@@ -34,6 +34,7 @@ type Core interface {
 	store.ShardStore
 	store.MaintenanceWindowStore
 	store.AnnouncementStore
+	store.CrossServerConfigStore
 }
 
 var seq atomic.Int64
@@ -73,6 +74,7 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 	t.Run("Maintenance", func(t *testing.T) { maintenance(t, ctx, s) })
 	t.Run("Announcements", func(t *testing.T) { announcements(t, ctx, s) })
 	t.Run("Stats", func(t *testing.T) { stats(t, ctx, s, rt) })
+	t.Run("CrossServerConfig", func(t *testing.T) { crossServerConfig(t, ctx, s) })
 }
 
 // createRealmShard provisions the realm + shard pair that server
@@ -1075,6 +1077,99 @@ func RunRuntime(t *testing.T, rt store.RuntimeStore) {
 	}
 	if _, err := rt.GetRuntime(ctx, srvID); !isNotFound(err) {
 		t.Errorf("runtime after delete = %v, want ErrNotFound", err)
+	}
+}
+
+// crossServerConfig pins the config-center storage contract: the config is
+// a single document, an unwritten center reports ErrNotFound, every save
+// bumps the version monotonically and rewrites hash/spec/updated_at, and
+// saving the same content twice must still be a distinct version (version
+// monotonicity is the storage layer's job, idempotency lives in the
+// service above it).
+func crossServerConfig(t *testing.T, ctx context.Context, s Core) {
+	spec := model.CrossServerSpec{
+		Topology: model.CrossServerTopology{Clusters: []model.CrossServerCluster{
+			{ID: "cluster-a", Name: "A", Region: "cn-east", Servers: []string{"srv-1", "srv-2"}},
+		}},
+		Groups:       []model.CrossServerGroup{{ID: "g1", Name: "season-1", Servers: []string{"srv-1"}}},
+		Features:     map[string]bool{"world-boss": true, "arena": false},
+		MatchDomains: []model.CrossServerMatchDomain{{ID: "md-1", Servers: []string{"srv-1", "srv-2"}, Params: map[string]string{"mmr_range": "500"}}},
+	}
+	spec = model.NormalizeCrossServerSpec(spec)
+
+	if _, err := s.GetCrossServerConfig(ctx); !isNotFound(err) {
+		t.Errorf("get unwritten config = %v, want ErrNotFound", err)
+	}
+
+	first, err := s.SaveCrossServerConfig(ctx, &model.CrossServerConfig{
+		Hash: model.HashCrossServerSpec(spec),
+		Spec: spec,
+	})
+	if err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	if first.Version < 1 {
+		t.Errorf("first save version = %d, want >= 1", first.Version)
+	}
+	if first.UpdatedAt.IsZero() {
+		t.Error("save did not stamp updated_at")
+	}
+
+	got, err := s.GetCrossServerConfig(ctx)
+	if err != nil {
+		t.Fatalf("get config: %v", err)
+	}
+	if got.Version != first.Version || got.Hash != first.Hash {
+		t.Errorf("roundtrip = version %d hash %q, want %d/%q", got.Version, got.Hash, first.Version, first.Hash)
+	}
+	if len(got.Spec.Topology.Clusters) != 1 || got.Spec.Topology.Clusters[0].ID != "cluster-a" {
+		t.Errorf("topology roundtrip = %+v", got.Spec.Topology.Clusters)
+	}
+	if !got.Spec.Features["world-boss"] || got.Spec.Features["arena"] {
+		t.Errorf("features roundtrip = %+v", got.Spec.Features)
+	}
+	if len(got.Spec.MatchDomains) != 1 || got.Spec.MatchDomains[0].Params["mmr_range"] != "500" {
+		t.Errorf("match domain roundtrip = %+v", got.Spec.MatchDomains)
+	}
+
+	// A second, different save must move the version forward and replace
+	// the document.
+	updated := model.NormalizeCrossServerSpec(model.CrossServerSpec{
+		Features: map[string]bool{"world-boss": false},
+	})
+	second, err := s.SaveCrossServerConfig(ctx, &model.CrossServerConfig{
+		Hash: model.HashCrossServerSpec(updated),
+		Spec: updated,
+	})
+	if err != nil {
+		t.Fatalf("save updated config: %v", err)
+	}
+	if second.Version <= first.Version {
+		t.Errorf("version did not advance: %d then %d", first.Version, second.Version)
+	}
+	got, err = s.GetCrossServerConfig(ctx)
+	if err != nil {
+		t.Fatalf("get config after update: %v", err)
+	}
+	if len(got.Spec.Topology.Clusters) != 0 {
+		t.Errorf("update did not replace the document: %+v", got.Spec.Topology)
+	}
+	if got.Hash != model.HashCrossServerSpec(updated) {
+		t.Errorf("hash = %q, want %q", got.Hash, model.HashCrossServerSpec(updated))
+	}
+
+	// Saving identical content is still a write: the storage layer does not
+	// dedupe (the service's idempotency check happens before it), and the
+	// version must keep climbing so a receiver can trust it as a clock.
+	third, err := s.SaveCrossServerConfig(ctx, &model.CrossServerConfig{
+		Hash: model.HashCrossServerSpec(updated),
+		Spec: updated,
+	})
+	if err != nil {
+		t.Fatalf("save identical config: %v", err)
+	}
+	if third.Version <= second.Version {
+		t.Errorf("version regressed on identical save: %d then %d", second.Version, third.Version)
 	}
 }
 

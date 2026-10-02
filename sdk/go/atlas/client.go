@@ -78,6 +78,8 @@ type backend interface {
 	heartbeat(ctx context.Context, serverID string, req HeartbeatRequest) (*HeartbeatResult, error)
 	unregister(ctx context.Context, serverID string) (*StatusResult, error)
 
+	fetchCrossServerConfig(ctx context.Context) (*CrossServerConfig, error)
+
 	listServers(ctx context.Context, f ServerFilter) ([]Server, error)
 	getServer(ctx context.Context, id string) (*Server, error)
 

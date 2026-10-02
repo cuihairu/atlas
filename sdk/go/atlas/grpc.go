@@ -17,8 +17,9 @@ import (
 // grpcBackend speaks gRPC against the single ATLAS_GRPC_ADDR port where
 // all five services are mounted (docs/api.md §gRPC).
 type grpcBackend struct {
-	conn   *grpc.ClientConn
-	policy retryPolicy
+	conn      *grpc.ClientConn
+	policy    retryPolicy
+	transport Transport
 
 	registry *pb.RegistryServiceClient
 	discover *pb.DiscoveryServiceClient
@@ -43,6 +44,7 @@ func newGRPCBackend(opts Options, policy retryPolicy) (*grpcBackend, error) {
 	return &grpcBackend{
 		conn:          conn,
 		policy:        policy,
+		transport:     opts.Transport,
 		registry:      &reg,
 		discover:      &disc,
 		director:      &dir,
@@ -161,6 +163,14 @@ func (b *grpcBackend) unregister(ctx context.Context, serverID string) (*StatusR
 		return nil
 	})
 	return out, grpcError(err)
+}
+
+// fetchCrossServerConfig is REST-only for now: the config pull endpoint
+// has no gRPC counterpart, so a gRPC-transport client reaches the
+// Registry HTTP listener directly through the REST base. Servers that
+// need the config center should use the REST transport (the default).
+func (b *grpcBackend) fetchCrossServerConfig(ctx context.Context) (*CrossServerConfig, error) {
+	return nil, fmt.Errorf("atlas: cross-server config pull requires the REST transport (got %s)", b.transport)
 }
 
 func (b *grpcBackend) listServers(ctx context.Context, f ServerFilter) ([]Server, error) {

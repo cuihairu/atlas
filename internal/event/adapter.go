@@ -28,6 +28,12 @@ const (
 	EventCharacterMoved EventType = "character.moved"
 	// EventCharacterLogin fires on login, refreshing last_login_at.
 	EventCharacterLogin EventType = "character.login"
+
+	// EventConfigUpdated signals that the cross-server coordination config
+	// changed (config center, docs/config-center.md). It carries only the
+	// new version/hash — never the config body: receivers pull
+	// GET /v1/crossserver/config themselves (notify-then-pull).
+	EventConfigUpdated EventType = "config.updated"
 )
 
 // Topics are the transport-level channels adapters route events through.
@@ -36,6 +42,9 @@ const (
 const (
 	// TopicCharacters carries all character.* events.
 	TopicCharacters = "atlas.characters"
+
+	// TopicConfig carries config.updated signals (cross-server config).
+	TopicConfig = "atlas.config"
 )
 
 // ErrNoSubscriber is returned by adapters when an event is published to a
@@ -68,6 +77,14 @@ type Event struct {
 	Avatar   *string            `json:"avatar,omitempty"`
 	Metadata *map[string]string `json:"metadata,omitempty"`
 
+	// Config-notification fields (config center). A config.updated event is
+	// a signal only: it carries the new version/hash and optional delivery
+	// targets (server or group IDs), never the config body — receivers
+	// always pull the full config themselves.
+	ConfigVersion int      `json:"config_version,omitempty"`
+	ConfigHash    string   `json:"config_hash,omitempty"`
+	ConfigTargets []string `json:"config_targets,omitempty"`
+
 	// Timestamp is the producer-side occurrence time.
 	Timestamp time.Time `json:"timestamp,omitempty"`
 }
@@ -79,6 +96,8 @@ func TopicFor(t EventType) (string, error) {
 	case EventCharacterCreated, EventCharacterUpdated, EventCharacterDeleted,
 		EventCharacterMoved, EventCharacterLogin:
 		return TopicCharacters, nil
+	case EventConfigUpdated:
+		return TopicConfig, nil
 	default:
 		return "", fmt.Errorf("event: unknown type %q", t)
 	}

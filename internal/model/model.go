@@ -8,9 +8,19 @@ package model
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+)
+
+// Notify modes for cross-server config updates (config center). Declared at
+// register time in the server's metadata; poll is the fallback when nothing
+// is declared. See docs/config-center.md.
+const (
+	NotifyModeSubscribe = "subscribe"
+	NotifyModeCallback  = "callback"
+	NotifyModePoll      = "poll"
 )
 
 // ServerStatus is the lifecycle state of a game server. The full state machine
@@ -116,17 +126,17 @@ func (e Endpoint) String() string {
 // Metadata is stored as JSON and returned in discovery responses. It is not
 // indexed for filtering in v0.1.1; use the server type or region for that.
 type Server struct {
-	ID         string            `json:"id"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Region     string            `json:"region"`
-	RealmID    *string           `json:"realm_id,omitempty"`
-	ShardID    *string           `json:"shard_id,omitempty"`
-	Version    string            `json:"version"`
-	Platform   string            `json:"platform"`
-	Endpoint   Endpoint          `json:"endpoint"`
-	Capacity   int               `json:"capacity"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Region   string            `json:"region"`
+	RealmID  *string           `json:"realm_id,omitempty"`
+	ShardID  *string           `json:"shard_id,omitempty"`
+	Version  string            `json:"version"`
+	Platform string            `json:"platform"`
+	Endpoint Endpoint          `json:"endpoint"`
+	Capacity int               `json:"capacity"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// Tags are operator-set markers (火热 / 禁止注册 / 新服 / …, see
 	// tags.go). They are configuration owned by the admin API: the register
 	// upsert never touches them. Discovery responses keep only tags with
@@ -137,11 +147,19 @@ type Server struct {
 	// declared in the servers config file (ATLAS_SERVERS_CONFIG) — its
 	// profile fields are config-owned and the register API rejects updates
 	// for it (heartbeats and lifecycle operations still apply).
-	Source    string       `json:"source,omitempty"`
-	Status    ServerStatus `json:"status"`
-	Players    int               `json:"players"`
-	Load       float64           `json:"load"`
-	LastSeenAt *time.Time        `json:"last_seen_at,omitempty"`
+	Source string `json:"source,omitempty"`
+	// NotifyMode declares how this server wants to be told about cross-server
+	// config updates (config center, see internal/crossserver): "subscribe"
+	// (message-bus topic), "callback" (atlas POSTs NotifyCallbackURL), or
+	// "poll" (the server polls version/ETag itself). Empty means undeclared —
+	// treated as poll for callback dispatch. Callback subscriptions require
+	// NotifyCallbackURL.
+	NotifyMode        string       `json:"notify_mode,omitempty"`
+	NotifyCallbackURL string       `json:"notify_callback_url,omitempty"`
+	Status            ServerStatus `json:"status"`
+	Players           int          `json:"players"`
+	Load              float64      `json:"load"`
+	LastSeenAt        *time.Time   `json:"last_seen_at,omitempty"`
 	// StartedAt is the game server process start time reported at register
 	// (TODO v0.1.20); re-registration (process restart) updates it, so
 	// discovery can surface uptime. Nil on records registered before v0.1.20.
@@ -198,6 +216,23 @@ func (s *Server) Validate() error {
 	}
 	if s.Status != "" && !s.Status.Valid() {
 		return fmt.Errorf("%w: unknown status %q", ErrInvalid, s.Status)
+	}
+	switch s.NotifyMode {
+	case "", NotifyModePoll, NotifyModeSubscribe, NotifyModeCallback:
+	default:
+		return fmt.Errorf("%w: notify_mode must be one of subscribe/callback/poll", ErrInvalid)
+	}
+	if s.NotifyMode == NotifyModeCallback {
+		if s.NotifyCallbackURL == "" {
+			return fmt.Errorf("%w: notify_callback_url is required when notify_mode=callback", ErrInvalid)
+		}
+		u, err := url.Parse(s.NotifyCallbackURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("%w: notify_callback_url must be an absolute http(s) URL", ErrInvalid)
+		}
+	}
+	if s.NotifyMode != NotifyModeCallback && s.NotifyCallbackURL != "" {
+		return fmt.Errorf("%w: notify_callback_url only applies to notify_mode=callback", ErrInvalid)
 	}
 	return nil
 }

@@ -71,12 +71,29 @@ type RegisterRequest struct {
 	Platform string   `json:"platform"`
 	Endpoint Endpoint `json:"endpoint"`
 	Capacity int      `json:"capacity"`
+	// NotifyMode declares how this server receives cross-server config
+	// change signals: subscribe | callback | poll (config.go).
+	NotifyMode string `json:"notify_mode,omitempty"`
+	// NotifyCallbackURL is required with NotifyModeCallback: the absolute
+	// http(s) URL Atlas POSTs the change signal to.
+	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 }
 
 // RegisterResult is the response to Register.
 type RegisterResult struct {
 	ServerID string `json:"server_id"`
 	Status   string `json:"status"`
+	// CrossServerConfig is the coordination config version in force at
+	// registration time (version 0 = nothing published yet). A server can
+	// compare it against its cached copy and skip a pointless pull.
+	CrossServerConfig *ConfigVersionRef `json:"crossserver_config,omitempty"`
+}
+
+// ConfigVersionRef is the version/hash pair carried by registration and
+// by config change signals.
+type ConfigVersionRef struct {
+	Version int    `json:"version"`
+	Hash    string `json:"hash"`
 }
 
 // HeartbeatRequest carries live load metadata (see TODO v0.1.20 for

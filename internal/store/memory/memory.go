@@ -31,6 +31,7 @@ type Store struct {
 	shards        map[string]*model.Shard
 	maintWindows  map[string]*model.MaintenanceWindow
 	announcements map[string]*model.Announcement
+	crossConfig   *model.CrossServerConfig
 }
 
 // New creates a new in-memory store.
@@ -78,6 +79,8 @@ func (s *Store) RegisterServer(_ context.Context, srv *model.Server) error {
 		existing.Endpoint = srv.Endpoint
 		existing.Capacity = srv.Capacity
 		existing.Source = srv.Source
+		existing.NotifyMode = srv.NotifyMode
+		existing.NotifyCallbackURL = srv.NotifyCallbackURL
 		existing.StartedAt = srv.StartedAt
 		// A fresh registration proves a (re)boot: reset only a dead-ish
 		// lifecycle (suspect / offline) so the next heartbeat can promote it
@@ -890,4 +893,36 @@ func (s *Store) ListAnnouncements(_ context.Context, f store.AnnouncementFilter)
 		out = out[:f.Limit]
 	}
 	return out, nil
+}
+
+// ── Cross-server config (config center) ──────────────────────────
+
+// SaveCrossServerConfig stores the spec as the new config, atomically
+// incrementing the version under the write lock (monotonic, stale writes
+// can never win). The caller's object is updated to the stored snapshot.
+func (s *Store) SaveCrossServerConfig(_ context.Context, cfg *model.CrossServerConfig) (*model.CrossServerConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := 1
+	if s.crossConfig != nil {
+		next = s.crossConfig.Version + 1
+	}
+	saved := *cfg
+	saved.Version = next
+	saved.UpdatedAt = time.Now()
+	s.crossConfig = &saved
+	return &saved, nil
+}
+
+// GetCrossServerConfig returns the current config.
+func (s *Store) GetCrossServerConfig(_ context.Context) (*model.CrossServerConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.crossConfig == nil {
+		return nil, fmt.Errorf("cross-server config: %w", store.ErrNotFound)
+	}
+	cp := *s.crossConfig
+	return &cp, nil
 }

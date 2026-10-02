@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cuihairu/atlas/internal/admin"
+	"github.com/cuihairu/atlas/internal/crossserver"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
@@ -24,28 +25,30 @@ import (
 
 // Handler holds all Atlas HTTP handlers and their dependencies.
 type Handler struct {
-	registry  *registry.Service
-	discovery *discovery.Service
-	directory *directory.Service
-	admin     *admin.Service
-	routing   *routing.Service
-	store     store.Store
-	events    event.EventAdapter
-	logger    *slog.Logger
-	audit     *AuditLog
+	registry    *registry.Service
+	discovery   *discovery.Service
+	directory   *directory.Service
+	admin       *admin.Service
+	routing     *routing.Service
+	crossserver *crossserver.Service
+	store       store.Store
+	events      event.EventAdapter
+	logger      *slog.Logger
+	audit       *AuditLog
 }
 
 // New creates a new Handler.
-func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, rt *routing.Service, s store.Store, events event.EventAdapter, logger *slog.Logger) *Handler {
+func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service, adm *admin.Service, rt *routing.Service, cross *crossserver.Service, s store.Store, events event.EventAdapter, logger *slog.Logger) *Handler {
 	return &Handler{
-		registry:  reg,
-		discovery: disc,
-		directory: dir,
-		admin:     adm,
-		routing:   rt,
-		store:     s,
-		events:    events,
-		logger:    logger,
+		registry:    reg,
+		discovery:   disc,
+		directory:   dir,
+		admin:       adm,
+		routing:     rt,
+		crossserver: cross,
+		store:       s,
+		events:      events,
+		logger:      logger,
 	}
 }
 
@@ -74,6 +77,10 @@ func (h *Handler) RegisterRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/registry/servers/register", h.handleRegister)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/heartbeat", h.handleHeartbeat)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/unregister", h.handleUnregister)
+	// Cross-server config pull (config center): the endpoint game servers
+	// call at startup and after every change signal. ETag/If-None-Match make
+	// polling cheap for poll-mode servers.
+	mux.HandleFunc("GET /v1/crossserver/config", h.handleGetCrossServerConfig)
 }
 
 // RegisterPublicRoutes registers discovery and directory routes. Mount on the
@@ -125,6 +132,10 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/admin/announcements", h.handleAdminCreateAnnouncement)
 	mux.HandleFunc("GET /v1/admin/announcements", h.handleAdminListAnnouncements)
 	mux.HandleFunc("DELETE /v1/admin/announcements/{id}", h.handleAdminDeleteAnnouncement)
+	// Cross-server config (config center): admin-facing read/write of the
+	// single versioned config document.
+	mux.HandleFunc("GET /v1/admin/crossserver/config", h.handleAdminGetCrossServerConfig)
+	mux.HandleFunc("PUT /v1/admin/crossserver/config", h.handleAdminUpdateCrossServerConfig)
 	if h.audit != nil {
 		mux.HandleFunc("GET /v1/admin/audit", h.handleAdminAudit)
 	}
@@ -159,6 +170,10 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Platform string         `json:"platform"`
 		Endpoint model.Endpoint `json:"endpoint"`
 		Capacity int            `json:"capacity"`
+		// Config-center notify declaration (subscribe | callback | poll);
+		// callback mode also carries the URL atlas signals.
+		NotifyMode        string `json:"notify_mode,omitempty"`
+		NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -167,16 +182,18 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	regReq := registry.RegisterRequest{
-		ID:       req.ID,
-		Name:     req.Name,
-		Type:     req.Type,
-		Region:   req.Region,
-		RealmID:  req.RealmID,
-		ShardID:  req.ShardID,
-		Version:  req.Version,
-		Platform: req.Platform,
-		Endpoint: req.Endpoint,
-		Capacity: req.Capacity,
+		ID:                req.ID,
+		Name:              req.Name,
+		Type:              req.Type,
+		Region:            req.Region,
+		RealmID:           req.RealmID,
+		ShardID:           req.ShardID,
+		Version:           req.Version,
+		Platform:          req.Platform,
+		Endpoint:          req.Endpoint,
+		Capacity:          req.Capacity,
+		NotifyMode:        req.NotifyMode,
+		NotifyCallbackURL: req.NotifyCallbackURL,
 	}
 
 	srv, err := h.registry.Register(r.Context(), regReq)
@@ -193,10 +210,25 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+	// Startup pull hookup: the registration response carries the current
+	// cross-server config version so a booting server knows what to fetch
+	// (and can compare against a cached copy). nil = no config saved yet.
+	resp := map[string]any{
 		"server_id": srv.ID,
 		"status":    srv.Status,
-	})
+	}
+	if h.crossserver != nil {
+		if cfg, err := h.crossserver.Snapshot(r.Context()); err == nil {
+			// version 0 = nothing published yet; the server starts with the
+			// empty snapshot and converges on the first change signal.
+			resp["crossserver_config"] = map[string]any{
+				"version": cfg.Version,
+				"hash":    cfg.Hash,
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (h *Handler) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -1186,4 +1218,115 @@ func (h *Handler) handleListAnnouncements(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{
 		"announcements": announcements,
 	})
+}
+
+// ── Cross-server config (config center) ─────────────────────────
+
+// handleGetCrossServerConfig serves GET /v1/crossserver/config — the pull
+// endpoint game servers call at startup and after every change signal.
+//
+// Semantics split by caller state:
+//   - A bare GET (startup pull) is strict: 404 CONFIG_NOT_FOUND when
+//     nothing has been published, so a booting server fails fast and
+//     loudly instead of silently running without coordination config.
+//   - ?version=N&hash=H (poll-mode fallback) or If-None-Match are
+//     conditional: they compare against the current snapshot and answer
+//     304 when nothing changed, never 404 — a running server keeps its
+//     old config and keeps polling.
+func (h *Handler) handleGetCrossServerConfig(w http.ResponseWriter, r *http.Request) {
+	if h.crossserver == nil {
+		writeError(w, http.StatusServiceUnavailable, "CONFIG_CENTER_DISABLED", "cross-server config service is not wired")
+		return
+	}
+
+	q := r.URL.Query()
+	if q.Get("version") != "" || q.Get("hash") != "" {
+		known := 0
+		if v := q.Get("version"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid version")
+				return
+			}
+			known = n
+		}
+		cfg, changed, err := h.crossserver.Since(r.Context(), known, q.Get("hash"))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+			return
+		}
+		etag := cfg.ETag()
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "no-cache")
+		if !changed {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeJSON(w, http.StatusOK, cfg)
+		return
+	}
+
+	cfg, err := h.crossserver.Get(r.Context())
+	if err != nil {
+		if store.IsNotFound(err) || errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "CONFIG_NOT_FOUND", "no cross-server config has been published yet")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	etag := cfg.ETag()
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// handleAdminGetCrossServerConfig is the admin read of the same document.
+// Unlike the strict startup pull it answers the version-0 empty snapshot
+// when nothing was published yet — the dashboard shows a real baseline.
+func (h *Handler) handleAdminGetCrossServerConfig(w http.ResponseWriter, r *http.Request) {
+	if h.crossserver == nil {
+		writeError(w, http.StatusServiceUnavailable, "CONFIG_CENTER_DISABLED", "cross-server config service is not wired")
+		return
+	}
+	cfg, err := h.crossserver.Snapshot(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
+}
+
+// handleAdminUpdateCrossServerConfig replaces the config spec (PUT, full
+// document). The store bumps the version atomically and the response
+// reports how the change signal fanned out (bus + callbacks). Saving
+// identical content is idempotent: no version bump, no signal.
+func (h *Handler) handleAdminUpdateCrossServerConfig(w http.ResponseWriter, r *http.Request) {
+	if h.crossserver == nil {
+		writeError(w, http.StatusServiceUnavailable, "CONFIG_CENTER_DISABLED", "cross-server config service is not wired")
+		return
+	}
+	var spec model.CrossServerSpec
+	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	// Save fetches the stored snapshot itself for the idempotency check and
+	// the target diff; the store owns the version, so a stale caller can
+	// never overwrite a newer one.
+	res, err := h.crossserver.Save(r.Context(), spec)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
