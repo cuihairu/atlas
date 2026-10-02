@@ -113,6 +113,11 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/realms", h.handleAdminListRealms)
 	mux.HandleFunc("POST /v1/admin/shards", h.handleAdminCreateShard)
 	mux.HandleFunc("GET /v1/admin/shards", h.handleAdminListShards)
+	// Server tags (标记体系): GET shows the full list including internal
+	// tags; POST upserts one tag by code; DELETE removes one by code.
+	mux.HandleFunc("GET /v1/admin/servers/{id}/tags", h.handleAdminGetServerTags)
+	mux.HandleFunc("POST /v1/admin/servers/{id}/tags", h.handleAdminAddServerTag)
+	mux.HandleFunc("DELETE /v1/admin/servers/{id}/tags/{code}", h.handleAdminRemoveServerTag)
 	// Maintenance windows & announcements (TODO v0.1.20).
 	mux.HandleFunc("POST /v1/admin/servers/{id}/maintenance-window", h.handleAdminCreateMaintenanceWindow)
 	mux.HandleFunc("GET /v1/admin/maintenance-windows", h.handleAdminListMaintenanceWindows)
@@ -328,6 +333,26 @@ func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Registration gating (server tags): 禁止注册 always rejects; 维护中
+	// rejects or warns per ATLAS_MAINTENANCE_ENFORCE. Checked before
+	// enqueueing so async adapters never accept a gated request.
+	verdict, err := h.registry.CheckRegistration(r.Context(), req.ServerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if verdict.Code != "" {
+		writeError(w, http.StatusForbidden, verdict.Code, verdict.Message)
+		return
+	}
+	if verdict.Warn {
+		// Warn mode: the request proceeds; the standard Warning header (and
+		// the log line) carry the notice.
+		w.Header().Set("Warning", `299 atlas "server under maintenance (维护中)"`)
+		h.logger.Warn("character created on server in maintenance (warn mode)",
+			"server_id", req.ServerID, "account_id", req.AccountID)
+	}
+
 	level, classID := req.Level, req.ClassID
 	evt := &event.Event{
 		Type:        event.EventCharacterCreated,
@@ -385,6 +410,9 @@ func (h *Handler) handleRecommended(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The recommendation is player-facing: keep only public tags (internal
+	// markers never leave the admin surface).
+	srv.Tags = model.PublicTags(srv.Tags)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server": srv,
 		"reason": reason,
@@ -882,6 +910,80 @@ func (h *Handler) handleAdminListShards(w http.ResponseWriter, r *http.Request) 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"shards": shards,
+	})
+}
+
+// ── Server tags (标记体系) ──────────────────────────────────────
+
+func (h *Handler) handleAdminGetServerTags(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	tags, err := h.admin.GetServerTags(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"tags":      tags,
+	})
+}
+
+func (h *Handler) handleAdminAddServerTag(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req admin.AddServerTagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	tags, err := h.admin.AddServerTag(r.Context(), id, req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"tags":      tags,
+	})
+}
+
+func (h *Handler) handleAdminRemoveServerTag(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	code := r.PathValue("code")
+
+	// Distinguish the two 404s: an unknown server vs an unknown tag on a
+	// known server.
+	if _, err := h.admin.GetServerTags(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if err := h.admin.RemoveServerTag(r.Context(), id, code); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "TAG_NOT_FOUND", fmt.Sprintf("no tag %q on server %s", code, id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"removed":   code,
 	})
 }
 

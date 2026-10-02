@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS servers (
     endpoint_host VARCHAR(255) NOT NULL,
     endpoint_port INT          NOT NULL,
     capacity      INT          NOT NULL DEFAULT 0,
-    metadata      JSON         NOT NULL,
+    -- Metadata is optional; inserts never write it (the store does not map
+    -- it yet). MySQL cannot put a DEFAULT on JSON columns, so allow NULL —
+    -- postgres uses DEFAULT '{}'::jsonb there.
+    metadata      JSON         DEFAULT NULL,
     status        VARCHAR(32)  NOT NULL DEFAULT 'starting',
     created_at    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
@@ -47,7 +50,7 @@ CREATE TABLE IF NOT EXISTS character_index (
     level         INT          NOT NULL DEFAULT 1,
     class_id      INT          NOT NULL DEFAULT 0,
     avatar        VARCHAR(255) NOT NULL DEFAULT '',
-    metadata      JSON         NOT NULL,
+    metadata      JSON         DEFAULT NULL,
     last_login_at DATETIME(6)  DEFAULT NULL,
     created_at    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     updated_at    DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),

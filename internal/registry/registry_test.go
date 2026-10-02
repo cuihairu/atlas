@@ -236,3 +236,85 @@ func TestHeartbeatConfigReentry(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Registration gating (server tags)
+// ---------------------------------------------------------------------------
+
+func TestCheckRegistration(t *testing.T) {
+	ctx := context.Background()
+	mem := memory.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	block := New(mem, mem, logger)
+	warn := New(mem, mem, logger).WithMaintenanceEnforce(MaintenanceEnforceWarn)
+
+	registered := testRequest()
+	if _, err := block.Register(ctx, registered); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	// First heartbeat promotes starting → online.
+	if _, err := block.Heartbeat(ctx, registered.ID, model.Heartbeat{Players: 1}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	// Online, untagged: allowed in both modes.
+	if v, err := block.CheckRegistration(ctx, registered.ID); err != nil || v.Code != "" || v.Warn {
+		t.Fatalf("online verdict = %+v err=%v", v, err)
+	}
+
+	// 禁止注册 always blocks.
+	tags := []model.ServerTag{{Code: model.TagNoRegister, Label: "禁止注册", Tier: model.TierWarning, Public: true}}
+	if err := mem.UpdateServerTags(ctx, registered.ID, tags); err != nil {
+		t.Fatalf("set tags: %v", err)
+	}
+	v, err := warn.CheckRegistration(ctx, registered.ID)
+	if err != nil || v.Code != "REGISTRATION_FORBIDDEN" || v.Message == "" {
+		t.Fatalf("no_register verdict = %+v err=%v", v, err)
+	}
+
+	// 维护中 tag: blocks in default (block) mode, warns in warn mode.
+	tags = []model.ServerTag{{Code: model.TagMaintenance, Label: "维护中", Tier: model.TierWarning, Public: true}}
+	if err := mem.UpdateServerTags(ctx, registered.ID, tags); err != nil {
+		t.Fatalf("set tags: %v", err)
+	}
+	if v, _ := block.CheckRegistration(ctx, registered.ID); v.Code != "SERVER_IN_MAINTENANCE" || v.Warn {
+		t.Fatalf("maintenance block verdict = %+v", v)
+	}
+	if v, _ := warn.CheckRegistration(ctx, registered.ID); v.Code != "" || !v.Warn {
+		t.Fatalf("maintenance warn verdict = %+v", v.Warn)
+	}
+
+	// 维护中 via lifecycle status behaves identically.
+	if err := mem.UpdateServerStatus(ctx, registered.ID, model.StatusMaintenance); err != nil {
+		t.Fatalf("set maintenance: %v", err)
+	}
+	if v, _ := block.CheckRegistration(ctx, registered.ID); v.Code != "SERVER_IN_MAINTENANCE" {
+		t.Fatalf("maintenance status verdict = %+v", v)
+	}
+
+	// Unknown server is not a gate (projections may outlive server records).
+	if v, err := block.CheckRegistration(ctx, "ghost"); err != nil || v.Code != "" || v.Warn {
+		t.Fatalf("unknown server verdict = %+v err=%v", v, err)
+	}
+}
+
+// WithMaintenanceEnforce treats any unknown value as block — fail closed.
+func TestCheckRegistrationFailClosed(t *testing.T) {
+	ctx := context.Background()
+	mem := memory.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	weird := New(mem, mem, logger).WithMaintenanceEnforce("sometimes")
+
+	srv := &model.Server{ID: "game-9", Region: "cn-east", Status: model.StatusOnline,
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001}}
+	if err := mem.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if err := mem.UpdateServerTags(ctx, "game-9", []model.ServerTag{
+		{Code: model.TagMaintenance, Label: "维护中", Tier: model.TierWarning, Public: true}}); err != nil {
+		t.Fatalf("set tags: %v", err)
+	}
+	if v, err := weird.CheckRegistration(ctx, "game-9"); err != nil || v.Code != "SERVER_IN_MAINTENANCE" {
+		t.Fatalf("unknown enforce mode verdict = %+v err=%v", v, err)
+	}
+}

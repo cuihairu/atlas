@@ -27,11 +27,21 @@ var (
 // Store implements the Atlas store interfaces on MySQL.
 type Store struct {
 	db *sql.DB
+	// runtime is an optional heartbeat store wired by the deployment: when
+	// set, GetStats merges its player counts into TotalPlayers.
+	runtime store.RuntimeStore
 }
 
 // New creates a new MySQL store from an existing *sql.DB.
 func New(db *sql.DB) *Store {
 	return &Store{db: db}
+}
+
+// WithRuntime attaches a heartbeat store for stats aggregation (GetStats
+// TotalPlayers). Returns the store for chaining.
+func (s *Store) WithRuntime(rt store.RuntimeStore) *Store {
+	s.runtime = rt
+	return s
 }
 
 // Ping checks the database connection.
@@ -93,7 +103,7 @@ ON DUPLICATE KEY UPDATE
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
 FROM servers WHERE id = ?
 `
 	srv, err := scanServer(s.db.QueryRowContext(ctx, q, id))
@@ -113,7 +123,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
 FROM servers WHERE 1=1`
 	args := []any{}
 
@@ -176,6 +186,29 @@ func (s *Store) UpdateServerStatus(ctx context.Context, id string, status model.
 		return fmt.Errorf("update server status %s: %w", id, err)
 	}
 	n, _ := tag.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
+	}
+	return nil
+}
+
+func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
+	if tags == nil {
+		tags = []model.ServerTag{}
+	}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal server %s tags: %w", id, err)
+	}
+	const q = `UPDATE servers SET tags = ?, updated_at = ? WHERE id = ?`
+	res, err := s.db.ExecContext(ctx, q, string(b), time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update server tags %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update server tags %s: %w", id, err)
+	}
 	if n == 0 {
 		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
 	}
@@ -568,6 +601,18 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 	}
 	stats.TotalCharacters = totalChars
 
+	// Player counts live in the runtime store (Redis in the default
+	// deployment), not in SQL — merge them in when one is wired.
+	if s.runtime != nil {
+		runtimes, err := s.runtime.ListRuntimes(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get stats runtime players: %w", err)
+		}
+		for _, rt := range runtimes {
+			stats.TotalPlayers += rt.Players
+		}
+	}
+
 	return stats, nil
 }
 
@@ -581,17 +626,26 @@ type scannable interface {
 
 func scanServer(row scannable) (*model.Server, error) {
 	var srv model.Server
+	// Nullable: MySQL cannot default a TEXT column, so rows read NULL until
+	// an operator first writes tags (unlike postgres' '[]'::jsonb default).
+	var tagsRaw sql.NullString
 	err := row.Scan(
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
+		&tagsRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
+	}
+	if tagsRaw.Valid && tagsRaw.String != "" {
+		if err := json.Unmarshal([]byte(tagsRaw.String), &srv.Tags); err != nil {
+			return nil, fmt.Errorf("decode server %s tags: %w", srv.ID, err)
+		}
 	}
 	return &srv, nil
 }
@@ -710,6 +764,11 @@ func (s *Store) ListRealms(ctx context.Context, limit int) ([]*model.Realm, erro
 }
 
 func (s *Store) CreateShard(ctx context.Context, sh *model.Shard) error {
+	// The MySQL schema has no realm FK (index only); mirror the enforcement
+	// the other stores get from the FK — no orphan shards anywhere.
+	if _, err := s.GetRealm(ctx, sh.RealmID); err != nil {
+		return fmt.Errorf("shard %s: realm %s: %w", sh.ID, sh.RealmID, store.ErrNotFound)
+	}
 	if sh.Status == "" {
 		sh.Status = "active"
 	}

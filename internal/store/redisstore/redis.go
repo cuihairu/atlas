@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -80,6 +81,13 @@ func (s *Store) GetRuntime(ctx context.Context, id string) (*model.Runtime, erro
 		return nil, fmt.Errorf("runtime %s: %w", id, store.ErrNotFound)
 	}
 
+	return decodeRuntime(vals), nil
+}
+
+// decodeRuntime builds a Runtime from the Redis hash fields. Parse errors on
+// individual fields degrade to zero values: a partial heartbeat is better
+// than a failed read, matching GetRuntime's historical tolerance.
+func decodeRuntime(vals map[string]string) *model.Runtime {
 	rt := &model.Runtime{
 		Status: model.ServerStatus(vals["status"]),
 	}
@@ -96,8 +104,33 @@ func (s *Store) GetRuntime(ctx context.Context, id string) (*model.Runtime, erro
 			rt.LastSeenAt = t
 		}
 	}
+	return rt
+}
 
-	return rt, nil
+// ListRuntimes returns every runtime snapshot currently stored, keyed by
+// server ID. Fleet-wide stats (TotalPlayers) aggregate through this: the
+// persistent StatsStore runs in PostgreSQL and cannot see Redis state.
+func (s *Store) ListRuntimes(ctx context.Context) (map[string]model.Runtime, error) {
+	const prefix, suffix = "atlas:server:", ":runtime"
+	out := make(map[string]model.Runtime)
+
+	iter := s.client.Scan(ctx, 0, prefix+"*"+suffix, 100).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val()
+		vals, err := s.client.HGetAll(ctx, key).Result()
+		if err != nil {
+			return nil, fmt.Errorf("list runtimes (%s): %w", key, err)
+		}
+		if len(vals) == 0 {
+			continue // expired between SCAN and HGETALL
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(key, prefix), suffix)
+		out[id] = *decodeRuntime(vals)
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("list runtimes scan: %w", err)
+	}
+	return out, nil
 }
 
 // DeleteRuntime removes the runtime data for a server.

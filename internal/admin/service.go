@@ -387,3 +387,90 @@ func (s *Service) ListAnnouncements(ctx context.Context, f store.AnnouncementFil
 func (s *Service) DeleteAnnouncement(ctx context.Context, id string) error {
 	return s.store.DeleteAnnouncement(ctx, id)
 }
+
+// ── Server tags (标记体系) ─────────────────────────────────────────
+
+// AddServerTagRequest is the DTO for adding (or replacing) one tag on a
+// server. Public is a pointer so "omitted" can differ from "false": an
+// omitted field inherits the preset's default visibility (true for presets,
+// false for custom codes).
+type AddServerTagRequest struct {
+	Code   string        `json:"code"`
+	Label  string        `json:"label,omitempty"`
+	Tier   model.TagTier `json:"tier,omitempty"`
+	Public *bool         `json:"public,omitempty"`
+}
+
+// GetServerTags returns a server's full tag list (public and internal — the
+// admin API is the only surface that shows internal tags).
+func (s *Service) GetServerTags(ctx context.Context, serverID string) ([]model.ServerTag, error) {
+	srv, err := s.store.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("get tags: %w", err)
+	}
+	if srv.Tags == nil {
+		return []model.ServerTag{}, nil
+	}
+	return srv.Tags, nil
+}
+
+// AddServerTag upserts one tag on a server (by code): preset defaults are
+// filled in, the resulting full list is validated, then persisted. Re-adding
+// an existing code replaces that tag.
+func (s *Service) AddServerTag(ctx context.Context, serverID string, req AddServerTagRequest) ([]model.ServerTag, error) {
+	srv, err := s.store.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("add tag: %w", err)
+	}
+
+	tag := model.FillTag(model.ServerTag{
+		Code:   req.Code,
+		Label:  req.Label,
+		Tier:   req.Tier,
+	}, req.Public)
+
+	merged := make([]model.ServerTag, 0, len(srv.Tags)+1)
+	replaced := false
+	for _, t := range srv.Tags {
+		if t.Code == tag.Code {
+			merged = append(merged, tag)
+			replaced = true
+			continue
+		}
+		merged = append(merged, t)
+	}
+	if !replaced {
+		merged = append(merged, tag)
+	}
+
+	if err := model.ValidateServerTags(merged); err != nil {
+		return nil, err
+	}
+	if err := s.store.UpdateServerTags(ctx, serverID, merged); err != nil {
+		return nil, fmt.Errorf("add tag: %w", err)
+	}
+	return merged, nil
+}
+
+// RemoveServerTag removes the tag with the given code from a server.
+// ErrNotFound when either the server or the tag is missing.
+func (s *Service) RemoveServerTag(ctx context.Context, serverID, code string) error {
+	srv, err := s.store.GetServer(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("remove tag: %w", err)
+	}
+	if !model.HasTag(srv.Tags, code) {
+		return fmt.Errorf("%w: no tag %q on server %s", model.ErrNotFound, code, serverID)
+	}
+
+	kept := make([]model.ServerTag, 0, len(srv.Tags))
+	for _, t := range srv.Tags {
+		if t.Code != code {
+			kept = append(kept, t)
+		}
+	}
+	if err := s.store.UpdateServerTags(ctx, serverID, kept); err != nil {
+		return fmt.Errorf("remove tag: %w", err)
+	}
+	return nil
+}

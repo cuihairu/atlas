@@ -40,6 +40,10 @@ type Service struct {
 	servers store.ServerStore
 	runtime store.RuntimeStore
 	logger  *slog.Logger
+	// maintenanceEnforce is the 维护中 policy for registration gating
+	// ("block" rejects 创角, "warn" allows it with a notice). See
+	// WithMaintenanceEnforce.
+	maintenanceEnforce string
 }
 
 // New creates a new registry service.
@@ -49,6 +53,57 @@ func New(servers store.ServerStore, runtime store.RuntimeStore, logger *slog.Log
 		runtime: runtime,
 		logger:  logger,
 	}
+}
+
+// MaintenanceEnforceBlock / MaintenanceEnforceWarn are the accepted values
+// of ATLAS_MAINTENANCE_ENFORCE.
+const (
+	MaintenanceEnforceBlock = "block"
+	MaintenanceEnforceWarn  = "warn"
+)
+
+// WithMaintenanceEnforce sets the 维护中 policy used by CheckRegistration:
+// "block" (default) rejects character creation on servers in maintenance,
+// "warn" lets it through so the caller can attach a notice. Any other value
+// is treated as "block" — fail closed.
+func (s *Service) WithMaintenanceEnforce(mode string) *Service {
+	s.maintenanceEnforce = mode
+	return s
+}
+
+// RegistrationVerdict is the outcome of registration gating for one request.
+type RegistrationVerdict struct {
+	// Code is the API error code to reject with; empty means "allowed".
+	Code string
+	// Message is the human-readable rejection reason for Code.
+	Message string
+	// Warn is set when the server is in maintenance but the enforce mode is
+	// "warn": the request proceeds, and the caller should attach a notice
+	// (e.g. an HTTP Warning header) so operators see the soft rejection.
+	Warn bool
+}
+
+// CheckRegistration evaluates registration gating (server tags) for a
+// new-character request against serverID. An unknown server is not a gate:
+// character projections may outlive server records, so ErrNotFound yields an
+// empty (allow) verdict; any other store error propagates.
+//
+// The gate honours the 禁止注册 tag unconditionally and the 维护中 tag or
+// maintenance status per the configured enforce mode.
+func (s *Service) CheckRegistration(ctx context.Context, serverID string) (RegistrationVerdict, error) {
+	srv, err := s.servers.GetServer(ctx, serverID)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			return RegistrationVerdict{}, nil
+		}
+		return RegistrationVerdict{}, fmt.Errorf("check registration for %s: %w", serverID, err)
+	}
+	code, message := srv.RegistrationBlocked(s.maintenanceEnforce == MaintenanceEnforceWarn)
+	return RegistrationVerdict{
+		Code:    code,
+		Message: message,
+		Warn:    code == "" && s.maintenanceEnforce == MaintenanceEnforceWarn && srv.InMaintenance(),
+	}, nil
 }
 
 // Register registers a game server. It is idempotent: re-registering the same

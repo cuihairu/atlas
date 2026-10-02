@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	pb "github.com/cuihairu/atlas/api/pb"
 	"github.com/cuihairu/atlas/internal/event"
 	"github.com/cuihairu/atlas/internal/model"
@@ -16,6 +19,16 @@ import (
 func (s *Server) CreateCharacter(ctx context.Context, req *pb.CreateCharacterRequest) (*pb.CreateCharacterResponse, error) {
 	if req.AccountId <= 0 || req.ServerId == "" || req.CharacterId <= 0 {
 		return nil, statusErr(errInvalid("account_id, server_id and character_id are required"))
+	}
+
+	// Registration gating (server tags), mirroring the REST handler:
+	// 禁止注册 always rejects; 维护中 follows ATLAS_MAINTENANCE_ENFORCE.
+	verdict, err := s.registry.CheckRegistration(ctx, req.ServerId)
+	if err != nil {
+		return nil, statusErr(err)
+	}
+	if verdict.Code != "" {
+		return nil, status.Errorf(codes.PermissionDenied, "%s: %s", verdict.Code, verdict.Message)
 	}
 
 	level, classID := int(req.Level), int(req.ClassId)

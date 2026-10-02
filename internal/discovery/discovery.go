@@ -68,6 +68,13 @@ func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*mod
 		srv.LastSeenAt = &rt.LastSeenAt
 	}
 
+	// Discovery is the player-facing view: only public tags travel (internal
+	// markers stay on the admin surface). The admin API reads the store
+	// directly and sees the full list.
+	for _, srv := range servers {
+		srv.Tags = model.PublicTags(srv.Tags)
+	}
+
 	return servers, nil
 }
 
@@ -85,5 +92,6 @@ func (s *Service) GetServer(ctx context.Context, id string) (*model.Server, erro
 		srv.LastSeenAt = &rt.LastSeenAt
 	}
 
+	srv.Tags = model.PublicTags(srv.Tags)
 	return srv, nil
 }

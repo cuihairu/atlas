@@ -228,3 +228,42 @@ func TestWithMetrics(t *testing.T) {
 		t.Errorf("expected discovery counter = 1, got %v", n)
 	}
 }
+
+func TestTagsPublicOnlyInView(t *testing.T) {
+	mem := memory.New()
+	svc := New(mem, mem)
+	ctx := context.Background()
+
+	srv := &model.Server{ID: "game-1", Name: "一区", Region: "cn-east", Status: model.StatusOnline,
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Tags: []model.ServerTag{
+			{Code: model.TagHot, Label: "火热", Tier: model.TierHot, Public: true},
+			{Code: "ops_note", Label: "内部", Tier: model.TierNeutral},
+		}}
+	if err := mem.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	got, err := svc.GetServer(ctx, "game-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(got.Tags) != 1 || got.Tags[0].Code != model.TagHot {
+		t.Fatalf("detail tags = %+v, want public only", got.Tags)
+	}
+
+	// The stored record keeps the internal tag: filtering must be a view,
+	// not a mutation.
+	stored, _ := mem.GetServer(ctx, "game-1")
+	if len(stored.Tags) != 2 {
+		t.Fatalf("stored tags = %+v, want untouched", stored.Tags)
+	}
+
+	list, err := svc.ListServers(ctx, store.ServerFilter{})
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %v (%d)", err, len(list))
+	}
+	if len(list[0].Tags) != 1 || list[0].Tags[0].Code != model.TagHot {
+		t.Fatalf("list tags = %+v, want public only", list[0].Tags)
+	}
+}

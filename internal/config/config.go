@@ -117,6 +117,14 @@ type Config struct {
 	// Env: ATLAS_ALERT_WEBHOOK_URL, default "".
 	AlertWebhookURL string
 
+	// MaintenanceEnforce controls what happens to a new-character request
+	// (创角) aimed at a server that is in maintenance — status or 维护中 tag:
+	// "block" rejects with 403 SERVER_IN_MAINTENANCE, "warn" lets it through
+	// and attaches a Warning header. 禁止注册 tags always reject regardless
+	// of this setting.
+	// Env: ATLAS_MAINTENANCE_ENFORCE, default "block".
+	MaintenanceEnforce string
+
 	// CharShards is the logical shard count for the character index
 	// (TODO v0.1.16). Values > 1 wrap the backing character store in an
 	// account-hash sharded composite (store/sharded): key-routed operations
@@ -234,6 +242,7 @@ func Load() Config {
 		AlertSuspectRatio:   0.3,
 		AlertOfflineRatio:   0.2,
 		AlertWebhookURL:     os.Getenv("ATLAS_ALERT_WEBHOOK_URL"),
+		MaintenanceEnforce:  envOr("ATLAS_MAINTENANCE_ENFORCE", "block"),
 		CharShards:          1,
 		RegistryTLSCert:     os.Getenv("ATLAS_REGISTRY_TLS_CERT"),
 		RegistryTLSKey:      os.Getenv("ATLAS_REGISTRY_TLS_KEY"),

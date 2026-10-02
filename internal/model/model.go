@@ -127,6 +127,11 @@ type Server struct {
 	Endpoint   Endpoint          `json:"endpoint"`
 	Capacity   int               `json:"capacity"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// Tags are operator-set markers (火热 / 禁止注册 / 新服 / …, see
+	// tags.go). They are configuration owned by the admin API: the register
+	// upsert never touches them. Discovery responses keep only tags with
+	// Public set; the admin API returns the full list.
+	Tags []ServerTag `json:"tags,omitempty"`
 	// Source marks who owns the profile fields of this record. Empty and
 	// "api" mean API-registered (the default); "config" means the record is
 	// declared in the servers config file (ATLAS_SERVERS_CONFIG) — its

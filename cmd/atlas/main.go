@@ -144,6 +144,9 @@ func main() {
 		}
 		rs := redisStore.New(rdb)
 		runtimeStore = rs
+		// Player counts live in Redis; wire the heartbeat view into the
+		// SQL stats so TotalPlayers is not silently 0.
+		pg.WithRuntime(rs)
 
 		pingCloser = func() {
 			pool.Close()
@@ -192,7 +195,8 @@ func main() {
 	}
 
 	// Create services.
-	regSvc := registry.New(serverStore, runtimeStore, logger)
+	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
+	regSvc := registry.New(serverStore, runtimeStore, logger).WithMaintenanceEnforce(cfg.MaintenanceEnforce)
 	discSvc := discovery.New(serverStore, runtimeStore)
 	dirSvc := directory.New(charStore)
 

@@ -619,3 +619,100 @@ func TestListShards_ByRealm(t *testing.T) {
 		t.Fatalf("expected 3 shards overall, got %d", len(all))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Server tags (标记体系)
+// ---------------------------------------------------------------------------
+
+func TestServerTagCRUD(t *testing.T) {
+	svc, mem := setupService(t)
+	ctx := context.Background()
+	registerServer(t, mem, "game-1", model.StatusOnline)
+
+	// Empty list is an empty slice, not nil (JSON renders as []).
+	tags, err := svc.GetServerTags(ctx, "game-1")
+	if err != nil || len(tags) != 0 {
+		t.Fatalf("fresh tags = %v err=%v", tags, err)
+	}
+
+	// Preset defaults are filled; custom defaults to internal.
+	tags, err = svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "hot"})
+	if err != nil {
+		t.Fatalf("add hot: %v", err)
+	}
+	public := true
+	tags, err = svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "watchlist", Label: "内部观察", Public: &public})
+	if err != nil {
+		t.Fatalf("add custom: %v", err)
+	}
+	if len(tags) != 2 {
+		t.Fatalf("tags after adds = %v", tags)
+	}
+	// Preset defaults public; explicit pointer wins; omission defaults an
+	// unknown code to internal.
+	srv, _ := mem.GetServer(ctx, "game-1")
+	for _, tag := range srv.Tags {
+		switch tag.Code {
+		case "hot":
+			if !tag.Public || tag.Label != "火热" || tag.Tier != model.TierHot {
+				t.Fatalf("hot = %+v", tag)
+			}
+		case "watchlist":
+			if !tag.Public {
+				t.Fatalf("watchlist should honor explicit public: %+v", tag)
+			}
+		}
+	}
+	if _, err = svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "silent", Label: "内部"}); err != nil {
+		t.Fatalf("add silent: %v", err)
+	}
+	srv, _ = mem.GetServer(ctx, "game-1")
+	for _, tag := range srv.Tags {
+		if tag.Code == "silent" && tag.Public {
+			t.Fatalf("custom without explicit public must be internal: %+v", tag)
+		}
+	}
+
+	// Upsert replaces by code.
+	if _, err = svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "hot", Label: "超火爆"}); err != nil {
+		t.Fatalf("replace hot: %v", err)
+	}
+	tags, _ = svc.GetServerTags(ctx, "game-1")
+	if len(tags) != 3 {
+		t.Fatalf("replace should not add: %+v", tags)
+	}
+
+	// Remove leaves the other tags intact.
+	if err = svc.RemoveServerTag(ctx, "game-1", "hot"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	tags, _ = svc.GetServerTags(ctx, "game-1")
+	if len(tags) != 2 || !model.HasTag(tags, "watchlist") || !model.HasTag(tags, "silent") {
+		t.Fatalf("after remove = %+v", tags)
+	}
+}
+
+func TestServerTagErrors(t *testing.T) {
+	svc, mem := setupService(t)
+	ctx := context.Background()
+	registerServer(t, mem, "game-1", model.StatusOnline)
+
+	if _, err := svc.GetServerTags(ctx, "ghost"); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("get on missing server = %v", model.ErrNotFound)
+	}
+	if _, err := svc.AddServerTag(ctx, "ghost", AddServerTagRequest{Code: "hot"}); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("add on missing server = %v", err)
+	}
+	if err := svc.RemoveServerTag(ctx, "ghost", "hot"); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("remove on missing server = %v", err)
+	}
+	if _, err := svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "BAD CODE"}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("bad code = %v", err)
+	}
+	if _, err := svc.AddServerTag(ctx, "game-1", AddServerTagRequest{Code: "custom"}); !errors.Is(err, model.ErrInvalid) {
+		t.Fatalf("custom without label = %v", err)
+	}
+	if err := svc.RemoveServerTag(ctx, "game-1", "hot"); !errors.Is(err, model.ErrNotFound) {
+		t.Fatalf("remove missing tag = %v", err)
+	}
+}

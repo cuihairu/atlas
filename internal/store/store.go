@@ -69,6 +69,11 @@ type ServerStore interface {
 	// UpdateServerStatus changes the status field of a server.
 	UpdateServerStatus(ctx context.Context, id string, status model.ServerStatus) error
 
+	// UpdateServerTags replaces a server's tag list. Tags are admin-owned
+	// configuration: the register upsert must not touch them. Returns
+	// ErrNotFound when the server does not exist.
+	UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error
+
 	// DeleteServer removes a server record entirely.
 	DeleteServer(ctx context.Context, id string) error
 }
@@ -159,6 +164,11 @@ type RuntimeStore interface {
 
 	// GetRuntime returns the latest runtime snapshot for a server.
 	GetRuntime(ctx context.Context, id string) (*model.Runtime, error)
+
+	// ListRuntimes returns every runtime snapshot currently stored, keyed by
+	// server ID. Fleet-wide stats (TotalPlayers) aggregate through this —
+	// the persistent StatsStore cannot see Redis-backed runtime state.
+	ListRuntimes(ctx context.Context) (map[string]model.Runtime, error)
 
 	// DeleteRuntime removes the runtime data for a server.
 	DeleteRuntime(ctx context.Context, id string) error

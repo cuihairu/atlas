@@ -4,12 +4,15 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/cuihairu/atlas/internal/model"
@@ -27,11 +30,23 @@ var (
 // Store implements store.ServerStore and store.CharacterStore on PostgreSQL.
 type Store struct {
 	pool *pgxpool.Pool
+	// runtime is an optional heartbeat store wired by the deployment: when
+	// set, GetStats merges its player counts into TotalPlayers. The default
+	// deployment wires Redis; without it the SQL side cannot see heartbeats
+	// and TotalPlayers reads 0.
+	runtime store.RuntimeStore
 }
 
 // New creates a new PostgreSQL store from an existing pgxpool.Pool.
 func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+// WithRuntime attaches a heartbeat store for stats aggregation (GetStats
+// TotalPlayers). Returns the store for chaining.
+func (s *Store) WithRuntime(rt store.RuntimeStore) *Store {
+	s.runtime = rt
+	return s
 }
 
 // Ping checks the database connection.
@@ -94,7 +109,7 @@ ON CONFLICT (id) DO UPDATE SET
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
 FROM servers WHERE id = $1
 `
 	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
@@ -114,7 +129,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags
 FROM servers WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -184,6 +199,25 @@ func (s *Store) UpdateServerStatus(ctx context.Context, id string, status model.
 	tag, err := s.pool.Exec(ctx, q, string(status), time.Now(), id)
 	if err != nil {
 		return fmt.Errorf("update server status %s: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
+	}
+	return nil
+}
+
+func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
+	if tags == nil {
+		tags = []model.ServerTag{}
+	}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return fmt.Errorf("marshal server %s tags: %w", id, err)
+	}
+	const q = `UPDATE servers SET tags = $1::jsonb, updated_at = $2 WHERE id = $3`
+	tag, err := s.pool.Exec(ctx, q, string(b), time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update server tags %s: %w", id, err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
@@ -581,6 +615,18 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 	}
 	stats.TotalCharacters = totalChars
 
+	// Player counts live in the runtime store (Redis in the default
+	// deployment), not in SQL — merge them in when one is wired.
+	if s.runtime != nil {
+		runtimes, err := s.runtime.ListRuntimes(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get stats runtime players: %w", err)
+		}
+		for _, rt := range runtimes {
+			stats.TotalPlayers += rt.Players
+		}
+	}
+
 	return stats, nil
 }
 
@@ -594,17 +640,24 @@ type scannable interface {
 
 func scanServer(row scannable) (*model.Server, error) {
 	var srv model.Server
+	var tagsRaw []byte
 	err := row.Scan(
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
+		&tagsRaw,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
+	}
+	if len(tagsRaw) > 0 {
+		if err := json.Unmarshal(tagsRaw, &srv.Tags); err != nil {
+			return nil, fmt.Errorf("decode server %s tags: %w", srv.ID, err)
+		}
 	}
 	return &srv, nil
 }
@@ -733,6 +786,13 @@ VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO NOTHING`
 	tag, err := s.pool.Exec(ctx, q, sh.ID, sh.RealmID, sh.Name, sh.Status, sh.CreatedAt)
 	if err != nil {
+		// SQLSTATE 23503 = foreign_key_violation: the referenced realm does
+		// not exist. Map it to ErrNotFound so callers see the same contract
+		// as the memory store (which validates the realm explicitly).
+		var fkErr *pgconn.PgError
+		if errors.As(err, &fkErr) && fkErr.Code == "23503" {
+			return fmt.Errorf("shard %s: realm %s: %w", sh.ID, sh.RealmID, store.ErrNotFound)
+		}
 		return fmt.Errorf("create shard: %w", err)
 	}
 	if tag.RowsAffected() == 0 {

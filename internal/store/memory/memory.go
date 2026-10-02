@@ -174,6 +174,27 @@ func (s *Store) UpdateServerStatus(_ context.Context, id string, status model.Se
 	return nil
 }
 
+func (s *Store) UpdateServerTags(_ context.Context, id string, tags []model.ServerTag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	srv, ok := s.servers[id]
+	if !ok {
+		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
+	}
+	// Replace, never mutate in place: readers hold shallow copies of the
+	// struct and would otherwise race on the shared backing array.
+	if len(tags) == 0 {
+		srv.Tags = nil
+	} else {
+		cp := make([]model.ServerTag, len(tags))
+		copy(cp, tags)
+		srv.Tags = cp
+	}
+	srv.UpdatedAt = time.Now()
+	return nil
+}
+
 func (s *Store) DeleteServer(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -381,6 +402,17 @@ func (s *Store) GetRuntime(_ context.Context, id string) (*model.Runtime, error)
 		return nil, fmt.Errorf("runtime %s: %w", id, store.ErrNotFound)
 	}
 	return &rt, nil
+}
+
+func (s *Store) ListRuntimes(_ context.Context) (map[string]model.Runtime, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make(map[string]model.Runtime, len(s.runtimes))
+	for id, rt := range s.runtimes {
+		out[id] = rt
+	}
+	return out, nil
 }
 
 func (s *Store) DeleteRuntime(_ context.Context, id string) error {
@@ -629,6 +661,11 @@ func (s *Store) CreateRealm(_ context.Context, r *model.Realm) error {
 	if _, ok := s.realms[r.ID]; ok {
 		return fmt.Errorf("realm %s: %w", r.ID, store.ErrConflict)
 	}
+	// SQL stores default the column to 'active'; mirror it so the stores
+	// cannot drift on freshly created realms.
+	if r.Status == "" {
+		r.Status = "active"
+	}
 	// Stamp on the caller's object too (parity with the SQL stores) so the
 	// HTTP response carries the real created_at instead of a zero time.
 	r.CreatedAt = time.Now()
@@ -673,6 +710,15 @@ func (s *Store) CreateShard(_ context.Context, sh *model.Shard) error {
 
 	if _, ok := s.shards[sh.ID]; ok {
 		return fmt.Errorf("shard %s: %w", sh.ID, store.ErrConflict)
+	}
+	// PostgreSQL enforces the realm foreign key; mirror it (the admin layer
+	// validates first, this is the store-level guarantee).
+	if _, ok := s.realms[sh.RealmID]; !ok {
+		return fmt.Errorf("shard %s: realm %s: %w", sh.ID, sh.RealmID, store.ErrNotFound)
+	}
+	// SQL stores default the column to 'active'; mirror it.
+	if sh.Status == "" {
+		sh.Status = "active"
 	}
 	// Stamp on the caller's object too (parity with the SQL stores) so the
 	// HTTP response carries the real created_at instead of a zero time.

@@ -307,3 +307,84 @@ func TestCloseIsNoop(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 }
+
+func TestServerTagsLifecycle(t *testing.T) {
+	s := newStore()
+	ctx := context.Background()
+
+	srv := &model.Server{ID: "game-1", Name: "一区", Region: "cn-east", Status: model.StatusOnline,
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001}}
+	if err := s.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Replace the tag list; reads observe it.
+	tags := []model.ServerTag{
+		{Code: model.TagHot, Label: "火热", Tier: model.TierHot, Public: true},
+		{Code: "ops_note", Label: "内部", Tier: model.TierNeutral},
+	}
+	if err := s.UpdateServerTags(ctx, "game-1", tags); err != nil {
+		t.Fatalf("update tags: %v", err)
+	}
+	got, err := s.GetServer(ctx, "game-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !model.HasTag(got.Tags, model.TagHot) || model.HasTag(got.Tags, "nope") {
+		t.Fatalf("stored tags = %+v", got.Tags)
+	}
+
+	// A re-register must not wipe admin-set tags.
+	if err := s.RegisterServer(ctx, &model.Server{ID: "game-1", Name: "改名", Region: "cn-east",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001}}); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	got, _ = s.GetServer(ctx, "game-1")
+	if len(got.Tags) != 2 {
+		t.Fatalf("tags after re-register = %+v, want preserved", got.Tags)
+	}
+
+	// An empty list clears the tags.
+	if err := s.UpdateServerTags(ctx, "game-1", nil); err != nil {
+		t.Fatalf("clear tags: %v", err)
+	}
+	got, _ = s.GetServer(ctx, "game-1")
+	if len(got.Tags) != 0 {
+		t.Fatalf("cleared tags = %+v", got.Tags)
+	}
+
+	// Unknown server maps to ErrNotFound.
+	if err := s.UpdateServerTags(ctx, "ghost", nil); err == nil {
+		t.Fatal("update tags on missing server accepted")
+	}
+}
+
+func TestListRuntimes(t *testing.T) {
+	s := newStore()
+	ctx := context.Background()
+
+	all, err := s.ListRuntimes(ctx)
+	if err != nil || len(all) != 0 {
+		t.Fatalf("empty ListRuntimes = %v err=%v", all, err)
+	}
+
+	for _, spec := range []struct {
+		id      string
+		players int
+	}{{"game-1", 100}, {"game-2", 250}} {
+		if err := s.RecordHeartbeat(ctx, spec.id, model.Heartbeat{Players: spec.players, Load: 0.4}); err != nil {
+			t.Fatalf("heartbeat %s: %v", spec.id, err)
+		}
+	}
+	if err := s.DeleteRuntime(ctx, "game-2"); err != nil {
+		t.Fatalf("delete runtime: %v", err)
+	}
+
+	all, err = s.ListRuntimes(ctx)
+	if err != nil {
+		t.Fatalf("ListRuntimes: %v", err)
+	}
+	if len(all) != 1 || all["game-1"].Players != 100 {
+		t.Fatalf("ListRuntimes = %+v", all)
+	}
+}
