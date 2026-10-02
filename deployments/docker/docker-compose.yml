@@ -5,7 +5,11 @@ services:
       dockerfile: deployments/docker/Dockerfile
     ports:
       - "8080:8080"
+      - "8081:8081"
+      - "8082:8082"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -15,12 +19,33 @@ services:
       ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
       ATLAS_REDIS_URL: redis://redis:6379/0
     volumes:
-      - ../../migrations:/migrations
+      - ../../migrations:/migrations:ro
+
+  # Schema bootstrap: distroless 的 Atlas 镜像没有 shell / psql，迁移由这个
+  # 一次性服务对 PostgreSQL 执行（跑完即退，atlas 等它成功后再启动）。
+  # 只执行 PG 变体，跳过 *_mysql.sql。
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: atlas
+      PGDATABASE: atlas
+    volumes:
+      - ../../migrations:/migrations:ro
+    # shell 变量需写成 $$f：裸 $f 会被 compose 自己先插值成空串。
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
 
   postgres:
     image: postgres:17-alpine
+    # 宿主机映射用移位端口，避免与开发机常驻的 PG/Redis 冲突；
+    # Atlas 在 docker 网络内走容器名直连，不经这些映射。
     ports:
-      - "5432:5432"
+      - "15432:5432"
     environment:
       POSTGRES_USER: atlas
       POSTGRES_PASSWORD: atlas
@@ -36,7 +61,7 @@ services:
   redis:
     image: redis:8-alpine
     ports:
-      - "6379:6379"
+      - "16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

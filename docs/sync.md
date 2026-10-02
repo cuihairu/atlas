@@ -2,6 +2,41 @@
 
 游戏角色数据如何进入 Atlas 的角色索引。
 
+## 0. 用法速览：怎么选、怎么配、怎么验证
+
+**什么时候需要 Message Bus**（其余情况用默认 HTTP 同步就好，见[快速上手](/api-quickstart)§2）：
+
+- 开服 / 合服时角色写入出现洪峰，需要**削峰缓冲**；
+- 角色写入量大到逐条 REST 调用成为游戏服热路径上的负担，需要**异步化**；
+- Atlas 滚动重启期间游戏服写入**不能失败**，需要故障隔离；
+- 同一份角色事件还要喂给风控 / 数据分析等**其他订阅方**。
+
+**怎么配**——不改代码，一个环境变量切换（连接细节见 §4 表格）：
+
+```bash
+ATLAS_EVENT_ADAPTER=redis  ./atlas                      # 复用已有 Redis，零新增组件
+ATLAS_EVENT_ADAPTER=kafka  ATLAS_KAFKA_BROKERS=b1:9092,b2:9092 ./atlas
+ATLAS_EVENT_ADAPTER=nats   ATLAS_NATS_URL=nats://nats:4222 ./atlas
+ATLAS_EVENT_ADAPTER=rabbitmq ATLAS_RABBITMQ_URL=amqp://rabbit:5672/ ./atlas
+```
+
+**怎么验证在跑**——写入端点从"同步落地"变为"排队"即说明适配器已接管：
+
+```bash
+# 适配器为 http（默认）：201，响应里带投影结果
+# 适配器为 redis/kafka/nats/rabbitmq：202 Accepted，{"status":"queued"}
+curl -s -w '\n[%{http_code}]\n' -X POST http://localhost:8080/v1/directory/characters \
+  -H 'Content-Type: application/json' \
+  -d '{"account_id":10001,"server_id":"game-1001","character_id":9001,"name":"验证","level":1}'
+
+# Redis 适配器：流里能看到事件、稍后角色可查即消费正常
+redis-cli XLEN atlas.characters
+curl http://localhost:8080/v1/directory/characters/9001
+```
+
+消费侧由 Atlas 内建消费循环承担（无需部署消费者进程）；投递是 at-least-once，
+落地幂等（§6），失败重投语义见 §4 表格下方的适配器分述。
+
 ---
 
 ## 1. 核心原则

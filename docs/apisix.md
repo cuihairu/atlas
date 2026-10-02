@@ -1,5 +1,32 @@
 # APISIX 接入插件
 
+**什么场景用**：Atlas 部署在 APISIX 网关后面（[部署拓扑](/topology)的公网形态），
+玩家客户端统一走网关域名访问 :8080 的 Discovery / Directory / Routing。此时两件事在
+网关做最省事、Atlas 与游戏服务器都不用改一行：
+
+- **玩家鉴权**：客户端的 token 在网关校验，通过后注入身份头 `X-Atlas-Player-ID`
+  再转发——Atlas 只消费身份，不关心 token 怎么发；
+- **差异化限流**：按端点组给配额（读多的 discovery 放宽、写多的 directory 收紧、
+  registry 每分钟 50 次防刷），一条路由覆盖整个 `/v1` 面。
+
+```mermaid
+sequenceDiagram
+    participant C as 玩家客户端
+    participant G as APISIX（atlas-auth）
+    participant A as Atlas :8080
+
+    C->>G: GET /v1/routing/recommended<br/>Header: X-Player-Token: xxx
+    G->>G: 校验 token（静态映射或挂载自身 token 服务）
+    alt token 有效
+        G->>G: 注入 X-Atlas-Player-ID: 1001<br/>剥离玩家 token（strip_token）
+        G->>A: 转发请求 + 身份头
+        A-->>G: 200（按身份头取 account，不校验 token）
+        G-->>C: 200
+    else token 无效 / 缺失
+        G-->>C: 401（请求不落到 Atlas）
+    end
+```
+
 Atlas 官方提供两个 APISIX 网关插件（源码与单元测试在
 [`plugins/apisix/`](https://github.com/cuihairu/atlas/tree/main/plugins/apisix)），
 分别负责**玩家身份注入**与**端点组限流**：

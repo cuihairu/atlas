@@ -145,7 +145,9 @@ flowchart TB
 
 ### 4.1 健康警报（v0.1.15 交付）
 
-每次巡检结束后，Atlas 会对「监控接管」的服务器集合（starting / online / suspect / offline；维护、禁用由运维设置，不参与分母）计算不健康占比，越阈值即告警：
+**什么场景用**：舰队几十上百台服务器时，靠人盯 `GET /v1/admin/stats` 发现不了"半夜有一批服悄悄掉线"。健康警报让 Atlas 巡检时顺手做全舰队的**占比巡检**：失联（suspect）或死亡（offline）的服务器占比越阈值就发告警——推送一条 JSON 到你的 webhook（值班机器人 / 电话网关），同时记一条 Warn 日志供日志告警系统抓取。
+
+**怎么配**——三个环境变量，进程启动时生效：
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -153,7 +155,34 @@ flowchart TB
 | `ATLAS_ALERT_OFFLINE_RATIO` | `0.2` | offline 占比 ≥ 该值触发告警；`0` 关闭 |
 | `ATLAS_ALERT_WEBHOOK_URL` | （空） | 告警触发 / 恢复时 POST 一条 JSON 通知 |
 
-告警为**锁存语义**：占比越限时记一条 `health alert`（state=firing）结构化 Warn 日志并回调 webhook，持续越限不重复发送；回落到阈值以下时发送一条 state=recovered。
+**跑起来什么样**——一个 75 秒的最小演练：两台服务器在线，`game-1002` 停止心跳模拟宕机（`game-1001` 持续保活），阈值都设 `0.5`：
+
+```bash
+ATLAS_ALERT_SUSPECT_RATIO=0.5 ATLAS_ALERT_OFFLINE_RATIO=0.5 \
+ATLAS_ALERT_WEBHOOK_URL=http://127.0.0.1:9999/hook ./atlas
+# 注册 game-1001 / game-1002 并心跳上线（见快速上手 §1），随后停止 game-1002 的心跳
+```
+
+约 30 秒后 `game-1002` 因心跳超龄进入 suspect，占比 1/2 达到阈值，webhook 收到第一条：
+
+```json
+{"alert":"suspect_ratio","state":"firing","count":1,"auto_managed_total":2,"ratio":0.5,"threshold":0.5,"fired_at":"2026-10-02T03:27:30Z"}
+```
+
+约 60 秒后它超龄转 offline：suspect 回落到 0（发 `suspect_ratio` 的 `recovered`），offline 占比越限（发 `offline_ratio` 的 `firing`）。同一时段 Atlas 日志里是三条对应的 Warn：
+
+```text
+level=WARN msg="health alert" alert=suspect_ratio state=firing    count=1 auto_managed_total=2 ratio=0.500 threshold=0.500
+level=WARN msg="health alert" alert=suspect_ratio state=recovered count=0 auto_managed_total=2 ratio=0.000 threshold=0.500
+level=WARN msg="health alert" alert=offline_ratio state=firing    count=1 auto_managed_total=2 ratio=0.500 threshold=0.500
+```
+
+**语义要点**：
+
+- 告警对象是「监控接管」的服务器集合（starting / online / suspect / offline）；维护、禁用由运维设置，不参与分母。
+- **锁存语义**：占比越限时发一条 `firing`，之后持续越限**不重复发送**；回落到阈值以下才发一条 `recovered`。不会刷屏。
+- webhook 载荷字段：`alert`（`suspect_ratio` / `offline_ratio`）、`state`（`firing` / `recovered`）、`count` / `auto_managed_total`（不健康数 / 分母）、`ratio` / `threshold`、`fired_at`（RFC3339 UTC）。
+- webhook 投递失败只记错误日志，不影响巡检循环。
 
 webhook 载荷示例：
 
