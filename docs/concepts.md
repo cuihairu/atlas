@@ -241,14 +241,29 @@ completed_at
 
 ---
 
-## 9. 概念与 API 的对应
+## 9. Announcement 与 MaintenanceWindow
+
+这两个概念是**时间区间型运维对象**——它们都有生效区间，到点自动出现 / 自动切换，过期自动失效：
+
+| 概念 | 面向 | 作用 | 关键字段 |
+| --- | --- | --- | --- |
+| **Announcement**（公告） | 玩家客户端 | 信息通道：紧急故障、维护预告、活动排期 | `level`（info / warning / critical）、全局或服务器级、`starts_at` / `ends_at` |
+| **MaintenanceWindow**（维护窗口） | 服务器状态 | 声明式维护：`start_at` 自动进入 `maintenance`，`end_at` 自动恢复 | `previous_status`（恢复目标）、`announcement_id`（联动公告） |
+
+二者可以独立使用，也可以联动：创建窗口时（`announce` 缺省 true）自动生成一条覆盖同时段的 warning 公告并通过 `announcement_id` 关联。自动状态机永不覆盖运维决策——窗口只移动它自己放入的服务器。
+
+场景与演练（curl 全流程、定时进入机制、边界规则）见 [operations.md](operations.md)，端点定义见 [api.md](api.md)。
+
+---
+
+## 10. 概念与 API 的对应
 
 | 概念 | API 分组 | 说明 |
 | --- | --- | --- |
 | Server 注册 / 心跳 | `/v1/registry/*` | 游戏服务器调用 |
-| Server 查询 | `/v1/discovery/*` | 客户端与工具调用 |
+| Server 查询 / 公告拉取 | `/v1/discovery/*` | 客户端与工具调用 |
 | Character 索引 | `/v1/directory/*` | 客户端查询，游戏服务器写入 |
 | 推荐接入 | `/v1/routing/*` | 客户端调用 |
-| 生命周期管理 | `/v1/admin/*` | 运维工具调用 |
+| 生命周期 / 公告 / 维护窗口管理 | `/v1/admin/*` | 运维工具调用 |
 
 完整定义见 [api.md](api.md)。
