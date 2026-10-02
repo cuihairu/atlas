@@ -4,176 +4,80 @@
 
 > **Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.**
 
-```text
-                     Atlas
-                       │
-       ┌───────────────┼────────────────┐
-       ▼               ▼                ▼
- Server Registry   Server Discovery   Character Directory
-       │               │                │
-       ▼               ▼                ▼
-   "我是谁？"       "谁在线？"       "我的角色在哪？"
+```mermaid
+flowchart TB
+    A["Atlas<br/>Game Infrastructure Directory"] --> R["Server Registry<br/>“我是谁?”"]
+    A --> D["Server Discovery<br/>“谁在线?”"]
+    A --> C["Character Directory<br/>“我的角色在哪?”"]
+    A --> O["Ops 管理面<br/>“何时维护? 玩家知道什么?”"]
 ```
 
 这个定位比单纯的 Game Server Discovery 更完整，而且以后做游戏服务器框架、账号系统时都能复用。
 
 ---
 
-## v0.1 — MVP ✅ 已完成
+## 当前状态:v0.1 系列全量交付
 
-**目标：把核心模型跑通。** ✅
+**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布两个 release：
 
-```text
-Atlas v0.1
-│
-├── ✅ Server Registry
-│   ├── ✅ Register
-│   ├── ✅ Heartbeat
-│   └── ✅ Unregister
-│
-├── ✅ Server Discovery
-│   ├── ✅ List
-│   └── ✅ Get
-│
-├── ✅ Character Directory
-│   ├── ✅ Create
-│   ├── ✅ Update
-│   ├── ✅ Delete
-│   └── ✅ Account → Characters
-│
-├── ✅ Health
-│   └── ✅ Automatic Offline
-│
-└── ✅ REST API
-```
-
-### 技术栈
-
-| 组件 | 选型 |
+| Release | 内容 |
 | --- | --- |
-| 语言 | Go |
-| 存储 | PostgreSQL + Redis（含内存实现用于开发/测试） |
-| API | REST (HTTP/1.1 + JSON) |
-| 部署 | Docker Compose |
-| 测试 | Go `testing` + testcontainers |
+| [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：核心模型跑通（Registry / Discovery / Directory / 健康监控 / REST API） |
+| [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | v0.1 系列收官：MVP 之上补齐全部工程化能力（69 个提交） |
 
-### 明确不在 v0.1 范围内
+> 早期路线图曾把事件驱动、SDK、gRPC、高可用分别规划在 v0.2 ~ v1.0。实际开发中它们以 v0.1.x 内部里程碑的形式全部完成于 0.1 系列内——**原 v0.2 ~ v1.0 的每一项都已交付**，见下表。
+
+### 已交付能力总览
+
+| 能力 | 交付内容 | 里程碑 |
+| --- | --- | --- |
+| ✅ Server Registry | register / heartbeat / unregister，幂等注册，重注册恢复 | v0.1.0（恢复语义 v0.1.x 巡检修复） |
+| ✅ Server Discovery | 多维筛选 + 游标分页 + 服务器详情 | v0.1.0 |
+| ✅ Character Directory | CRUD + 账号跨服索引，幂等投影 | v0.1.0 |
+| ✅ 生命周期状态机 | starting / online / draining / maintenance / suspect / offline / disabled，两段式掉线判定 | v0.1.0 起，v0.1.x 补全 |
+| ✅ Admin 生命周期操作 | maintenance / drain / enable / disable | v0.1.x |
+| ✅ 事件同步 | EventAdapter 抽象 + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
+| ✅ Prometheus 指标 | :8082 `/metrics` + Grafana 概览看板 | v0.1.3 |
+| ✅ Routing 接入推荐 | `GET /v1/routing/recommended`，同账号角色粘滞 | v0.1.x |
+| ✅ gRPC 双传输 | 5 服务 22 RPC，:9090，与 REST 同一 API 面 | v0.1.5 |
+| ✅ 六语言 SDK | Go(双传输) / C++ / Python(同步异步) / JS/TS / Java / C#，自动心跳内置 | v0.1.6 ~ v0.1.11 |
+| ✅ APISIX 插件 | atlas-auth 玩家 token 鉴权注入 + atlas-ratelimit 端点组限流 | v0.1.13 |
+| ✅ Realm / Shard 管理 | Admin CRUD + 三存储实现 + 索引迁移 | v0.1.14 |
+| ✅ 健康告警 | suspect / offline 占比阈值 + webhook 通知（锁存语义） | v0.1.15 |
+| ✅ 角色索引分片 | account-hash 分片 + 跨分片查询 + 重切工具 | v0.1.16 |
+| ✅ 安全加固 | Registry mTLS、Admin RBAC + 审计（证书指纹）、令牌桶限流、三端口安全域 | v0.1.17 |
+| ✅ Dashboard 增强 | 实时服务器地图、玩家趋势、迁移进度、主题切换、中英 i18n | v0.1.18 |
+| ✅ 高可用 | Redis 哨兵/集群、PG 连接池调优、HAProxy 心跳扇入、主从复制指南 | v0.1.19 |
+| ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
+| ✅ 质量基建 | service/handler 覆盖率 >80% 门禁、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
+
+能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
+
+### 明确不做（范围纪律）
 
 ```text
-❌ Kafka / NATS / RabbitMQ     v0.1 用 HTTP 同步写入
-❌ Kubernetes Operator
-❌ Service Mesh
-❌ 复杂调度算法
-❌ 强绑定 APISIX
-❌ gRPC API
-❌ 多语言 SDK
-❌ 合服 / 转服
-❌ Server Lifecycle 完整状态机
+❌ Kubernetes Operator      —— Atlas 是普通无状态服务，compose/k8s 自行编排即可
+❌ Service Mesh 集成        —— 不绑定任何 mesh，保持标准 REST/gRPC
+❌ 复杂调度算法             —— Routing 只做推荐元数据，不做调度器
+❌ 强绑定 APISIX            —— 网关永远是可选集成层
+❌ 角色权威数据              —— Directory 永远是 Projection
 ```
 
-先把核心模型跑通，再谈工程化。
+这些不是"还没做"，是**设计决定**：Atlas 是控制面目录服务，以上每一项都有更合适的归属。
 
 ---
 
-## v0.2 — 事件驱动 + 生命周期
+## v0.2+ 候选方向
 
-```text
-Atlas v0.2
-│
-├── Event Adapter 接口
-│   ├── Redis Streams 实现
-│   └── HTTP 同步实现（保留）
-│
-├── Server Lifecycle 完整状态机
-│   ├── STARTING / ONLINE / DRAINING
-│   ├── MAINTENANCE / SUSPECT / OFFLINE / DISABLED
-│   └── 自动掉线两段式判定
-│
-├── Admin API
-│   ├── maintenance
-│   ├── drain
-│   ├── enable
-│   └── disable
-│
-└── Observability
-    ├── Prometheus metrics
-    └── 健康状态告警
-```
+以下是**候选清单，不是承诺**——按需求驱动排期，欢迎 issue 讨论：
 
----
-
-## v0.3 — Routing + 合服
-
-```text
-Atlas v0.3
-│
-├── Server Routing
-│   └── GET /v1/routing/recommended
-│
-├── Server Migration
-│   ├── 合服 (merge)
-│   ├── 转服 (transfer)
-│   ├── 迁服 (relocate)
-│   └── 幂等 / 可重放 / 可回滚
-│
-├── gRPC API
-│   └── 与 REST 等价的高性能接口
-│
-└── Message Bus 适配器
-    ├── Kafka
-    └── NATS
-```
-
----
-
-## v0.4 — SDK 与集成
-
-```text
-Atlas v0.4
-│
-├── Server SDK
-│   ├── atlas-sdk-go
-│   └── atlas-sdk-cpp
-│
-├── Character SDK
-│   └── character_created / updated / deleted
-│
-├── APISIX Integration
-│   ├── plugins/apisix
-│   └── 认证 / 限流 / 路由规则
-│
-└── Realm / Shard 管理 API
-```
-
-SDK 优先级：**C++ > Go**，因为游戏服务器主语言是 C++，Go 更适合工具链与内部服务。
-
----
-
-## v1.0 — 生产就绪
-
-```text
-Atlas v1.0
-│
-├── 高可用
-│   ├── Atlas 多副本无状态部署
-│   ├── Redis 哨兵 / 集群
-│   └── PostgreSQL 主从 + 流复制
-│
-├── character_index 分片
-│   └── 按 account_id hash
-│
-├── 多语言 SDK
-│   ├── atlas-sdk-java
-│   └── atlas-sdk-csharp
-│
-├── 管理控制台
-│   └── 服务器 / 角色 / 迁移 可视化
-│
-└── 安全
-    ├── mTLS 服务间认证
-    ├── RBAC
-    └── 审计日志
-```
+| 方向 | 说明 | 前置条件 |
+| --- | --- | --- |
+| **API 稳定化与 v1.0** | 冻结 REST/gRPC 契约、承诺兼容性、正式 v1.0 release | API 面在生产环境验证充分 |
+| **Routing 策略扩展** | 权重、灰度放量的白名单、维护前引导(把玩家引向非维护服) | 有真实运营需求反馈 |
+| **公告与窗口批量编排** | 舰队级窗口模板、批量创建、与迁移编排联动 | 多服务器运营场景验证 |
+| **可观测性深化** | 请求级 tracing、目录写路径延迟指标 | 生产部署规模上来之后 |
+| **Kubernetes 部署样例** | Helm chart / Operator 仍是"明确不做"，但部署样例可讨论 | 有部署需求提出 |
 
 ---
 
@@ -181,7 +85,7 @@ Atlas v1.0
 
 ### 1. 先跑通模型，再谈工程化
 
-v0.1 故意不做 Message Bus、不做 K8s Operator、不做复杂调度。这些是**放大器**——核心模型不对，放大只会放大错误。
+0.1 系列证明了这条顺序是对的：核心模型（注册、发现、投影）先稳定，事件总线、SDK、gRPC、高可用都是在这个底座上按里程碑叠加的。
 
 ### 2. Atlas Core 独立于任何网关
 
@@ -207,24 +111,37 @@ Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、
 atlas/
 ├── cmd/atlas/              主服务入口
 ├── internal/
-│   ├── model/              领域模型（Server, Character, Status）
+│   ├── model/              领域模型（Server, Character, Realm, Shard…）
 │   ├── store/              存储接口
 │   │   ├── memory/         内存实现（测试 + 开发）
 │   │   ├── postgres/       PostgreSQL 实现
-│   │   └── redisstore/     Redis 运行时状态
+│   │   ├── mysql/          MySQL 实现
+│   │   ├── redisstore/     Redis 运行时状态
+│   │   └── sharded/        一致性哈希分片包装
 │   ├── registry/           注册 / 心跳 / 注销
 │   ├── discovery/          服务器发现
 │   ├── directory/          角色目录
-│   ├── health/             健康监控（自动掉线）
+│   ├── routing/            接入推荐
+│   ├── admin/              Admin 服务（Realm/Shard/维护窗口/公告/迁移/审计）
+│   ├── health/             健康监控（自动掉线 + 占比告警）
+│   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers
+│   ├── grpc/               gRPC 服务
+│   ├── metrics/            Prometheus 指标
+│   ├── tlsutil/            mTLS 辅助
 │   ├── config/             环境变量配置
 │   └── version/            版本信息
+├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
+├── sdk/                    六语言 SDK（go/cpp/python/js/java/csharp）
+├── plugins/apisix/         APISIX 接入插件
+├── examples/               各语言可运行示例
+├── deploy/                 haproxy / postgres / redis 部署配置
 ├── deployments/docker/     Dockerfile + docker-compose
-├── docs/                   设计文档
+├── docs/                   设计文档（VitePress 站点）
 ├── Makefile
 ├── .env.example
 └── go.mod
 ```
 
-**当前状态**：v0.1 MVP 已完成。下一步是 v0.2 事件驱动 + 生命周期。
+**当前状态**：v0.1 系列交付完毕，release v0.1.1 为系列收官。后续方向见「v0.2+ 候选方向」。

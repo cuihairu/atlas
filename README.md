@@ -56,34 +56,34 @@ Atlas 的核心目标不是"返回一份服务器列表"，而是建立游戏后
 
 ## 架构
 
-```text
-                                      ┌──────────────────┐
-                                      │      Client      │
-                                      └────────┬─────────┘
-                                               │
-                                               ▼
-                                      ┌──────────────────┐
-                                      │      APISIX      │
-                                      │   API Gateway    │
-                                      └────────┬─────────┘
-                                               │
-                         ┌─────────────────────┼─────────────────────┐
-                         │                     │                     │
-                         ▼                     ▼                     ▼
-                 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-                 │    Server    │     │  Character   │     │    Account   │
-                 │   Discovery  │     │   Directory  │     │    Routing   │
-                 └──────┬───────┘     └──────┬───────┘     └──────────────┘
-                        │                    │
-                        ▼                    ▼
-                 ┌──────────────┐     ┌──────────────┐
-                 │    Server    │     │   Character  │
-                 │   Registry   │     │    Index     │
-                 └──────┬───────┘     └──────┬───────┘
-                        │                    │
-             ┌──────────┼──────────┐         │
-             ▼          ▼          ▼         ▼
-          Game-01    Game-02    Game-03   Character DB
+```mermaid
+flowchart TB
+    Player["玩家客户端"]
+    GW["APISIX<br/>API 网关（可选）"]
+
+    subgraph atlas["Atlas 控制面（无状态，可多副本）"]
+        REG["Registry<br/>注册 / 心跳 / 注销"]
+        DISC["Discovery<br/>服务器发现"]
+        DIR["Directory<br/>角色目录"]
+        ROUT["Routing<br/>接入推荐"]
+        ADMIN["Admin<br/>Realm / Shard / 维护 / 公告 / 迁移"]
+    end
+
+    subgraph stores["数据层"]
+        direction LR
+        REDIS[("Redis<br/>运行时状态")]
+        PG[("PostgreSQL<br/>持久事实")]
+    end
+
+    GS["Game Server 集群"]
+
+    Player -->|HTTPS| GW
+    GW --> DISC & DIR & ROUT
+    GS -->|"register / heartbeat<br/>:8081（内网）"| REG
+    GS -->|角色索引事件| BUS["Message Bus<br/>Kafka / NATS / RabbitMQ / Redis Streams"] --> DIR
+    REG --> REDIS & PG
+    DISC -->|热点读| REDIS
+    DIR & ROUT & ADMIN --> PG
 ```
 
 数据层采用 **PostgreSQL + Redis** 双存储：Redis 承载高频运行时状态（心跳、负载、在线数），PostgreSQL 承载持久事实（服务器档案、拓扑、角色索引、迁移记录）。
@@ -240,13 +240,12 @@ Atlas 保存角色的索引信息（`account_id` / `server_id` / `character_id` 
 
 **4. Atlas Core 独立于任何网关。**
 
-```text
-Atlas Core
-    │
-    ├── HTTP API
-    ├── gRPC API
-    ├── SDK
-    └── APISIX Integration
+```mermaid
+flowchart LR
+    CORE["Atlas Core"] --> HTTP["HTTP API"]
+    CORE --> GRPC["gRPC API"]
+    CORE --> SDK["六语言 SDK"]
+    CORE -.->|可选集成| APISIX["APISIX 插件"]
 ```
 
 ---
@@ -276,29 +275,16 @@ Atlas Core
 
 ## 路线图
 
-**v0.1.0（MVP）✅ 已完成**
+**v0.1 系列已全量交付**，对外发布两个 release：
 
-```text
-Atlas v0.1
-│
-├── ✅ Server Registry      Register / Heartbeat / Unregister
-├── ✅ Server Discovery     List / Get
-├── ✅ Character Directory  Create / Update / Delete / Account → Characters
-├── ✅ Health               Automatic Offline
-└── ✅ REST API
-```
+| Release | 内容 |
+| --- | --- |
+| [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：Registry / Discovery / Directory / 健康监控 / REST API |
+| [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | 系列收官：Routing、gRPC 双传输、六语言 SDK、消息总线适配器、Realm/Shard 管理、维护窗口与公告、安全加固（mTLS/RBAC/审计）、高可用、角色索引分片 |
 
-**明确不在 v0.1 范围内**
+**明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据。
 
-```text
-❌ Kafka / NATS / RabbitMQ
-❌ Kubernetes Operator
-❌ Service Mesh
-❌ 复杂调度算法
-❌ 强绑定 APISIX
-```
-
-完整规划见 [docs/roadmap.md](docs/roadmap.md)。
+后续候选方向见 [docs/roadmap.md](docs/roadmap.md)。
 
 ---
 
