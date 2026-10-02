@@ -1,0 +1,37 @@
+# Codecov 配置 —— 公共仓库 tokenless 上传，覆盖率口径由本文件驱动。
+# 覆盖率定位为趋势信号（informational）：只报告，不因全局数字波动阻断合入；
+# 提交前的硬门禁仍是本地 go build / vet / test（见 .github/workflows/ci.yml）。
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    # 项目级：相对基线自动比较（首次上传无基线即通过）
+    project:
+      default:
+        target: auto
+        informational: true
+    # 行级：新增/变更代码的覆盖率
+    patch:
+      default:
+        target: auto
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  # 服务入口装配（不承载逻辑）与 gRPC 生成代码
+  - "cmd/**"
+  - "api/**"
+  # 非 Go 产物与样例（六语言 SDK / 仪表盘 / 文档 / 部署 / 插件示例）
+  - "sdk/**"
+  - "dashboard/**"
+  - "docs/**"
+  - "examples/**"
+  - "deploy/**"
+  - "deployments/**"
+  - "plugins/**"

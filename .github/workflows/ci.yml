@@ -48,3 +48,11 @@ jobs:
           name: coverage
           path: coverage.out
           retention-days: 7
+
+      # 覆盖率上传 Codecov —— 公共仓库免注册 tokenless 方案（无 token，
+      # 覆盖率口径由根目录 codecov.yml 驱动）。
+      # 上传失败不阻断门禁（fail_ci_if_error: false），Codecov 侧限流/故障不应挡代码合入。
+      - uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
