@@ -45,7 +45,7 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -hatlas -patlas"
+          --health-cmd "mysqladmin ping -h127.0.0.1 -uroot -proot"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
