@@ -31,7 +31,7 @@ flowchart LR
 | --- | --- |
 | `character_id` | 123 |
 | `old_server` | 1001 |
-| `current_server` | 2001 |
+| `new_server` | 2001 |
 
 ### 过程
 
@@ -43,7 +43,7 @@ flowchart TB
     S4["4. 存量玩家自然离开或到达超时"]
     S5["5. 源服务器角色数据导出 → 导入目标"]
     S6["6. 更新 character_index 的 server_id<br/>status = migrating"]
-    S7["7. 校验角色数量一致"]
+    S7["7. 校验角色数量一致<br/>status = verifying"]
     S8["8. 源服务器 offline，目标 online<br/>status = completed"]
     S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
 ```
@@ -71,8 +71,10 @@ flowchart TB
 | 字段 | 值 |
 | --- | --- |
 | `character_id` | 123 |
-| `source_server` | 1001 |
+| `source_servers` | `["1001"]` |
 | `target_server` | 2001 |
+
+> 说明：API 请求体使用 `source_servers` 数组（`CreateMigrationRequest.SourceServers []string`），合服/转服/迁服共用同一端点。转服时数组仅含单个源服务器。
 
 与合服的区别：转服是**单角色粒度**，合服是**服务器粒度**。但对 Atlas 而言都是 `character_index` 中 `server_id` 字段的变更。
 
