@@ -174,7 +174,7 @@ v0.1 采用 **PostgreSQL 为准、Redis 为缓存** 的策略：
 
 - 写路径先落 PG，再更新 Redis。
 - Redis 中的运行时字段（`load` / `players` / `status`）允许短暂不一致，因为它们本身就是近似值。
-- 心跳超时由定时任务扫描 Redis TTL 并回写 PG 的 `status`。
+- 心跳超时由健康监控巡检（默认每 10s）计算 `last_seen_at` 年龄并回写 PG 的 `status`；Redis 键上的 TTL（120s）只为键自清理，不参与判活。
 
 详细表结构与键设计见 [data-model.md](data-model.md)。
 
@@ -215,10 +215,11 @@ Atlas 对外暴露的运维指标建议覆盖：
 | 指标 | 含义 |
 | --- | --- |
 | `atlas_registry_servers_total{status}` | 当前各状态服务器数 |
-| `atlas_registry_heartbeat_lag_seconds` | 心跳延迟分布 |
+| `atlas_registry_heartbeat_lag_seconds` | 心跳年龄分布 |
 | `atlas_directory_characters_total` | 角色索引总量 |
 | `atlas_discovery_requests_total{filter}` | 发现查询量与筛选维度 |
-| `atlas_routing_decisions_total{reason}` | 推荐决策的原因分布 |
+| `atlas_admin_requests_total{endpoint,status}` | Admin 请求量与响应码 |
+| `atlas_health_transitions_total{from,to}` | 生命周期状态迁移量 |
 
 这些指标同时服务于容量规划与告警（例如 `suspect` 状态服务器数突增）。
 
@@ -291,14 +292,14 @@ Atlas 需要运行后台任务：
 | 心跳、负载、在线数 | Redis | 高频写（每服务器每 10 秒），TTL 自动过期，丢失可恢复 |
 | 服务器档案 | PostgreSQL | 低频写，需要持久化和审计 |
 | 角色索引 | PostgreSQL | 合服需要跨行事务，Redis 事务能力不够 |
-| 列表页缓存 | Redis | 最高频的读路径，ZSET 排序天然支持 |
+| 运行时合并读 | Redis | 列表/详情读路径把 PG 档案与 Redis 运行时（`players` / `load` / `last_seen_at`）合并返回 |
 
 **为什么不用 PostgreSQL 单独完成？**
 
-技术上可以——心跳也写 PG，用定时任务扫描 `last_heartbeat_at` 字段。但：
+技术上可以——心跳也写 PG，用定时任务扫描 `last_seen_at` 字段（Atlas 的巡检本来就要回写 PG 状态，这个方案是自洽的）。但：
 - 1000 台服务器 × 0.1 QPS = 100 QPS 的心跳写入，PG 能扛但不优雅
-- TTL 过期是 Redis 的原生语义，用 PG 模拟需要额外的扫描逻辑
-- 列表页的 `ZRANGEBYSCORE` 查询在 Redis 是 O(log N)，在 PG 是全表扫描 + 排序
+- 运行时数值（`players` / `load`）每次心跳都变，放 PG 意味着最高频的写落在最贵的一层
+- Redis 键 TTL 过期是原生的自清理语义，PG 需要额外的清理任务
 
 **为什么不用 Redis 单独完成？**
 

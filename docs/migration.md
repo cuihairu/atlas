@@ -6,12 +6,12 @@ Atlas 的角色目录设计让它天然适合承载服务器之间的角色迁�
 
 ## 1. 场景
 
-```text
-合服      多个服务器合并为一个
-转服      玩家把角色从一个服务器移到另一个
-迁服      服务器整体搬迁（换机房 / 换集群）
-跨区      跨 Region 迁移
-```
+| 场景 | 含义 |
+| --- | --- |
+| 合服 | 多个服务器合并为一个 |
+| 转服 | 玩家把角色从一个服务器移到另一个 |
+| 迁服 | 服务器整体搬迁（换机房 / 换集群） |
+| 跨区 | 跨 Region 迁移 |
 
 四者在 Atlas 中抽象为同一件事：**角色索引的 `server_id` 从源迁移到目标**。
 
@@ -19,51 +19,48 @@ Atlas 的角色目录设计让它天然适合承载服务器之间的角色迁�
 
 ## 2. 合服
 
-```text
-Server 1001
-Server 1002
-     │
-     │ merge
-     ▼
-Server 2001
+```mermaid
+flowchart LR
+    S1["Server 1001"] -->|merge| T["Server 2001"]
+    S2["Server 1002"] -->|merge| T
 ```
 
 ### 角色目录的变化
 
-```text
-character_id 123
-old_server     = 1001
-current_server = 2001
-```
+| 字段 | 值 |
+| --- | --- |
+| `character_id` | 123 |
+| `old_server` | 1001 |
+| `current_server` | 2001 |
 
 ### 过程
 
-```text
-1. 运维创建 migration 记录        status = pending
-2. 目标服务器 2001 进入 starting  加载合并后的角色数据
-3. 源服务器 1001 / 1002 进入 draining
-4. 存量玩家自然离开或到达超时
-5. 源服务器角色数据导出 → 导入目标
-6. 更新 character_index 的 server_id    status = migrating
-7. 校验角色数量一致
-8. 源服务器 offline，目标 online         status = completed
+```mermaid
+flowchart TB
+    S1["1. 运维创建 migration 记录<br/>status = pending"]
+    S2["2. 目标服务器 2001 进入 starting<br/>加载合并后的角色数据"]
+    S3["3. 源服务器 1001 / 1002 进入 draining"]
+    S4["4. 存量玩家自然离开或到达超时"]
+    S5["5. 源服务器角色数据导出 → 导入目标"]
+    S6["6. 更新 character_index 的 server_id<br/>status = migrating"]
+    S7["7. 校验角色数量一致"]
+    S8["8. 源服务器 offline，目标 online<br/>status = completed"]
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
 ```
 
 ### 校验
 
 合服最容易出问题的是**角色丢失**。Atlas 在第 7 步提供校验能力：
 
-```text
-GET /v1/directory/servers/{source_server}/characters?migration_id={id}
-```
+`GET /v1/directory/servers/{server_id}/characters`（分别拉取源与目标的角色列表）
 
 比对迁移前后的角色数与 `character_id` 集合，确保：
 
-```text
-source 角色数  ==  target 中来自 source 的角色数
-无 character_id 遗漏
-无 character_id 重复
-```
+| # | 校验条件 |
+| --- | --- |
+| 1 | source 角色数 == target 中来自 source 的角色数 |
+| 2 | 无 `character_id` 遗漏 |
+| 3 | 无 `character_id` 重复 |
 
 ---
 
@@ -71,18 +68,17 @@ source 角色数  ==  target 中来自 source 的角色数
 
 玩家主动转移单个角色。
 
-```text
-character_id 123
-    source_server = 1001
-    target_server = 2001
-```
+| 字段 | 值 |
+| --- | --- |
+| `character_id` | 123 |
+| `source_server` | 1001 |
+| `target_server` | 2001 |
 
 与合服的区别：转服是**单角色粒度**，合服是**服务器粒度**。但对 Atlas 而言都是 `character_index` 中 `server_id` 字段的变更。
 
-```text
-1. 游戏服务器完成角色数据转移
-2. 调用 PATCH /v1/directory/characters/{id}  { "server_id": "2001" }
-3. Atlas 事务性更新索引
+```mermaid
+flowchart LR
+    T1["1. 游戏服务器完成角色数据转移"] --> T2["2. 调用 PATCH /v1/directory/characters/{id}<br/>{ &quot;server_id&quot;: &quot;2001&quot; }"] --> T3["3. Atlas 事务性更新索引"]
 ```
 
 Atlas 需要保证的是**索引更新的原子性**，不是数据转移本身——数据转移由游戏服务器负责。
@@ -93,19 +89,20 @@ Atlas 需要保证的是**索引更新的原子性**，不是数据转移本身�
 
 服务器整体搬迁，`server_id` 不变，`endpoint` 变化。
 
-```text
-game-1001
-    before: 10.0.1.21:30001
-    after:  10.0.5.88:30001
-```
+| 服务器 | 阶段 | endpoint |
+| --- | --- | --- |
+| `game-1001` | before | `10.0.1.21:30001` |
+| `game-1001` | after | `10.0.5.88:30001` |
 
 对 Atlas 只是 `servers.endpoint` 的更新，角色索引无需变更。
 
-```text
-1. 目标实例以相同 server_id 注册，新 endpoint
-2. Atlas 更新 endpoint，状态置为 starting
-3. 旧实例 draining
-4. 新实例 online
+```mermaid
+flowchart TB
+    M1["1. 目标实例以相同 server_id 注册，新 endpoint"]
+    M2["2. Atlas 更新 endpoint，状态置为 starting"]
+    M3["3. 旧实例 draining"]
+    M4["4. 新实例 online"]
+    M1 --> M2 --> M3 --> M4
 ```
 
 ---
@@ -116,25 +113,25 @@ game-1001
 
 ```sql
 CREATE TABLE server_migrations (
-    id            TEXT PRIMARY KEY,
-    source_server TEXT        NOT NULL,
-    target_server TEXT        NOT NULL,
-    status        TEXT        NOT NULL DEFAULT 'pending',
-    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ
+    id             TEXT PRIMARY KEY,
+    source_servers JSONB       NOT NULL DEFAULT '[]',
+    target_server  TEXT        NOT NULL,
+    status         TEXT        NOT NULL DEFAULT 'pending',
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at   TIMESTAMPTZ
 );
 ```
 
 `status` 取值：
 
-```text
-pending      已创建，未开始
-migrating    进行中
-verifying    校验中
-completed    已完成
-failed       失败，需要人工介入
-rolled_back  已回滚
-```
+| status | 含义 |
+| --- | --- |
+| `pending` | 已创建，未开始 |
+| `migrating` | 进行中 |
+| `verifying` | 校验中 |
+| `completed` | 已完成 |
+| `failed` | 失败，需要人工介入 |
+| `rolled_back` | 已回滚 |
 
 ### character_index 的变更
 
@@ -163,8 +160,8 @@ SELECT account_id, '2001', character_id, name, level, class_id, last_login_at
 
 DELETE FROM character_index WHERE server_id = '1001';
 
-INSERT INTO server_migrations (id, source_server, target_server, status, completed_at)
-VALUES ('mig-2026-001', '1001', '2001', 'completed', now());
+INSERT INTO server_migrations (id, source_servers, target_server, status, completed_at)
+VALUES ('mig-2026-001', '["1001"]', '2001', 'completed', now());
 
 COMMIT;
 ```
@@ -179,30 +176,27 @@ COMMIT;
 
 ```json
 {
-  "type": "merge",
   "source_servers": ["game-1001", "game-1002"],
   "target_server": "game-2001"
 }
 ```
+
+> 请求体只有 `source_servers` 与 `target_server` 两个字段（`CreateMigrationRequest`）。合服 / 转服 / 迁服共用同一个端点，语义由源与目标的数量与关系决定，不需要 `type` 字段。
 
 ### GET /v1/admin/migrations/{id}
 
 ```json
 {
   "id": "mig-2026-001",
-  "type": "merge",
   "source_servers": ["game-1001", "game-1002"],
   "target_server": "game-2001",
   "status": "verifying",
   "started_at": "2026-10-01T02:00:00Z",
-  "completed_at": null,
-  "progress": {
-    "characters_total": 18420,
-    "characters_migrated": 18420,
-    "verify_passed": null
-  }
+  "completed_at": null
 }
 ```
+
+> 迁移记录不携带 `progress`（角色计数）字段；过程中的校验用第 4 节的目录查询自行比对。
 
 ### POST /v1/admin/migrations/{id}/rollback
 
@@ -223,11 +217,13 @@ COMMIT;
 
 核心设计：**先复制，后切换，再清理**，而不是原地移动。
 
-```text
-复制   source 的索引行复制到 target 新键   （source 行保留）
-校验   比对 source 与 target 的角色集合
-切换   标记 migration = completed
-清理   删除 source 行
+```mermaid
+flowchart LR
+    P1["1. 复制<br/>source 的索引行复制到 target 新键（source 行保留）"]
+    P2["2. 校验<br/>比对 source 与 target 的角色集合"]
+    P3["3. 切换<br/>标记 migration = completed"]
+    P4["4. 清理<br/>删除 source 行"]
+    P1 --> P2 --> P3 --> P4
 ```
 
 任何一步失败，源数据都还在，可以重来。

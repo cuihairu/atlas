@@ -6,24 +6,25 @@
 
 ## 1. 状态机
 
-```text
-                         ┌──────────┐
-                         │ STARTING │
-                         └────┬─────┘
-                              ▼
-                         ┌──────────┐
-                    ┌────│ ONLINE   │────┐
-                    │    └──────────┘    │
-                    │                    │
-                    ▼                    ▼
-              ┌──────────┐         ┌────────────┐
-              │ DRAINING │         │ MAINTENANCE │
-              └────┬─────┘         └────────────┘
-                   │
-                   ▼
-              ┌──────────┐
-              │ OFFLINE  │
-              └──────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> starting: register
+    starting --> online: 首个有效心跳
+    online --> draining: 运维 drain
+    online --> maintenance: 运维 maintenance
+    online --> suspect: 心跳超时 30s
+    suspect --> online: 心跳恢复
+    suspect --> offline: 心跳超时 60s
+    suspect --> starting: 重新注册
+    offline --> starting: 重新注册
+    draining --> offline: 存量清零 / 超时
+    maintenance --> online: 运维 enable
+
+    note right of online
+        disable 可将任意状态置为 disabled
+        unregister 可将任意状态置为 offline
+    end note
 ```
 
 完整状态集：
@@ -56,15 +57,7 @@
 
 ### DRAINING
 
-排水状态，用于**优雅下线**。
-
-```text
-ONLINE
-  ↓
-DRAINING
-  ↓
-OFFLINE
-```
+排水状态，用于**优雅下线**：`ONLINE → DRAINING → OFFLINE`。
 
 - 停止接受新连接
 - **存量玩家不受影响**，继续游戏直到自己退出
@@ -73,13 +66,7 @@ OFFLINE
 
 ### MAINTENANCE
 
-维护状态。
-
-```text
-ONLINE
-  ↓
-MAINTENANCE
-```
+维护状态：`ONLINE → MAINTENANCE`。
 
 **与 DRAINING 的关键区别**：`MAINTENANCE` 时**老玩家可以继续游戏**，只是新玩家不能进入。
 
@@ -89,17 +76,7 @@ MAINTENANCE
 
 ### SUSPECT
 
-疑似失联。
-
-```text
-online
-   ↓
-heartbeat timeout
-   ↓
-suspect
-   ↓
-offline
-```
+疑似失联：`online → (心跳超时) → suspect → (超时未恢复) → offline`。
 
 - 心跳超时但尚未确认死亡
 - **仍然对外可见**，因为可能是网络抖动而非服务器崩溃
@@ -139,34 +116,32 @@ offline
 
 ## 4. 自动掉线判定
 
-Atlas 用 Redis TTL 做第一层判定，定时任务做第二层状态推进：
+每次心跳把运行时快照（`status` / `players` / `load` / `last_seen_at`）写入 Redis 的 runtime HASH，健康监控的巡检循环（默认每 10s，与维护窗口应用同一个循环）拉取所有 auto-managed 服务器，计算**心跳年龄**并推进状态：
 
-```text
-心跳写入
-  │
-  └─▶ PEXPIRE atlas:server:{id}:hb   TTL = 30s (3 个心跳周期)
-              │
-              ▼
-        键过期 = 心跳超时
-              │
-              ▼
-定时任务 (每 10s) 扫描
-  │
-  ├─▶ 超时 < 30s   → 保持 online
-  ├─▶ 超时 30–60s  → suspect
-  └─▶ 超时 > 60s   → offline
+```mermaid
+flowchart TB
+    HB["心跳写入（每次）"] --> P["HSET atlas:server:{server_id}:runtime<br/>status / players / load / last_seen_at<br/>+ EXPIRE 120s（仅自清理，不参与判活）"]
+    P --> S["巡检（默认每 10s）<br/>拉取 auto-managed 服务器"]
+    S --> A{"age = now − last_seen_at"}
+    A -->|"age ≤ 30s"| K["保持 online"]
+    A -->|"age > 30s"| SU["suspect"]
+    A -->|"age > 60s"| OFF["offline"]
+    SU --> WB["状态回写 PostgreSQL"]
+    OFF --> WB
 ```
+
+> TTL（120s）比判活阈值大，刻意如此：Redis 键过期只负责"彻底失联的服务器的运行时数据自动消失"，生死判定一律以 `last_seen_at` 年龄为准，避免两层语义打架。
 
 阈值建议：
 
-| 参数 | 建议值 | 说明 |
+| 参数 | 默认值 | 说明 |
 | --- | --- | --- |
 | 心跳间隔 | 10s | 游戏服务器上报频率 |
-| TTL | 30s | 3 个心跳周期，容忍单次丢包 |
-| suspect 阈值 | 30s | TTL 过期即进入 |
-| offline 阈值 | 60s | 再给一个周期确认 |
+| runtime HASH TTL | 120s | 固定值，仅键自清理；每次心跳刷新 |
+| suspect 阈值 | 30s | 3× 心跳间隔（见 §4.2） |
+| offline 阈值 | 60s | 6× 心跳间隔 |
 
-阈值应可配置，不同部署环境（同机房 vs 跨地域）差异较大。
+阈值应可配置，不同部署环境（同机房 vs 跨地域）差异较大。从未上报过心跳的服务器（无 runtime 数据）以注册时刻起算年龄。
 
 ### 4.1 健康警报（v0.1.15 交付）
 
@@ -221,7 +196,7 @@ webhook 投递失败只记错误日志，不影响巡检循环。
 
 运维可以预先安排维护时段，健康监控在窗口开启时自动把服务器置入 `maintenance`，结束后恢复原状态：
 
-```text
+```http
 POST /v1/admin/servers/{id}/maintenance-window
 { "start_at": "...", "end_at": "...", "announce": true }
 ```

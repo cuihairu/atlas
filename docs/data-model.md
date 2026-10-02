@@ -22,7 +22,7 @@ Atlas 采用 **PostgreSQL + Redis** 双存储，按**访问模式**分工：
 
 - 写路径先落 PG，再更新 Redis。
 - Redis 中的运行时字段（`load` / `players` / `status`）允许短暂不一致，它们本身就是近似值。
-- 心跳超时由定时任务扫描 Redis TTL，回写 PG 的 `status`。
+- 心跳超时由健康监控巡检计算 `last_seen_at` 年龄（默认每 10s），回写 PG 的 `status`；Redis 键 TTL（120s）仅做自清理。
 - Redis 全量丢失时，可从 PG 重建运行时状态（服务器档案都在，只是心跳数据丢失）。
 
 ---
@@ -44,7 +44,9 @@ CREATE TABLE servers (
     endpoint_host TEXT      NOT NULL,
     endpoint_port INTEGER   NOT NULL,
     capacity    INTEGER     NOT NULL DEFAULT 0,
+    metadata    JSONB       NOT NULL DEFAULT '{}',
     status      TEXT        NOT NULL DEFAULT 'starting',
+    started_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -56,11 +58,17 @@ CREATE INDEX idx_servers_shard        ON servers (shard_id);
 
 `status` 的取值域见 [lifecycle.md](lifecycle.md)：
 
-```text
-starting / online / draining / maintenance / suspect / offline / disabled
-```
+| 状态 | 语义 |
+| --- | --- |
+| `starting` | 进程启动中，尚未就绪 |
+| `online` | 正常服务 |
+| `draining` | 排水中（优雅下线） |
+| `maintenance` | 维护中 |
+| `suspect` | 疑似失联 |
+| `offline` | 已下线 |
+| `disabled` | 运维禁用 |
 
-`players`、`load`、`last_heartbeat_at` **不在此表**，它们在 Redis 中。
+`players`、`load`、`last_seen_at` **不在此表**，它们在 Redis 中。
 
 ---
 
@@ -107,6 +115,7 @@ CREATE TABLE character_index (
     level         INTEGER     NOT NULL DEFAULT 1,
     class_id      INTEGER     NOT NULL DEFAULT 0,
     avatar        TEXT        NOT NULL DEFAULT '',
+    metadata      JSONB       NOT NULL DEFAULT '{}',
     last_login_at TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -133,12 +142,12 @@ CREATE INDEX idx_char_by_server  ON character_index (server_id);
 
 ```sql
 CREATE TABLE server_migrations (
-    id            TEXT PRIMARY KEY,
-    source_server TEXT        NOT NULL,
-    target_server TEXT        NOT NULL,
-    status        TEXT        NOT NULL DEFAULT 'pending',
-    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ
+    id             TEXT PRIMARY KEY,
+    source_servers JSONB       NOT NULL DEFAULT '[]',
+    target_server  TEXT        NOT NULL,
+    status         TEXT        NOT NULL DEFAULT 'pending',
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at   TIMESTAMPTZ
 );
 
 CREATE INDEX idx_migration_status ON server_migrations (status);
@@ -152,60 +161,56 @@ CREATE INDEX idx_migration_status ON server_migrations (status);
 
 ### 服务器运行时状态
 
-```text
-atlas:server:{server_id}:state       HASH    服务器实时状态
-atlas:server:{server_id}:hb          STRING  最后心跳时间戳 (Unix ms)，带 TTL
-atlas:servers:region:{region}        ZSET    按 score 排序的服务器索引
-atlas:servers:all                    ZSET    全量服务器索引
-```
+| 键 | 类型 | 说明 | TTL |
+| --- | --- | --- | --- |
+| `atlas:server:{server_id}:runtime` | HASH | 服务器运行时快照，字段见下表 | 120 秒，每次心跳刷新 |
 
-**`atlas:server:{id}:state`** 字段：
+**`atlas:server:{id}:runtime`** 字段：
 
-```text
-status       online / suspect / ...
-players      843
-load         "0.42"
-capacity     2000
-region       cn-east
-realm        realm-01
-shard        shard-1001
-version      1.8.2
-endpoint     game-1001.example.com:30001
-```
+| 字段 | 示例 | 说明 |
+| --- | --- | --- |
+| `status` | `online` | 服务器当前状态，取值域见 [lifecycle.md](lifecycle.md) |
+| `players` | `843` | 当前在线玩家数（整数字符串） |
+| `load` | `0.42` | 负载比，`[0, 1]` 浮点字符串 |
+| `last_seen_at` | `2026-01-01T12:00:00Z` | 最近一次心跳的写入时间（RFC3339），判活依据 |
 
-**`atlas:server:{id}:hb`** — 单值，TTL 设为心跳超时阈值（如 30 秒，即 3 个心跳周期）。键过期即代表心跳超时。
+TTL 为 120 秒（`redisstore.runtimeTTL`），刻意大于判活阈值（suspect 30s / offline 60s）：键过期只负责运行时数据的自清理，判活由监控按 `last_seen_at` 计算心跳年龄完成。
 
-### 为什么用 ZSET 索引
+档案字段（`capacity`、`region`、`realm`、`shard`、`version`、`endpoint`）**不进 Redis**，始终以 PG 为准。
 
-```text
-atlas:servers:region:{cn-east}
-    score = load * 1000
-    member = game-1001
-```
+### 列表与推荐的读路径
 
-Discovery 的列表查询、Routing 的"最低负载推荐"都变成一次 `ZRANGEBYSCORE`，无需访问 PG。
+当前实现没有 ZSET 索引：Discovery 与 Routing 都以 PG 为候选源，Redis 只负责补充运行时字段。
+
+| 读路径 | 实现 |
+| --- | --- |
+| Discovery 列表 | PG `ListServers`（条件过滤 + 可见性过滤）→ 逐台合并 Redis `runtime` 的 `players / load / last_seen_at` |
+| Routing 推荐 | PG 候选集 → 合并运行时 → 打分排序：已有角色 > 最低负载 > 剩余容量最大 > 稳定 ID 兜底 |
 
 ### 心跳写路径
 
-```text
-收到心跳
-  │
-  ├─▶ PEXPIRE atlas:server:{id}:hb       刷新 TTL
-  ├─▶ HSET    atlas:server:{id}:state    players / load / status
-  └─▶ ZADD    atlas:servers:region:{r}   更新 score
+```mermaid
+flowchart LR
+    HB["收到心跳"] --> P["pipeline 一次往返"]
+    P --> H["HSET atlas:server:{id}:runtime<br/>status / players / load / last_seen_at"]
+    P --> E["EXPIRE atlas:server:{id}:runtime<br/>TTL 120s"]
 ```
 
-单次心跳涉及 3 个 Redis 命令，可用 pipeline 一次往返完成。
+单次心跳涉及 2 个 Redis 命令（`HSET` + `EXPIRE`），pipeline 一次往返完成。
 
 ### 掉线检测
 
-```text
-定时任务 (每 10s)
-  │
-  ├─▶ 扫描 atlas:server:*:hb
-  │     键已过期 ──▶ 状态机 online → suspect → offline
-  │
-  └─▶ 回写 PG servers.status
+```mermaid
+flowchart TD
+    T["健康监控 sweep<br/>默认每 10s"] --> L["从 PG 拉取全部服务器"]
+    L --> R["逐台读 runtime<br/>age = now - last_seen_at"]
+    R --> C{"心跳年龄判定"}
+    C -->|"age > 60s"| OFF["online / starting / suspect → offline"]
+    C -->|"age > 30s"| SUS["online / starting → suspect"]
+    C -->|"suspect 且 age ≤ 30s"| REC["心跳恢复 → online"]
+    OFF --> W["UpdateServerStatus<br/>回写 PG servers.status"]
+    SUS --> W
+    REC --> W
 ```
 
 ---
@@ -214,36 +219,28 @@ Discovery 的列表查询、Routing 的"最低负载推荐"都变成一次 `ZRAN
 
 ### 写路径
 
-```text
-Game Server
-    │ register / heartbeat
-    ▼
-  Atlas
-    │
-    ├──▶ Redis      运行时状态（立即）
-    └──▶ PostgreSQL 服务器档案（注册时）
+```mermaid
+flowchart TD
+    GS["Game Server"] -->|"register / heartbeat"| AT["Atlas"]
+    AT -->|"运行时状态（立即）"| RD[("Redis")]
+    AT -->|"服务器档案（注册时）"| PG[("PostgreSQL")]
 ```
 
 ### 读路径
 
-```text
-GET /v1/discovery/servers
-    │
-    ▼
-  Redis ZSET  ──命中──▶ 返回
-    │
-    └──回源──▶ PostgreSQL（缓存重建）
+```mermaid
+flowchart TD
+    REQ["GET /v1/discovery/servers"] --> Q["PostgreSQL：ListServers<br/>条件过滤 + 可见性过滤"]
+    Q --> M["逐台合并 Redis runtime<br/>players / load / last_seen_at"]
+    M --> RESP["返回"]
 ```
 
 ### 角色索引路径
 
-```text
-Game Server
-    │ POST /v1/directory/characters
-    ▼
-  Atlas
-    │
-    └──▶ PostgreSQL character_index（事务性）
+```mermaid
+flowchart TD
+    GS["Game Server"] -->|"POST /v1/directory/characters"| AT["Atlas"]
+    AT -->|"事务性 upsert"| PG[("PostgreSQL character_index")]
 ```
 
 角色索引不进 Redis，因为它是按 `account_id` 的点查，PG 索引足以支撑，且需要事务保证合服时的跨行一致性。
@@ -258,7 +255,7 @@ Game Server
 | --- | --- | --- |
 | 服务器 | 1,000 台 | PG + Redis，可忽略 |
 | 心跳写入 | 1,000 × 0.1 QPS = 100 QPS | Redis |
-| 列表读取 | 5,000 QPS | Redis ZSET |
+| 列表读取 | 5,000 QPS | PG 候选集 + Redis 运行时合并 |
 | 角色索引 | 5,000 万行 | PG |
 | 角色点查 | 2,000 QPS | PG（走 `idx_char_by_account`） |
 
@@ -278,14 +275,11 @@ Game Server
 - **PG**：常规逻辑备份 + WAL 归档。`character_index` 可从游戏服务器的角色数据库**全量重建**，这是它作为投影表的最大运维优势。
 - **Redis**：不需要备份。全量丢失时从 PG 的 `servers` 表重建运行时状态，代价是所有服务器需重新上报一次心跳（通常 15 秒内恢复）。
 
-```text
-Redis 数据丢失
-    │
-    ▼
-  从 PG servers 表重建 state HASH 与 ZSET
-    │
-    ▼
-  各服务器下次心跳自动补全 players / load
+```mermaid
+flowchart TD
+    L["Redis 数据丢失"] --> A["PG servers 表档案无损<br/>status 等持久字段不受影响"]
+    A --> B["无需主动重建<br/>各服务器下次心跳自动重填 runtime HASH"]
+    B --> C["players / load 随首个心跳补全"]
 ```
 
 

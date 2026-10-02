@@ -3,40 +3,27 @@
 从客户端到存储的完整部署视图。端口、职责与流量方向一一对应；高可用细节
 （副本、哨兵、主从）见 [ha.md](ha.md)，状态机见 [lifecycle.md](lifecycle.md)。
 
-```text
-                      玩家客户端
-                          │
-                          ▼
-        ┌─────────────────────────────────┐
-        │        APISIX / 网关（公网）      │   TLS 终结 · 鉴权 · 限流
-        │  routes: /v1/discovery/*         │
-        └───────┬──────────────────┬──────┘
-                │                  │
-       ┌────────▼───────┐  ┌───────▼────────┐
-       │ Atlas 公共端口   │  │  游戏服务器 × N  │
-       │ :8080 discovery │  │  (登录/对战)     │
-       └────────┬───────┘  └───────┬────────┘
-                │                  │ 心跳 10s（注册/心跳/注销）
-                │                  ▼
-                │        ┌──────────────────┐
-                │        │ HAProxy TCP 模式  │  内网，registry 扇入
-                │        │ :8081 → N× Atlas │
-                │        └────────┬─────────┘
-                │                 │
-        ┌───────▼─────────────────▼────────┐
-        │        Atlas 集群（无状态 × N）     │
-        │  :8080 public  :8081 registry     │
-        │  :8082 admin    :9090 gRPC        │
-        └───────┬──────────────────┬────────┘
-                │ 运行时/心跳        │ 注册表/角色索引
-                ▼                  ▼
-     ┌──────────────────┐  ┌────────────────────────┐
-     │ Redis            │  │ PostgreSQL             │
-     │ master + replica │  │ primary + hot standby  │
-     │ + 3× Sentinel    │  │ (流复制)                │
-     └──────────────────┘  └────────────────────────┘
+```mermaid
+flowchart TB
+    Player["玩家客户端"]
+    GW["APISIX / 网关（公网）<br/>routes: /v1/discovery/*<br/>TLS 终结 · 鉴权 · 限流"]
+    PUB["Atlas 公共端口<br/>:8080 discovery"]
+    GSN["游戏服务器 × N<br/>(登录/对战)"]
+    HAP["HAProxy TCP 模式<br/>内网，registry 扇入<br/>:8081 → N× Atlas"]
+    CLUSTER["Atlas 集群（无状态 × N）<br/>:8080 public · :8081 registry<br/>:8082 admin · :9090 gRPC"]
+    REDIS["Redis<br/>master + replica<br/>+ 3× Sentinel"]
+    PG["PostgreSQL<br/>primary + hot standby<br/>(流复制)"]
 
-                Prometheus ──▶ Atlas :8080/metrics ──▶ Grafana
+    Player --> GW
+    GW --> PUB
+    GW --> GSN
+    GSN -->|"心跳 10s（注册/心跳/注销）"| HAP
+    PUB --> CLUSTER
+    HAP --> CLUSTER
+    CLUSTER -->|"运行时/心跳"| REDIS
+    CLUSTER -->|"注册表/角色索引"| PG
+
+    PROM["Prometheus"] --> MET["Atlas :8080/metrics"] --> GRAF["Grafana"]
 ```
 
 ## 1. 分层职责

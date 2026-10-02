@@ -10,17 +10,14 @@
 
 正确的形态是**事件驱动**：
 
-```text
-Game Server
-     │
-     │ CharacterCreated
-     │ CharacterUpdated
-     │ CharacterDeleted
-     ▼
-Message Bus
-     │
-     ▼
-   Atlas
+```mermaid
+flowchart LR
+    GS["Game Server"]
+    BUS["Message Bus"]
+    ATLAS["Atlas"]
+
+    GS -->|"CharacterCreated<br/>CharacterUpdated<br/>CharacterDeleted"| BUS
+    BUS --> ATLAS
 ```
 
 ---
@@ -66,12 +63,7 @@ Message Bus
 
 第一版支持多种，通过 **Event Adapter** 抽象：
 
-```text
-Kafka
-NATS
-Redis Streams
-RabbitMQ
-```
+**Kafka / NATS / Redis Streams / RabbitMQ**
 
 ### 推荐
 
@@ -84,14 +76,16 @@ RabbitMQ
 
 ### Event Adapter 接口
 
-```text
-EventAdapter
-    │
-    ├── Subscribe(topic, handler)
-    ├── Publish(event)
-    ├── Ack(event)
-    ├── Synchronous()   同步适配器在 Publish 返回前完成应用
-    └── Close()
+```mermaid
+flowchart LR
+    EA["EventAdapter"]
+
+    EA --> NAME["Name()"]
+    EA --> SUB["Subscribe(ctx, topic, handler)"]
+    EA --> PUB["Publish(ctx, event)"]
+    EA --> ACK["Ack(ctx, event)"]
+    EA --> SYN["Synchronous()<br/>同步适配器在 Publish 返回前完成应用"]
+    EA --> CLOSE["Close()"]
 ```
 
 Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不改业务代码。
@@ -137,14 +131,12 @@ ATLAS_EVENT_ADAPTER=rabbitmq ATLAS_RABBITMQ_URL=amqp://rabbit:5672/ ./atlas
 
 **HTTP 同步写入保留为默认形态，Event Adapter 作为解耦入口并存。**
 
-```text
-Game Server
-     │
-     │ POST /v1/directory/characters      (HTTP，默认 ATLAS_EVENT_ADAPTER=http)
-     │         或
-     │ XADD atlas.characters …            (Redis Streams，ATLAS_EVENT_ADAPTER=redis)
-     ▼
-   Atlas Directory（幂等投影）
+```mermaid
+flowchart LR
+    GS["Game Server"]
+    DIR["Atlas Directory（幂等投影）"]
+
+    GS -->|"POST /v1/directory/characters<br/>（HTTP，默认 ATLAS_EVENT_ADAPTER=http）<br/>或<br/>XADD atlas.characters …<br/>（Redis Streams，ATLAS_EVENT_ADAPTER=redis）"| DIR
 ```
 
 同步路径的响应与 v0.1 完全一致；Redis 路径下写端点返回 `202 Accepted`
@@ -152,14 +144,14 @@ Game Server
 
 ### 迁移路径
 
-```text
-v0.1    HTTP 同步写入
-          │  ✅ v0.1.2 已到达
-          ▼
-v0.1.2  Event Adapter 接口 + Redis Streams 实现
-          │  ✅ v0.1.12 已到达
-          ▼
-v0.1.12 Kafka / NATS / RabbitMQ 适配器（见 §4 Event Adapter 接口）
+```mermaid
+flowchart TB
+    V01["v0.1<br/>HTTP 同步写入"]
+    V012["v0.1.2<br/>Event Adapter 接口 + Redis Streams 实现"]
+    V0112["v0.1.12<br/>Kafka / NATS / RabbitMQ 适配器（见 §4 Event Adapter 接口）"]
+
+    V01 -->|"✅ v0.1.2 已到达"| V012
+    V012 -->|"✅ v0.1.12 已到达"| V0112
 ```
 
 关键是**从第一天就把写入接口设计成幂等的**，这样无论底层是 HTTP 还是 MQ，重试都不会产生副作用。
@@ -170,9 +162,7 @@ v0.1.12 Kafka / NATS / RabbitMQ 适配器（见 §4 Event Adapter 接口）
 
 事件可能重复投递（MQ 的 at-least-once 语义），Atlas 必须幂等。
 
-```text
-幂等键 = (account_id, server_id, character_id)
-```
+**幂等键 = `(account_id, server_id, character_id)`**
 
 ```sql
 INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id)
@@ -214,39 +204,40 @@ Atlas 的角色索引保证的是：
 
 ---
 
-## 8. 反向同步
+## 8. 反向同步（设计方向，未实现）
 
-Atlas 也需要在特定场景下**反向通知**游戏服务器：
+**当前版本 Atlas 不向游戏服务器推送事件。** 方向反过来时，游戏服务器这样感知 Atlas 侧的变化：
 
-```text
-Atlas
-  │
-  │ server.draining
-  │ server.maintenance
-  │ migration.started
-  ▼
-Game Server
+| 变化 | 现有感知通道 |
+| --- | --- |
+| 自己被判 `suspect` / `offline` | 心跳响应的 `status` 字段如实返回生效状态（v0.1.x 巡检修复），服务器可据此报警或重注册 |
+| 维护中 / 公告 | 玩家客户端拉 `GET /v1/discovery/announcements`，服务器无需感知 |
+| 迁移开始 | 运维通过迁移 API 通知相关服务器（`POST /v1/admin/migrations`），游戏服务器配合加锁 |
+
+事件化的反向通道（`server.draining` / `server.maintenance` / `migration.started` 推送）是候选方向，未排期：
+
+```mermaid
+flowchart LR
+    ATLAS["Atlas"] -->|"server.draining（候选）"| GS["Game Server"]
+    ATLAS -->|"server.maintenance（候选）"| GS
+    ATLAS -->|"migration.started（候选）"| GS
 ```
 
-用途：
-
-| 事件 | 游戏服务器响应 |
-| --- | --- |
-| `server.draining` | 停止接受新连接，提示玩家服务器将关闭 |
-| `server.maintenance` | 拒绝新登录，存量玩家继续 |
-| `migration.started` | 角色写入加锁，配合迁移 |
-
-同样走 Message Adapter，方向相反。
+在它落地之前，**不要**假设 Atlas 会主动通知游戏服务器。
 
 ---
 
 ## 9. 监控
 
-```text
-atlas_events_received_total{type}       事件接收量
-atlas_events_failed_total{type}         处理失败量
-atlas_events_lag_seconds                处理延迟
-atlas_index_drift_estimate              索引滞后估算
-```
+事件同步当前**没有专属指标**；重投递与死信（redis 的 PEL 超限、kafka 的 offset 不提交）见各适配器的结构化日志。服务整体健康用 `/metrics`（:8082）上的真实指标观测：
 
-`atlas_events_failed_total` 是最重要的告警项——它上升意味着角色索引开始与实际脱节。
+| 指标 | 含义 |
+| --- | --- |
+| `atlas_directory_characters_total` | 角色索引总量——持续不涨说明事件消费停了 |
+| `atlas_health_transitions_total{from,to}` | 生命周期状态迁移量 |
+| `atlas_registry_heartbeat_lag_seconds` | 心跳年龄分布 |
+| `atlas_registry_servers_total{status}` | 各状态服务器数 |
+| `atlas_discovery_requests_total{filter}` | 发现查询量 |
+| `atlas_admin_requests_total{endpoint,status}` | Admin 请求量 |
+
+排查索引脱节：先看 `atlas_directory_characters_total` 是否停滞，再看适配器日志里的重投递/死信记录，最后确认总线（broker）本身可达。
