@@ -239,8 +239,11 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    GS["Game Server"] -->|"POST /v1/directory/characters"| AT["Atlas"]
-    AT -->|"事务性 upsert"| PG[("PostgreSQL character_index")]
+    GS["Game Server"] -->|"POST /v1/directory/characters"| AT["Atlas 写入端点"]
+    AT -->|"http 适配器（默认）同步"| UP["事务性 upsert"]
+    AT -.->|"异步适配器入队 + 202"| BUS[("Message Bus")]
+    BUS -.->|"Atlas 内建消费循环"| UP
+    UP --> PG[("PostgreSQL character_index")]
 ```
 
 角色索引不进 Redis，因为它是按 `account_id` 的点查，PG 索引足以支撑，且需要事务保证合服时的跨行一致性。

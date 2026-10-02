@@ -43,17 +43,20 @@ curl http://localhost:8080/v1/directory/characters/9001
 
 > **不要让 Game Server 每次修改角色都直接强耦合调用 Atlas API。**
 
-正确的形态是**事件驱动**：
+落到实现上，"事件驱动"的是 **Atlas 写入接口内部**：游戏服务器仍然只调
+`POST /v1/directory/characters`（HTTP 写端点；gRPC `:9090` 有同名镜像，同一
+实现），事件化发生在 Atlas 写入处理器之后——默认同步落地，需要削峰/故障隔离时
+一个环境变量切到 Message Bus 异步缓冲：
 
 ```mermaid
 flowchart LR
-    GS["Game Server"]
-    BUS["Message Bus"]
-    ATLAS["Atlas"]
-
-    GS -->|"CharacterCreated<br/>CharacterUpdated<br/>CharacterDeleted"| BUS
-    BUS --> ATLAS
+    GS["Game Server"] -->|"POST /v1/directory/characters"| EP["Atlas 写入端点"]
+    EP -->|"默认：进程内同步"| DIR["Directory<br/>幂等投影"]
+    EP -.->|"可选：Message Bus 缓冲"| BUS["Kafka / NATS /<br/>RabbitMQ / Redis Streams"]
+    BUS -.->|"Atlas 内建消费循环"| DIR
 ```
+
+游戏服务器**不直连消息队列**；队列的生产者与消费者都是 Atlas（详见 §5 写入路径）。
 
 ---
 
@@ -70,13 +73,18 @@ flowchart LR
 }
 ```
 
-| 事件 | 触发时机 | 携带字段 |
-| --- | --- | --- |
-| `character.created` | 创建角色 | 全量索引字段 |
-| `character.updated` | 升级 / 改名 / 转职 | 变更字段 |
-| `character.deleted` | 删除角色 | 主键三元组 |
-| `character.moved` | 转服 | 主键 + `target_server` |
-| `character.login` | 登录 | 主键，用于刷新 `last_login_at` |
+| 事件 | 触发时机 | 携带字段 | 当前触发源 |
+| --- | --- | --- | --- |
+| `character.created` | 创建角色 | 全量索引字段 | 写端点 `POST /v1/directory/characters` |
+| `character.updated` | 升级 / 改名 / 转职 | 变更字段 | 写端点 `PATCH /v1/directory/characters/{id}` |
+| `character.deleted` | 删除角色 | 主键三元组 | 写端点 `DELETE /v1/directory/characters/{id}` |
+| `character.moved` | 转服 | 主键 + `target_server` | **暂无内建触发源**（定义与消费已就绪，待迁移联动/事件化反向通道） |
+| `character.login` | 登录 | 主键，用于刷新 `last_login_at` | **暂无内建触发源**（同上） |
+
+> 五类事件 `ApplyEvent` 都能消费；但触发源只有写端点三个（created / updated /
+> deleted）。`moved` / `login` 目前**没有任何代码路径会产生它们**（预留的事件定义）：
+> 转服的数据转移由游戏服务器完成后走写端点 `PATCH` 更新索引（产生 `updated`
+> 事件），并不消费 `moved`——不要按事件表假设这两个事件会自动出现。
 
 ---
 
@@ -152,8 +160,9 @@ ATLAS_EVENT_ADAPTER=nats ATLAS_NATS_URL=nats://nats:4222 ./atlas
 ATLAS_EVENT_ADAPTER=rabbitmq ATLAS_RABBITMQ_URL=amqp://rabbit:5672/ ./atlas
 ```
 
-切换适配器不影响 HTTP 写端点语义（同步路径照常可用），消费侧由 Atlas
-内建消费循环承担，无需额外部署消费者进程。
+切换适配器不改写端点的 URL 与请求体（游戏服务器与 SDK 零改动），变的只是响应：
+`http` 返回 `201` + 投影结果，其余四种返回 `202 Accepted`（`{"status":"queued"}`）；
+消费侧由 Atlas 内建消费循环承担，无需额外部署消费者进程。
 
 选型补充（§4 推荐表）之外的运维参照：已有 Redis 用 `redis`（零新增组件）；
 日志/审计类大吞吐、需要回放与多消费组用 `kafka`；云原生内网低延迟、
@@ -166,16 +175,25 @@ ATLAS_EVENT_ADAPTER=rabbitmq ATLAS_RABBITMQ_URL=amqp://rabbit:5672/ ./atlas
 
 **HTTP 同步写入保留为默认形态，Event Adapter 作为解耦入口并存。**
 
+写接口是游戏服务器唯一接触的面（HTTP 写端点，gRPC 同名镜像）；队列段（如果启用）
+完全在 Atlas 内部——写入处理器是生产者，Atlas 内建消费循环（`main.go` 里的
+`Subscribe`）是消费者，**不需要也不建议部署独立的消费者进程**：
+
 ```mermaid
 flowchart LR
-    GS["Game Server"]
-    DIR["Atlas Directory（幂等投影）"]
-
-    GS -->|"POST /v1/directory/characters<br/>（HTTP，默认 ATLAS_EVENT_ADAPTER=http）<br/>或<br/>XADD atlas.characters …<br/>（Redis Streams，ATLAS_EVENT_ADAPTER=redis）"| DIR
+    GS["Game Server"] -->|"HTTP :8080 写端点<br/>POST /v1/directory/characters<br/>或 gRPC :9090 DirectoryService<br/>（同一实现）"| EP["Atlas 写入处理器<br/>校验后 Publish"]
+    EP -->|"ATLAS_EVENT_ADAPTER=http（默认）<br/>进程内同步"| DIR["Directory 幂等投影<br/>（ApplyEvent）"]
+    EP -.->|"redis / kafka / nats / rabbitmq<br/>入队，写端点返回 202"| BUS[("Message Bus")]
+    BUS -.->|"Atlas 内建消费循环<br/>at-least-once"| DIR
 ```
 
 同步路径的响应与 v0.1 完全一致；Redis 路径下写端点返回 `202 Accepted`
 （`{"status":"queued"}`），由消费组异步落地。
+
+> broker 里的封包（如 Redis 的 `{type, data}` 流条目、Kafka 的 event JSON）
+> 是 **Atlas 内部格式**，不作为对外契约：外部系统直接向 broker 投递机制上可行
+> （消费循环会照常解析），但字段无版本承诺，升级可能不兼容——接入一律走
+> Atlas 写入接口（HTTP 写端点或 gRPC）。
 
 ### 迁移路径
 

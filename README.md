@@ -80,7 +80,9 @@ flowchart TB
     Player -->|HTTPS| GW
     GW --> DISC & DIR & ROUT
     GS -->|"register / heartbeat<br/>:8081（内网）"| REG
-    GS -->|角色索引事件| BUS["Message Bus<br/>Kafka / NATS / RabbitMQ / Redis Streams"] --> DIR
+    GS -->|"角色索引事件<br/>POST :8080"| DIR
+    DIR -.->|"可选异步层"| BUS["Message Bus<br/>Kafka / NATS / RabbitMQ / Redis Streams"]
+    BUS -.->|"Atlas 消费"| DIR
     REG --> REDIS & PG
     DISC -->|热点读| REDIS
     DIR & ROUT & ADMIN --> PG

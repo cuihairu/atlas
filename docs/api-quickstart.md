@@ -165,8 +165,9 @@ curl http://localhost:8080/v1/directory/accounts/10001/characters
 {"characters":[{"account_id":10001,"server_id":"game-1001","character_id":823712,"name":"剑无尘","level":182,"class_id":3,"last_login_at":"…","created_at":"…","updated_at":"…"}]}
 ```
 
-> 大规模写路径不该逐条调 REST——改走 Message Bus 事件投递（Kafka / NATS / RabbitMQ /
-> Redis Streams），见[数据同步](/sync)。
+> 大规模写路径不该逐条落地——同一个写端点加一个环境变量切到 Message Bus
+> 异步缓冲（Atlas 入队、内建消费循环回放），游戏服务器仍只调 REST，
+> 见[数据同步](/sync)。
 
 ## 3. 运维侧：大区、公告、维护、统计（:8082）
 

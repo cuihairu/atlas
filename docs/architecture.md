@@ -29,12 +29,14 @@ flowchart TB
     end
 
     GS["Game Server 集群"]
-    BUS["Message Bus<br/>Kafka / NATS / RabbitMQ / Redis Streams"]
+    BUS["Message Bus（可选异步层）<br/>Kafka / NATS / RabbitMQ / Redis Streams<br/>生产者与消费者都是 Atlas"]
 
     Player -->|HTTPS| GW
     GW --> DISC & DIR & ROUT
     GS -->|"register / heartbeat<br/>:8081（内网）"| REG
-    GS -->|角色索引事件| BUS --> DIR
+    GS -->|"角色索引事件<br/>POST :8080"| DIR
+    DIR -.->|"可选异步层（Atlas 内部）"| BUS
+    BUS -.->|"Atlas 消费循环"| DIR
     REG --> REDIS & PG
     DISC -->|热点读| REDIS
     DIR & ROUT & ADMIN --> PG
@@ -50,7 +52,7 @@ flowchart TB
 | 服务层 | Atlas Core | Registry / Discovery / Directory / Routing 四大模块 |
 | 数据层 | Redis | 运行时状态：心跳、状态、负载、在线数 |
 | 数据层 | PostgreSQL | 持久事实：服务器档案、拓扑、角色索引、迁移记录 |
-| 来源层 | Game Server | 角色数据的 Source of Truth，向 Atlas 投递索引事件 |
+| 来源层 | Game Server | 角色数据的 Source of Truth，经 Atlas 写入接口（HTTP `:8080` POST `/v1/directory/characters`，或 gRPC `:9090` `DirectoryService`，同一实现）投递索引事件；不直连消息队列 |
 
 ---
 
@@ -140,15 +142,34 @@ Discovery 是高频读路径，Redis 承载热点；Directory 是按 `account_id
 
 ### 4.3 角色索引同步
 
+**写入接口是唯一入口，消息队列段发生在 Atlas 内部**——游戏服务器只调 Atlas
+的写入接口：HTTP `:8080` 的 `POST /v1/directory/characters`（REST SDK 同款）或
+gRPC `:9090` 的 `DirectoryService`（Go SDK 可选传输），二者同一实现；写入处理器
+校验后交给 EventAdapter：默认 `http` 适配器进程内同步落地；切换为
+`redis / kafka / nats / rabbitmq` 后同一接口改为入队并返回 `202`，由 Atlas
+**内建的消费循环**（`main.go` 里的 `Subscribe`）取回事件调用 `ApplyEvent`
+落地。生产者与消费者都是 Atlas，**游戏服务器不直连 broker**：
+
 ```mermaid
 flowchart LR
     GS["Game Server<br/>（角色数据 Source of Truth）"]
-    GS -->|CharacterCreated / Updated / Deleted<br/>Login / Moved| BUS["Message Bus<br/>http 同步 / Redis Streams / Kafka / NATS / RabbitMQ"]
-    BUS --> A["Atlas Directory<br/>幂等投影（ApplyEvent）"]
-    A --> PG[("PostgreSQL<br/>character_index")]
+    EP["Atlas 写入接口<br/>HTTP :8080 POST /v1/directory/characters<br/>或 gRPC :9090 DirectoryService<br/>（同一实现）"]
+    A["Directory<br/>幂等投影（ApplyEvent）"]
+    BUS["Message Bus<br/>redis / kafka / nats / rabbitmq<br/>（可选异步层）"]
+    PG[("PostgreSQL<br/>character_index")]
+
+    GS -->|"CharacterCreated / Updated / Deleted"| EP
+    EP -->|"默认 http 适配器<br/>进程内同步"| A
+    EP -.->|"异步适配器：入队 + 202"| BUS
+    BUS -.->|"Atlas 内建消费循环<br/>（无需独立消费者进程）"| A
+    A --> PG
 ```
 
 Atlas 只保存投影，不保存权威数据。详见 [sync.md](sync.md)。
+
+> `character.login` / `character.moved` 两类事件已定义并可被消费，但当前版本
+> **没有内建触发源**（写端点只产生 created / updated / deleted），见
+> [sync.md](sync.md) 事件表注。
 
 ---
 
