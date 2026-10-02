@@ -1,0 +1,11 @@
+# 构建上下文瘦身：镜像只需要 Go 源码（含 api/pb 生成代码）与迁移文件
+.git
+.github
+.claude
+docs
+dashboard
+sdk
+plugins
+deploy
+deployments
+*.md

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -49,6 +50,13 @@ import (
 )
 
 func main() {
+	// `atlas healthcheck` is a container health probe: exit 0 when the
+	// public API answers /healthz. Distroless images have no shell, so the
+	// Dockerfile HEALTHCHECK / compose healthcheck calls the binary itself.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -695,3 +703,30 @@ var (
 	_ = pgxpool.ParseConfig
 	_ = redis.NewClient
 )
+
+// runHealthcheck probes the public API's /healthz and exits 0 on success.
+// It is the container health probe: the distroless runtime image has no
+// shell, so the compose healthcheck calls the binary itself. Honors
+// ATLAS_HTTP_ADDR to follow the same bind address as the server.
+func runHealthcheck() int {
+	addr := os.Getenv("ATLAS_HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+
+	client := http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://" + addr + "/healthz")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck: /healthz returned %s\n", resp.Status)
+		return 1
+	}
+	return 0
+}

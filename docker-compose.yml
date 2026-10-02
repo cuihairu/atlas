@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Atlas 快速搭建 —— 一条命令起全栈（Atlas + PostgreSQL + Redis + 迁移引导）
+#
+# 用法（在本文件所在目录执行）：
+#   cp .env.example .env          # 敏感值（如数据库密码）只放 .env，不写死在这里
+#   docker compose up -d
+#   curl http://localhost:8080/healthz      # {"status":"ok"} 即起服成功
+#
+# 数据持久化在哪：
+#   - PostgreSQL（服务器档案 / 角色索引 / 迁移记录）→ 具名卷 atlas_pgdata，
+#     `docker volume inspect atlas_pgdata` 可查看宿主机实际路径；down -v 才会删数据。
+#   - Redis（心跳等运行时状态，本来就是易失数据）→ 不挂卷，容器重建即清空，属预期行为。
+#
+# 怎么换版本：
+#   - Atlas 镜像：改 .env 的 ATLAS_IMAGE（latest=main 最新滚动；可 pin 成
+#     sha-<短SHA> 或日期标签；本地开发镜像写本地 tag 即可）。
+#   - PostgreSQL / Redis：直接改下面对应 service 的 image 标签。
+#
+# 配置怎么改：Atlas 全部走 ATLAS_* 环境变量（与二进制裸跑同一套），在下面
+# atlas.environment 里增删即可；常见项见 README「Docker 快速搭建」，事件总线见 docs/sync.md。
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: atlas
+
+services:
+  atlas:
+    image: ${ATLAS_IMAGE:-ghcr.io/cuihairu/atlas:latest}
+    # 首次拉取不用 --pull always 也行；追 main 滚动更新的用户可加 pull_policy: always
+    container_name: atlas
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully   # 先建表再起服
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ATLAS_STORE: postgres
+      ATLAS_DATABASE_URL: postgres://atlas:${ATLAS_PG_PASSWORD:-atlas}@postgres:5432/atlas?sslmode=disable
+      ATLAS_REDIS_URL: redis://redis:6379/0
+      # 可选：角色写入改走消息总线异步缓冲（默认 http = 进程内同步）。
+      # 例：ATLAS_EVENT_ADAPTER: redis   # 复用本栈 Redis，写端点返回 202
+      # 更多适配器与变量见 docs/sync.md。
+    ports:
+      - "8080:8080"   # 公网：Discovery / Directory / Routing（玩家客户端、网关）
+      - "8081:8081"   # 内网：Registry 注册/心跳（游戏服务器）
+      - "8082:8082"   # 管理端：Admin / 审计 / Prometheus /metrics
+      - "9090:9090"   # gRPC（同功能高性能通道，Go SDK 可选）
+    healthcheck:
+      # distroless 镜像没有 shell/curl，健康探测直接调二进制自带子命令
+      test: ["CMD", "/atlas", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # 一次性建表服务：跑完 migrations/ 全部 PostgreSQL 迁移后即退出（exit 0），
+  # atlas 等它成功后再启动。官方 postgres 镜像自带 psql，迁移不进业务镜像
+  # （业务镜像是 distroless，无 shell）。改表只增不改已发布的迁移文件。
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: ${ATLAS_PG_PASSWORD:-atlas}
+      PGDATABASE: atlas
+    volumes:
+      - ./migrations:/migrations:ro
+    # shell 变量必须写成 $$f：裸 $f 会被 compose 自己先插值成空串
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: atlas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atlas
+      # 密码从 .env 读（敏感值不写死）；本地默认 atlas，生产务必改强密码
+      POSTGRES_PASSWORD: ${ATLAS_PG_PASSWORD:-atlas}
+      POSTGRES_DB: atlas
+    volumes:
+      - atlas_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 默认不暴露到宿主机（只有 Atlas 在 docker 网络内访问）。
+    # 需要本机 psql 调试时取消注释：
+    # ports:
+    #   - "127.0.0.1:15432:5432"
+
+  redis:
+    image: redis:8-alpine
+    container_name: atlas-redis
+    restart: unless-stopped
+    # 心跳/运行时状态是易失数据，不挂持久卷；重建容器丢运行时属预期
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 需要本机 redis-cli 调试时取消注释：
+    # ports:
+    #   - "127.0.0.1:16379:6379"
+
+volumes:
+  atlas_pgdata:

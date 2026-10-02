@@ -1,0 +1,62 @@
+# 构建并推送 Atlas 运行镜像到 GHCR（ghcr.io/cuihairu/atlas）。
+# 触发：main 分支推送 + 手动执行。多架构：amd64 / arm64。
+# 镜像标签：latest（main 每次推送）、main、sha-<短SHA>、YYYYMMDD。
+# 不打 v* tag（发布由 GitHub Release 承担，镜像随 main 滚动）。
+name: Docker Image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU（arm64 交叉构建）
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/cuihairu/atlas
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value={{date 'YYYYMMDD'}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

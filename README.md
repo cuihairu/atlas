@@ -98,12 +98,46 @@ flowchart TB
 # Run with in-memory store (no dependencies)
 make run
 
-# Run with PostgreSQL + Redis
-docker compose -f deployments/docker/docker-compose.yml up --build
-
 # Run tests
 make test
 ```
+
+## Docker 快速搭建
+
+官方镜像在 GHCR：**`ghcr.io/cuihairu/atlas`**（`latest` 跟随 main 滚动，另有 `main` / `sha-<短SHA>` / 日期标签；多架构 amd64 + arm64）。
+
+一条命令起全栈（Atlas + PostgreSQL + Redis，自动建表）：
+
+```bash
+git clone https://github.com/cuihairu/atlas && cd atlas
+cp .env.example .env          # 按需改镜像 tag / 数据库密码（.env 不入库）
+docker compose up -d
+curl http://localhost:8080/healthz      # {"status":"ok"} 即成功
+```
+
+起来的是四个容器：`atlas`（业务）、`atlas-postgres`（档案/索引持久化，数据在具名卷 `atlas_pgdata`，`down -v` 才会删）、`atlas-redis`（心跳运行时状态，易失属预期）、一次性 `migrate`（建表后退出）。开箱端口：
+
+| 端口 | 用途 | 谁在调 |
+| --- | --- | --- |
+| `8080` | Discovery / Directory / Routing | 玩家客户端、网关 |
+| `8081` | Registry 注册 / 心跳 | 游戏服务器 |
+| `8082` | Admin / 审计 / `/metrics` | 运维 |
+| `9090` | gRPC | Go SDK 可选 |
+
+30 秒走一遍主链路：
+
+```bash
+# 注册一台游戏服务器并心跳上线
+curl -X POST localhost:8081/v1/registry/servers/register -H 'Content-Type: application/json' \
+  -d '{"server_id":"game-1001","name":"一区·青龙","region":"cn-east","endpoint":{"host":"10.0.1.21","port":30001},"capacity":2000}'
+curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat -H 'Content-Type: application/json' -d '{"players":843,"load":0.42}'
+# 玩家侧查询
+curl 'localhost:8080/v1/discovery/servers?status=online'
+```
+
+常用配置都在 `.env` + compose 环境变量里改：换镜像版本改 `ATLAS_IMAGE`（如 `sha-xxxxxxx`，升级可控）；数据库密码改 `ATLAS_PG_PASSWORD`（敏感值只放 `.env`，该文件已被 `.gitignore` 排除）；角色写入切消息总线在 compose 的 `atlas.environment` 加 `ATLAS_EVENT_ADAPTER=redis`（复用本栈 Redis，详见 [数据同步](https://github.com/cuihairu/atlas/blob/main/docs/sync.md)）。停止与清理：`docker compose down`（保留数据）/ `docker compose down -v`（连数据卷一起删）。
+
+> 开发场景想从源码构建（不走 GHCR 镜像）用 `deployments/docker/docker-compose.yml`；多副本高可用见 `deploy/docker-compose.ha.yaml` 与[高可用文档](https://github.com/cuihairu/atlas/blob/main/docs/ha.md)。
 
 ---
 
