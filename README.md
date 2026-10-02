@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/cuihairu/atlas/releases"><img src="https://img.shields.io/github/v/release/cuihairu/atlas" alt="Release" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
+  <a href="https://cuihairu.github.io/atlas/"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a>
+</p>
+
+<p align="center">
   Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.
 </p>
 
@@ -298,4 +304,8 @@ Atlas v0.1
 
 ## License
 
-见 [LICENSE](LICENSE)。
+Atlas 采用 [Apache License 2.0](LICENSE) 开源。
+
+你可以自由地使用、修改、分发 Atlas,包括商业用途;唯一的要求是保留版权与许可声明。详见 [LICENSE](LICENSE) 全文。
+
+> 第三方依赖各自遵循其原始许可证(golang.org/x 生态、pgx、go-redis、protobuf 等),以各依赖仓库声明为准。
