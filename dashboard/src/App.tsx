@@ -6,6 +6,8 @@ import Servers from './pages/Servers';
 import ServerDetail from './pages/ServerDetail';
 import Characters from './pages/Characters';
 import Migrations from './pages/Migrations';
+import Operations from './pages/Operations';
+import CrossServer from './pages/CrossServer';
 import { useLang, antdLocale } from './i18n';
 import { useTheme } from './theme';
 
@@ -34,6 +36,8 @@ export default function App() {
               <Route path="/servers/:id" element={<ServerDetail />} />
               <Route path="/characters" element={<Characters />} />
               <Route path="/migrations" element={<Migrations />} />
+              <Route path="/operations" element={<Operations />} />
+              <Route path="/crossserver" element={<CrossServer />} />
             </Route>
           </Routes>
         </BrowserRouter>

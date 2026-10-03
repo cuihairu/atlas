@@ -9,6 +9,13 @@ import type {
   Migration,
   MigrationListResponse,
   ServerTagListResponse,
+  Announcement,
+  AnnouncementListResponse,
+  MaintenanceWindow,
+  MaintenanceWindowListResponse,
+  CrossServerSpec,
+  CrossServerConfig,
+  CrossServerSaveResponse,
 } from '../types';
 
 // Same-origin by default: the vite dev/preview proxy splits the API by path
@@ -153,4 +160,63 @@ export function getMigration(id: string): Promise<Migration> {
 
 export function rollbackMigration(id: string): Promise<void> {
   return request(`/v1/admin/migrations/${id}/rollback`, { method: 'POST' });
+}
+// ── 公告与维护窗口 ────────────────────────────────────────────────────
+
+export function listAnnouncements(params?: {
+  server_id?: string;
+  active?: 'true';
+}): Promise<AnnouncementListResponse> {
+  return request(`/v1/admin/announcements${qs(params ?? {})}`, undefined, ADMIN_BASE);
+}
+
+export function createAnnouncement(body: {
+  title: string;
+  body: string;
+  level: string;
+  server_id?: string;
+  starts_at: string;
+  ends_at: string;
+}): Promise<Announcement> {
+  return request('/v1/admin/announcements', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, ADMIN_BASE);
+}
+
+export function deleteAnnouncement(id: string): Promise<void> {
+  return request(`/v1/admin/announcements/${id}`, { method: 'DELETE' }, ADMIN_BASE);
+}
+
+export function listMaintenanceWindows(params?: {
+  server_id?: string;
+}): Promise<MaintenanceWindowListResponse> {
+  return request(`/v1/admin/maintenance-windows${qs(params ?? {})}`, undefined, ADMIN_BASE);
+}
+
+export function createMaintenanceWindow(
+  serverId: string,
+  body: { start_at: string; end_at: string; announce?: boolean },
+): Promise<MaintenanceWindow> {
+  return request(`/v1/admin/servers/${serverId}/maintenance-window`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, ADMIN_BASE);
+}
+
+export function deleteMaintenanceWindow(id: string): Promise<void> {
+  return request(`/v1/admin/maintenance-windows/${id}`, { method: 'DELETE' }, ADMIN_BASE);
+}
+
+// ── 跨服配置中心 ─────────────────────────────────────────────────────
+
+export function getCrossServerConfig(): Promise<CrossServerConfig> {
+  return request('/v1/admin/crossserver/config', undefined, ADMIN_BASE);
+}
+
+export function updateCrossServerConfig(spec: CrossServerSpec): Promise<CrossServerSaveResponse> {
+  return request('/v1/admin/crossserver/config', {
+    method: 'PUT',
+    body: JSON.stringify(spec),
+  }, ADMIN_BASE);
 }

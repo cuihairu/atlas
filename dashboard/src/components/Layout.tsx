@@ -5,6 +5,8 @@ import {
   CloudServerOutlined,
   UserOutlined,
   SwapOutlined,
+  NotificationOutlined,
+  ClusterOutlined,
   SunOutlined,
   MoonOutlined,
   GlobalOutlined,
@@ -30,6 +32,8 @@ export default function AppLayout() {
     { key: '/servers', icon: <CloudServerOutlined />, label: t('servers') },
     { key: '/characters', icon: <UserOutlined />, label: t('characterSearch') },
     { key: '/migrations', icon: <SwapOutlined />, label: t('migrations') },
+    { key: '/operations', icon: <NotificationOutlined />, label: t('operations') },
+    { key: '/crossserver', icon: <ClusterOutlined />, label: t('crossserverConfig') },
   ];
 
   // Determine selected key from path

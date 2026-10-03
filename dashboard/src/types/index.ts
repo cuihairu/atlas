@@ -83,3 +83,91 @@ export interface MigrationListResponse {
   migrations: Migration[];
   next_cursor?: string;
 }
+// ── 公告与维护窗口（/v1/admin/announcements · maintenance-windows）────
+
+export type AnnouncementLevel = 'info' | 'warning' | 'critical';
+
+export interface Announcement {
+  id: string;
+  server_id?: string | null;
+  title: string;
+  body: string;
+  level: AnnouncementLevel;
+  starts_at: string;
+  ends_at: string;
+  created_at?: string;
+}
+
+export interface AnnouncementListResponse {
+  announcements: Announcement[];
+}
+
+export interface MaintenanceWindow {
+  id: string;
+  server_id: string;
+  start_at: string;
+  end_at: string;
+  previous_status: string;
+  announcement_id?: string | null;
+  applied?: boolean;
+  created_at?: string;
+}
+
+export interface MaintenanceWindowListResponse {
+  maintenance_windows: MaintenanceWindow[];
+}
+
+// ── 跨服配置中心（/v1/admin/crossserver/config）──────────────────────
+
+export interface CrossServerCluster {
+  id: string;
+  name?: string;
+  region?: string;
+  status?: string; // active (default) | disabled
+  servers: string[];
+}
+
+export interface CrossServerGroup {
+  id: string;
+  name?: string;
+  servers: string[];
+}
+
+export interface CrossServerMatchDomain {
+  id: string;
+  name?: string;
+  servers: string[];
+  params?: Record<string, string>;
+}
+
+export interface CrossServerSpec {
+  topology: { clusters: CrossServerCluster[] };
+  groups: CrossServerGroup[];
+  features: Record<string, boolean>;
+  match_domains: CrossServerMatchDomain[];
+}
+
+export interface CrossServerConfig {
+  version: number;
+  hash: string;
+  spec: CrossServerSpec;
+  updated_at?: string;
+}
+
+export interface CrossServerNotifyResult {
+  bus: string;
+  bus_error?: string;
+  targets: string[];
+  idempotent: boolean;
+  callbacks: {
+    targets: number;
+    delivered: number;
+    failed: number;
+    errors?: string[];
+  };
+}
+
+export interface CrossServerSaveResponse {
+  config: CrossServerConfig;
+  notify: CrossServerNotifyResult;
+}
