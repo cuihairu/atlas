@@ -61,14 +61,16 @@ jobs:
 
       # ── 门禁：主分支绿才部署 ─────────────────────────────────────
       # 等两条 workflow 对本次提交跑完：ci（测试）与 docker-image（镜像已推）。
-      # 还在排队/进行中就轮询（最多 15 分钟）；失败或超时直接中止，不碰部署机。
+      # 还在排队/进行中就轮询；失败或超时直接中止，不碰部署机。
+      # 轮询预算取 100 分钟：docker-image 要出 amd64+arm64（QEMU 交叉构建），
+      # 本仓库实测 20–60 分钟，先前 15 分钟的预算会在镜像没出来时误判超时。
       - name: Gate — main green (ci + image)
-        timeout-minutes: 20
+        timeout-minutes: 105
         run: |
           set -euo pipefail
           wait_green() {
             wf="$1"
-            for _ in $(seq 1 90); do
+            for _ in $(seq 1 300); do
               resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" || true)"
               status="$(printf '%s' "$resp" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
@@ -86,9 +88,9 @@ jobs:
               else
                 echo "$wf $status — $run_url"
               fi
-              sleep 10
+              sleep 20
             done
-            echo "$wf: still not completed after 15m" >&2
+            echo "$wf: still not completed after 100m" >&2
             return 1
           }
           wait_green ci.yml
@@ -144,7 +146,8 @@ jobs:
           EOF
           else
             # 已有 .env（运维可能改了端口/口令）：只滚动镜像标签
-            sed -i '/^ATLAS_TAG=/d;/^DASHBOARD_TAG=/d' "$deploy_dir/.env"
+            # （GHCR_OWNER 一并先删再写，否则每次部署都追加一行）
+            sed -i '/^ATLAS_TAG=/d;/^DASHBOARD_TAG=/d;/^GHCR_OWNER=/d' "$deploy_dir/.env"
             printf 'ATLAS_TAG=%s\nDASHBOARD_TAG=%s\nGHCR_OWNER=%s\n' \
               "${{ inputs.tag }}" "${{ inputs.tag }}" "${{ github.repository_owner }}" >> "$deploy_dir/.env"
           fi
