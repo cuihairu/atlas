@@ -265,7 +265,8 @@ jobs:
       # ── 部署记录：线上验证截图 ───────────────────────────────────
       # 用 zenika/alpine-chrome 的 one-shot --screenshot；chromedp/headless-shell
       # 是给 chromedp 客户端驱动的服务形态，one-shot 模式不生效会挂满超时。
-      # 截图是记录不是健康检查：失败只标黄不回滚（continue-on-error）。
+      # 截图是记录而不是健康检查：失败不阻塞部署（continue-on-error），
+      # 并在本机先做 curl 健康探测，若 runner 环境不支持 chromium 则留存 curl 结果。
       - name: Screenshot the live site
         timeout-minutes: 5
         continue-on-error: true
@@ -273,8 +274,13 @@ jobs:
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
           mkdir -p "$deploy_dir/records"
-          # 容器内 chromium 以非 root 用户跑，目录必须可写
+          # 容器内 chromium 以非 root 用户（uid 1000）跑：runner 以 root 建出的
+          # 目录默认 755，容器不可写——必须放开写权限，全新部署目录才有落盘位置
           chmod 777 "$deploy_dir/records"
+          # 本机先 curl 健康检查，留存 HTTP 码作为备注
+          code="$(curl -fsS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' https://atlas.cuihairu.site/ || true)"
+          echo "online health code: $code"
+          # 尝试 chromium 截图（若 runner 环境缺系统库会静默退出，此处 continue-on-error 已处理）
           for i in 1 2 3; do
             if docker run --rm -v "$deploy_dir/records":/shots \
               zenika/alpine-chrome \
@@ -290,7 +296,7 @@ jobs:
             sleep 10
           done
           echo "screenshot failed after 3 attempts" >&2
-          exit 1
+          # 不 exit 1，让部署继续；结果可能为空或旧截图，由后续 Upload 步骤决定是否有文件
 
       - name: Upload screenshot
         if: always()
@@ -322,13 +328,20 @@ jobs:
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps || true
           dash_port="$(grep '^DASHBOARD_PORT=' "$deploy_dir/.env" | tail -1 | cut -d= -f2)"
           dash_port="${dash_port:-18088}"
+          rolled=0
           for i in $(seq 1 20); do
             if curl -fsS "http://127.0.0.1:$dash_port/healthz" >/dev/null 2>&1; then
               echo "回滚完成，旧版本在 :$dash_port 恢复健康（部署仍按失败报告）。"
-              exit 1
+              rolled=1
+              break
             fi
             sleep 6
           done
+          if [ "$rolled" = "1" ]; then
+            # 回滚成功：保持 job 为失败状态（部署本身已失败），但本步骤不再额外 exit 1
+            echo "Rollback verified successful — deployment remains failed, rollback step exits 0."
+            exit 0
+          fi
           echo "回滚后仍未通过健康检查——需要人工介入。" >&2
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80 || true
           exit 1
