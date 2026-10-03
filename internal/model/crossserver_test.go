@@ -13,6 +13,9 @@ func testCrossSpec() CrossServerSpec {
 		Groups:       []CrossServerGroup{{ID: "g1", Servers: []string{"game-1"}}},
 		Features:     map[string]bool{"cross_battle": true},
 		MatchDomains: []CrossServerMatchDomain{{ID: "m1", Servers: []string{"game-1"}, Params: map[string]string{"mmr": "0-3000"}}},
+		CrossPlayTypes: []CrossPlayType{
+			{ID: "battlefield", Name: "跨服战场", Summary: "跨服 PVP 匹配对局", Lifecycle: CrossPlayLifecycleSeasonal, Matchmaking: true, Ranking: true, IDPrefix: "xb"},
+		},
 	}
 }
 
@@ -34,6 +37,14 @@ func TestHashCrossServerSpecDeterministic(t *testing.T) {
 	c.Features["cross_battle"] = false
 	if HashCrossServerSpec(c) == HashCrossServerSpec(testCrossSpec()) {
 		t.Error("different content produced the same hash")
+	}
+
+	// The type table is hashed content too: a changed table must move
+	// the hash (idempotent save relies on it).
+	tp := testCrossSpec()
+	tp.CrossPlayTypes[0].Lifecycle = CrossPlayLifecyclePersistent
+	if HashCrossServerSpec(tp) == HashCrossServerSpec(testCrossSpec()) {
+		t.Error("type table change produced the same hash")
 	}
 }
 
@@ -82,6 +93,17 @@ func TestValidateCrossServerSpec(t *testing.T) {
 		{"duplicate domain id", func(s *CrossServerSpec) {
 			s.MatchDomains = append(s.MatchDomains, CrossServerMatchDomain{ID: "m1"})
 		}},
+		{"missing type id", func(s *CrossServerSpec) { s.CrossPlayTypes[0].ID = "" }},
+		{"bad type id charset", func(s *CrossServerSpec) { s.CrossPlayTypes[0].ID = "Cross Battle" }},
+		{"duplicate type id", func(s *CrossServerSpec) {
+			s.CrossPlayTypes = append(s.CrossPlayTypes, CrossPlayType{ID: "battlefield", IDPrefix: "zz"})
+		}},
+		{"bad type lifecycle", func(s *CrossServerSpec) { s.CrossPlayTypes[0].Lifecycle = "forever" }},
+		{"type id prefix too short", func(s *CrossServerSpec) { s.CrossPlayTypes[0].IDPrefix = "x" }},
+		{"type id prefix uppercase", func(s *CrossServerSpec) { s.CrossPlayTypes[0].IDPrefix = "XB" }},
+		{"duplicate type id prefix", func(s *CrossServerSpec) {
+			s.CrossPlayTypes = append(s.CrossPlayTypes, CrossPlayType{ID: "chat", IDPrefix: "xb"})
+		}},
 	}
 	for _, tc := range cases {
 		spec := testCrossSpec()
@@ -112,7 +134,8 @@ func TestEmptyCrossServerConfigETag(t *testing.T) {
 func TestNormalizeCrossServerSpec(t *testing.T) {
 	spec := NormalizeCrossServerSpec(CrossServerSpec{})
 	if spec.Topology.Clusters == nil || spec.Groups == nil ||
-		spec.Features == nil || spec.MatchDomains == nil {
+		spec.Features == nil || spec.MatchDomains == nil ||
+		spec.CrossPlayTypes == nil {
 		t.Fatal("normalization left nil containers")
 	}
 	// Empty params collapse to nil so a domain without params and one with
@@ -134,6 +157,7 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 	spec.Groups[0].Servers[0] = "game-mutated"
 	spec.Features["cross_battle"] = false
 	spec.MatchDomains[0].Params["mmr"] = "9999"
+	spec.CrossPlayTypes = append(spec.CrossPlayTypes, CrossPlayType{ID: "chat"})
 
 	if clone.Topology.Clusters[0].Servers[0] != "game-1" {
 		t.Error("clone shares the cluster servers array")
@@ -146,6 +170,9 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 	}
 	if clone.MatchDomains[0].Params["mmr"] != "0-3000" {
 		t.Error("clone shares the params map")
+	}
+	if len(clone.CrossPlayTypes) != 1 {
+		t.Error("clone shares the type table slice")
 	}
 	if HashCrossServerSpec(spec) == HashCrossServerSpec(clone) {
 		t.Error("mutated original still hashes like the clone")

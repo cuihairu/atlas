@@ -1,6 +1,6 @@
 # 跨服配置中心
 
-Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩法所需的拓扑、参与分组、玩法开关、匹配域，以及服务器标记与 profile 的配置化定义。它**不是**通用配置中心（如 Apollo/Nacos），也**不**替代游戏自身的数值/业务配置管线（如 cage 产物）。
+Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩法所需的拓扑、参与分组、玩法开关、匹配域、玩法类型表，以及服务器标记与 profile 的配置化定义。它**不是**通用配置中心（如 Apollo/Nacos），也**不**替代游戏自身的数值/业务配置管线（如 cage 产物）。
 
 ---
 
@@ -8,7 +8,7 @@ Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩�
 
 | 维度 | Atlas 配置中心 | 通用配置中心 | 游戏配置管线 |
 |---|---|---|---|
-| **管辖内容** | 跨服拓扑、参与分组、玩法开关、匹配域、服务器标记、profile | 业务通用配置、功能开关、白名单、限流规则 | 数值表、道具、副本、技能、平衡性参数 |
+| **管辖内容** | 跨服拓扑、参与分组、玩法开关、匹配域、玩法类型表、服务器标记、profile | 业务通用配置、功能开关、白名单、限流规则 | 数值表、道具、副本、技能、平衡性参数 |
 | **消费者** | 游戏服务器进程（启动/运行中） | 网关、微服务、后台服务 | 策划工具、客户端热更、服务端热更 |
 | **更新语义** | Notify-then-pull（版本号+hash，不推全文） | 推送全量/增量、订阅回调、灰度发布 | 发布流水线、灰度、回滚、A/B 测试 |
 | **一致性要求** | 单调版本、幂等、启动快失败、运行中不断服 | 最终一致/强一致（视产品） | 强一致、审计、变更记录 |
@@ -20,23 +20,106 @@ Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩�
 
 ## 2. 配置文档结构
 
-单份 JSON 文档（`CrossServerSpec`），四段：
+单份 JSON 文档（`CrossServerSpec`），五段：
 
 ```json
 {
   "topology": { "clusters": [ { "id": "cluster-ea", "name": "华东战场", "region": "cn-east", "status": "active", "servers": ["game-1001", "game-1002"] } ] },
   "groups": [ { "id": "season-1", "name": "第一期", "servers": ["game-1001"] } ],
   "features": { "cross_battlefield": true, "world_boss": false },
-  "match_domains": [ { "id": "mmr-0-3000", "name": "0-3000 段", "servers": ["game-1001", "game-2001"], "params": { "mmr_range": "0-3000", "max_team": "3" } } ]
+  "match_domains": [ { "id": "mmr-0-3000", "name": "0-3000 段", "servers": ["game-1001", "game-2001"], "params": { "mmr_range": "0-3000", "max_team": "3" } } ],
+  "crossplay_types": [
+    { "id": "battlefield", "name": "跨服战场/竞技", "summary": "跨服 PVP 匹配对局", "lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb" },
+    { "id": "dungeon", "name": "跨服副本/BOSS", "summary": "多人协作 PVE", "id_prefix": "xd" }
+  ]
 }
 ```
 
-- **topology.clusters**：跨服拓扑集群（一组共同参与跨服玩法的服务器）。`servers` 允许先建集群后补成员。
+- **topology.clusters**：跨服拓扑集群（一组共同参与跨服玩法的服务器）。`servers` 允许先建集群后补成员。集群 `id` 即跨服组/集群 ID（§2.1）。
 - **groups**：参与分组（运营口径圈定的一批服务器，如「华东跨服战场第一期」）。
 - **features**：玩法开关（键值对，键合法字符 `[a-z0-9._-]`，值布尔）。
 - **match_domains**：匹配域（同一匹配池的服务器集合，`params` 为游戏自定义字符串参数）。
+- **crossplay_types**：跨服玩法类型表（§2.2）——每类玩法的代码标识、定名、一句话定义、生命周期、走不走匹配/榜单、运行时 ID 前缀。
 
-文档通过 `NormalizeCrossServerSpec` 归一化（nil 切片/映射 → 空容器），保证**同一语义配置 hash 恒定**，幂等保存才生效。
+文档通过 `NormalizeCrossServerSpec` 归一化（nil 切片/映射 → 空容器，五段同理），保证**同一语义配置 hash 恒定**，幂等保存才生效。
+
+### 2.1 跨服 ID 体系
+
+跨服级实体的 ID 全部是**小写 ASCII + 连字符分段**（kebab），与服务器
+`ServerID`（`game-1001` = 种类-编号）同一分段风格：**首段是种类前缀，
+段从左到右递进「什么 → 归属 → 时序 → 随机」**，单凭 ID 就能读出定位信息。
+跨服 ID 分**配置态**与**运行时**两态，签发者与生命周期不同：
+
+**配置态 ID** —— Atlas 托管，运营在配置中心定义，随文档版本走
+notify-then-pull：
+
+| ID | 格式 | 示例 | 说明 |
+|---|---|---|---|
+| 跨服组/集群 ID（`cluster_id`） | `cluster-<scope>[-<seq>]` | `cluster-ea`、`cluster-ea-2` | 拓扑集群主键；scope 用区域或运营口径缩写 |
+| 跨服类型 ID | `<word>`（`[a-z0-9._-]`） | `battlefield` | 类型表主键，术语契约的代码标识（§2.2） |
+| 分组 / 匹配域 ID | `<kind>-<scope>`（惯例） | `season-1`、`mmr-0-3000` | 参与分组 / 匹配域主键 |
+
+**运行时 ID** —— 游戏侧**跨服对局管理服务**在开局/撮合/赛季开局时签发，
+**Atlas 只规范格式：不生成、不存储、不回写**（配置中心不为对局计数）：
+
+| ID | 格式 | 示例 | 签发者 | 生命周期 |
+|---|---|---|---|---|
+| 跨服玩法实例 ID | `<类型前缀>i-<cluster_id>-<yymmdd>-<序号>` | `xbi-cluster-ea-261004-0042` | 跨服对局管理服务 | 局起签发、局终作废（留存于对局日志/榜单） |
+| 跨服匹配 ID | `xm-<match_domain_id>-<yymmdd>-<序号>` | `xm-mmr-0-3000-261004-0187` | 匹配服务（可并入管理服务） | 撮合期；成局后映射为实例 ID |
+| 跨服排行榜 ID | `xr-<类型>-<周期>` | `xr-battlefield-s3` | 赛季开局由管理服务签发，或运营在配置态预定义 | 赛季 / 周期 |
+
+- **类型前缀**：实例 ID 首段 = 类型表的 `id_prefix` + `i`（instance），
+  如 `battlefield` 的前缀 `xb` → 实例 `xbi-…`。`id_prefix` 全表唯一，
+  一条日志先按前缀认类型、再按第二段认归属。
+- **可回溯到参与服务器**：实例 ID 第二段就是 `cluster_id`——查本文档
+  `topology.clusters` 即得该局的参与服务器全集（对比改动前后版本可得
+  成员增减）；匹配 ID 第二段是 `match_domain_id`，同理。
+- **两态边界**：配置态 ID 随配置版本生效与扩散（同内容保存不升版本）；
+  运行时 ID 永不回写 Atlas——实例归属由对局服务自持，Atlas 只提供
+  拓扑真相（cluster/domain → servers）。
+
+### 2.2 跨服玩法类型表
+
+`crossplay_types` 是跨服玩法的**类型定义表**（枚举由运营发布，非代码内置）。
+字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | ✓ | 代码标识（术语契约锚点），`[a-z0-9._-]`，表内唯一 |
+| `name` | | 中文定名（展示名） |
+| `summary` | | 一句话定义 |
+| `lifecycle` | | `persistent`（缺省，常驻）/ `seasonal`（赛季）/ `ephemeral`（限时） |
+| `matchmaking` | | 参与是否经 `match_domains` 匹配池撮合 |
+| `ranking` | | 是否需要排行榜数据汇聚 |
+| `id_prefix` | | 该类型运行时 ID 前缀，2–8 位小写字母，全表唯一（§2.1） |
+
+**术语契约**——同一概念只有一个定名，文档 / 管理台 / 接入方引用同一套：
+
+| 中文定名 | English 定名 | 代码标识（`id`） | `id_prefix` |
+|---|---|---|---|
+| 跨服战场/竞技 | Cross-Server Battlefield | `battlefield` | `xb` |
+| 跨服副本/BOSS | Cross-Server Dungeon | `dungeon` | `xd` |
+| 跨服排行榜 | Cross-Server Ranking | `ranking` | `xr` |
+| 跨服公会战/领地战 | Cross-Server Guild War | `guildwar` | `xg` |
+| 跨服交易行/拍卖 | Cross-Server Trade | `trade` | `xt` |
+| 跨服聊天/社交 | Cross-Server Chat | `chat` | `xc` |
+| 跨服组队/招募 | Cross-Server Team Up | `team` | `xp` |
+
+**七类简介**——一句话定义 / 参与形态 / 典型配置 / 生命周期：
+
+| 类型 | 一句话定义 | 参与形态 | 典型配置 | 生命周期 |
+|---|---|---|---|---|
+| `battlefield` | 跨服 PVP 匹配对局（战场/竞技场） | 各服玩家进同一匹配池，撮合成局后跨服进图 | `matchmaking=true`（必用 `match_domain` 按段位分池），`ranking=true`（段位/战绩榜） | `seasonal`（赛季重置） |
+| `dungeon` | 多人协作 PVE（副本/世界 BOSS） | 跨服组队进同一副本实例，协作击杀 | `matchmaking=true`（组队撮合）；榜单交给 `ranking` 类型 | `persistent` 常驻（单局实例限时） |
+| `ranking` | 数据汇聚排名 | 各服上报成绩，按榜聚合出全服榜 | 不走匹配；本类型即汇聚本体 | `seasonal`（赛季榜）或 `persistent`（总榜） |
+| `guildwar` | 组织对组织对抗（公会战/领地战） | 公会为单位报名，多服争夺领地/据点 | 不用匹配（报名制），`ranking=true`（战绩/占领榜） | `seasonal`（赛季） |
+| `trade` | 经济互通（交易行/拍卖） | 各服寄售与竞价共享同一市场 | 无匹配、无榜单 | `persistent` 常驻 |
+| `chat` | 频道互通（聊天/社交） | 各服玩家进同一频道发言 | 无匹配、无榜单 | `persistent` 常驻 |
+| `team` | 跨服组队入口（组队/招募） | 各服玩家跨服挂招募、申请入队 | `matchmaking=true`（队伍撮合） | `persistent` 常驻 |
+
+> 类型表是**舰队级声明**：改动任一行都会让变更信号以 `targets=["*"]`
+> 全局扩散（与玩法开关同级）——类型没有分服务器成员，全体在线注册都
+> 需要拉新版本。
 
 ---
 
@@ -76,7 +159,7 @@ Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩�
 
 ### 4.4 变更信号的定向投递
 
-- **targets**（变更了什么结构）：改动的 cluster/group/match-domain ID 列表，或 `["*"]`（玩法开关变更等全局变更）。
+- **targets**（变更了什么结构）：改动的 cluster/group/match-domain ID 列表，或 `["*"]`（玩法开关、玩法类型表变更等全局变更）。
 - **receivers / config_servers**（谁该动作）：变更前后文档中、上述 targets 所涉集合的**并集成员**，且仅限**当前在线的注册**（`Status != offline/disabled`）。下线即退订，下次启动走启动拉取。
 - 订阅端收到信号 → `config_servers` 包含自己 → 拉取；不含 → 忽略。
 - 回调派发对**每个在线 callback 声明者**逐个发送，与 `config_servers` 无关（声明了回调就通知）。
@@ -126,7 +209,8 @@ curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: applica
   "topology": { "clusters": [{ "id": "c1", "servers": ["game-1001"] }] },
   "groups": [],
   "features": { "cross_battle": true },
-  "match_domains": []
+  "match_domains": [],
+  "crossplay_types": [{ "id": "battlefield", "name": "跨服战场/竞技", "lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb" }]
 }'
 # 200 {"config":{...},"notify":{"bus":"redis","targets":["c1"],"receivers":["game-1001"],"idempotent":false,"callbacks":{"targets":1,"delivered":1,"failed":0}}}
 ```
@@ -168,7 +252,7 @@ POST /v1/registry/servers/register
 
 - **版本/Hash/更新时间/通知总线** 一眼可见
 - **脏标记**（未保存修改）+ **发布按钮**（幂等保存直接提示「内容未变化」）
-- 四段分卡片：集群 / 分组 / 玩法开关 / 匹配域
+- 分段分卡片：集群 / 分组 / 玩法开关 / 匹配域；**类型表**（§2.2）当前经 API/JSON 全量发布，管理台卡片排期中（见 TODO）——页面保存只透传该段，不会抹掉已发布内容
 - 每段增删改模态框，服务器成员用 tag-input（逗号/回车分隔）
 - 发布后即时展示 **NotifyResult**：总线类型、变更目标、受影响服务器、回调送达/失败明细、bus 错误（无订阅者不报错，只记录）
 

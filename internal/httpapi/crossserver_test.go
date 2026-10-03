@@ -106,6 +106,10 @@ func specBody() map[string]any {
 		"groups":        []map[string]any{{"id": "g-1", "name": "第一期", "servers": []string{"game-1001"}}},
 		"features":      map[string]bool{"world-boss": true, "arena": false},
 		"match_domains": []map[string]any{{"id": "md-1", "servers": []string{"game-1001", "game-1002"}, "params": map[string]string{"mmr_range": "500"}}},
+		"crossplay_types": []map[string]any{
+			{"id": "battlefield", "name": "跨服战场/竞技", "summary": "跨服 PVP 匹配对局",
+				"lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb"},
+		},
 	}
 }
 
@@ -555,6 +559,76 @@ func TestRegisterCoexistingModesAndSwitch(t *testing.T) {
 	}
 	if srv.NotifyMode != "poll" || srv.NotifyCallbackURL != "" {
 		t.Errorf("switch did not replace declaration: mode=%q url=%q", srv.NotifyMode, srv.NotifyCallbackURL)
+	}
+}
+
+// TestCrossServerConfigPullOnPublicPort guards the split-mount promise of
+// docs/config-center.md §4.2/§5: the strict pull is served on the public
+// listener too (deployments without a registry gateway pull it there),
+// not only on the registry listener. The all-in-one RegisterRoutes mux
+// would hide a missing public mount — this test registers only the
+// public/admin route sets the way main.go wires its listeners.
+func TestCrossServerConfigPullOnPublicPort(t *testing.T) {
+	mem := memory.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	events := httpadapter.New()
+	crossSvc := crossserver.New(mem, mem, events, logger)
+	handler := New(
+		registry.New(mem, mem, logger), discovery.New(mem, mem), directory.New(mem),
+		admin.New(mem), routing.New(mem, mem, mem), crossSvc, mem, events, logger,
+	)
+
+	mux := http.NewServeMux()
+	handler.RegisterPublicRoutes(mux)
+	handler.RegisterAdminRoutes(mux)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// Unpublished: JSON CONFIG_NOT_FOUND — a plain mux "404 page not
+	// found" here would mean the route is not mounted on the listener.
+	resp := getJSON(t, ts, "/v1/crossserver/config")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("public pull before publish = %d, want 404", resp.StatusCode)
+	}
+	var errBody struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	decode(t, resp, &errBody)
+	if errBody.Error.Code != "CONFIG_NOT_FOUND" {
+		t.Errorf("error code = %q, want CONFIG_NOT_FOUND", errBody.Error.Code)
+	}
+
+	// Publish via admin, then pull on the public listener: the fifth
+	// section (crossplay_types) must round-trip through both listeners.
+	resp = putJSON(t, ts, "/v1/admin/crossserver/config", specBody())
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("publish = %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	resp.Body.Close()
+
+	resp = getJSON(t, ts, "/v1/crossserver/config")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("public pull = %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	var cfg struct {
+		Version int `json:"version"`
+		Spec    struct {
+			CrossPlayTypes []struct {
+				ID       string `json:"id"`
+				IDPrefix string `json:"id_prefix"`
+			} `json:"crossplay_types"`
+		} `json:"spec"`
+	}
+	decode(t, resp, &cfg)
+	if cfg.Version != 1 {
+		t.Errorf("version = %d, want 1", cfg.Version)
+	}
+	if len(cfg.Spec.CrossPlayTypes) != 1 ||
+		cfg.Spec.CrossPlayTypes[0].ID != "battlefield" ||
+		cfg.Spec.CrossPlayTypes[0].IDPrefix != "xb" {
+		t.Errorf("crossplay_types roundtrip = %+v", cfg.Spec.CrossPlayTypes)
 	}
 }
 

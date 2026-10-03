@@ -63,24 +63,37 @@ func (h *Handler) WithAudit(a *AuditLog) *Handler {
 
 // RegisterRoutes registers all Atlas routes on a single mux (legacy, for
 // development with a single port). For production, use the zone-specific
-// methods below.
+// methods below. The shared cross-server pull is mounted exactly once —
+// ServeMux rejects duplicate patterns.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	h.RegisterRegistryRoutes(mux)
+	h.registerRegistryRoutes(mux)
 	h.RegisterPublicRoutes(mux)
 	h.RegisterAdminRoutes(mux)
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
 	mux.HandleFunc("GET /readyz", h.handleReadyz)
 }
 
-// RegisterRegistryRoutes registers server registration / heartbeat / unregister
-// routes. Mount on the internal-network listener with RegistryAuth middleware.
+// RegisterRegistryRoutes registers server registration / heartbeat /
+// unregister routes plus the cross-server config pull. Mount on the
+// internal-network listener with RegistryAuth middleware.
 func (h *Handler) RegisterRegistryRoutes(mux *http.ServeMux) {
+	h.registerRegistryRoutes(mux)
+	h.registerCrossServerPull(mux)
+}
+
+// registerRegistryRoutes mounts the registry verbs only; each exported
+// wrapper adds the shared cross-server pull itself so the legacy
+// all-in-one RegisterRoutes ends up mounting it exactly once.
+func (h *Handler) registerRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/registry/servers/register", h.handleRegister)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/heartbeat", h.handleHeartbeat)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/unregister", h.handleUnregister)
-	// Cross-server config pull (config center): the endpoint game servers
-	// call at startup and after every change signal. ETag/If-None-Match make
-	// polling cheap for poll-mode servers.
+}
+
+// registerCrossServerPull mounts GET /v1/crossserver/config — the endpoint
+// game servers call at startup and after every change signal (config
+// center). ETag/If-None-Match make polling cheap for poll-mode servers.
+func (h *Handler) registerCrossServerPull(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/crossserver/config", h.handleGetCrossServerConfig)
 }
 
@@ -94,6 +107,12 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 
 	// Routing
 	mux.HandleFunc("GET /v1/routing/recommended", h.handleRecommended)
+
+	// The strict config pull also serves the public listener: game servers
+	// with no registry gateway pull it here (docs/config-center.md §4.2/§5
+	// — 公网 :8080 / 注册 :8081). Unpublished is 404 CONFIG_NOT_FOUND,
+	// never an empty document.
+	h.registerCrossServerPull(mux)
 
 	// Directory
 	mux.HandleFunc("POST /v1/directory/characters", h.handleCreateCharacter)

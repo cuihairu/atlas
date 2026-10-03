@@ -140,11 +140,24 @@ export interface CrossServerMatchDomain {
   params?: Record<string, string>;
 }
 
+// 跨服玩法类型表（crossplay_types）一行：与 Go model.CrossPlayType 同构。
+// lifecycle 缺省 persistent；id_prefix 是该类型运行时 ID 前缀（唯一）。
+export interface CrossPlayType {
+  id: string;
+  name?: string;
+  summary?: string;
+  lifecycle?: 'persistent' | 'seasonal' | 'ephemeral';
+  matchmaking?: boolean;
+  ranking?: boolean;
+  id_prefix?: string;
+}
+
 export interface CrossServerSpec {
   topology: { clusters: CrossServerCluster[] };
   groups: CrossServerGroup[];
   features: Record<string, boolean>;
   match_domains: CrossServerMatchDomain[];
+  crossplay_types: CrossPlayType[];
 }
 
 export interface CrossServerConfig {

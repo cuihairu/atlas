@@ -28,6 +28,9 @@ func testSpec() model.CrossServerSpec {
 		},
 		Features:     map[string]bool{"cross_battlefield": true},
 		MatchDomains: []model.CrossServerMatchDomain{},
+		CrossPlayTypes: []model.CrossPlayType{
+			{ID: "battlefield", Name: "跨服战场", Lifecycle: model.CrossPlayLifecycleSeasonal, Matchmaking: true, Ranking: true, IDPrefix: "xb"},
+		},
 	}
 }
 
@@ -211,6 +214,24 @@ func TestDiffTargets(t *testing.T) {
 	got = diffTargets(old, other)
 	if len(got) != 1 || got[0] != "season-2" {
 		t.Errorf("new group targets = %v, want [season-2]", got)
+	}
+
+	// The cross-play type table is a fleet-wide declaration: any edit
+	// (add / rename / field flip) is global, like a feature switch.
+	typed := model.NormalizeCrossServerSpec(testSpec())
+	typed.CrossPlayTypes[0].Ranking = !typed.CrossPlayTypes[0].Ranking
+	got = diffTargets(old, typed)
+	if len(got) != 1 || got[0] != model.TargetAll {
+		t.Errorf("type table edit targets = %v, want [*]", got)
+	}
+
+	// ...and an unchanged type table stays out of the signal when only
+	// a section changed: the diff must not escalate scoped edits.
+	scoped := model.NormalizeCrossServerSpec(testSpec())
+	scoped.MatchDomains = append(scoped.MatchDomains, model.CrossServerMatchDomain{ID: "md-2", Servers: []string{"game-3001"}})
+	got = diffTargets(old, scoped)
+	if len(got) != 1 || got[0] != "md-2" {
+		t.Errorf("new domain targets = %v, want [md-2]", got)
 	}
 }
 

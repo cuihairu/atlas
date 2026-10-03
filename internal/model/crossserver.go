@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// 跨服协调配置的四段配置面（配置中心的托管内容）：
-// 拓扑（集群）、参与分组、玩法开关、匹配域。全部为声明式结构，
-// 按规范化 JSON 持久化并计算 hash。
+// 跨服协调配置的五段配置面（配置中心的托管内容）：拓扑（集群）、参与
+// 分组、玩法开关、匹配域、跨服玩法类型表。全部为声明式结构，按规范化
+// JSON 持久化并计算 hash。
 type (
 	// CrossServerCluster 跨服拓扑中的一个集群（一组共同参与跨服玩法的
 	// 服务器）。Servers 为 server_id 列表，允许先建集群后补成员。
@@ -41,12 +41,28 @@ type (
 		Params  map[string]string `json:"params,omitempty"`
 	}
 
+	// CrossPlayType 跨服玩法类型表（crossplay_types）的一行：一类跨服
+	// 玩法的声明式元数据（docs/config-center.md §2.2）。类型表是舰队级
+	// 声明——改动即全局变更（diff targets=["*"]）。ID 是代码标识（术语
+	// 契约的定名锚点），IDPrefix 是该类型运行时 ID 的类型前缀（§2.1
+	// 跨服 ID 体系，全表唯一），供日志/榜单按前缀 grep 回溯。
+	CrossPlayType struct {
+		ID          string `json:"id"`                    // 代码标识，如 "battlefield"（[a-z0-9._-]）
+		Name        string `json:"name,omitempty"`        // 中文定名，如「跨服战场」
+		Summary     string `json:"summary,omitempty"`     // 一句话定义
+		Lifecycle   string `json:"lifecycle,omitempty"`   // persistent(缺省) / seasonal / ephemeral
+		Matchmaking bool   `json:"matchmaking,omitempty"` // 参与经 match_domains 池撮合
+		Ranking     bool   `json:"ranking,omitempty"`     // 需要排行榜数据汇聚
+		IDPrefix    string `json:"id_prefix,omitempty"`   // 运行时 ID 类型前缀（2-8 位小写字母，全表唯一）
+	}
+
 	// CrossServerSpec 跨服配置全文。
 	CrossServerSpec struct {
-		Topology     CrossServerTopology      `json:"topology"`
-		Groups       []CrossServerGroup       `json:"groups"`
-		Features     map[string]bool          `json:"features"`
-		MatchDomains []CrossServerMatchDomain `json:"match_domains"`
+		Topology       CrossServerTopology      `json:"topology"`
+		Groups         []CrossServerGroup       `json:"groups"`
+		Features       map[string]bool          `json:"features"`
+		MatchDomains   []CrossServerMatchDomain `json:"match_domains"`
+		CrossPlayTypes []CrossPlayType          `json:"crossplay_types"`
 	}
 
 	// CrossServerTopology 跨服拓扑（集群列表）。
@@ -64,6 +80,27 @@ type (
 	}
 )
 
+// CrossPlayType.Lifecycle 的合法取值（缺省 persistent）：常驻玩法 /
+// 赛季制（榜单与匹配池随赛季重置）/ 限时活动窗口。
+const (
+	CrossPlayLifecyclePersistent = "persistent"
+	CrossPlayLifecycleSeasonal   = "seasonal"
+	CrossPlayLifecycleEphemeral  = "ephemeral"
+)
+
+// 七类标准跨服玩法类型的代码标识（术语契约锚点，docs/config-center.md
+// §2.2）。类型表由运营发布而非代码内置，这套常量保证文档、管理台与
+// 接入方对「类型定名」引用的是同一个词。
+const (
+	CrossPlayBattlefield = "battlefield" // 跨服战场 Cross-Server Battlefield（xb）
+	CrossPlayDungeon     = "dungeon"     // 跨服副本/BOSS Cross-Server Dungeon（xd）
+	CrossPlayRanking     = "ranking"     // 跨服排行榜 Cross-Server Ranking（xr）
+	CrossPlayGuildWar    = "guildwar"    // 跨服公会战/领地战 Cross-Server Guild War（xg）
+	CrossPlayTrade       = "trade"       // 跨服交易行/拍卖 Cross-Server Trade（xt）
+	CrossPlayChat        = "chat"        // 跨服聊天/社交 Cross-Server Chat（xc）
+	CrossPlayTeam        = "team"        // 跨服组队/招募 Cross-Server Team Up（xp）
+)
+
 // Clone returns a deep copy of the spec: every slice and map is rebuilt,
 // so a caller mutating its copy can never write through into a stored
 // snapshot. Same zero-sharing rule the server store applies to tags —
@@ -71,10 +108,11 @@ type (
 // must do it explicitly.
 func (s CrossServerSpec) Clone() CrossServerSpec {
 	out := CrossServerSpec{
-		Topology:    CrossServerTopology{Clusters: make([]CrossServerCluster, len(s.Topology.Clusters))},
-		Groups:      make([]CrossServerGroup, len(s.Groups)),
-		Features:    maps.Clone(s.Features),
-		MatchDomains: make([]CrossServerMatchDomain, len(s.MatchDomains)),
+		Topology:       CrossServerTopology{Clusters: make([]CrossServerCluster, len(s.Topology.Clusters))},
+		Groups:         make([]CrossServerGroup, len(s.Groups)),
+		Features:       maps.Clone(s.Features),
+		MatchDomains:   make([]CrossServerMatchDomain, len(s.MatchDomains)),
+		CrossPlayTypes: slices.Clone(s.CrossPlayTypes),
 	}
 	for i, c := range s.Topology.Clusters {
 		c.Servers = slices.Clone(c.Servers)
@@ -115,6 +153,9 @@ func NormalizeCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 	if spec.MatchDomains == nil {
 		spec.MatchDomains = []CrossServerMatchDomain{}
 	}
+	if spec.CrossPlayTypes == nil {
+		spec.CrossPlayTypes = []CrossPlayType{}
+	}
 	for i := range spec.MatchDomains {
 		if spec.MatchDomains[i].Servers == nil {
 			spec.MatchDomains[i].Servers = []string{}
@@ -149,6 +190,8 @@ func CloneCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 		d.Params = maps.Clone(d.Params)
 		out.MatchDomains[i] = d
 	}
+	// 类型表行是纯值类型（string/bool），切片克隆即完全独立。
+	out.CrossPlayTypes = slices.Clone(spec.CrossPlayTypes)
 	return out
 }
 
@@ -226,6 +269,52 @@ func ValidateCrossServerSpec(spec CrossServerSpec) error {
 		domainIDs[d.ID] = true
 		if err := validateServerIDs(fmt.Sprintf("match_domains[%d].servers", i), d.Servers); err != nil {
 			return err
+		}
+	}
+	typeIDs := make(map[string]bool, len(spec.CrossPlayTypes))
+	prefixes := make(map[string]bool, len(spec.CrossPlayTypes))
+	for i, tp := range spec.CrossPlayTypes {
+		if tp.ID == "" {
+			return fmt.Errorf("crossplay_types[%d].id: required", i)
+		}
+		if err := validateConfigKey(tp.ID); err != nil {
+			return fmt.Errorf("crossplay_types[%d].id: %w", i, err)
+		}
+		if typeIDs[tp.ID] {
+			return fmt.Errorf("crossplay_types[%d].id %q: duplicate", i, tp.ID)
+		}
+		typeIDs[tp.ID] = true
+		switch tp.Lifecycle {
+		case "", CrossPlayLifecyclePersistent, CrossPlayLifecycleSeasonal, CrossPlayLifecycleEphemeral:
+		default:
+			return fmt.Errorf("crossplay_types[%d].lifecycle %q: must be persistent, seasonal or ephemeral", i, tp.Lifecycle)
+		}
+		if tp.IDPrefix == "" {
+			continue
+		}
+		if err := validateIDPrefix(tp.IDPrefix); err != nil {
+			return fmt.Errorf("crossplay_types[%d].id_prefix: %w", i, err)
+		}
+		// Prefixes must be unique so a runtime ID greps back to exactly
+		// one type (ambiguous prefixes break log/bboard traceability).
+		if prefixes[tp.IDPrefix] {
+			return fmt.Errorf("crossplay_types[%d].id_prefix %q: duplicate", i, tp.IDPrefix)
+		}
+		prefixes[tp.IDPrefix] = true
+	}
+	return nil
+}
+
+// validateIDPrefix checks a runtime-ID type prefix: 2-8 lowercase ASCII
+// letters (docs/config-center.md §2.1), e.g. "xb" / "xd". Letters-only
+// keeps prefixes unambiguous against the "-" segment separator.
+func validateIDPrefix(p string) error {
+	if len(p) < 2 || len(p) > 8 {
+		return fmt.Errorf("%q: must be 2-8 lowercase letters", p)
+	}
+	for i := 0; i < len(p); i++ {
+		if c := p[i]; c < 'a' || c > 'z' {
+			return fmt.Errorf("%q: must be 2-8 lowercase letters", p)
 		}
 	}
 	return nil

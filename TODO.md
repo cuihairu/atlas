@@ -243,3 +243,11 @@
 
 - [x] 请求级追踪（X-Request-ID）——三个 HTTP 监听口（公网/注册/管理）最外层中间件：入站合法 id（`[A-Za-z0-9._:-]` ≤64）沿用、缺失/非法/超长生成 128-bit 随机 hex，回显响应头并注入 context；请求完成记录含 request_id/method/path/status/duration_ms 的访问日志，`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头不记日志；中间件置于鉴权/限流之外，被拒绝的请求同样被追踪（网关透传同一 header 可跨跳关联）
 - [x] 目录写路径延迟指标 `atlas_directory_write_duration_seconds{op}`——服务层写（create/update/delete）与事件投影（按事件类型标记：created/updated/deleted/…，生产写路径 REST/gRPC 均经此投影）在 service 层计时观测，metrics 未接线时为 nil 安全空操作；docs/api.md 指标表 + 「请求追踪」小节、docs/architecture.md §7 指标表同步
+
+---
+
+## 跨服 ID 体系与玩法类型表（2026-10-04）
+
+- [x] 跨服 ID 体系规范（docs/config-center.md §2.1）——跨服级 ID 分两态：**配置态**（`cluster_id`、类型 ID、分组/匹配域 ID，Atlas 托管、随文档版本 notify-then-pull）由运营定义；**运行时**（跨服玩法实例 / 匹配 / 排行榜 ID）由跨服对局管理服务在开局/撮合/赛季开局签发，**Atlas 只规范格式：不生成、不存储、不回写**。命名前缀+分段与 ServerID（`game-1001`）同风格——首段种类前缀，左→右「什么→归属→时序→随机」；实例 ID 第二段即 `cluster_id`（回溯参与服务器全集），匹配 ID 第二段为 `match_domain_id`，类型前缀（`id_prefix`）全表唯一、日志先认类型再认归属
+- [x] 跨服玩法类型枚举与类型表（§2.2）——七类（battlefield/dungeon/ranking/guildwar/trade/chat/team）术语契约表（中文定名/English 定名/代码标识/`id_prefix`）+ 每类简介表（一句话定义/参与形态/典型配置/生命周期）；`CrossPlayType` 进 Spec 第五段 `crossplay_types`（含 `summary`/`lifecycle` persistent-seasonal-ephemeral/`matchmaking`/`ranking`/`id_prefix`），Normalize 与双 Clone 补段、Validate 补类型 ID 唯一+字符集/lifecycle 枚举/id_prefix 2–8 小写唯一，diff 对齐：类型表变更 → `targets=["*"]` 全局扩散；`model.CrossPlayBattlefield` 等七常量作编译期定名锚点；契约测试夹具三库往返带第五段，dashboard 类型补齐（保存只透传不抹段）
+- [ ] 管理台跨服配置「玩法类型表」编辑卡片——当前经 API/JSON 全量发布、页面全量透传保存，卡片排期（docs/config-center.md §7 已注明）

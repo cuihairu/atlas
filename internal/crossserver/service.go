@@ -4,8 +4,10 @@
 //
 // Scope boundary (docs/config-center.md §3): Atlas hosts *coordination*
 // config only — cross-server topology, participation groups, feature
-// switches, match domains, plus server tags/profiles. Game numeric and
-// business config belong to the game's own config pipeline.
+// switches, match domains, the cross-play type table (crossplay_types,
+// the vocabulary + runtime-ID prefixes per play type), plus server
+// tags/profiles. Game numeric and business config belong to the game's
+// own config pipeline.
 //
 // Update semantics are notify-then-pull: a change publishes a signal
 // carrying the new version/hash (never the body) and receivers pull
@@ -250,9 +252,9 @@ func (s *Service) Save(ctx context.Context, spec model.CrossServerSpec) (*SaveRe
 }
 
 // Notify signals a change on the bus and by callback. targets names what
-// changed (cluster/group/match-domain IDs or "*"); receivers names who is
-// affected (server IDs, carried on the bus event for subscriber-side
-// addressing). It never returns an error: the config is already
+// changed (cluster/group/match-domain IDs; feature switches and the type
+// table use "*"); receivers names who is affected (server IDs, carried on
+// the bus event for subscriber-side addressing). It never returns an error: the config is already
 // persisted, and receivers fall back to polling when a signal is lost.
 func (s *Service) Notify(ctx context.Context, cfg *model.CrossServerConfig, targets, receivers []string) NotifyResult {
 	if targets == nil {
@@ -551,7 +553,8 @@ func (s *Service) listServersAll(ctx context.Context) ([]*model.Server, error) {
 
 // diffTargets computes which clusters / groups / match domains changed so
 // subscribers can ignore signals that do not concern them. Feature-switch
-// changes are global (TargetAll).
+// and cross-play type table changes are global (TargetAll): the type
+// table is a fleet-wide declaration with no per-server membership.
 func diffTargets(old, updated model.CrossServerSpec) []string {
 	old = model.NormalizeCrossServerSpec(old)
 	updated = model.NormalizeCrossServerSpec(updated)
@@ -561,6 +564,9 @@ func diffTargets(old, updated model.CrossServerSpec) []string {
 	diffGroups(old.Groups, updated.Groups, set)
 	diffDomains(old.MatchDomains, updated.MatchDomains, set)
 	if !sameFeatures(old.Features, updated.Features) {
+		set[model.TargetAll] = true
+	}
+	if !slices.Equal(old.CrossPlayTypes, updated.CrossPlayTypes) {
 		set[model.TargetAll] = true
 	}
 	if len(set) == 0 {

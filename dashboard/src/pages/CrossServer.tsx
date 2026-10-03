@@ -22,6 +22,9 @@ const emptySpec = (): CrossServerSpec => ({
   groups: [],
   features: {},
   match_domains: [],
+  // 类型表由 API 全量带回（后端 Normalize 恒输出空数组），管理台暂只
+  // 透传不编辑（卡片排期见 TODO）——保留该段，发布时才不会抹掉它。
+  crossplay_types: [],
 });
 
 /** id 列表编辑用自由输入 tags（逗号/回车分隔）。 */

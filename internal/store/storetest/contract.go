@@ -1094,6 +1094,9 @@ func crossServerConfig(t *testing.T, ctx context.Context, s Core) {
 		Groups:       []model.CrossServerGroup{{ID: "g1", Name: "season-1", Servers: []string{"srv-1"}}},
 		Features:     map[string]bool{"world-boss": true, "arena": false},
 		MatchDomains: []model.CrossServerMatchDomain{{ID: "md-1", Servers: []string{"srv-1", "srv-2"}, Params: map[string]string{"mmr_range": "500"}}},
+		CrossPlayTypes: []model.CrossPlayType{
+			{ID: "battlefield", Name: "跨服战场", Lifecycle: model.CrossPlayLifecycleSeasonal, Matchmaking: true, Ranking: true, IDPrefix: "xb"},
+		},
 	}
 	spec = model.NormalizeCrossServerSpec(spec)
 
@@ -1130,6 +1133,10 @@ func crossServerConfig(t *testing.T, ctx context.Context, s Core) {
 	}
 	if len(got.Spec.MatchDomains) != 1 || got.Spec.MatchDomains[0].Params["mmr_range"] != "500" {
 		t.Errorf("match domain roundtrip = %+v", got.Spec.MatchDomains)
+	}
+	if len(got.Spec.CrossPlayTypes) != 1 || got.Spec.CrossPlayTypes[0].ID != "battlefield" ||
+		got.Spec.CrossPlayTypes[0].IDPrefix != "xb" || !got.Spec.CrossPlayTypes[0].Matchmaking {
+		t.Errorf("crossplay type roundtrip = %+v", got.Spec.CrossPlayTypes)
 	}
 
 	// The stored document must not alias the caller's spec: mutating the
