@@ -909,10 +909,16 @@ func (s *Store) SaveCrossServerConfig(_ context.Context, cfg *model.CrossServerC
 		next = s.crossConfig.Version + 1
 	}
 	saved := *cfg
+	// Deep-copy the spec: the stored document must not share backing
+	// arrays with the caller — a later in-place caller mutation would
+	// rewrite stored history (the SQL stores round-trip through JSON
+	// and never alias).
+	saved.Spec = model.CloneCrossServerSpec(cfg.Spec)
 	saved.Version = next
 	saved.UpdatedAt = time.Now()
 	s.crossConfig = &saved
-	return &saved, nil
+	cp := saved
+	return &cp, nil
 }
 
 // GetCrossServerConfig returns the current config.
@@ -924,5 +930,6 @@ func (s *Store) GetCrossServerConfig(_ context.Context) (*model.CrossServerConfi
 		return nil, fmt.Errorf("cross-server config: %w", store.ErrNotFound)
 	}
 	cp := *s.crossConfig
+	cp.Spec = model.CloneCrossServerSpec(s.crossConfig.Spec)
 	return &cp, nil
 }

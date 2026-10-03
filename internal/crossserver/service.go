@@ -20,6 +20,13 @@
 //	            logged as a degradation so operators can fall back);
 //	poll      — the server polls version/ETag itself (the third fallback,
 //	            also the effective behavior when nothing is declared).
+//
+// Signals are addressed (按服务/分组定向投递): the bus event names the
+// server IDs affected by the change — members of the changed clusters /
+// groups / match domains under the document before and after the save —
+// so a subscriber ignores signals that do not concern it. Callback
+// dispatch is per registration (every live callback declarer is called);
+// poll needs no addressing at all.
 package crossserver
 
 import (
@@ -31,6 +38,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -71,9 +79,14 @@ type CallbackResult struct {
 // for operator visibility: a failed fan-out never rolls back a persisted
 // config, it only degrades to poll until the receiver catches up.
 type NotifyResult struct {
-	Bus        string         `json:"bus"`
-	BusError   string         `json:"bus_error,omitempty"`
-	Targets    []string       `json:"targets"`
+	Bus      string   `json:"bus"`
+	BusError string   `json:"bus_error,omitempty"`
+	Targets  []string `json:"targets"`
+	// Receivers addresses the bus signal: the server IDs affected by this
+	// change (["*"] = everyone, [] = no live server is affected). Callback
+	// dispatch is independent of it — every live callback declarer is
+	// called.
+	Receivers  []string       `json:"receivers"`
 	Idempotent bool           `json:"idempotent"`
 	Callbacks  CallbackResult `json:"callbacks"`
 }
@@ -218,6 +231,7 @@ func (s *Service) Save(ctx context.Context, spec model.CrossServerSpec) (*SaveRe
 			Notify: NotifyResult{
 				Bus:        s.busName(),
 				Targets:    []string{},
+				Receivers:  []string{},
 				Idempotent: true,
 			},
 		}, nil
@@ -230,18 +244,24 @@ func (s *Service) Save(ctx context.Context, spec model.CrossServerSpec) (*SaveRe
 	saved.Spec = model.NormalizeCrossServerSpec(saved.Spec)
 
 	targets := diffTargets(prev.Spec, saved.Spec)
-	notify := s.Notify(ctx, saved, targets)
+	receivers := s.receivers(ctx, prev.Spec, saved.Spec, targets)
+	notify := s.Notify(ctx, saved, targets, receivers)
 	return &SaveResult{Config: saved, Notify: notify}, nil
 }
 
-// Notify signals a change on the bus and by callback. It never returns an
-// error: the config is already persisted, and receivers fall back to
-// polling when a signal is lost.
-func (s *Service) Notify(ctx context.Context, cfg *model.CrossServerConfig, targets []string) NotifyResult {
+// Notify signals a change on the bus and by callback. targets names what
+// changed (cluster/group/match-domain IDs or "*"); receivers names who is
+// affected (server IDs, carried on the bus event for subscriber-side
+// addressing). It never returns an error: the config is already
+// persisted, and receivers fall back to polling when a signal is lost.
+func (s *Service) Notify(ctx context.Context, cfg *model.CrossServerConfig, targets, receivers []string) NotifyResult {
 	if targets == nil {
 		targets = []string{model.TargetAll}
 	}
-	res := NotifyResult{Bus: s.busName(), Targets: targets}
+	res := NotifyResult{Bus: s.busName(), Targets: targets, Receivers: receivers}
+	if receivers == nil {
+		res.Receivers = []string{}
+	}
 
 	if s.events != nil {
 		e := &event.Event{
@@ -249,6 +269,7 @@ func (s *Service) Notify(ctx context.Context, cfg *model.CrossServerConfig, targ
 			ConfigVersion: cfg.Version,
 			ConfigHash:    cfg.Hash,
 			ConfigTargets: targets,
+			ConfigServers: receivers,
 			Timestamp:     time.Now(),
 		}
 		if err := s.events.Publish(ctx, e); err != nil {
@@ -286,7 +307,7 @@ func (s *Service) dispatchCallbacks(ctx context.Context, cfg *model.CrossServerC
 	if s.servers == nil {
 		return res
 	}
-	list, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: 1000})
+	list, err := s.listServersAll(ctx)
 	if err != nil {
 		res.Errors = append(res.Errors, "list servers: "+err.Error())
 		return res
@@ -294,7 +315,7 @@ func (s *Service) dispatchCallbacks(ctx context.Context, cfg *model.CrossServerC
 
 	var todo []callbackTarget
 	for _, srv := range list {
-		if srv.NotifyMode != model.NotifyModeCallback || srv.NotifyCallbackURL == "" {
+		if !srv.HasNotifyMode(model.NotifyModeCallback) || srv.NotifyCallbackURL == "" {
 			continue
 		}
 		// Subscription lifetime follows registration (docs/config-center.md
@@ -424,6 +445,108 @@ type callbackPayload struct {
 	// to hardcode a second base URL. Set from ATLAS_PUBLIC_URL.
 	CrossServerURL string    `json:"crossserver_url,omitempty"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// receivers addresses a change signal to the server IDs that must act on
+// it (按服务/分组定向投递): members of every changed cluster/group/match
+// domain, under the document before the save (a server just removed still
+// has to tear the feature down) and after it (a server just added still
+// has to join). A global change ("*" in targets) addresses everyone. Only
+// registrations that are still live are named — offline/disabled servers
+// unsubscribed with their registration and pull at next boot. When the
+// server list cannot be read, addressing degrades to "*" so the signal
+// over-notifies instead of silently dropping an update.
+func (s *Service) receivers(ctx context.Context, before, after model.CrossServerSpec, targets []string) []string {
+	if slices.Contains(targets, model.TargetAll) {
+		return []string{model.TargetAll}
+	}
+	if s.servers == nil {
+		return nil
+	}
+	want := map[string]bool{}
+	for _, spec := range []model.CrossServerSpec{before, after} {
+		index := targetMemberIndex(spec)
+		for _, t := range targets {
+			for id := range index[t] {
+				want[id] = true
+			}
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	live, err := s.listServersAll(ctx)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("receiver addressing degraded to all servers", "error", err)
+		}
+		return []string{model.TargetAll}
+	}
+	out := make([]string, 0, len(want))
+	for _, srv := range live {
+		if want[srv.ID] && receivesSignals(srv.Status) {
+			out = append(out, srv.ID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// targetMemberIndex maps each topology cluster / group / match domain id
+// to the set of server ids it contains.
+func targetMemberIndex(spec model.CrossServerSpec) map[string]map[string]bool {
+	spec = model.NormalizeCrossServerSpec(spec)
+	index := map[string]map[string]bool{}
+	add := func(id string, servers []string) {
+		set, ok := index[id]
+		if !ok {
+			set = map[string]bool{}
+			index[id] = set
+		}
+		for _, srv := range servers {
+			set[srv] = true
+		}
+	}
+	for _, c := range spec.Topology.Clusters {
+		add(c.ID, c.Servers)
+	}
+	for _, g := range spec.Groups {
+		add(g.ID, g.Servers)
+	}
+	for _, d := range spec.MatchDomains {
+		add(d.ID, d.Servers)
+	}
+	return index
+}
+
+// receivesSignals reports whether a server in this state still hears bus
+// signals: registration lifetime is subscription lifetime (下线即退订) —
+// offline and disabled are gone; starting / maintenance / drain are live
+// processes and stay addressable. Callback dispatch keeps its stricter
+// accept-traffic rule (an HTTP callback must not race a booting server).
+func receivesSignals(status model.ServerStatus) bool {
+	return status != model.StatusOffline && status != model.StatusDisabled
+}
+
+// listServersAll pages through the whole fleet (cursor = last ID, stores
+// order by ID) so addressing and callback dispatch never silently stop at
+// a page size.
+func (s *Service) listServersAll(ctx context.Context) ([]*model.Server, error) {
+	const pageSize = 500
+	var out []*model.Server
+	cursor := ""
+	for page := 0; page < 10000; page++ {
+		batch, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: pageSize, Cursor: cursor})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if len(batch) < pageSize {
+			return out, nil
+		}
+		cursor = batch[len(batch)-1].ID
+	}
+	return out, nil
 }
 
 // diffTargets computes which clusters / groups / match domains changed so

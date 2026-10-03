@@ -122,3 +122,32 @@ func TestNormalizeCrossServerSpec(t *testing.T) {
 		t.Error("empty params not collapsed to nil")
 	}
 }
+
+func TestCloneCrossServerSpecIndependent(t *testing.T) {
+	spec := testCrossSpec()
+	clone := CloneCrossServerSpec(spec)
+
+	// In-place mutation of the original must not reach the clone —
+	// stores hand out clones so caller mutations cannot rewrite
+	// stored history.
+	spec.Topology.Clusters[0].Servers[0] = "game-mutated"
+	spec.Groups[0].Servers[0] = "game-mutated"
+	spec.Features["cross_battle"] = false
+	spec.MatchDomains[0].Params["mmr"] = "9999"
+
+	if clone.Topology.Clusters[0].Servers[0] != "game-1" {
+		t.Error("clone shares the cluster servers array")
+	}
+	if clone.Groups[0].Servers[0] != "game-1" {
+		t.Error("clone shares the group servers array")
+	}
+	if !clone.Features["cross_battle"] {
+		t.Error("clone shares the features map")
+	}
+	if clone.MatchDomains[0].Params["mmr"] != "0-3000" {
+		t.Error("clone shares the params map")
+	}
+	if HashCrossServerSpec(spec) == HashCrossServerSpec(clone) {
+		t.Error("mutated original still hashes like the clone")
+	}
+}

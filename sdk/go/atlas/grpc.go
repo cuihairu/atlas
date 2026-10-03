@@ -113,6 +113,12 @@ func grpcError(err error) error {
 }
 
 func (b *grpcBackend) register(ctx context.Context, req RegisterRequest) (*RegisterResult, error) {
+	// The proto RegisterRequest carries no notify fields (the config center
+	// is REST-only, see fetchCrossServerConfig): fail loudly instead of
+	// registering without the declaration the caller asked for.
+	if req.NotifyMode != "" || req.NotifyCallbackURL != "" {
+		return nil, fmt.Errorf("atlas: notify_mode declaration requires the REST transport (got %s)", b.transport)
+	}
 	ctx, cancel := b.callCtx(ctx, b.registryToken)
 	defer cancel()
 	var out *RegisterResult

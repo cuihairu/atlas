@@ -459,6 +459,8 @@ func TestRegisterRejectsBadNotifyDeclaration(t *testing.T) {
 		{"callback with relative url", map[string]any{"notify_mode": "callback", "notify_callback_url": "/notify"}},
 		{"callback with non-http scheme", map[string]any{"notify_mode": "callback", "notify_callback_url": "ftp://host/notify"}},
 		{"unknown mode", map[string]any{"notify_mode": "telepathy"}},
+		{"unknown mode inside a mode list", map[string]any{"notify_mode": "callback,telepathy"}},
+		{"callback inside a mode list without url", map[string]any{"notify_mode": "subscribe,callback"}},
 		{"url without callback mode", map[string]any{"notify_callback_url": "http://127.0.0.1:9999/notify"}},
 	}
 	for _, tc := range cases {
@@ -477,6 +479,59 @@ func TestRegisterRejectsBadNotifyDeclaration(t *testing.T) {
 				t.Fatalf("register = %d, want 400: %s", resp.StatusCode, readBody(t, resp))
 			}
 		})
+	}
+}
+
+// TestRegisterCoexistingModesAndSwitch pins 可并存可切换: both push
+// channels may be declared at once ("subscribe,callback" + callback URL),
+// and a plain re-registration replaces the declaration — switching to
+// poll clears the old callback URL instead of leaving it behind.
+func TestRegisterCoexistingModesAndSwitch(t *testing.T) {
+	ts, mem, _ := setupCrossServer(t)
+	defer ts.Close()
+
+	register := func(mode, url string) int {
+		t.Helper()
+		body := map[string]any{
+			"server_id": "game-coexist", "name": "GC", "type": "game", "region": "cn-east",
+			"version": "1.0.0", "platform": "any",
+			"endpoint": map[string]any{"host": "10.0.0.9", "port": 30009},
+			"capacity": 100,
+		}
+		if mode != "" {
+			body["notify_mode"] = mode
+		}
+		if url != "" {
+			body["notify_callback_url"] = url
+		}
+		resp := postJSON(t, ts, "/v1/registry/servers/register", body)
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if code := register("subscribe,callback", "http://127.0.0.1:9999/notify"); code != http.StatusCreated {
+		t.Fatalf("coexisting declaration = %d, want 201", code)
+	}
+	srv, err := mem.GetServer(context.Background(), "game-coexist")
+	if err != nil {
+		t.Fatalf("get server: %v", err)
+	}
+	if srv.NotifyMode != "subscribe,callback" {
+		t.Errorf("notify_mode = %q, want subscribe,callback", srv.NotifyMode)
+	}
+	if !srv.HasNotifyMode("subscribe") || !srv.HasNotifyMode("callback") {
+		t.Errorf("HasNotifyMode misses a declared mode: %q", srv.NotifyMode)
+	}
+
+	if code := register("poll", ""); code != http.StatusCreated {
+		t.Fatalf("re-register as poll = %d, want 201", code)
+	}
+	srv, err = mem.GetServer(context.Background(), "game-coexist")
+	if err != nil {
+		t.Fatalf("get server: %v", err)
+	}
+	if srv.NotifyMode != "poll" || srv.NotifyCallbackURL != "" {
+		t.Errorf("switch did not replace declaration: mode=%q url=%q", srv.NotifyMode, srv.NotifyCallbackURL)
 	}
 }
 

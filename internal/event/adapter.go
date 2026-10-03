@@ -84,6 +84,14 @@ type Event struct {
 	ConfigVersion int      `json:"config_version,omitempty"`
 	ConfigHash    string   `json:"config_hash,omitempty"`
 	ConfigTargets []string `json:"config_targets,omitempty"`
+	// ConfigServers addresses the signal (服务/分组定向投递): the server IDs
+	// affected by this change — members (before or after the save) of every
+	// changed cluster/group/match-domain, or ["*"] for a global change.
+	// Atlas computes it while both document versions are in hand; a
+	// subscriber ignores a signal that does not name it. Absent = not
+	// addressed (no live server is affected); subscribers treat that as
+	// "nothing to do" — a server that boots later does its startup pull.
+	ConfigServers []string `json:"config_servers,omitempty"`
 
 	// Timestamp is the producer-side occurrence time.
 	Timestamp time.Time `json:"timestamp,omitempty"`

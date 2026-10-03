@@ -138,8 +138,9 @@ type ConfigWatcherOptions struct {
 	OnApply func(*CrossServerConfig)
 
 	// PollInterval is the fallback poll period for servers that cannot
-	// subscribe (or whose subscription is down). Zero disables polling,
-	// leaving signal-driven updates only. Default 30s.
+	// subscribe (or whose subscription is down). Zero keeps the 30s
+	// default; a negative value disables the periodic poll, leaving
+	// signal-driven updates only.
 	PollInterval time.Duration
 
 	// MaxBackoff caps the retry delay after repeated pull failures.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,30 @@ const (
 	NotifyModeCallback  = "callback"
 	NotifyModePoll      = "poll"
 )
+
+// NotifyModes parses the server's notify_mode declaration. It may carry a
+// comma-separated list ("subscribe,callback") so both push channels can
+// coexist on one registration; modes are also switchable — a
+// re-registration overwrites the declaration. Poll is the implicit third
+// fallback and needs no declaration (listing it explicitly is harmless).
+func (s *Server) NotifyModes() []string {
+	if s.NotifyMode == "" {
+		return nil
+	}
+	var out []string
+	for _, m := range strings.Split(s.NotifyMode, ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// HasNotifyMode reports whether the server declared mode (one entry of
+// the comma-separated list).
+func (s *Server) HasNotifyMode(mode string) bool {
+	return slices.Contains(s.NotifyModes(), mode)
+}
 
 // ServerStatus is the lifecycle state of a game server. The full state machine
 // is documented in docs/lifecycle.md.
@@ -151,8 +176,9 @@ type Server struct {
 	// NotifyMode declares how this server wants to be told about cross-server
 	// config updates (config center, see internal/crossserver): "subscribe"
 	// (message-bus topic), "callback" (atlas POSTs NotifyCallbackURL), or
-	// "poll" (the server polls version/ETag itself). Empty means undeclared —
-	// treated as poll for callback dispatch. Callback subscriptions require
+	// "poll" (the server polls version/ETag itself). A comma-separated list
+	// declares coexisting channels ("subscribe,callback"); an empty value is
+	// undeclared — effective poll. Callback anywhere in the list requires
 	// NotifyCallbackURL.
 	NotifyMode        string       `json:"notify_mode,omitempty"`
 	NotifyCallbackURL string       `json:"notify_callback_url,omitempty"`
@@ -217,12 +243,15 @@ func (s *Server) Validate() error {
 	if s.Status != "" && !s.Status.Valid() {
 		return fmt.Errorf("%w: unknown status %q", ErrInvalid, s.Status)
 	}
-	switch s.NotifyMode {
-	case "", NotifyModePoll, NotifyModeSubscribe, NotifyModeCallback:
-	default:
-		return fmt.Errorf("%w: notify_mode must be one of subscribe/callback/poll", ErrInvalid)
+	modes := s.NotifyModes()
+	for _, mode := range modes {
+		switch mode {
+		case NotifyModePoll, NotifyModeSubscribe, NotifyModeCallback:
+		default:
+			return fmt.Errorf("%w: notify_mode must be one of subscribe/callback/poll", ErrInvalid)
+		}
 	}
-	if s.NotifyMode == NotifyModeCallback {
+	if s.HasNotifyMode(NotifyModeCallback) {
 		if s.NotifyCallbackURL == "" {
 			return fmt.Errorf("%w: notify_callback_url is required when notify_mode=callback", ErrInvalid)
 		}
@@ -231,7 +260,7 @@ func (s *Server) Validate() error {
 			return fmt.Errorf("%w: notify_callback_url must be an absolute http(s) URL", ErrInvalid)
 		}
 	}
-	if s.NotifyMode != NotifyModeCallback && s.NotifyCallbackURL != "" {
+	if !s.HasNotifyMode(NotifyModeCallback) && s.NotifyCallbackURL != "" {
 		return fmt.Errorf("%w: notify_callback_url only applies to notify_mode=callback", ErrInvalid)
 	}
 	return nil

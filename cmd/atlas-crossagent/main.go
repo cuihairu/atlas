@@ -15,8 +15,10 @@
 // without touching Atlas:
 //
 //	POST /ctl/failpull  {"on":true|false}  — make every config pull fail
-//	POST /ctl/bus-reset                     — drop & rebuild the bus
-//	                                       subscription, then re-pull once
+//	POST /ctl/bus-off                      — drop the bus subscription
+//	                                       (updates missed until reset)
+//	POST /ctl/bus-reset                    — rebuild the subscription, then
+//	                                       re-pull once (断连补拉)
 //	GET  /ctl/status                        — current snapshot + counters
 //
 // The same listener serves POST /notify, the callback-mode signal URL.
@@ -117,9 +119,16 @@ func main() {
 	}
 
 	watcher := atlas.NewConfigWatcher(client, atlas.ConfigWatcherOptions{
-		ServerID:     *serverID,
-		PollInterval: *pollInterval,
-		MaxBackoff:   5 * time.Second,
+		ServerID: *serverID,
+		// The flag says 0 disables the periodic poll; the watcher reads 0
+		// as "default", so translate explicitly.
+		PollInterval: func() time.Duration {
+			if *pollInterval == 0 {
+				return -1
+			}
+			return *pollInterval
+		}(),
+		MaxBackoff: 5 * time.Second,
 		OnApply: func(cfg *atlas.CrossServerConfig) {
 			// "热生效" in the reference agent: swap the in-memory view and
 			// log. A real game server re-reads its cross-server modules
@@ -198,7 +207,10 @@ func main() {
 	// cannot lose an update.
 	var bus io.Closer
 	var busRdb io.Closer
-	busReset := func() error {
+	// busDrop ends the subscription without rebuilding it — the
+	// fault-injection twin of bus-reset, used to walk the "an update landed
+	// while I was disconnected" window (断连→改配置→重连→补拉).
+	busDrop := func() {
 		if bus != nil {
 			bus.Close()
 			bus = nil
@@ -207,6 +219,9 @@ func main() {
 			busRdb.Close()
 			busRdb = nil
 		}
+	}
+	busReset := func() error {
+		busDrop()
 		if *notifyMode != atlas.NotifyModeSubscribe {
 			return nil
 		}
@@ -226,14 +241,18 @@ func main() {
 		})
 		if err := adapter.Subscribe(ctx, event.TopicConfig, func(_ context.Context, e *event.Event) error {
 			log.Info("bus signal received",
-				"type", string(e.Type), "version", e.ConfigVersion, "hash", e.ConfigHash, "targets", e.ConfigTargets)
-			for _, t := range e.ConfigTargets {
-				if t == model.TargetAll || t == *serverID {
-					watcher.Notify()
-					return nil
-				}
+				"type", string(e.Type), "version", e.ConfigVersion, "hash", e.ConfigHash,
+				"targets", e.ConfigTargets, "receivers", e.ConfigServers)
+			// 定向投递: pull only when the signal names this server (or
+			// everyone). Atlas computes the receiver list from the config
+			// before AND after the change, so both "just joined a group"
+			// and "just left one" reach this server.
+			if addressed(e.ConfigServers, *serverID) {
+				watcher.Notify()
+				return nil
 			}
-			log.Info("signal ignored (not a target)", "version", e.ConfigVersion, "targets", e.ConfigTargets)
+			log.Info("signal ignored (not a receiver)", "version", e.ConfigVersion,
+				"targets", e.ConfigTargets, "receivers", e.ConfigServers)
 			return nil
 		}); err != nil {
 			rdb.Close()
@@ -254,6 +273,11 @@ func main() {
 	}
 
 	// Heartbeat loop: proof of life, independent of the config center.
+	// The first success after failures re-pulls the config: while
+	// heartbeats fail Atlas marks the server offline and stops naming it
+	// as a signal receiver (下线即退订), so an update landed in that window
+	// is picked up as soon as registration comes back (补拉).
+	var hbFailed atomic.Bool
 	go func() {
 		tick := time.NewTicker(*heartbeatIn)
 		defer tick.Stop()
@@ -264,8 +288,13 @@ func main() {
 			case <-tick.C:
 				res, err := client.Heartbeat(ctx, *serverID, atlas.HeartbeatRequest{Players: 42, Load: 0.3})
 				if err != nil {
+					hbFailed.Store(true)
 					log.Warn("heartbeat failed", "error", err)
 					continue
+				}
+				if hbFailed.CompareAndSwap(true, false) {
+					log.Info("heartbeat recovered — re-pulling config (补拉)")
+					watcher.Notify()
 				}
 				log.Debug("heartbeat", "status", res.Status)
 			}
@@ -307,6 +336,11 @@ func main() {
 			return
 		}
 		fmt.Fprintln(w, "bus re-subscribed + re-pull triggered")
+	})
+	mux.HandleFunc("POST /ctl/bus-off", func(w http.ResponseWriter, r *http.Request) {
+		busDrop()
+		log.Warn("FAULT INJECTION", "bus_subscription", "dropped")
+		fmt.Fprintln(w, "bus subscription dropped (changes missed until /ctl/bus-reset)")
 	})
 	mux.HandleFunc("GET /ctl/status", func(w http.ResponseWriter, r *http.Request) {
 		cur := watcher.Current()
@@ -358,3 +392,15 @@ func main() {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// addressed reports whether a bus signal names this server. The receiver
+// list is computed by Atlas from the config before and after the change;
+// an empty list means no live server is affected — nothing to pull.
+func addressed(receivers []string, serverID string) bool {
+	for _, r := range receivers {
+		if r == model.TargetAll || r == serverID {
+			return true
+		}
+	}
+	return false
+}

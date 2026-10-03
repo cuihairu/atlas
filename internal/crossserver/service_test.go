@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -358,4 +359,108 @@ func TestSaveWithNilEventsAndServers(t *testing.T) {
 	if res.Notify.Callbacks.Targets != 0 {
 		t.Errorf("targets = %d, want 0 without a server store", res.Notify.Callbacks.Targets)
 	}
+}
+
+// registerPollServer registers a poll-mode server and forces its status,
+// mirroring registerCallbackServer (bus addressing cares about status,
+// not about the callback URL).
+func registerPollServer(t *testing.T, mem *memory.Store, id string, status model.ServerStatus) {
+	t.Helper()
+	srv := &model.Server{
+		ID: id, Name: id, Type: "game", Region: "cn-east",
+		Endpoint: model.Endpoint{Host: "127.0.0.1", Port: 30001},
+		Capacity: 100, NotifyMode: model.NotifyModePoll,
+	}
+	if err := mem.RegisterServer(context.Background(), srv); err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.UpdateServerStatus(context.Background(), id, status); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestBusSignalAddressesAffectedServers pins 按服务/分组定向投递: the bus
+// event names the server IDs affected by the change — members of the
+// changed cluster under the document before AND after the save — while
+// targets keep naming the changed structures. Offline registrations are
+// not addressed (下线即退订), a global change addresses everyone, and a
+// change that affects no live server addresses nobody (subscribers then
+// have nothing to pull).
+func TestBusSignalAddressesAffectedServers(t *testing.T) {
+	adapter := httpEvent.New()
+	var mu sync.Mutex
+	var got []*event.Event
+	_ = adapter.Subscribe(context.Background(), event.TopicConfig, func(_ context.Context, e *event.Event) error {
+		mu.Lock()
+		got = append(got, e)
+		mu.Unlock()
+		return nil
+	})
+	svc, mem := newSvc(t, adapter)
+
+	registerPollServer(t, mem, "game-1001", model.StatusOnline)
+	registerPollServer(t, mem, "game-1002", model.StatusOffline)
+	registerPollServer(t, mem, "game-2001", model.StatusOnline)
+
+	save := func(spec model.CrossServerSpec, step string) *SaveResult {
+		t.Helper()
+		res, err := svc.Save(context.Background(), spec)
+		if err != nil {
+			t.Fatalf("%s: Save: %v", step, err)
+		}
+		return res
+	}
+	assertReceivers := func(step string, res *SaveResult, want ...string) {
+		t.Helper()
+		if !slices.Equal(res.Notify.Receivers, want) {
+			t.Errorf("%s: receivers = %v, want %v", step, res.Notify.Receivers, want)
+		}
+		mu.Lock()
+		e := got[len(got)-1]
+		mu.Unlock()
+		if !slices.Equal(e.ConfigServers, want) {
+			t.Errorf("%s: event config_servers = %v, want %v", step, e.ConfigServers, want)
+		}
+	}
+
+	// 1) First publish introduces the feature switches → global.
+	spec := testSpec()
+	res := save(spec, "first publish")
+	assertReceivers("first publish", res, model.TargetAll)
+
+	// 2) Adding a server to the cluster addresses the members before and
+	// after: game-1001 (was, still), game-2001 (now); offline game-1002
+	// is dropped. Targets keep naming the structure, not the servers.
+	spec.Topology.Clusters[0].Servers = append(spec.Topology.Clusters[0].Servers, "game-2001")
+	res = save(spec, "add member")
+	if !slices.Equal(res.Notify.Targets, []string{"cluster-ea"}) {
+		t.Errorf("add member: targets = %v, want [cluster-ea]", res.Notify.Targets)
+	}
+	assertReceivers("add member", res, "game-1001", "game-2001")
+
+	// 3) Removing a live member still addresses it — it has to tear the
+	// feature down even though it is no longer in the document.
+	spec.Topology.Clusters[0].Servers = []string{"game-1002", "game-2001"}
+	res = save(spec, "remove member")
+	assertReceivers("remove member", res, "game-1001", "game-2001")
+
+	// 4) A feature-switch change is global.
+	spec.Features["cross_battlefield"] = false
+	res = save(spec, "feature flip")
+	if !slices.Equal(res.Notify.Targets, []string{model.TargetAll}) {
+		t.Errorf("feature flip: targets = %v, want [*]", res.Notify.Targets)
+	}
+	assertReceivers("feature flip", res, model.TargetAll)
+
+	// 5) Removing the last live member still addresses it (the
+	// old-membership rule), even though only offline servers remain.
+	spec.Topology.Clusters[0].Servers = []string{"game-1002"}
+	res = save(spec, "last live member removed")
+	assertReceivers("last live member removed", res, "game-2001")
+
+	// 6) What remains is offline or unregistered: nobody live is affected,
+	// the signal is addressed to nobody, and subscribers have nothing to do.
+	spec.Topology.Clusters[0].Servers = []string{"game-9999"}
+	res = save(spec, "no live member")
+	assertReceivers("no live member", res)
 }

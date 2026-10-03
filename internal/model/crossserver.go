@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 )
 
@@ -62,6 +64,34 @@ type (
 	}
 )
 
+// Clone returns a deep copy of the spec: every slice and map is rebuilt,
+// so a caller mutating its copy can never write through into a stored
+// snapshot. Same zero-sharing rule the server store applies to tags —
+// the SQL stores get this for free from their JSON round-trip, memory
+// must do it explicitly.
+func (s CrossServerSpec) Clone() CrossServerSpec {
+	out := CrossServerSpec{
+		Topology:    CrossServerTopology{Clusters: make([]CrossServerCluster, len(s.Topology.Clusters))},
+		Groups:      make([]CrossServerGroup, len(s.Groups)),
+		Features:    maps.Clone(s.Features),
+		MatchDomains: make([]CrossServerMatchDomain, len(s.MatchDomains)),
+	}
+	for i, c := range s.Topology.Clusters {
+		c.Servers = slices.Clone(c.Servers)
+		out.Topology.Clusters[i] = c
+	}
+	for i, g := range s.Groups {
+		g.Servers = slices.Clone(g.Servers)
+		out.Groups[i] = g
+	}
+	for i, d := range s.MatchDomains {
+		d.Servers = slices.Clone(d.Servers)
+		d.Params = maps.Clone(d.Params)
+		out.MatchDomains[i] = d
+	}
+	return out
+}
+
 // TargetAll 是变更目标里的通配符：任何服务器都应重新拉取
 // （全局变更，如玩法开关表整体改动）。
 const TargetAll = "*"
@@ -94,6 +124,32 @@ func NormalizeCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 		}
 	}
 	return spec
+}
+
+// CloneCrossServerSpec 返回 spec 的深拷贝。配置文档按值存取、按前后
+// 两个版本做 diff：store 若与调用方共享底层数组，调用方之后的原地
+// 改写会连同已存的历史一起改掉（SQL store 走 JSON 序列化天然无别名，
+// 内存 store 必须显式克隆——三库契约一致）。
+func CloneCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
+	out := spec
+	out.Topology.Clusters = make([]CrossServerCluster, len(spec.Topology.Clusters))
+	for i, c := range spec.Topology.Clusters {
+		c.Servers = slices.Clone(c.Servers)
+		out.Topology.Clusters[i] = c
+	}
+	out.Groups = make([]CrossServerGroup, len(spec.Groups))
+	for i, g := range spec.Groups {
+		g.Servers = slices.Clone(g.Servers)
+		out.Groups[i] = g
+	}
+	out.Features = maps.Clone(spec.Features)
+	out.MatchDomains = make([]CrossServerMatchDomain, len(spec.MatchDomains))
+	for i, d := range spec.MatchDomains {
+		d.Servers = slices.Clone(d.Servers)
+		d.Params = maps.Clone(d.Params)
+		out.MatchDomains[i] = d
+	}
+	return out
 }
 
 // EmptyCrossServerConfig 是 version=0 的空快照：配置中心还没被写过。

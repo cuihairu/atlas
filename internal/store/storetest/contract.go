@@ -1132,6 +1132,22 @@ func crossServerConfig(t *testing.T, ctx context.Context, s Core) {
 		t.Errorf("match domain roundtrip = %+v", got.Spec.MatchDomains)
 	}
 
+	// The stored document must not alias the caller's spec: mutating the
+	// object that was handed to Save in place afterwards must leave the
+	// store untouched (the service diffs the stored copy against the
+	// incoming one — a shared backing array would corrupt that diff).
+	spec.Topology.Clusters[0].Servers = append(spec.Topology.Clusters[0].Servers, "srv-late")
+	spec.Features["world-boss"] = !spec.Features["world-boss"]
+	got, err = s.GetCrossServerConfig(ctx)
+	if err != nil {
+		t.Fatalf("get config after caller mutation: %v", err)
+	}
+	if len(got.Spec.Topology.Clusters[0].Servers) != 2 || !got.Spec.Features["world-boss"] {
+		t.Errorf("caller-side mutation leaked into the store: %+v", got.Spec)
+	}
+	spec.Topology.Clusters[0].Servers = spec.Topology.Clusters[0].Servers[:2]
+	spec.Features["world-boss"] = !spec.Features["world-boss"]
+
 	// A second, different save must move the version forward and replace
 	// the document.
 	updated := model.NormalizeCrossServerSpec(model.CrossServerSpec{
