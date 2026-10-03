@@ -55,8 +55,13 @@ jobs:
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
-          sudo mkdir -p "$deploy_dir"
-          sudo chown "$(id -u):$(id -g)" "$deploy_dir"
+          # runner 可能以 root 跑（部署机上常常没装 sudo）：按可用性取提权前缀
+          sudo_cmd=""
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+            sudo_cmd="sudo"
+          fi
+          $sudo_cmd mkdir -p "$deploy_dir"
+          $sudo_cmd chown "$(id -u):$(id -g)" "$deploy_dir"
           # compose 与迁移文件随部署走；版本跟着 checkout 的这次提交
           cp deployments/docker/docker-compose.deploy.yml "$deploy_dir/docker-compose.yml"
           rm -rf "$deploy_dir/migrations"
@@ -68,6 +73,11 @@ jobs:
           DASHBOARD_TAG=${{ inputs.tag }}
           GHCR_OWNER=${{ github.repository_owner }}
           ATLAS_PUBLIC_URL=https://atlas.cuihairu.site
+          ATLAS_PUBLIC_PORT=18080
+          ATLAS_REGISTRY_PORT=18083
+          ATLAS_ADMIN_PORT=18084
+          ATLAS_GRPC_PORT=18090
+          DASHBOARD_PORT=18088
           EOF
           else
             # 已有 .env（运维可能改了端口/口令）：只滚动镜像标签
