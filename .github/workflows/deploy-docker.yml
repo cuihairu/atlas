@@ -1,0 +1,140 @@
+# 部署到自托管 docker 主机（atlas.cuihairu.site 演示环境）
+#
+# 与 docker-image.yml 的分工：那个工作流在 GitHub 托管 runner 上构建并推
+# GHCR，这个工作流只做"拉镜像 → 起栈 → 验活"，跑在部署机自己的 runner 上
+# （标签 atlas-docker100，与其它仓库的 runner 隔离，互不排队）。
+#
+# 部署机不需要源码工具链：compose 文件与 migrations/ 由本工作流同步过去，
+# 镜像全部来自 GHCR。
+#
+# 手动触发（tag 缺省 latest = main 最新滚动）：
+#   gh workflow run deploy-docker.yml
+#   gh workflow run deploy-docker.yml -f tag=<短SHA> -f deploy_dir=/data/deploy/atlas
+name: Deploy Docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "镜像标签（atlas 与 atlas-dashboard 共用；缺省 latest）"
+        required: false
+        default: "latest"
+      deploy_dir:
+        description: "部署机上的部署目录（compose 文件与 migrations/ 落在这里）"
+        required: false
+        default: "/data/deploy/atlas"
+
+permissions:
+  contents: read
+  packages: read
+
+# 同时只允许一个部署在跑：并发 up -d 会互相 --remove-orphans。
+concurrency:
+  group: deploy-docker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, atlas-docker100]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: Login GHCR
+        timeout-minutes: 3
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare deploy directory
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          sudo mkdir -p "$deploy_dir"
+          sudo chown "$(id -u):$(id -g)" "$deploy_dir"
+          # compose 与迁移文件随部署走；版本跟着 checkout 的这次提交
+          cp deployments/docker/docker-compose.deploy.yml "$deploy_dir/docker-compose.yml"
+          rm -rf "$deploy_dir/migrations"
+          cp -r migrations "$deploy_dir/migrations"
+          # 只留本次部署要用的变量（口令不进版本库，从宿主机既有 .env 继承）
+          if [ ! -f "$deploy_dir/.env" ]; then
+            cat > "$deploy_dir/.env" <<EOF
+          ATLAS_TAG=${{ inputs.tag }}
+          DASHBOARD_TAG=${{ inputs.tag }}
+          GHCR_OWNER=${{ github.repository_owner }}
+          ATLAS_PUBLIC_URL=https://atlas.cuihairu.site
+          EOF
+          else
+            # 已有 .env（运维可能改了端口/口令）：只滚动镜像标签
+            sed -i '/^ATLAS_TAG=/d;/^DASHBOARD_TAG=/d' "$deploy_dir/.env"
+            printf 'ATLAS_TAG=%s\nDASHBOARD_TAG=%s\nGHCR_OWNER=%s\n' \
+              "${{ inputs.tag }}" "${{ inputs.tag }}" "${{ github.repository_owner }}" >> "$deploy_dir/.env"
+          fi
+          echo "--- deploy_dir/$deploy_dir ---"
+          cat "$deploy_dir/.env"
+
+      - name: Pull images
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" pull
+
+      - name: Deploy containers
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" \
+            up -d --remove-orphans
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps
+
+      - name: Wait for health
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          # docker 自己判定健康；这里额外做端到端探测：管理台首页 +
+          # 经 nginx 同源反代的 admin 接口 + 公网发现接口。
+          set -- $(grep -E '^(DASHBOARD_PORT|ATLAS_PUBLIC_PORT)=' "$deploy_dir/.env" | cut -d= -f2 | tr '\n' ' ')
+          dash_port="${1:-18088}"
+          echo "waiting for dashboard on :$dash_port ..."
+          for i in $(seq 1 40); do
+            if curl -fsS "http://127.0.0.1:$dash_port/healthz" >/dev/null 2>&1; then
+              echo "dashboard healthy after ${i}0s"
+              break
+            fi
+            if [ "$i" = "40" ]; then
+              echo "dashboard did not become healthy" >&2
+              docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "--- discovery via dashboard origin (same-origin proxy) ---"
+          curl -fsS "http://127.0.0.1:$dash_port/v1/discovery/servers?limit=3" | head -c 400; echo
+          echo "--- admin stats via dashboard origin ---"
+          curl -fsS "http://127.0.0.1:$dash_port/v1/admin/stats" | head -c 400; echo
+
+      - name: Deploy summary
+        if: always()
+        timeout-minutes: 3
+        run: |
+          deploy_dir="${{ inputs.deploy_dir }}"
+          {
+            echo "### Atlas 部署完成"
+            echo
+            echo "- 提交：\`${{ github.sha }}\`"
+            echo "- 镜像标签：\`${{ inputs.tag }}\`"
+            echo "- 部署目录：\`$deploy_dir\`"
+            echo "- 站点：<https://atlas.cuihairu.site/>"
+            echo
+            echo '```'
+            docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps --format '{{.Name}}\t{{.Image}}\t{{.Status}}' 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

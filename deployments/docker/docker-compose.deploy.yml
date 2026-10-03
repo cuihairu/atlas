@@ -1,0 +1,155 @@
+# Atlas 演示部署栈（docker compose，全部走 GHCR 预构建镜像，无本地构建）
+#
+# 用途：在一台 docker 主机上起一套"活的"Atlas 演示环境 —— Atlas API +
+# PostgreSQL + Redis + 管理台（nginx 托管前端，同源反代三个监听口）+ 演示舰队
+# 模拟器（持续注册/心跳，管理台与选服页因此有真实数据）。
+#
+# 与仓库根 docker-compose.yml 的区别：根目录那份是"开发者一条命令起后端"
+# （本地 build、可改端口），本文件是"CI 拉镜像直接部"（部署机不需要源码、
+# 不需要 go/npm 工具链），供 .github/workflows/deploy-docker.yml 在
+# self-hosted runner 上执行。
+#
+# 用法（在部署目录执行，deploy_dir 内只有本文件与 .env）：
+#   docker compose --env-file .env -f docker-compose.yml pull
+#   docker compose --env-file .env -f docker-compose.yml up -d
+#
+# 端口（.env 可改，注意与宿主机既有服务避让；缺省为部署机选定的 18xxx）：
+#   ATLAS_PUBLIC_PORT  公网 Discovery/Directory/Routing → 管理台 nginx 反代（缺省 18080）
+#   ATLAS_REGISTRY_PORT 注册域（游戏服接入，演示环境只对内网；缺省 18083）
+#   ATLAS_ADMIN_PORT   管理口（运维/管理台反代；按拓扑设计不直接对公网暴露；缺省 18084）
+#   ATLAS_GRPC_PORT    gRPC（缺省 18090）
+#   DASHBOARD_PORT     管理台 nginx（对外只暴露这一个端口，前面挂 TLS 终结；缺省 18088）
+
+name: atlas-demo
+
+services:
+  atlas:
+    image: ghcr.io/${GHCR_OWNER:-cuihairu}/atlas:${ATLAS_TAG:-latest}
+    container_name: atlas-demo
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ATLAS_STORE: postgres
+      ATLAS_DATABASE_URL: postgres://atlas:${ATLAS_PG_PASSWORD:-atlas}@postgres:5432/atlas?sslmode=disable
+      ATLAS_REDIS_URL: redis://redis:6379/0
+      # 演示环境用 Redis Streams 跑配置中心通知：subscribe 模式的游戏服
+      # 从 atlas.config 主题收变更信号（只带版本号，再回拉全文）。
+      ATLAS_EVENT_ADAPTER: redis
+      # 信号里的 crossserver_url 由公网基址拼出；演示域名前置 TLS 终结后
+      # 就是 https://atlas.cuihairu.site
+      ATLAS_PUBLIC_URL: ${ATLAS_PUBLIC_URL:-http://localhost:${DASHBOARD_PORT:-8090}}
+    ports:
+      - "${ATLAS_PUBLIC_PORT:-18080}:8080"
+      - "${ATLAS_REGISTRY_PORT:-18083}:8081"
+      - "${ATLAS_ADMIN_PORT:-18084}:8082"
+      - "${ATLAS_GRPC_PORT:-18090}:9090"
+    healthcheck:
+      # distroless 镜像没有 shell/curl，健康探测直接调二进制自带子命令
+      test: ["CMD", "/atlas", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # 管理台：nginx 托管前端静态产物，把 /v1/admin、/v1/registry、/v1/crossserver、
+  # 其余 /v1 分别反代到 atlas 三个监听口 —— 浏览器只与同源打交道，跨域不存在。
+  dashboard:
+    image: ghcr.io/${GHCR_OWNER:-cuihairu}/atlas-dashboard:${DASHBOARD_TAG:-latest}
+    container_name: atlas-demo-dashboard
+    restart: unless-stopped
+    depends_on:
+      atlas:
+        condition: service_healthy
+    ports:
+      - "${DASHBOARD_PORT:-18088}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # 演示舰队：一组模拟游戏服进程（注册/心跳/角色写入/配置热更）。
+  # 不需要它时：docker compose stop demoagents 或把 profile 设为 "off"。
+  demoagents:
+    image: ghcr.io/${GHCR_OWNER:-cuihairu}/atlas:${ATLAS_TAG:-latest}
+    container_name: atlas-demo-agents
+    restart: unless-stopped
+    entrypoint: ["/demoagents"]
+    depends_on:
+      atlas:
+        condition: service_healthy
+    command:
+      - -registry=http://atlas:8081
+      - -public=http://atlas:8080
+      - -admin=http://atlas:8082
+      - -interval=10s
+      - -poll-interval=30s
+      - -redis-url=redis://redis:6379/0
+      - -watch-server=game-1001
+      - -http=:9098
+    healthcheck:
+      # distroless 没有 shell/curl：探测子命令调自身状态端点，心跳停了会
+      # 报 unhealthy（ATLAS_DEMOAGENTS_HTTP_ADDR 与 -http 保持一致）。
+      test: ["CMD", "/demoagents", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    environment:
+      ATLAS_DEMOAGENTS_HTTP_ADDR: ":9098"
+
+  # 一次性建表服务：跑完 migrations/ 里的 PostgreSQL 迁移后即退出（exit 0），
+  # atlas 等它成功后再启动。只跑 PG 变体，跳过 *_mysql.sql。
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: ${ATLAS_PG_PASSWORD:-atlas}
+      PGDATABASE: atlas
+    volumes:
+      - ${ATLAS_MIGRATIONS_DIR:-./migrations}:/migrations:ro
+    # shell 变量必须写成 $$f：裸 $f 会被 compose 自己先插值成空串
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: atlas-demo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${ATLAS_PG_PASSWORD:-atlas}
+      POSTGRES_DB: atlas
+    volumes:
+      - atlas-demo-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: atlas-demo-redis
+    restart: unless-stopped
+    # 心跳/运行时状态与事件流是易失数据，不挂持久卷
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  atlas-demo-pgdata:

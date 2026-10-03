@@ -4,8 +4,10 @@
 .claude
 docs
 dashboard
-sdk
 plugins
 deploy
 deployments
 *.md
+
+# 注意：sdk/ 不能排除 —— cmd/atlas-demoagents（演示舰队模拟器，随服务端镜像
+# 一起发布）import 了 sdk/go/atlas，缺了它镜像构建直接失败。

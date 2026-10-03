@@ -17,11 +17,18 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
               -X github.com/cuihairu/atlas/internal/version.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -o /atlas ./cmd/atlas
 
+# 演示舰队模拟器（demo 部署用，见 deployments/docker/docker-compose.deploy.yml）：
+# 代替真人游戏服持续注册/心跳，让演示环境的管理台与选服页有活数据。
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X github.com/cuihairu/atlas/internal/version.GitCommit=${GIT_COMMIT}" \
+    -o /demoagents ./cmd/atlas-demoagents
+
 # Stage 2: Minimal runtime image
 # nonroot 标签：以 uid/gid 65534 运行，不用 root。
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /atlas /atlas
+COPY --from=builder /demoagents /demoagents
 
 # 8080 公网(Discovery/Directory/Routing) · 8081 内网(Registry) · 8082 管理端 · 9090 gRPC
 EXPOSE 8080 8081 8082 9090
