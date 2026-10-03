@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cuihairu/atlas/internal/admin"
@@ -1278,11 +1279,32 @@ func (h *Handler) handleGetCrossServerConfig(w http.ResponseWriter, r *http.Requ
 	etag := cfg.ETag()
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
-	if r.Header.Get("If-None-Match") == etag {
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	writeJSON(w, http.StatusOK, cfg)
+}
+
+// etagMatches reports whether an If-None-Match header covers etag, using the
+// weak comparison RFC 7232 §3.2 prescribes: a proxy that re-encodes the body
+// (Cloudflare turns "x" into W/"x") still describes the same representation,
+// and polling servers behind it must still get their 304 instead of a full
+// re-download every tick. The header may also carry a list or "*".
+func etagMatches(ifNoneMatch, etag string) bool {
+	if ifNoneMatch == "" {
+		return false
+	}
+	for _, candidate := range strings.Split(ifNoneMatch, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" {
+			return true
+		}
+		if strings.TrimPrefix(candidate, "W/") == strings.TrimPrefix(etag, "W/") {
+			return true
+		}
+	}
+	return false
 }
 
 // handleAdminGetCrossServerConfig is the admin read of the same document.

@@ -280,6 +280,29 @@ func TestCrossServerConfigConditionalGet(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// A re-encoding proxy weakens the validator (Cloudflare turns "x" into
+	// W/"x"). Weak comparison still recognises it — otherwise every polling
+	// server behind such a hop re-downloads the whole document each tick.
+	resp = conditional(t, "/v1/crossserver/config", "W/"+etag)
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf("weak matching validator = %d, want 304", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// A list of validators (some unrelated) still matches on the hit.
+	resp = conditional(t, "/v1/crossserver/config", `"other", W/`+etag)
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf("validator list = %d, want 304", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// "*" matches any current representation.
+	resp = conditional(t, "/v1/crossserver/config", "*")
+	if resp.StatusCode != http.StatusNotModified {
+		t.Errorf(`If-None-Match: * = %d, want 304`, resp.StatusCode)
+	}
+	resp.Body.Close()
+
 	// The query form is equivalent: current version → 304, old → 200.
 	resp = conditional(t, "/v1/crossserver/config?version=1", "")
 	if resp.StatusCode != http.StatusNotModified {
