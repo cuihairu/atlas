@@ -115,6 +115,36 @@ curl -X POST localhost:8082/v1/admin/announcements -H 'Content-Type: application
 
 **操作路径**：`Realms`/`Shards` 管理在管理口（`POST /v1/admin/realms`、`POST /v1/admin/shards`）；玩家侧 `GET /v1/discovery/servers?realm=realm-cn`。详见[Realm 与 Shard](/realms-shards)。
 
+## 8. 跨服配置热更新 {#scenario-crossserver}
+
+**场景**：跨服玩法要开新赛季——运营改一把配置，三种形态的服务器（轮询 / 回调 / 订阅）各自收到信号、拉取、热生效，全程不重启。有人断网、有人拉取失败，旧配置继续跑，恢复后自动补齐。
+
+**操作路径**：管理台 `跨服配置` 页改完点"发布"，或等价接口（`atlas-crossagent` 是三种模式的完整接收端，`go run ./cmd/atlas-crossagent -h` 看参数）：
+
+```bash
+# 发布全文（PUT，替换）→ version 8 → 9
+curl -X PUT localhost:8082/v1/admin/crossserver/config \
+  -H 'Content-Type: application/json' -d @spec.json
+# {"config":{"version":9,"hash":"3768c1708e690107"},
+#  "notify":{"targets":["*","season-1"],"receivers":["*"],
+#   "bus":"redis","callbacks":{"targets":1,"delivered":1,"failed":0}}}
+```
+
+真实走查实录（演示栈，`ATLAS_EVENT_ADAPTER=redis`）：
+
+1. **启动拉取**——三台 agent 注册（`poll` / `callback` / `subscribe`），注册响应带 `config_version: 8`，启动拉取直接采用：
+   `CONFIG APPLIED (hot) version=8 hash=b0c7e5cc595bf888 clusters=3 groups=2 features_on=1`
+2. **运行中改配置**——发布 v9（`cross_arena` 开启 + 分组加成员），三台各自热生效：
+   poll（5s 轮询）`config_version: 9`；callback 收到 `POST /notify` 即拉取；subscribe 收到总线 `config.updated` 即拉取。
+3. **拉取失败旧配置续跑**——给 poll 实例开故障注入（`POST /ctl/failpull {"on":true}`）再发布 v10：
+   `{"config_version":9,"pull_failing":true,"pull_failures":3}`——版本不动、进程不退；关注入后下一次轮询自动追上 v10。
+4. **断连补拉**——给 subscribe 实例 `POST /ctl/bus-off`（订阅丢弃），发布 v11（只改匹配域参数，`receivers` 定向为 `["game-1001","game-9001"]`）期间它停在 v10；`POST /ctl/bus-reset` 重建订阅即补拉：`config_version: 11`。
+5. **回调到达**——发布 v12（新增走查分组），Atlas 主动 `POST` 回调 URL（只带版本/信号），agent 日志：
+   `callback signal received type=config.updated version=12` →
+   `CONFIG APPLIED (hot) version=12 … groups=3`；发布响应 `callbacks:{targets:2, delivered:2}`。
+
+语义与边界见[配置中心](/config-center)。
+
 ---
 
 以上界面来自 [dashboard/](https://github.com/cuihairu/atlas/tree/main/dashboard)（React + antd）。本地跑起来：`docker compose up -d` 起 Atlas 三件套，`cd dashboard && npm run dev` 起管理台（dev 代理自动分流公网/管理口）。
