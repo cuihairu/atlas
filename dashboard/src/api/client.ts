@@ -25,11 +25,70 @@ import type {
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 const ADMIN_BASE = (import.meta.env.VITE_ADMIN_API_BASE || '').replace(/\/$/, '');
 
+// ── 管理台会话（API Key 登录） ───────────────────────────────────────
+// 后端管理口没有用户体系，鉴权是 Bearer API Key（按角色 admin/operator/
+// viewer 授权，viewer 只读）。"账号/密码"里的密码就是发给这个账号的 key：
+// 演示账号 demo 的密钥见 README「演示站点」。会话存 localStorage，仅本浏览器。
+const KEY_STORAGE = 'atlas.adminKey';
+const ACCOUNT_STORAGE = 'atlas.adminAccount';
+
+export function getAdminKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORAGE) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function getAdminAccount(): string {
+  try {
+    return localStorage.getItem(ACCOUNT_STORAGE) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAdminSession(account: string, key: string): void {
+  try {
+    localStorage.setItem(KEY_STORAGE, key);
+    localStorage.setItem(ACCOUNT_STORAGE, account);
+  } catch {
+    // storage unavailable — session just won't persist
+  }
+}
+
+export function clearAdminSession(): void {
+  try {
+    localStorage.removeItem(KEY_STORAGE);
+    localStorage.removeItem(ACCOUNT_STORAGE);
+  } catch {
+    // ignore
+  }
+}
+
+// 探测会话是否可访问管理口：200 = 通过（含服务端未启用鉴权的部署），
+// 401/403 = 未登录或密钥失效；网络等其它错误按通过处理，避免误锁在登录页。
+export async function probeAdmin(key = getAdminKey()): Promise<'ok' | 'unauthorized'> {
+  try {
+    const headers: Record<string, string> = {};
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+    const res = await fetch(`${ADMIN_BASE}/v1/admin/stats`, { headers });
+    return res.status === 401 || res.status === 403 ? 'unauthorized' : 'ok';
+  } catch {
+    return 'ok';
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit, base = API_BASE): Promise<T> {
   const url = `${base}${path}`;
   try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // 管理口调用带会话密钥（按路径判定：三个 base 都可能承载 /v1/admin，
+    // 反代按路径分流到管理监听口）
+    const key = getAdminKey();
+    if (key && url.includes('/v1/admin')) headers['Authorization'] = `Bearer ${key}`;
     const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       ...init,
     });
     if (!res.ok) {

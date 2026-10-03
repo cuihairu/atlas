@@ -346,6 +346,7 @@ func main() {
 		registryAddr = flag.String("registry", "http://127.0.0.1:8081", "Atlas registry base URL (register/heartbeat)")
 		publicAddr   = flag.String("public", "http://127.0.0.1:8080", "Atlas public base URL (character writes)")
 		adminAddr    = flag.String("admin", "http://127.0.0.1:8082", "Atlas admin base URL (tags, maintenance)")
+		adminKey     = flag.String("admin-key", os.Getenv("ATLAS_ADMIN_KEY"), "admin API key for the ops-owned seeding calls (empty = atlas admin auth disabled)")
 		fleetPath    = flag.String("fleet", "", "fleet JSON file (default: built-in demo fleet)")
 		interval     = flag.Duration("interval", 10*time.Second, "heartbeat interval")
 		pollEvery    = flag.Duration("poll-interval", 30*time.Second, "cross-server config poll interval (0 disables; subscribe-mode servers still keep this as the final fallback)")
@@ -386,7 +387,7 @@ func main() {
 	}
 	defer client.Close()
 
-	admin := &adminClient{base: strings.TrimRight(*adminAddr, "/"), http: &http.Client{Timeout: 5 * time.Second}}
+	admin := &adminClient{base: strings.TrimRight(*adminAddr, "/"), key: *adminKey, http: &http.Client{Timeout: 5 * time.Second}}
 
 	live := make(map[string]*liveState, len(fleet))
 	for i := range fleet {
@@ -742,6 +743,7 @@ func addressed(receivers []string, serverID string) bool {
 // adminClient is a minimal admin-API caller for the ops-owned demo seeding.
 type adminClient struct {
 	base string
+	key  string
 	http *http.Client
 }
 
@@ -759,6 +761,9 @@ func (a *adminClient) postJSON(ctx context.Context, path string, body any) error
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if a.key != "" {
+		req.Header.Set("Authorization", "Bearer "+a.key)
+	}
 	resp, err := a.http.Do(req)
 	if err != nil {
 		return err

@@ -44,6 +44,10 @@ services:
       # 信号里的 crossserver_url 由公网基址拼出；演示域名前置 TLS 终结后
       # 就是 https://atlas.cuihairu.site
       ATLAS_PUBLIC_URL: ${ATLAS_PUBLIC_URL:-http://localhost:${DASHBOARD_PORT:-8090}}
+      # 管理口鉴权（部署工作流首次部署时生成并写入 .env，不进版本库）：
+      # ATLAS_ADMIN_ROLES 把演示密钥钉成 viewer（只读），管理员密钥为 admin。
+      ATLAS_ADMIN_API_KEYS: ${ATLAS_ADMIN_API_KEYS:-}
+      ATLAS_ADMIN_ROLES: ${ATLAS_ADMIN_ROLES:-}
     ports:
       - "${ATLAS_PUBLIC_PORT:-18080}:8080"
       - "${ATLAS_REGISTRY_PORT:-18083}:8081"
@@ -106,6 +110,10 @@ services:
       retries: 3
     environment:
       ATLAS_DEMOAGENTS_HTTP_ADDR: ":9098"
+      # 演示舰队要铺 realm/shard 拓扑、打标记/维护窗口——都是管理口调用，
+      # 管理口鉴权开启后必须带管理员密钥（.env 里与 ATLAS_ADMIN_API_KEYS
+      # 的 admin 角色密钥同源）。
+      ATLAS_ADMIN_KEY: ${ATLAS_ADMIN_KEY:-}
 
   # 一次性建表服务：跑完 migrations/ 里的 PostgreSQL 迁移后即退出（exit 0），
   # atlas 等它成功后再启动。只跑 PG 变体，跳过 *_mysql.sql。

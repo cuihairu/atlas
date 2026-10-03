@@ -10,10 +10,12 @@ import {
   SunOutlined,
   MoonOutlined,
   GlobalOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useLang, setLang, t, type Lang } from '../i18n';
 import { useTheme, setTheme } from '../theme';
+import { clearAdminSession, getAdminAccount } from '../api/client';
 
 const { Sider, Header, Content } = AntLayout;
 
@@ -23,6 +25,7 @@ export default function AppLayout() {
   const location = useLocation();
   const lang = useLang();
   const mode = useTheme();
+  const account = getAdminAccount();
   const {
     token: { colorBgContainer, colorBorder, borderRadiusLG },
   } = theme.useToken();
@@ -90,7 +93,25 @@ export default function AppLayout() {
           }}
         >
           <span>Atlas Dashboard</span>
-          <span style={{ display: 'flex', gap: 8 }}>
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {account && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, opacity: 0.75 }}>
+                <UserOutlined /> {account}
+              </span>
+            )}
+            {account && (
+              <Tooltip title={t('logout')}>
+                <Button
+                  icon={<LogoutOutlined />}
+                  size="small"
+                  aria-label={t('logout')}
+                  onClick={() => {
+                    clearAdminSession();
+                    navigate('/login');
+                  }}
+                />
+              </Tooltip>
+            )}
             <Tooltip title={`${t('language')}: ${lang === 'zh' ? '中文' : 'English'}`}>
               <Button
                 icon={<GlobalOutlined />}

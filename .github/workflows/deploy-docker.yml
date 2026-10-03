@@ -51,6 +51,9 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
       SHA: ${{ github.sha }}
+      # 演示密钥与 README「演示站点」一节一致（viewer 只读，数据定期重置）；
+      # 只在部署机首次生成 .env 时使用一次，已有的 .env 不覆盖。
+      DEMO_KEY: demo-ab36cfc2cb77ac66ccd0523512efffbe
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -145,8 +148,20 @@ jobs:
             printf 'ATLAS_TAG=%s\nDASHBOARD_TAG=%s\nGHCR_OWNER=%s\n' \
               "${{ inputs.tag }}" "${{ inputs.tag }}" "${{ github.repository_owner }}" >> "$deploy_dir/.env"
           fi
+          # 管理口鉴权密钥：首次部署生成（管理员随机、演示密钥与 README
+          # 「演示站点」一节一致且钉 viewer 只读），已存在则原样保留。
+          # 密钥只活在部署机 .env，永不进版本库。
+          if ! grep -q '^ATLAS_ADMIN_API_KEYS=' "$deploy_dir/.env"; then
+            admin_key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+            {
+              printf 'ATLAS_ADMIN_API_KEYS=%s,%s\n' "$admin_key" "$DEMO_KEY"
+              printf 'ATLAS_ADMIN_ROLES=%s:admin,%s:viewer\n' "$admin_key" "$DEMO_KEY"
+              printf 'ATLAS_ADMIN_KEY=%s\n' "$admin_key"
+            } >> "$deploy_dir/.env"
+            echo "generated admin API key (stored in .env only)"
+          fi
           echo "--- deploy_dir/$deploy_dir ---"
-          cat "$deploy_dir/.env"
+          cat "$deploy_dir/.env" | sed "s/ATLAS_ADMIN_API_KEYS=.*/ATLAS_ADMIN_API_KEYS=<redacted>/"
 
       - name: Pull images
         timeout-minutes: 10
@@ -200,8 +215,26 @@ jobs:
             fi
             sleep 5
           done
-          echo "--- admin stats via dashboard origin ---"
-          curl -fsS "http://127.0.0.1:$dash_port/v1/admin/stats" | head -c 400; echo
+          echo "--- admin auth via dashboard origin ---"
+          # 鉴权开启后：无密钥必须 401，演示密钥（viewer 只读）必须能读 stats
+          # —— 这一步顺带验证了 README 里演示账号确实可用。
+          code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dash_port/v1/admin/stats" || true)"
+          demo_key="$(grep '^ATLAS_ADMIN_API_KEYS=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- | cut -d, -f2 || true)"
+          if [ -n "$demo_key" ]; then
+            if [ "$code" != "401" ]; then
+              echo "auth: expected 401 without key, got $code" >&2
+              exit 1
+            fi
+            echo "no-key → 401 (auth on) ✓"
+            curl -fsS -H "Authorization: Bearer $demo_key" \
+              "http://127.0.0.1:$dash_port/v1/admin/stats" | head -c 400; echo
+          else
+            if [ "$code" != "200" ]; then
+              echo "admin stats http $code" >&2
+              exit 1
+            fi
+            echo "admin auth disabled (no keys in .env)"
+          fi
           echo "--- crossserver config via dashboard origin (404 = 尚未发布，正常) ---"
           curl -sS -o /dev/null -w 'http %{http_code}\n' "http://127.0.0.1:$dash_port/v1/crossserver/config"
 
