@@ -457,9 +457,74 @@ func findEntry(fleet []fleetEntry, id string) *fleetEntry {
 	return nil
 }
 
+// ensureTopology creates every realm and shard the fleet references, in
+// realm-then-shard order. Duplicates are fine: Atlas answers 409 and the
+// seed moves on. Returns nil when every referenced row is known to exist.
+func ensureTopology(ctx context.Context, log *slog.Logger, admin *adminClient, fleet []fleetEntry) error {
+	realms := map[string]string{} // realm id → region (first entry wins)
+	shards := map[string]string{} // shard id → owning realm id ("" = region-level)
+	for i := range fleet {
+		if fleet[i].RealmID != "" {
+			if _, ok := realms[fleet[i].RealmID]; !ok {
+				realms[fleet[i].RealmID] = fleet[i].Region
+			}
+		}
+		if fleet[i].ShardID != "" {
+			shards[fleet[i].ShardID] = fleet[i].RealmID
+		}
+	}
+	for id, region := range realms {
+		body := map[string]any{"id": id, "name": id, "region": region}
+		if err := admin.postJSON(ctx, "/v1/admin/realms", body); err != nil && !isConflict(err) {
+			return fmt.Errorf("seed realm %s: %w", id, err)
+		}
+	}
+	for id, realmID := range shards {
+		body := map[string]any{"id": id, "name": id}
+		if realmID != "" {
+			body["realm_id"] = realmID
+		}
+		if err := admin.postJSON(ctx, "/v1/admin/shards", body); err != nil && !isConflict(err) {
+			return fmt.Errorf("seed shard %s: %w", id, err)
+		}
+	}
+	if len(realms) > 0 || len(shards) > 0 {
+		log.Info("topology seeded", "realms", len(realms), "shards", len(shards))
+	}
+	return nil
+}
+
+// isConflict reports whether an admin POST failed with HTTP 409 — the row
+// already exists, which for an idempotent re-seed is a success outcome.
+func isConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "http 409")
+}
+
 // registerFleet registers every entry, retrying until Atlas answers — the
 // container may start before the registry listener is up.
 func registerFleet(ctx context.Context, log *slog.Logger, client *atlas.Client, admin *adminClient, fleet []fleetEntry, seedChars bool) error {
+	// Topology first: fleet entries hang under realms/shards, and a fresh
+	// Atlas (empty postgres) rejects registrations that reference an unknown
+	// realm. Topology is ops-owned data, so it is seeded through the admin
+	// API the same way an operator would create it; an HTTP 409 answer means
+	// an earlier boot of this container already created the row.
+	topologyBackoff := 500 * time.Millisecond
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := ensureTopology(ctx, log, admin, fleet); err == nil {
+			break
+		} else {
+			log.Warn("topology seed failed, retrying", "error", err, "backoff", topologyBackoff)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(topologyBackoff):
+		}
+		topologyBackoff = min(topologyBackoff*2, 5*time.Second)
+	}
 	for i := range fleet {
 		e := &fleet[i]
 		backoff := 500 * time.Millisecond

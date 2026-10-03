@@ -69,7 +69,9 @@ services:
     ports:
       - "${DASHBOARD_PORT:-18088}:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      # Alpine 容器里 localhost 先解析 ::1，而 nginx 只听 IPv4 —— 健康探测
+      # 必须走 127.0.0.1，否则服务正常也报 connection refused。
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
       interval: 15s
       timeout: 3s
       start_period: 5s
