@@ -36,6 +36,9 @@ type Metrics struct {
 	AdminRequests *prometheus.CounterVec
 	// HealthTransitions counts lifecycle transitions by from/to status.
 	HealthTransitions *prometheus.CounterVec
+	// DirectoryWrites observes directory write-path latency by operation
+	// (REST create/update/delete and event-bus projection application).
+	DirectoryWrites *prometheus.HistogramVec
 }
 
 // New builds the metric set. The store backs the scrape-time gauges.
@@ -61,6 +64,11 @@ func New(s store.Store) *Metrics {
 			Name: "atlas_health_transitions_total",
 			Help: "Server lifecycle transitions, labeled by from/to status.",
 		}, []string{"from", "to"}),
+		DirectoryWrites: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "atlas_directory_write_duration_seconds",
+			Help:    "Directory write-path latency by operation (service-API create/update/delete, or projection event name).",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		}, []string{"op"}),
 	}
 
 	reg.MustRegister(
@@ -68,6 +76,7 @@ func New(s store.Store) *Metrics {
 		m.DiscoveryRequests,
 		m.AdminRequests,
 		m.HealthTransitions,
+		m.DirectoryWrites,
 		newStoreCollector(s),
 	)
 	return m
@@ -96,6 +105,16 @@ func (m *Metrics) CountDiscovery(f store.ServerFilter) {
 func (m *Metrics) CountHealthTransition(from, to model.ServerStatus) {
 	if m != nil {
 		m.HealthTransitions.WithLabelValues(string(from), string(to)).Inc()
+	}
+}
+
+// ObserveDirectoryWrite records a directory write-path operation latency.
+// op is "create"/"update"/"delete" for direct service-API writes, or the
+// event-bus projection event name ("created"/"updated"/"deleted"/…) — the
+// production write path (REST and gRPC both publish events).
+func (m *Metrics) ObserveDirectoryWrite(op string, d time.Duration) {
+	if m != nil {
+		m.DirectoryWrites.WithLabelValues(op).Observe(d.Seconds())
 	}
 }
 

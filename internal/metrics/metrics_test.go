@@ -97,6 +97,29 @@ func TestRequestCounterMiddleware(t *testing.T) {
 	}
 }
 
+func TestObserveDirectoryWrite(t *testing.T) {
+	m, _ := newTestMetrics(t)
+
+	m.ObserveDirectoryWrite("create", 3*time.Millisecond)
+	m.ObserveDirectoryWrite("create", 2*time.Millisecond)
+	m.ObserveDirectoryWrite("event", 800*time.Microsecond)
+
+	out := scrape(t, m)
+	if !hasLine(out, `atlas_directory_write_duration_seconds_count{op="create"} 2`) {
+		t.Errorf("expected 2 create observations:\n%s", out)
+	}
+	if !hasLine(out, `atlas_directory_write_duration_seconds_count{op="event"} 1`) {
+		t.Errorf("expected 1 event observation:\n%s", out)
+	}
+	if !strings.Contains(out, `atlas_directory_write_duration_seconds_bucket{op="create",le="0.005"} 2`) {
+		t.Errorf("expected create observations in the 5ms bucket:\n%s", out)
+	}
+
+	// Nil receiver must be a no-op (services run without metrics in tests).
+	var nilMetrics *Metrics
+	nilMetrics.ObserveDirectoryWrite("create", time.Millisecond)
+}
+
 func hasLine(out, want string) bool {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.TrimSpace(line) == want {

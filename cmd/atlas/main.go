@@ -281,6 +281,7 @@ func main() {
 	// Prometheus instrumentation (TODO v0.1.3).
 	prom := metrics.New(composite)
 	discSvc.WithMetrics(prom)
+	dirSvc.WithMetrics(prom)
 
 	// Start health monitor.
 	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger).WithMetrics(prom)
@@ -371,7 +372,7 @@ func main() {
 	})
 	publicSrv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      publicMux,
+		Handler:      httpapi.Tracing(logger)(publicMux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -395,6 +396,9 @@ func main() {
 	if limiter != nil {
 		regHandler = limiter.Middleware(regHandler)
 	}
+	// Tracing outermost: register/heartbeat calls rejected by auth or the
+	// rate limiter are traced too.
+	regHandler = httpapi.Tracing(logger)(regHandler)
 	regSrv := &http.Server{
 		Addr:         cfg.RegistryAddr,
 		Handler:      regHandler,
@@ -435,6 +439,7 @@ func main() {
 		adminHandler = limiter.Middleware(adminHandler)
 	}
 	adminHandler = metrics.RequestCounter(prom.AdminRequests)(adminHandler)
+	adminHandler = httpapi.Tracing(logger)(adminHandler)
 	adminSrv := &http.Server{
 		Addr:         cfg.AdminAddr,
 		Handler:      adminHandler,

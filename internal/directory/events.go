@@ -7,6 +7,7 @@ package directory
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cuihairu/atlas/internal/event"
@@ -20,6 +21,9 @@ func (s *Service) ApplyEvent(ctx context.Context, e *event.Event) (*model.Charac
 	if e == nil {
 		return nil, fmt.Errorf("%w: event is required", model.ErrInvalid)
 	}
+
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveDirectoryWrite(eventWriteOp(e.Type), time.Since(t0)) }()
 
 	switch e.Type {
 	case event.EventCharacterCreated:
@@ -35,6 +39,18 @@ func (s *Service) ApplyEvent(ctx context.Context, e *event.Event) (*model.Charac
 	default:
 		return nil, fmt.Errorf("%w: unknown event type %q", model.ErrInvalid, e.Type)
 	}
+}
+
+// eventWriteOp renders an event type as the write-latency op label:
+// "character.created" → "created". Every production write path (REST and
+// gRPC alike) funnels through here, so these labels carry the real
+// per-operation breakdown; the create/update/delete labels cover direct
+// service-API writes.
+func eventWriteOp(t event.EventType) string {
+	if v, ok := strings.CutPrefix(string(t), "character."); ok {
+		return v
+	}
+	return string(t)
 }
 
 // applyCreated upserts a full index row. Re-delivered created events are

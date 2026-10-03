@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 )
@@ -15,6 +16,7 @@ import (
 // Service manages the character index (projection).
 type Service struct {
 	characters store.CharacterStore
+	metrics    *metrics.Metrics
 }
 
 // New creates a new directory service.
@@ -22,8 +24,17 @@ func New(characters store.CharacterStore) *Service {
 	return &Service{characters: characters}
 }
 
+// WithMetrics attaches Prometheus instrumentation (optional). Write-path
+// operations are observed as atlas_directory_write_duration_seconds{op}.
+func (s *Service) WithMetrics(m *metrics.Metrics) *Service {
+	s.metrics = m
+	return s
+}
+
 // CreateCharacter creates or updates a character index entry.
 func (s *Service) CreateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, name string, level int, classID int) (*model.Character, error) {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveDirectoryWrite("create", time.Since(t0)) }()
 	if accountID <= 0 {
 		return nil, fmt.Errorf("%w: account_id must be > 0", model.ErrInvalid)
 	}
@@ -53,6 +64,8 @@ func (s *Service) CreateCharacter(ctx context.Context, accountID int64, serverID
 
 // UpdateCharacter applies a partial patch to a character index entry.
 func (s *Service) UpdateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, patch store.CharacterPatch) (*model.Character, error) {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveDirectoryWrite("update", time.Since(t0)) }()
 	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, characterID, patch); err != nil {
 		return nil, fmt.Errorf("update character: %w", err)
 	}
@@ -61,6 +74,8 @@ func (s *Service) UpdateCharacter(ctx context.Context, accountID int64, serverID
 
 // DeleteCharacter removes a character index entry.
 func (s *Service) DeleteCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) error {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveDirectoryWrite("delete", time.Since(t0)) }()
 	if err := s.characters.DeleteCharacter(ctx, accountID, serverID, characterID); err != nil {
 		return fmt.Errorf("delete character: %w", err)
 	}

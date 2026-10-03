@@ -236,3 +236,10 @@
 - [x] 重注册状态语义三库分裂——postgres/mysql upsert 的 `CASE WHEN EXCLUDED.status='starting' THEN servers.status` 使 offline 服务器重注册后仍 offline（心跳只提升 starting→online,恢复路径在 SQL store 上永久断裂）;memory 则无条件重置,连 `disabled`/`maintenance` 都会被重注册打回 starting（违反 lifecycle.md「禁用不被自动状态机覆盖」）；已统一契约：仅旧状态为 suspect/offline 时重置为 starting,其余（online 及运维态）保留（实测 disable→重注册→仍 disabled;SQL 语句已对齐,三库行为一致）
 - [x] realm/shard 创建响应 `created_at` 恒为零值——fa5b874 修窗口/公告时同款缺陷漏查了这两处:memory 只戳内部副本,postgres/mysql 把 `time.Now()` 内联进 INSERT 不回填调用方对象（实测 `POST /v1/admin/realms` 返回 `0001-01-01T00:00:00Z`）；已按窗口范式对齐三库（先回填调用方再落库）,实测返回真实时间戳；并全量清点三库 5 类 Create 确认无第六处（Migration 模型无 created_at,Character/Server 本就有回填）
 - [x] NATS 消费者测试断言竞态——CI run 36913633871 实际失败（`TestHandlerFailureLeavesMessageUnacked`,后续 run 偶发复现）:断言先于 handler 执行检查 `calls.Load()`,而 `NumPending` 在消息落流即为 1、pull 投递尚未发生;毒丸测试同理,断言"handler 未被调用"可因消费循环未追上而假通过;修复:先等 handler 被调用（deadline 轮询）再断言 pending,毒丸用例先发一条合法事件探活消费循环（确保毒丸不达 handler 的断言不可能空过）,`called` 改 `atomic.Int32`;本地 `-count=3` + 全包 20s 稳定通过
+
+---
+
+## 可观测性深化 · 首期（2026-10-03）
+
+- [x] 请求级追踪（X-Request-ID）——三个 HTTP 监听口（公网/注册/管理）最外层中间件：入站合法 id（`[A-Za-z0-9._:-]` ≤64）沿用、缺失/非法/超长生成 128-bit 随机 hex，回显响应头并注入 context；请求完成记录含 request_id/method/path/status/duration_ms 的访问日志，`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头不记日志；中间件置于鉴权/限流之外，被拒绝的请求同样被追踪（网关透传同一 header 可跨跳关联）
+- [x] 目录写路径延迟指标 `atlas_directory_write_duration_seconds{op}`——服务层写（create/update/delete）与事件投影（按事件类型标记：created/updated/deleted/…，生产写路径 REST/gRPC 均经此投影）在 service 层计时观测，metrics 未接线时为 nil 安全空操作；docs/api.md 指标表 + 「请求追踪」小节、docs/architecture.md §7 指标表同步

@@ -590,6 +590,15 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 | `atlas_discovery_requests_total{filter}` | counter | 发现服务列表请求（按过滤条件） |
 | `atlas_admin_requests_total{endpoint,status}` | counter | 管理 API 请求（按路由与状态码） |
 | `atlas_health_transitions_total{from,to}` | counter | 服务器生命周期状态迁移 |
+| `atlas_directory_write_duration_seconds{op}` | histogram | 角色目录写路径延迟（`op` = 服务层 `create`/`update`/`delete`，或事件投影名 `created`/`updated`/`deleted`/…——生产写路径 REST/gRPC 均经事件总线投影） |
+
+### 请求追踪（X-Request-ID）
+
+三个 HTTP 监听口（公网 / 注册 / 管理）对每个请求做请求级追踪：
+
+- 入站带 `X-Request-ID`（合法字符 `[A-Za-z0-9._:-]`，≤64 字符）则沿用并回显到响应头；否则生成 128-bit 随机 hex id。
+- 请求完成时输出一条访问日志：`request_id`、`method`、`path`、`status`、`duration_ms`。`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头、不记日志。
+- 网关（APISIX/nginx）透传同一 header 即可把一条请求在多跳日志里串起来。被限流/鉴权拒绝的请求同样有 id（追踪中间件在最外层）。
 
 ---
 
