@@ -1,6 +1,8 @@
 // 跨服配置中心：管理台编辑跨服协调配置（拓扑 / 参与分组 / 玩法开关 /
-// 匹配域），保存即发布新版本（version/hash），变更按通知-拉取语义扩散。
-// 幂等保存（内容未变）不升版本、不发信号——保存结果里直接可见。
+// 匹配域 / 玩法类型表），保存即发布新版本（version/hash），变更按通知-
+// 拉取语义扩散。幂等保存（内容未变）不升版本、不发信号——保存结果里
+// 直接可见。类型表是舰队级声明（docs/config-center.md §2.2），任何改动
+// 都以 targets=["*"] 全局扩散。
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Space, Tag, Input, Switch, Select, Modal, Form,
@@ -8,13 +10,13 @@ import {
 } from 'antd';
 import {
   PlusOutlined, ClusterOutlined, AppstoreOutlined, PartitionOutlined,
-  SaveOutlined, ReloadOutlined,
+  SaveOutlined, ReloadOutlined, TagsOutlined,
 } from '@ant-design/icons';
 import { useLang, t } from '../i18n';
 import { getCrossServerConfig, updateCrossServerConfig } from '../api/client';
 import type {
   CrossServerSpec, CrossServerCluster, CrossServerGroup, CrossServerMatchDomain,
-  CrossServerNotifyResult,
+  CrossPlayType, CrossServerNotifyResult,
 } from '../types';
 
 const emptySpec = (): CrossServerSpec => ({
@@ -22,10 +24,17 @@ const emptySpec = (): CrossServerSpec => ({
   groups: [],
   features: {},
   match_domains: [],
-  // 类型表由 API 全量带回（后端 Normalize 恒输出空数组），管理台暂只
-  // 透传不编辑（卡片排期见 TODO）——保留该段，发布时才不会抹掉它。
+  // 类型表随全文发布一起扩散——服务端对 crossplay_types 变更按
+  // targets=["*"] 全局下发（舰队级声明），这里保存同样整段透传。
   crossplay_types: [],
 });
+
+/** 类型行客户端校验镜像服务端 model.ValidateCrossServerSpec 的口径：
+ * ID 与 id_prefix 全表唯一、ID 走 [a-z0-9._-] 首字符字母数字、前缀
+ * 2–8 位小写字母；lifecycle 枚举交给下拉框。空值即「未填」，服务端
+ * 缺省 persistent，客户端不替它做决定（往返不改动已发布内容）。 */
+const TYPE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const TYPE_PREFIX_RE = /^[a-z]{2,8}$/;
 
 /** id 列表编辑用自由输入 tags（逗号/回车分隔）。 */
 function ServerIdsInput({ value, onChange }: { value?: string[]; onChange?: (v: string[]) => void }) {
@@ -52,10 +61,12 @@ export default function CrossServer() {
   const [clusterModal, setClusterModal] = useState<CrossServerCluster | null>(null);
   const [groupModal, setGroupModal] = useState<CrossServerGroup | null>(null);
   const [domainModal, setDomainModal] = useState<CrossServerMatchDomain | null>(null);
+  const [typeModal, setTypeModal] = useState<CrossPlayType | null>(null);
   const [featureKey, setFeatureKey] = useState('');
   const [clusterForm] = Form.useForm();
   const [groupForm] = Form.useForm();
   const [domainForm] = Form.useForm();
+  const [typeForm] = Form.useForm();
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -211,6 +222,116 @@ export default function CrossServer() {
     });
     setDirty(true);
   };
+
+  // ── 玩法类型表 ─────────────────────────────────────────────────────
+
+  const editType = (tp?: CrossPlayType) => {
+    const target = tp ?? { id: '' };
+    setTypeModal(target);
+    typeForm.setFieldsValue({
+      id: target.id,
+      name: target.name ?? '',
+      summary: target.summary ?? '',
+      lifecycle: target.lifecycle ?? '',
+      matchmaking: target.matchmaking ?? false,
+      ranking: target.ranking ?? false,
+      id_prefix: target.id_prefix ?? '',
+    });
+  };
+
+  const saveType = async () => {
+    const v = await typeForm.validateFields();
+    const row: CrossPlayType = { id: v.id };
+    // 与服务端 omitempty 同口径：空串/关掉的开关不落段，保存往返
+    // 不会把「未声明」改写成「显式空值」（hash 才对得上、幂等才成立）。
+    if (v.name) row.name = v.name;
+    if (v.summary) row.summary = v.summary;
+    if (v.lifecycle) row.lifecycle = v.lifecycle;
+    if (v.matchmaking) row.matchmaking = true;
+    if (v.ranking) row.ranking = true;
+    if (v.id_prefix) row.id_prefix = v.id_prefix;
+    const exists = typeModal && spec.crossplay_types.some((tp) => tp.id === typeModal.id);
+    setSpec((s) => ({
+      ...s,
+      crossplay_types: exists
+        ? s.crossplay_types.map((tp) => (tp.id === typeModal?.id ? row : tp))
+        : [...s.crossplay_types, row],
+    }));
+    setDirty(true);
+    setTypeModal(null);
+  };
+
+  const removeType = (id: string) => {
+    setSpec((s) => ({ ...s, crossplay_types: s.crossplay_types.filter((tp) => tp.id !== id) }));
+    setDirty(true);
+  };
+
+  /** 类型 ID 唯一性（编辑行豁免自己，与 id_prefix 同款口径）。 */
+  const uniqueTypeId = (_: unknown, value: string) => {
+    if (!value || !TYPE_ID_RE.test(value)) return Promise.resolve();
+    const clash = spec.crossplay_types.some(
+      (tp) => tp.id === value && tp.id !== typeModal?.id,
+    );
+    return clash ? Promise.reject(new Error(t('csTypeIdTaken'))) : Promise.resolve();
+  };
+
+  /** id_prefix 全表唯一（编辑行豁免自己）——前缀歧义会断日志回溯。 */
+  const uniqueTypePrefix = (_: unknown, value: string) => {
+    if (!value) return Promise.resolve();
+    if (!TYPE_PREFIX_RE.test(value)) return Promise.reject(new Error(t('csTypePrefixPattern')));
+    const clash = spec.crossplay_types.some(
+      (tp) => tp.id_prefix === value && tp.id !== typeModal?.id,
+    );
+    return clash ? Promise.reject(new Error(t('csTypePrefixTaken'))) : Promise.resolve();
+  };
+
+  const typeColumns = [
+    { title: t('id'), dataIndex: 'id', width: 120, render: (v: string) => <Typography.Text code>{v}</Typography.Text> },
+    { title: t('csTypeName'), dataIndex: 'name', width: 150, render: (v: string) => v || '—' },
+    { title: t('csTypeSummary'), dataIndex: 'summary', render: (v: string) => v || '—' },
+    {
+      title: t('csTypeLifecycle'),
+      dataIndex: 'lifecycle',
+      width: 110,
+      // 服务端缺省 persistent，未声明按缺省渲染。
+      render: (v: string) => (
+        <Tag color={v === 'seasonal' ? 'gold' : v === 'ephemeral' ? 'purple' : 'green'}>
+          {v || 'persistent'}
+        </Tag>
+      ),
+    },
+    {
+      title: t('csTypeMatchmaking'),
+      dataIndex: 'matchmaking',
+      width: 90,
+      render: (v: boolean) => <Tag color={v ? 'blue' : 'default'}>{v ? t('yes') : t('no')}</Tag>,
+    },
+    {
+      title: t('csTypeRanking'),
+      dataIndex: 'ranking',
+      width: 80,
+      render: (v: boolean) => <Tag color={v ? 'cyan' : 'default'}>{v ? t('yes') : t('no')}</Tag>,
+    },
+    {
+      title: t('csTypeIdPrefix'),
+      dataIndex: 'id_prefix',
+      width: 100,
+      render: (v: string) => (v ? <Typography.Text code>{v}</Typography.Text> : '—'),
+    },
+    {
+      title: t('actions'),
+      key: 'actions',
+      width: 120,
+      render: (_: unknown, tp: CrossPlayType) => (
+        <Space>
+          <Button size="small" onClick={() => editType(tp)}>{t('edit')}</Button>
+          <Popconfirm title={t('confirmDelete')} onConfirm={() => removeType(tp.id)}>
+            <Button size="small" danger>{t('delete')}</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   const clusterColumns = [
     { title: t('id'), dataIndex: 'id', width: 130 },
@@ -406,6 +527,24 @@ export default function CrossServer() {
         />
       </Card>
 
+      <Card
+        title={<Space><TagsOutlined />{t('csCrossPlayTypes')}</Space>}
+        extra={<Button icon={<PlusOutlined />} onClick={() => editType()}>{t('csAddType')}</Button>}
+      >
+        <Alert
+          style={{ marginBottom: 12 }}
+          type="info"
+          showIcon
+          message={t('csTypeFleetWide')}
+          description={t('csTypeFleetWideTip')}
+        />
+        <Table
+          rowKey="id" size="small" columns={typeColumns}
+          dataSource={spec.crossplay_types} pagination={false}
+          locale={{ emptyText: t('noData') }}
+        />
+      </Card>
+
       <Modal
         title={t('csAddCluster')}
         open={clusterModal !== null}
@@ -466,6 +605,65 @@ export default function CrossServer() {
           </Form.Item>
           <Form.Item name="paramsText" label={t('csParams')} tooltip={t('csParamsTip')}>
             <Input.TextArea rows={3} placeholder={'mmr=0-3000\nmax_team=3'} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={typeModal?.id ? t('edit') + ' · ' + t('csCrossPlayTypes') : t('csAddType')}
+        open={typeModal !== null}
+        onOk={saveType}
+        onCancel={() => setTypeModal(null)}
+        destroyOnClose
+      >
+        <Form form={typeForm} layout="vertical">
+          <Form.Item
+            name="id"
+            label={t('id')}
+            tooltip={t('csTypeIdTip')}
+            rules={[
+              { required: true },
+              { pattern: TYPE_ID_RE, message: t('csTypeIdPattern') },
+              { validator: uniqueTypeId },
+            ]}
+          >
+            <Input
+              placeholder="battlefield"
+              disabled={!!typeModal?.id && spec.crossplay_types.some((tp) => tp.id === typeModal.id)}
+            />
+          </Form.Item>
+          <Form.Item name="name" label={t('csTypeName')}>
+            <Input placeholder={t('csTypeNamePlaceholder')} />
+          </Form.Item>
+          <Form.Item name="summary" label={t('csTypeSummary')}>
+            <Input.TextArea rows={2} placeholder={t('csTypeSummaryPlaceholder')} />
+          </Form.Item>
+          <Form.Item name="lifecycle" label={t('csTypeLifecycle')} tooltip={t('csTypeLifecycleTip')}>
+            <Select
+              allowClear
+              placeholder="persistent"
+              options={[
+                { value: 'persistent', label: 'persistent' },
+                { value: 'seasonal', label: 'seasonal' },
+                { value: 'ephemeral', label: 'ephemeral' },
+              ]}
+            />
+          </Form.Item>
+          <Space size={24}>
+            <Form.Item name="matchmaking" label={t('csTypeMatchmaking')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item name="ranking" label={t('csTypeRanking')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Space>
+          <Form.Item
+            name="id_prefix"
+            label={t('csTypeIdPrefix')}
+            tooltip={t('csTypeIdPrefixTip')}
+            rules={[{ validator: uniqueTypePrefix }]}
+          >
+            <Input placeholder="xb" maxLength={8} style={{ width: 160 }} />
           </Form.Item>
         </Form>
       </Modal>
