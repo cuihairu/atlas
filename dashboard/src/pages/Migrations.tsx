@@ -61,7 +61,7 @@ export default function Migrations() {
     setLoading(true);
     try {
       const res = await listMigrations({ limit: 50, cursor });
-      setMigrations(res.migrations);
+      setMigrations(res.migrations ?? []);
       setNextCursor(res.next_cursor);
     } finally {
       setLoading(false);
@@ -80,7 +80,7 @@ export default function Migrations() {
     const id = setInterval(async () => {
       try {
         const res = await listMigrations({ limit: 50, cursor });
-        setMigrations(res.migrations);
+        setMigrations(res.migrations ?? []);
         setNextCursor(res.next_cursor);
       } catch {
         // transient poll failure: keep the interval, client already toasts
