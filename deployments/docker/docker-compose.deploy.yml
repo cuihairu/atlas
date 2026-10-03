@@ -72,6 +72,11 @@ services:
         condition: service_healthy
     ports:
       - "${DASHBOARD_PORT:-18088}:80"
+      # Cloudflare 隧道的 ingress 是远程托管配置，把 atlas.cuihairu.site
+      # 回源到 192.168.5.5:8082（改不了云端就要在地上接住）：这里让管理台
+      # 同样占住宿主机 8082，域名经隧道直达管理台 nginx；18xxx 直连口不受
+      # 影响。/v1/admin 等仍由 nginx 同源反代到 atlas 管理监听口。
+      - "${ATLAS_TUNNEL_PORT:-8082}:80"
     healthcheck:
       # Alpine 容器里 localhost 先解析 ::1，而 nginx 只听 IPv4 —— 健康探测
       # 必须走 127.0.0.1，否则服务正常也报 connection refused。
