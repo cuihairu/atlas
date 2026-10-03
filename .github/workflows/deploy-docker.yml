@@ -46,7 +46,9 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, atlas-docker100]
-    timeout-minutes: 45
+    # job 级超时必须大于门禁（105m）+ 部署与验活（约 30m）：
+    # 曾按 45m 设，门禁没跑完整个 job 就被强杀。
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
@@ -71,13 +73,17 @@ jobs:
           wait_green() {
             wf="$1"
             for _ in $(seq 1 300); do
+              # 这个端点返回的是带缩进的 JSON（"status": "x" 带空格），
+              # 先压成单行再抠字段，否则紧凑模式的 grep 永远不匹配。
+              err=/tmp/gate-err.$$
               resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" || true)"
-              status="$(printf '%s' "$resp" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-              concl="$(printf '%s' "$resp" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
-              run_url="$(printf '%s' "$resp" | grep -o '"html_url":"[^"]*actions/runs/[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
+                "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" 2>"$err" || true)"
+              flat="$(printf '%s' "$resp" | tr -d ' \n')"
+              status="$(printf '%s' "$flat" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              concl="$(printf '%s' "$flat" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              run_url="$(printf '%s' "$flat" | grep -o '"html_url":"[^"]*actions/runs/[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
               if [ -z "$status" ]; then
-                echo "$wf: no run for $SHA yet, retrying..."
+                echo "$wf: no run for $SHA yet (api: $(tr -d '\n' < "$err" | head -c 200)), retrying..."
               elif [ "$status" = "completed" ]; then
                 if [ "$concl" = "success" ]; then
                   echo "$wf green — $run_url"
