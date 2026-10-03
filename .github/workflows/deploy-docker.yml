@@ -263,18 +263,24 @@ jobs:
             "https://atlas.cuihairu.site/v1/discovery/servers?limit=2" | head -c 300; echo
 
       # ── 部署记录：线上验证截图 ───────────────────────────────────
-      # 部署机不一定有浏览器，用无头 chrome 容器截图（随后上传为 artifact）。
+      # 用 zenika/alpine-chrome 的 one-shot --screenshot；chromedp/headless-shell
+      # 是给 chromedp 客户端驱动的服务形态，one-shot 模式不生效会挂满超时。
+      # 截图是记录不是健康检查：失败只标黄不回滚（continue-on-error）。
       - name: Screenshot the live site
         timeout-minutes: 5
+        continue-on-error: true
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
           mkdir -p "$deploy_dir/records"
+          # 容器内 chromium 以非 root 用户跑，目录必须可写
+          chmod 777 "$deploy_dir/records"
           for i in 1 2 3; do
             if docker run --rm -v "$deploy_dir/records":/shots \
-              chromedp/headless-shell:latest \
-              --no-sandbox --disable-gpu --hide-scrollbars \
-              --window-size=1440,2000 --timeout=15000 \
+              zenika/alpine-chrome \
+              --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --hide-scrollbars --window-size=1440,2000 \
+              --virtual-time-budget=10000 \
               --screenshot=/shots/deploy-online.png \
               https://atlas.cuihairu.site/ ; then
               ls -la "$deploy_dir/records/deploy-online.png"
