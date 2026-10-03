@@ -1,11 +1,20 @@
 # 部署到自托管 docker 主机（atlas.cuihairu.site 演示环境）
 #
 # 与 docker-image.yml 的分工：那个工作流在 GitHub 托管 runner 上构建并推
-# GHCR，这个工作流只做"拉镜像 → 起栈 → 验活"，跑在部署机自己的 runner 上
-# （标签 atlas-docker100，与其它仓库的 runner 隔离，互不排队）。
+# GHCR，这个工作流只做"拉镜像 → 起栈 → 验活 → 失败回滚"，跑在部署机自己的
+# runner 上（标签 atlas-docker100，与其它仓库的 runner 隔离，互不排队）。
 #
 # 部署机不需要源码工具链：compose 文件与 migrations/ 由本工作流同步过去，
-# 镜像全部来自 GHCR。
+# 镜像全部来自 GHCR。部署幂等（同 tag 重复 up -d 无副作用）。
+#
+# 门禁与保障：
+#   - 绿才部署：先等 ci.yml 与 docker-image.yml 对本次提交跑完且成功
+#     （失败/超时即中止，不碰部署机）；
+#   - 验活两层：部署机本机 127.0.0.1 端口 + 线上 https://atlas.cuihairu.site/；
+#   - 失败自动回滚：把 .env 滚回上一组镜像标签重新 up 并验活，再报失败
+#     （首次部署没有上一组标签，只报错）；
+#   - 部署记录：job summary 回传 run 链接、提交、容器状态与线上验证截图
+#     （artifact: deploy-screenshot）。
 #
 # 手动触发（tag 缺省 latest = main 最新滚动）：
 #   gh workflow run deploy-docker.yml
@@ -27,6 +36,7 @@ on:
 permissions:
   contents: read
   packages: read
+  actions: read      # 门禁要读 ci / docker-image 的运行结论
 
 # 同时只允许一个部署在跑：并发 up -d 会互相 --remove-orphans。
 concurrency:
@@ -36,11 +46,50 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, atlas-docker100]
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
     steps:
       - name: Checkout
         timeout-minutes: 3
         uses: actions/checkout@v4
+
+      # ── 门禁：主分支绿才部署 ─────────────────────────────────────
+      # 等两条 workflow 对本次提交跑完：ci（测试）与 docker-image（镜像已推）。
+      # 还在排队/进行中就轮询（最多 15 分钟）；失败或超时直接中止，不碰部署机。
+      - name: Gate — main green (ci + image)
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          wait_green() {
+            wf="$1"
+            for _ in $(seq 1 90); do
+              resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" || true)"
+              status="$(printf '%s' "$resp" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              concl="$(printf '%s' "$resp" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              run_url="$(printf '%s' "$resp" | grep -o '"html_url":"[^"]*actions/runs/[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
+              if [ -z "$status" ]; then
+                echo "$wf: no run for $SHA yet, retrying..."
+              elif [ "$status" = "completed" ]; then
+                if [ "$concl" = "success" ]; then
+                  echo "$wf green — $run_url"
+                  return 0
+                fi
+                echo "$wf $concl — $run_url" >&2
+                return 1
+              else
+                echo "$wf $status — $run_url"
+              fi
+              sleep 10
+            done
+            echo "$wf: still not completed after 15m" >&2
+            return 1
+          }
+          wait_green ci.yml
+          wait_green docker-image.yml
 
       - name: Login GHCR
         timeout-minutes: 3
@@ -50,6 +99,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── 部署目录与 .env（记录上一组标签，供失败回滚） ─────────────
       - name: Prepare deploy directory
         timeout-minutes: 3
         run: |
@@ -66,6 +116,16 @@ jobs:
           cp deployments/docker/docker-compose.deploy.yml "$deploy_dir/docker-compose.yml"
           rm -rf "$deploy_dir/migrations"
           cp -r migrations "$deploy_dir/migrations"
+          # 回滚目标 = 这次部署前 .env 里的标签（首次部署为空 = 无处可回，
+          # 失败时只报错不回滚）
+          prev_atlas=""
+          prev_dash=""
+          if [ -f "$deploy_dir/.env" ]; then
+            prev_atlas="$(grep '^ATLAS_TAG=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- || true)"
+            prev_dash="$(grep '^DASHBOARD_TAG=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- || true)"
+          fi
+          echo "PREV_ATLAS_TAG=$prev_atlas" >> "$GITHUB_ENV"
+          echo "PREV_DASHBOARD_TAG=$prev_dash" >> "$GITHUB_ENV"
           # 只留本次部署要用的变量（口令不进版本库，从宿主机既有 .env 继承）
           if [ ! -f "$deploy_dir/.env" ]; then
             cat > "$deploy_dir/.env" <<EOF
@@ -100,11 +160,13 @@ jobs:
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
+          # up -d 对同 tag 重复执行即幂等：镜像未变则原样不动，变了才重建
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" \
             up -d --remove-orphans
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps
 
-      - name: Wait for health
+      # ── 验活第 1 层：部署机本机端口 ─────────────────────────────
+      - name: Wait for health (local)
         timeout-minutes: 8
         run: |
           set -euo pipefail
@@ -143,18 +205,100 @@ jobs:
           echo "--- crossserver config via dashboard origin (404 = 尚未发布，正常) ---"
           curl -sS -o /dev/null -w 'http %{http_code}\n' "http://127.0.0.1:$dash_port/v1/crossserver/config"
 
+      # ── 验活第 2 层：线上域名（Cloudflare 隧道） ──────────────────
+      - name: Verify online (https://atlas.cuihairu.site)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          echo "--- homepage ---"
+          curl -fsS --retry 8 --retry-delay 3 --retry-all-errors -o /dev/null \
+            -w 'HTTP %{http_code} in %{time_total}s\n' https://atlas.cuihairu.site/
+          echo "--- healthz through the tunnel ---"
+          curl -fsS --retry 8 --retry-delay 3 --retry-all-errors https://atlas.cuihairu.site/healthz
+          echo
+          echo "--- discovery via the public origin ---"
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors \
+            "https://atlas.cuihairu.site/v1/discovery/servers?limit=2" | head -c 300; echo
+
+      # ── 部署记录：线上验证截图 ───────────────────────────────────
+      # 部署机不一定有浏览器，用无头 chrome 容器截图（随后上传为 artifact）。
+      - name: Screenshot the live site
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          mkdir -p "$deploy_dir/records"
+          for i in 1 2 3; do
+            if docker run --rm -v "$deploy_dir/records":/shots \
+              chromedp/headless-shell:latest \
+              --no-sandbox --disable-gpu --hide-scrollbars \
+              --window-size=1440,2000 --timeout=15000 \
+              --screenshot=/shots/deploy-online.png \
+              https://atlas.cuihairu.site/ ; then
+              ls -la "$deploy_dir/records/deploy-online.png"
+              exit 0
+            fi
+            echo "screenshot attempt $i failed; retrying in 10s"
+            sleep 10
+          done
+          echo "screenshot failed after 3 attempts" >&2
+          exit 1
+
+      - name: Upload screenshot
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-screenshot
+          path: ${{ inputs.deploy_dir }}/records/deploy-online.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # ── 失败自动回滚：滚回上一组镜像标签重新 up 并验活 ────────────
+      - name: Rollback to previous images
+        if: failure()
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          if [ -z "${PREV_ATLAS_TAG:-}" ] && [ -z "${PREV_DASHBOARD_TAG:-}" ]; then
+            echo "首次部署失败，没有上一组镜像可回滚——保持现状并报告失败。"
+            exit 1
+          fi
+          echo "回滚：atlas=${PREV_ATLAS_TAG:-<none>} dashboard=${PREV_DASHBOARD_TAG:-<none>}"
+          sed -i '/^ATLAS_TAG=/d;/^DASHBOARD_TAG=/d' "$deploy_dir/.env"
+          printf 'ATLAS_TAG=%s\nDASHBOARD_TAG=%s\n' \
+            "${PREV_ATLAS_TAG:-latest}" "${PREV_DASHBOARD_TAG:-${PREV_ATLAS_TAG:-latest}}" >> "$deploy_dir/.env"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" pull || true
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" up -d --remove-orphans || true
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps || true
+          dash_port="$(grep '^DASHBOARD_PORT=' "$deploy_dir/.env" | tail -1 | cut -d= -f2)"
+          dash_port="${dash_port:-18088}"
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:$dash_port/healthz" >/dev/null 2>&1; then
+              echo "回滚完成，旧版本在 :$dash_port 恢复健康（部署仍按失败报告）。"
+              exit 1
+            fi
+            sleep 6
+          done
+          echo "回滚后仍未通过健康检查——需要人工介入。" >&2
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80 || true
+          exit 1
+
       - name: Deploy summary
         if: always()
         timeout-minutes: 3
         run: |
           deploy_dir="${{ inputs.deploy_dir }}"
           {
-            echo "### Atlas 部署完成"
+            echo "### Atlas 部署记录"
             echo
+            echo "- 部署 run：<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>"
             echo "- 提交：\`${{ github.sha }}\`"
-            echo "- 镜像标签：\`${{ inputs.tag }}\`"
+            echo "- 镜像标签：\`${{ inputs.tag }}\`（回滚目标：\`${PREV_ATLAS_TAG:-首次部署}\`）"
             echo "- 部署目录：\`$deploy_dir\`"
-            echo "- 站点：<https://atlas.cuihairu.site/>"
+            echo "- 站点：<https://atlas.cuihairu.site/>（线上验证截图见 artifact \`deploy-screenshot\`）"
+            echo "- 结论：${{ job.status }}"
             echo
             echo '```'
             docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps --format '{{.Name}}\t{{.Image}}\t{{.Status}}' 2>/dev/null || true
