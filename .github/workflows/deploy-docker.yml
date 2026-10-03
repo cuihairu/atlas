@@ -111,8 +111,10 @@ jobs:
           deploy_dir="${{ inputs.deploy_dir }}"
           # docker 自己判定健康；这里额外做端到端探测：管理台首页 +
           # 经 nginx 同源反代的 admin 接口 + 公网发现接口。
-          set -- $(grep -E '^(DASHBOARD_PORT|ATLAS_PUBLIC_PORT)=' "$deploy_dir/.env" | cut -d= -f2 | tr '\n' ' ')
-          dash_port="${1:-18088}"
+          # 端口逐个按名取（一次 grep 两个变量会拿错顺序，把公网口当管理台口）。
+          read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
+          dash_port="$(read_port DASHBOARD_PORT)"
+          dash_port="${dash_port:-18088}"
           echo "waiting for dashboard on :$dash_port ..."
           for i in $(seq 1 40); do
             if curl -fsS "http://127.0.0.1:$dash_port/healthz" >/dev/null 2>&1; then
@@ -127,9 +129,19 @@ jobs:
             sleep 10
           done
           echo "--- discovery via dashboard origin (same-origin proxy) ---"
-          curl -fsS "http://127.0.0.1:$dash_port/v1/discovery/servers?limit=3" | head -c 400; echo
+          # 演示舰队注册/心跳要几拍，等真的有服再收工（管理台首屏才有数据）
+          for i in $(seq 1 12); do
+            body="$(curl -fsS "http://127.0.0.1:$dash_port/v1/discovery/servers?limit=3" || true)"
+            if printf '%s' "$body" | grep -q '"id"'; then
+              echo "demo fleet online (after ${i} tries): $(printf '%s' "$body" | head -c 400)"
+              break
+            fi
+            sleep 5
+          done
           echo "--- admin stats via dashboard origin ---"
           curl -fsS "http://127.0.0.1:$dash_port/v1/admin/stats" | head -c 400; echo
+          echo "--- crossserver config via dashboard origin (404 = 尚未发布，正常) ---"
+          curl -sS -o /dev/null -w 'http %{http_code}\n' "http://127.0.0.1:$dash_port/v1/crossserver/config"
 
       - name: Deploy summary
         if: always()
