@@ -9,6 +9,10 @@ build/
 out/
 *.tsbuildinfo
 
+# Go 覆盖率产物（go test -coverprofile / CI 中间文件，勿提交）
+coverage.out
+coverage.raw
+
 # 环境
 .env
 .env.*
