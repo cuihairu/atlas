@@ -3,11 +3,10 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：**覆盖率回补（巡检补令）**——CI 口径 total 70.4% → ≥80%
-> （10-03 为 85.8%，crossserver / fleet / tracing 新面拉低），只补测试
-> 不改语义，门禁全绿按 CI 口径复测后推送。
+> 当前批次：**文档清味批（用户令）**——按规范文档清机器味 + 禁吹牛扫描
+> （README 与 docs 全量，一次提交）；随后接续其它队列批次。
 >
-> 前批「收尾清零 + 全量对账」已完成：定档归档与对账纠真见下。
+> 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
 > 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
 
@@ -148,6 +147,29 @@
 - [x] 重注册状态语义三库分裂（postgres/mysql offline 无法复活、memory 覆盖运维态）→ 统一契约：仅 suspect/offline 重置 starting
 - [x] realm/shard 创建响应 created_at 零值 → 按窗口范式三库对齐，全量清点无第六处
 - [x] NATS 消费者测试断言竞态 → 等待 handler 调用 + 毒丸探活，`-count=3` 稳定
+
+### 覆盖率回补 · 巡检补令（2026-10-04）✅
+
+> CI 口径 total 70.4% → **87.0%**（10-03 基线 85.8%）；本地无 DB 口径
+> 70.4% → 71.3%（DB 契约测试由 CI service containers 承载，本地无 DSN 时
+> skip，故两个口径并存）。只补测试不改语义（commit f750263）：
+
+- [x] 点名短板全部补齐（复测值）：crossserver Update 0%→100%、
+      diffDomains 57.9%→100%、receivers 78.3%→95.7%、listServersAll
+      75%→91.7%；model Clone 0%→100%；httpapi sprintfTimeID 0%→100%；
+      fleet Matches 76.2%→100%、track 四包装 75–80%→100%
+- [x] 顺手快赢：envOr、Endpoint.String、MigrationStatus.Valid、redis
+      适配器身份、pbMetadata PATCH 语义、readyz 存储故障、admin crossserver
+      GET 基线、RegistryRoutes 挂载面
+- [x] 门禁：改动包 `-race` 绿、`go vet ./...` 绿、service/handler 层
+      全部 >80%（httpapi 86.7 / crossserver 92.3 / admin 92.7 / fleet 94.6 /
+      registry 88.0 / routing 91.4）
+- 巡检新发现（如实记档，未处置——修复涉及契约/语义，留独立批次）：
+  ① 三库 `ListServers` 均 cap 200（storetest 钉住的契约），而
+  `crossserver.listServersAll` 按每页 500 判终页、`fleet.Index.Reconcile`
+  以 Limit 500 循环——**舰队 >200 台时信号寻址与索引重建漏读**；
+  `routing.Diagnose` Limit 200 单页截断同理；② `model.CrossServerSpec.Clone()`
+  方法与 `CloneCrossServerSpec` 函数重复实现，生产只用函数（方法本批已补测）
 
 ### 全量对账 · 首轮（2026-10-04）✅
 
