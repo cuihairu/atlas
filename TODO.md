@@ -1,253 +1,108 @@
 # TODO
 
-> 每一项都是一个可独立提交的原子任务。完成后打勾并注明 commit。
+> 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
+> 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 版本策略：0.1.x 逐个推进，产品验证后再考虑 0.2.0。
+> 当前批次：**工程落地清单（P1）**——从 docs/roadmap.md「v0.2+ 候选方向」与
+> docs/performance.md §7 立档项加载，按「正确性优先于 QPS」排序：
+> Discovery 读路径管线化、故障模式回归套件打头。
+>
+> 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
 
 ---
 
-## v0.1.0 — MVP ✅
+## 工程落地清单 · Discovery 读路径管线化（P1，打头）
 
-- [x] Server Registry — register / heartbeat / unregister
-- [x] Server Discovery — list / get
-- [x] Character Directory — create / update / delete / account → characters
-- [x] Health Monitor — automatic offline (online → suspect → offline)
-- [x] REST API — 11 endpoints, Go 1.22+ pattern routing
-- [x] Memory Store — in-memory implementation for tests/dev
-- [x] PostgreSQL Store — pgx + pgxpool
-- [x] Redis Store — runtime state (heartbeat/load/players)
-- [x] Docker — multi-stage Dockerfile + docker-compose (atlas + PG + Redis)
-- [x] CI — GitHub Actions for VitePress docs deployment
-- [x] VitePress docs site — config + custom CSS + landing page + api-quickstart
-- [x] README — logo + quick start + API reference + project structure
+> 立档位置：docs/performance.md §2「已知边界」；目标把 Redis 往返从 N 次
+> （1,000 台 ≈ 300ms）降到常数 1–2 次，改动限定 `internal/store/redisstore`
+> 与 discovery 读路径。完成后同步刷新 benchmarks.md / performance.md 数字。
 
-## v0.1.1 — Admin + Dashboard + Security ✅
+- [ ] 接口与实现：`RuntimeStore` 新增批量读 `GetRuntimes(ctx, ids)`；
+      memory 单次锁内读全（缺失即缺席）、Redis pipeline 一次 Exec
+      （单节点 1 RTT，Cluster 按 slot 分批）；`GetRuntime` 单点语义不变
+- [ ] 调用方：`discovery.ListServers` 列表路径改批量合并；
+      `GetServer` 详情路径维持单点读
+- [ ] 契约测试：storetest `RunRuntime` 扩展批量语义
+      （部分缺失 → 缺失键缺席、其余值正确；空 id 列表无副作用）
+- [ ] 基准与文档：`BenchmarkListServers` 系列复测 + benchmarks.md §3
+      往返估算表 / performance.md §2 更新，回归警戒线同步修订
 
-- [x] Admin API — server lifecycle (maintenance / drain / enable / disable)
-- [x] Admin API — global stats (servers by status/region/version, player counts)
-- [x] Admin API — character search (by name/server/class/level range)
-- [x] Admin API — migration CRUD (create / get / list / rollback)
-- [x] Dashboard — React 19 + Vite 6 + Ant Design 5, dark theme
-- [x] Dashboard — Overview / Servers / ServerDetail / Characters / Migrations
-- [x] MySQL Store — database/sql + go-sql-driver/mysql
-- [x] Metadata — Server.Metadata + Character.Metadata (JSON KV)
-- [x] Auth — AdminAuth (API key + IP whitelist) + RegistryAuth (service token)
-- [x] Security — three-port isolation (:8080 public / :8081 registry / :8082 admin)
-- [x] Migration SQL — PostgreSQL + MySQL schema with metadata columns
-- [x] Docs — architecture selection rationale
+## 工程落地清单 · 故障模式回归套件（P1）
 
----
+> 立档位置：docs/performance.md §7 演练矩阵——把「正确性不靠人品」的七个
+> 场景逐项变成 `go test` 可复现的故障用例，叠在现有健康巡检 / 契约套件上。
+> 最后一个「Atlas 副本宕机」是部署级演练，以清单形式保留在 ha.md 不自动化。
 
-## v0.1.2 — Event Adapter ✅
-
-- [x] Define `EventAdapter` interface in `internal/event/adapter.go` (518f76d)
-- [x] Implement `internal/event/http/` — HTTP sync adapter (current behavior) (518f76d)
-- [x] Implement `internal/event/redis/` — Redis Streams adapter (XADD / XREADGROUP) (d53d9c9)
-- [x] Add `ATLAS_EVENT_ADAPTER` config (http / redis) (518f76d)
-- [x] Wire adapter into Directory service, replace direct HTTP call (518f76d)
-- [x] Tests for both adapters (518f76d, d53d9c9)
-- [x] Update docs/sync.md migration path
-
-## v0.1.3 — Prometheus Metrics ✅
-
-- [x] Add `internal/metrics/` package with Prometheus registry (d6742b1)
-- [x] Expose `GET /metrics` on admin port (:8082) (d6742b1)
-- [x] `atlas_registry_servers_total{status}` — gauge (d6742b1)
-- [x] `atlas_registry_heartbeat_lag_seconds` — histogram (d6742b1)
-- [x] `atlas_directory_characters_total` — gauge (d6742b1)
-- [x] `atlas_discovery_requests_total{filter}` — counter (d6742b1)
-- [x] `atlas_admin_requests_total{endpoint,status}` — counter (d6742b1)
-- [x] `atlas_health_transitions_total{from,to}` — counter (d6742b1)
-- [x] Grafana dashboard JSON in `deployments/grafana/`
-
-## v0.1.4 — Server Routing ✅
-
-- [x] Add `internal/routing/service.go` — recommendation logic
-- [x] Filter: region, version, platform, status=online
-- [x] Score: load (lower better), capacity remaining (higher better)
-- [x] Tiebreak: has existing character (account_id optional)
-- [x] `GET /v1/routing/recommended` on public port (:8080)
-- [x] Response: `{server, reason}` (lowest_load / highest_capacity / has_character / fallback)
-- [x] Tests
-
-## v0.1.5 — gRPC API ✅
-
-- [x] Define `api/proto/atlas.proto` — all service definitions
-- [x] Generate Go code (protoc / buf)
-- [x] Implement gRPC server in `internal/grpc/`
-- [x] Start on `:9090` (configurable `ATLAS_GRPC_ADDR`; empty disables)
-- [x] Feature parity: Registry, Discovery, Directory, Routing, Admin
-- [x] bufconn end-to-end tests (register → heartbeat → list → character → recommend → admin)
-
-## v0.1.6 — Go SDK ✅
-
-- [x] `sdk/go/` — Go client library
-- [x] `Register` / `Heartbeat` / `Unregister`
-- [x] `ListServers` / `GetServer`
-- [x] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`（Directory + Admin 全量方法）
-- [x] Auto-heartbeat goroutine with configurable interval（`StartHeartbeat`，启动即报、`Set` 并发更新负载）
-- [x] Retry with exponential backoff（全抖动；网络错误 + 5xx / gRPC Unavailable，4xx 不重试）
-- [x] Both REST and gRPC transport（同一 `Client` API，`Options.Transport` 切换）
-- [x] Example: `examples/go/`（注册 → 心跳 → 推荐 → 角色 → 注销）
-- [x] Docs: `docs/sdk-go.md` + VitePress 侧边栏
-
-## v0.1.7 — C++ SDK ✅
-
-- [x] `sdk/cpp/` — C++ client library
-- [x] HTTP client (cpp-httplib v0.58.0, vendored single header)
-- [x] JSON serialization (nlohmann/json v3.12.0, vendored single header)
-- [x] Same API surface as Go SDK（五组方法全量 + AutoHeartbeat 线程 + 重试）
-- [x] CMake build system（`atlas_sdk` 目标 + ctest；`ATLAS_SDK_BUILD_TESTS`）
-- [x] Example: `examples/cpp/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
-- [x] `registry_base_url` 覆盖 Registry 独立端口（Go SDK 同步补 `RegistryAddr`）
-- [x] 扁平/嵌套目录写回复归一化（Go `CharacterWriteResult.UnmarshalJSON` + C++ `ParseCharacterWrite`）
-
-## v0.1.8 — Python SDK ✅
-
-- [x] `sdk/python/` — Python client library
-- [x] `atlas_client.py` — sync client using httpx
-- [x] `AtlasAsyncClient` — async client using httpx + asyncio
-- [x] `Register` / `Heartbeat` / `Unregister`
-- [x] `ListServers` / `GetServer`
-- [x] `UpsertCharacter` / `ListByAccount` / `SearchCharacters`
-- [x] Auto-heartbeat background task（同步线程 + asyncio 任务，`on_error` 回调）
-- [x] PyPI package config (`pyproject.toml`)
-- [x] Tests — 真实 socket 假 Atlas（路径/认证/查询/错误映射/重试/心跳，同步+异步 13 例）
-- [x] Example: `examples/python/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
-- [x] Docs: `docs/sdk-python.md` + VitePress 侧边栏
-
-## v0.1.9 — JavaScript/TypeScript SDK ✅
-
-- [x] `sdk/js/` — TypeScript client library
-- [x] `AtlasClient` — fetch based client（Node 18+ 与浏览器通用，零运行时依赖）
-- [x] Same API surface as Go SDK（五组方法全量，传输 snake_case / SDK camelCase）
-- [x] npm package config (`package.json`，`@cuihairu/atlas-client`，ESM + CJS 双产物 + 类型)
-- [x] Works in Node.js and browser（fetch / AbortSignal.timeout / URL 全平台内置）
-- [x] Tests — node:test 真实 socket 假 Atlas（12 例，Node 类型剥离直接跑 TS 源码）
-- [x] Example: `examples/js/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
-- [x] Docs: `docs/sdk-js.md` + VitePress 侧边栏
-- [x] 示例竞态修复（Go/Python/JS 同步）：首发心跳改同步，在线后才推荐
-
-## v0.1.10 — Java SDK ✅
-
-- [x] `sdk/java/` — Java client library（Java 17+，`io.github.cuihairu:atlas-client`）
-- [x] `AtlasClient` — OkHttp + Gson（snake_case/camelCase 双向映射，Instant 时间戳）
-- [x] Same API surface as Go SDK（五组方法全量 + AutoHeartbeat 守护线程 + 重试）
-- [x] Maven + Gradle config（pom.xml + build.gradle，两者构建/测试均验证通过）
-- [x] Tests — JUnit 5 + JDK httpserver 假 Atlas（13 例，含显式 null 集合兜底）
-- [x] Example: `examples/java/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过）
-
-## v0.1.11 — C# SDK ✅
-
-- [x] `sdk/csharp/` — C# client library（`Atlas.Client`，net8.0 + net10.0 multi-target，零第三方依赖）
-- [x] `AtlasClient` — HttpClient + System.Text.Json（SnakeCaseLower 双向映射，DateTimeOffset 时间戳）
-- [x] Same API surface as Go SDK（五组方法全量 + StartHeartbeat/AutoHeartbeat + 重试）
-- [x] NuGet package config（csproj 打包配置，dotnet pack 产出 nupkg 验证通过）
-- [x] Tests — xUnit + TcpListener 假 Atlas（23 例，含重试耗尽/端口拆分/心跳循环/OnError）
-- [x] Example: `examples/csharp/`（注册 → 心跳 → 推荐 → 角色 → 注销，对真实 Atlas 冒烟通过；PosixSignalRegistration 处理 Ctrl+C，stdin 重定向时可用 ATLAS_RUN_SECONDS 退出）
-
-## v0.1.12 — Message Bus Adapters ✅
-
-- [x] Implement `internal/event/kafka/`（segmentio/kafka-go，纯 Go；消费组手动提交 offset，at-least-once）
-- [x] Implement `internal/event/nats/`（nats.go JetStream：流 `ATLAS` + durable pull consumer 显式 Ack）
-- [x] Implement `internal/event/rabbitmq/`（amqp091-go：durable topic exchange + persistent 消息 + Nack requeue）
-- [x] Config: `ATLAS_EVENT_ADAPTER=kafka|nats|rabbitmq`（+ `ATLAS_KAFKA_BROKERS` / `ATLAS_NATS_URL` / `ATLAS_RABBITMQ_URL`）
-- [x] Adapter selection guide in docs/sync.md（五种适配器连接配置 + 重投语义对照 + 运维选型参照）
-- [x] Tests — kafka/rabbitmq 接口注入 fake（发布编解码/拓扑声明/投递 ack/失败重投/poison 丢弃/Close），nats 用嵌入式 nats-server 端到端（JetStream 真实发布-消费-确认）
-
-## v0.1.13 — APISIX Plugin ✅
-
-- [x] `plugins/apisix/` — Lua plugin（`atlas-auth.lua` + `atlas-ratelimit.lua`，标准 APISIX schema/access 结构）
-- [x] Route Atlas requests to Atlas backend（`/v1/*` → atlas:8080，config-example.yaml 一条路由覆盖全 API 面）
-- [x] Inject player token into Atlas headers（token 头/Bearer 校验 → 注入 `X-Atlas-Player-ID`，可剥离原 token，匿名模式可选）
-- [x] Rate limit config per endpoint group（discovery/directory/routing/registry 四组最长前缀匹配 + 固定窗口 + fail open）
-- [x] Installation and config guide（README：安装/启用/共享字典/路由配置/验证 curl；mock 测试 13 例全过，luac 语法检查通过）
-
-## v0.1.14 — Realm / Shard Management
-
-- [x] `POST /v1/admin/realms` / `GET /v1/admin/realms`
-- [x] `POST /v1/admin/shards` / `GET /v1/admin/shards`（`?realm_id=` 过滤）
-- [x] Wire into store interfaces and all implementations（memory / postgres / mysql；`0002_realms_shards_indexes` 迁移补 created_at / status 索引）
-- [x] Tests（admin service 9 例 + httpapi 端到端 1 例）
-
-## v0.1.15 — Health Alerts
-
-- [x] Alert thresholds in config (`ATLAS_ALERT_SUSPECT_RATIO`，默认 0.3；`ATLAS_ALERT_OFFLINE_RATIO`，默认 0.2；0 关闭)
-- [x] Structured log alert when suspect/offline exceeds threshold（锁存语义：越限 firing 一次，回落 recovered 一次）
-- [x] Optional: webhook notification (`ATLAS_ALERT_WEBHOOK_URL`，5s 超时，投递失败不影响巡检)
-
-## v0.1.16 — Character Index Sharding
-
-- [x] Sharding strategy interface in `internal/store/`（`CharacterShardStrategy`）
-- [x] Hash-based sharding by `account_id`（FNV-1a，`HashShardStrategy` + `store/sharded` 组合：键路由一跳，扇出查询归并；`ATLAS_CHAR_SHARDS` 接线）
-- [x] Cross-shard query for admin search（SearchCharacters 全分片扇出 + 全局游标序归并，分页跨分片正确）
-- [x] Migration tool for resharding（`sharded.Reshard` + `cmd/atlas-reshard` CLI：单库→N 库 / N→M 重切 / 逻辑分片验证，幂等续传）
-- [x] 顺带修复 memory 存储搜索游标的词法比较 bug（跨位数翻页丢行，postgres 语义为类型化元组比较）
-
-## v0.1.17 — Security Hardening
-
-- [x] mTLS for service-to-service (Registry API)（`ATLAS_REGISTRY_TLS_CERT/_KEY`，配 `ATLAS_REGISTRY_CLIENT_CA` 升级双向 TLS；握手层拒绝无证客户端）
-- [x] RBAC for Admin API（admin/operator/viewer 三角色，`ATLAS_ADMIN_ROLES`，未列出的 key 默认 admin 向后兼容；viewer 写操作 403 ROLE_NOT_ALLOWED）
-- [x] Audit log — actor（role:key 指纹）+ RFC3339 时间 + method/path/status + 变更请求体（diff），结构化日志 + 内存环 + `GET /v1/admin/audit`
-- [x] Rate limiting middleware（令牌桶，路径前缀最长匹配 × 客户端 IP 分桶，`ATLAS_RATE_LIMITS`/`ATLAS_RATE_LIMIT_DEFAULT`，429 + Retry-After，桶表上限防 XFF 伪造）
-- [x] docs/security.md 四层防护说明 + 测试 18 例（含真实 mTLS 握手）
-
-## v0.1.18 — Dashboard Enhancements
-
-- [x] Real-time server map (geographic distribution)（ServerMap 组件：按区域卡片聚合状态/玩家/负载，10s 轮询 + 更新时间徽标）
-- [x] Player trend charts (daily/weekly active)（PlayerTrend：后端暂无历史库，仪表盘 localStorage 滚动采样（7 天/5000 点），24h/7d 折线切换）
-- [x] Migration progress with live updates（迁移 pending/running 时静默 5s 轮询 + 行展开 Steps 时间线（已创建→迁移中→完成，失败置 error））
-- [x] Dark/light theme toggle（theme.ts 单例 + localStorage，antd darkAlgorithm/defaultAlgorithm 切换，侧栏/头部联动）
-- [x] i18n (English + Chinese)（i18n.ts 模块单例 + useLang 订阅，非 React 的 api client 也可翻译；全部页面/组件硬编码中文迁入词典，头部语言/主题切换按钮）
-
-## v0.1.19 — High Availability
-
-- [x] Atlas multi-replica deployment guide (stateless, horizontal scaling)（docs/ha.md：状态归属表 + 每副本健康巡检/审计环的告警去重与 admin 粘性说明）
-- [x] Internal LB (HAProxy TCP mode / APISIX) in front of the Registry port for heartbeat fan-in（deploy/haproxy/haproxy.cfg：registry 扇入 round-robin + 主动 TCP 健康检查，admin source 粘性，stats 面板）
-- [x] Redis Sentinel / Cluster config（ATLAS_REDIS_CLUSTER > ATLAS_REDIS_SENTINELS + ATLAS_REDIS_MASTER_NAME > 单节点；URL 密码/DB 全模式生效；runtime store 与 Redis Streams 事件适配器共用拓扑，go-redis UniversalClient）
-- [x] PostgreSQL primary-replica with streaming replication（docs/ha.md §4：pg_hba + pg_basebackup -R + hot_standby，故障晋升 runbook；deploy/postgres/init-replica.sh）
-- [x] Connection pool tuning documentation（ATLAS_PG_POOL_MAX_CONNS/MIN_CONNS/LIFETIME/IDLE_TIME/HEALTH_CHECK_PERIOD 叠加 pgxpool.ParseConfig（MinConns>MaxConns 钳制），ATLAS_REDIS_POOL_SIZE；docs/ha.md §5 容量经验公式）
-- [x] Lab stack：deploy/docker-compose.ha.yaml（2× Atlas + HAProxy + PG 主从 + Redis 主从 + 3 Sentinel 一键起）
-
-## v0.1.20 — Server Metadata, Maintenance Windows & Announcements ✅
-
-- [x] Register metadata extension: initial `players`, `started_at` (server uptime metadata)（注册请求新增 players 种子初始心跳、started_at 缺省注册时刻并随重注册刷新，Discovery 可展示 uptime；迁移 0003 三库同步）
-- [x] Heartbeat cadence guidance: report interval vs suspect/offline thresholds (3:1, e.g. 10s / 30s / 60s)（lifecycle.md §4.2 心跳节奏 3:1:6 法则与按比例缩放指引）
-- [x] Scheduled maintenance windows — `POST /v1/admin/servers/{id}/maintenance-window {start_at, end_at}`; health monitor auto-enters `maintenance` at start, restores previous status at end（健康巡检 start_at 自动置 maintenance 并记 previous_status，end_at 仅恢复窗口放入的状态——运维手动转移不被回滚；operator 状态/offline 不动、窗口标记已应用不重试，到期删除窗口记录）
-- [x] Announcements resource — server-scoped or global, active time range, `GET /v1/discovery/announcements` for clients（全局/服务器范围公告，半开 [starts_at, ends_at) 生效区间，info/warning/critical 级别校验；Discovery 只读接口仅返回生效公告，服务器的全局公告始终可见）
-- [x] Maintenance window ↔ announcement linkage (optionally auto-create a maintenance announcement)（announce 缺省 true 自动创建同时段 warning 级公告并与窗口双向关联；删除窗口不撤回公告）
-- [x] `docs/topology.md` — deployment topology: client → APISIX (public LB + auth) → game servers / Atlas public; game servers → (HAProxy) → Atlas registry; Atlas → Redis / PostgreSQL; Prometheus → Grafana（分层职责表 + 端口矩阵 + 单机/标准生产/大规模三档部署形态；VitePress 导航新增）
+- [ ] 游戏服网络分区：心跳停止 → suspect → offline 推进 + 客户端列表不抖动
+      （lifecycle §3-§4 语义自动化）
+- [ ] 游戏服重启 / 心跳延迟：重注册幂等恢复；3:1:6 节奏容忍抖动
+      （lifecycle §4.2）
+- [ ] 重复注册 / 重复迁移：upsert 幂等；迁移幂等可重放（migration §7）
+- [ ] Redis 数据丢失（flushall）：档案仍在 PG，心跳重填，无残留 stale 视图
+      （data-model §6）
+- [ ] PG 短暂不可用：连接池自愈后写路径恢复，读路径不阻塞
+      （performance §4）
+- [ ] 迁移中途失败：先复制后切换再清理，任意一步失败可回滚 / 重放
+      （migration §7）
+- [ ] 巡检任务：跑绿后把用例接进 CI（ci.yml 同包内自然纳入）
 
 ---
 
-## Ongoing
+## 待命（条件触发，不再展开——提升即从 roadmap 择优）
 
-- [x] Dependency updates — Dependabot auto-merge for patch versions（dependabot.yml：gomod + dashboard/docs npm 三生态周更，开发依赖分组；auto-merge workflow：仅 dependabot[bot] PR，先跑 Go/dashboard/docs 三门禁，同 major.minor 的 patch 自动 approve+squash 合并，minor/major/digest 人工评审）
-- [x] Security audits — periodic review of auth and storage layers（security-audit workflow：每周 govulncheck + 双 npm audit；docs/security-audit.md 八层检查清单 + v0.1.20 审计记录——检出并修复 GO-2026-6443 gRPC panic（升级修复版本）、SQL 全参数化确认、Server.ID 字符集低危建议）
-- [x] Performance benchmarks — Registry and Discovery QPS（bench_test.go ×2：注册/重注册/心跳/并发心跳扇入/列表 100–5000 台/region 过滤/详情；docs/benchmarks.md 基线表 + O(fleet) 列表的 Redis 往返估算 + 回归警戒线，挂导航）
-- [x] Test coverage — aim for >80% on service and handler layers（discovery 0→90.9%、httpapi 66.3→80.7%、health 72.1→83.8%、model 36.2→91.4%、memory 31.1→88.4%；admin 87.5 / directory 82.4 / registry 81.8 / routing 87.8 全部达标；新增 ci.yml：build/vet/test + 每包覆盖率进 Actions Summary）
-- [x] Documentation — keep docs/ in sync with implementation（本节交付均已同步：api.md 端点、lifecycle 窗口语义、data-model §7、新拓扑/基准/安全审计三篇 + 导航；docs.yml + ci.yml 双门禁防漂移）
----
-
-## 巡检修复（2026-10-02）
-
-- [x] memory store `CreateMaintenanceWindow` / `CreateAnnouncement` 不回填 `CreatedAt`——postgres/mysql 在调用方对象上戳时间,memory 只戳内部副本,导致 API 响应 `created_at` 恒为零值（实测 `mwin-*` 返回 `0001-01-01T00:00:00Z`）；已对齐三库语义（在调用方对象上戳时间再存副本）。走查方式：`ATLAS_STORE=memory` 起真实进程,覆盖注册→心跳提升→窗口自动维护→联动公告→CRUD→异常路径→审计全链路
-- [x] 心跳响应谎报 `status:"online"`——REST handler 与 gRPC server 均硬编码 `online`,服务器被监控判 `suspect`/`offline` 后心跳照常 200 且自称 online,调用方（SDK/运维脚本）无从感知已出局、也就不会触发文档承诺的重注册恢复（实测 offline 后心跳返回 `{"status":"online"}` 而 discovery 列 offline、路由拒派）；已改为 `Service.Heartbeat` 返回生效状态,REST/gRPC 两面如实回显（实测 offline 心跳响应 `"status":"offline"`,重注册→starting→心跳→online 全链路复活）
-- [x] 重注册状态语义三库分裂——postgres/mysql upsert 的 `CASE WHEN EXCLUDED.status='starting' THEN servers.status` 使 offline 服务器重注册后仍 offline（心跳只提升 starting→online,恢复路径在 SQL store 上永久断裂）;memory 则无条件重置,连 `disabled`/`maintenance` 都会被重注册打回 starting（违反 lifecycle.md「禁用不被自动状态机覆盖」）；已统一契约：仅旧状态为 suspect/offline 时重置为 starting,其余（online 及运维态）保留（实测 disable→重注册→仍 disabled;SQL 语句已对齐,三库行为一致）
-- [x] realm/shard 创建响应 `created_at` 恒为零值——fa5b874 修窗口/公告时同款缺陷漏查了这两处:memory 只戳内部副本,postgres/mysql 把 `time.Now()` 内联进 INSERT 不回填调用方对象（实测 `POST /v1/admin/realms` 返回 `0001-01-01T00:00:00Z`）；已按窗口范式对齐三库（先回填调用方再落库）,实测返回真实时间戳；并全量清点三库 5 类 Create 确认无第六处（Migration 模型无 created_at,Character/Server 本就有回填）
-- [x] NATS 消费者测试断言竞态——CI run 36913633871 实际失败（`TestHandlerFailureLeavesMessageUnacked`,后续 run 偶发复现）:断言先于 handler 执行检查 `calls.Load()`,而 `NumPending` 在消息落流即为 1、pull 投递尚未发生;毒丸测试同理,断言"handler 未被调用"可因消费循环未追上而假通过;修复:先等 handler 被调用（deadline 轮询）再断言 pending,毒丸用例先发一条合法事件探活消费循环（确保毒丸不达 handler 的断言不可能空过）,`called` 改 `atomic.Int32`;本地 `-count=3` + 全包 20s 稳定通过
+- [ ] 状态三态显式化（Desired / Observed / Effective）——概念已定稿
+      （lifecycle §0 / architecture §4.4），代码字段命名演化只在 v1.0
+      API 冻结窗口做，避免破坏契约
+- [ ] Migration Controller 独立模块——概念边界已定（migration §9），
+      代码拆分只在独立扩缩容有真实需求时做
 
 ---
 
-## 可观测性深化 · 首期（2026-10-03）
+## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
 
-- [x] 请求级追踪（X-Request-ID）——三个 HTTP 监听口（公网/注册/管理）最外层中间件：入站合法 id（`[A-Za-z0-9._:-]` ≤64）沿用、缺失/非法/超长生成 128-bit 随机 hex，回显响应头并注入 context；请求完成记录含 request_id/method/path/status/duration_ms 的访问日志，`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头不记日志；中间件置于鉴权/限流之外，被拒绝的请求同样被追踪（网关透传同一 header 可跨跳关联）
-- [x] 目录写路径延迟指标 `atlas_directory_write_duration_seconds{op}`——服务层写（create/update/delete）与事件投影（按事件类型标记：created/updated/deleted/…，生产写路径 REST/gRPC 均经此投影）在 service 层计时观测，metrics 未接线时为 nil 安全空操作；docs/api.md 指标表 + 「请求追踪」小节、docs/architecture.md §7 指标表同步
+### v0.1 系列（0.1.0 ~ 0.1.20）✅
 
----
+| 里程碑 | 内容 |
+| --- | --- |
+| v0.1.0 | MVP：Registry / Discovery / Directory / 健康监控 / REST API / 双存储 / Docker / CI / 文档站 |
+| v0.1.1 | Admin + Dashboard（蓝图 5 页面）+ MySQL store + 鉴权 + 三端口隔离 |
+| v0.1.2 | EventAdapter 抽象 + HTTP / Redis Streams 适配器 |
+| v0.1.3 | Prometheus 指标 + Grafana 看板 |
+| v0.1.4 | Routing 接入推荐（load / capacity / 角色粘滞） |
+| v0.1.5 | gRPC 双传输（5 服务 22 RPC，:9090） |
+| v0.1.6 ~ 0.1.11 | 六语言 SDK（Go / C++ / Python / JS / Java / C#，自动心跳 + 重试） |
+| v0.1.12 | Kafka / NATS(JetStream) / RabbitMQ 总线适配器 |
+| v0.1.13 | APISIX 插件（atlas-auth 玩家身份注入 + atlas-ratelimit） |
+| v0.1.14 | Realm / Shard 管理（CRUD + 三存储） |
+| v0.1.15 | 健康告警（suspect / offline 占比阈值 + webhook 锁存） |
+| v0.1.16 | 角色索引 account-hash 分片 + 跨分片查询 + reshard 工具 |
+| v0.1.17 | 安全加固（Registry mTLS / Admin RBAC + 审计 / 令牌桶限流） |
+| v0.1.18 | Dashboard 增强（服务器地图 / 趋势 / 迁移时间线 / 主题 / i18n） |
+| v0.1.19 | 高可用（Redis 哨兵集群 / PG 主从 / HAProxy 扇入 / 连接池调优） |
+| v0.1.20 | 注册元数据（players / started_at）+ 计划维护窗口 + 公告系统 + topology 文档 |
 
-## 跨服 ID 体系与玩法类型表（2026-10-04）
+### 工程化 Ongoing ✅
 
-- [x] 跨服 ID 体系规范（docs/config-center.md §2.1）——跨服级 ID 分两态：**配置态**（`cluster_id`、类型 ID、分组/匹配域 ID，Atlas 托管、随文档版本 notify-then-pull）由运营定义；**运行时**（跨服玩法实例 / 匹配 / 排行榜 ID）由跨服对局管理服务在开局/撮合/赛季开局签发，**Atlas 只规范格式：不生成、不存储、不回写**。命名前缀+分段与 ServerID（`game-1001`）同风格——首段种类前缀，左→右「什么→归属→时序→随机」；实例 ID 第二段即 `cluster_id`（回溯参与服务器全集），匹配 ID 第二段为 `match_domain_id`，类型前缀（`id_prefix`）全表唯一、日志先认类型再认归属
-- [x] 跨服玩法类型枚举与类型表（§2.2）——七类（battlefield/dungeon/ranking/guildwar/trade/chat/team）术语契约表（中文定名/English 定名/代码标识/`id_prefix`）+ 每类简介表（一句话定义/参与形态/典型配置/生命周期）；`CrossPlayType` 进 Spec 第五段 `crossplay_types`（含 `summary`/`lifecycle` persistent-seasonal-ephemeral/`matchmaking`/`ranking`/`id_prefix`），Normalize 与双 Clone 补段、Validate 补类型 ID 唯一+字符集/lifecycle 枚举/id_prefix 2–8 小写唯一，diff 对齐：类型表变更 → `targets=["*"]` 全局扩散；`model.CrossPlayBattlefield` 等七常量作编译期定名锚点；契约测试夹具三库往返带第五段，dashboard 类型补齐（保存只透传不抹段）
-- [x] 管理台跨服配置「玩法类型表」编辑卡片——跨服配置页新增类型表卡片：七字段行内表格（ID/定名/一句话定义/lifecycle 三色 Tag/走匹配/上榜单/id_prefix）+ 增改模态框，校验镜像服务端 `ValidateCrossServerSpec`（类型 ID `[a-z0-9._-]` 表内唯一、`id_prefix` 2–8 位小写全表唯一、lifecycle 下拉三枚举），空字段不落段与 omitempty 同口径（往返 hash 对得上、幂等保存成立）；卡片顶部固定舰队级扩散提示（改动即 `targets=["*"]`）；保存仍五段全量透传，docs/config-center.md §7 同步
+- [x] Dependabot 周更 + auto-merge（Go / dashboard / docs 三门禁，patch 自动合并）
+- [x] 周期安全审计（govulncheck + npm audit；检出 GO-2026-6443 已升级修复）
+- [x] 性能基准（bench_test.go ×2 + benchmarks.md 基线表 + 回归警戒线）
+- [x] 覆盖率门禁（service/handler >80%，ci.yml 每包进 Actions Summary）
+- [x] 文档与实现同步双门禁（docs.yml + ci.yml）
+
+### 巡检修复（2026-10-02）✅
+
+- [x] memory CreateMaintenanceWindow / CreateAnnouncement 不回填 CreatedAt → 三库对齐
+- [x] 心跳响应硬编码 `online` → REST/gRPC 回显生效状态（offline 如实上报，重注册恢复可用）
+- [x] 重注册状态语义三库分裂（postgres/mysql offline 无法复活、memory 覆盖运维态）→ 统一契约：仅 suspect/offline 重置 starting
+- [x] realm/shard 创建响应 created_at 零值 → 按窗口范式三库对齐，全量清点无第六处
+- [x] NATS 消费者测试断言竞态 → 等待 handler 调用 + 毒丸探活，`-count=3` 稳定
+
+### 可观测性深化 · 首期（2026-10-03）✅
+
+- [x] X-Request-ID 贯通三监听口（生成/沿用/回显/访问日志，健康路径免打扰）
+- [x] `atlas_directory_write_duration_seconds{op}` 目录写路径延迟指标
+
+### 跨服 ID 体系与玩法类型表（2026-10-04）✅
+
+- [x] config-center §2.1 跨服 ID 两态规范（配置态 Atlas 托管 / 运行时实例 ID 只规范格式不生成不存储）
+- [x] §2.2 七类玩法类型枚举 + 类型表进 Spec 第五段（Normalize / Validate / 契约夹具 / dashboard 卡片）
