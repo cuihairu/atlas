@@ -84,7 +84,7 @@ flowchart TB
 | --- | --- | --- |
 | **API 稳定化与 v1.0** | 冻结 REST/gRPC 契约、承诺兼容性、正式 v1.0 release | API 面在生产环境验证充分 |
 | ✅ **Discovery 读路径管线化**（P1，2026-10-04 交付） | `RuntimeStore.GetRuntimes` 批量读：Redis pipeline 一次 Exec（N 次 RTT → 1–2 次，Cluster 按 slot 分批）、memory 单锁读全；列表路径批量合并、单点详情不变；契约测试与降级语义钉住（commit 9f99745 / 8201f57） | 已完成；基准与往返估算见 [性能设计](/performance) §2 / [基准页](/benchmarks) §3 |
-| **故障模式回归套件**（P1，已立档） | 把「正确性优先于 QPS」清单（[性能设计](/performance) §7）逐项自动化：Redis down / PG down / 分区 / 重复注册 / 重复迁移 / 迁移中途失败 | 现有健康巡检 / 契约套件之上叠加 |
+| ✅ **故障模式回归套件**（P1，2026-10-04 交付） | 「正确性优先于 QPS」演练矩阵（[性能设计](/performance) §7）逐项自动化：分区巡检 / 重注册契约 / 幂等与 rollback / Redis FLUSHALL 数据丢失（miniredis 兜底，契约不再 skip）；仅 PG 连接池自愈与副本宕机保留为部署级演练（ha.md） | 已完成，验证位置见 §7 表格 |
 | **状态三态显式化** | Desired / Observed / Effective 概念已写入文档（lifecycle §0）；代码字段/接口命名演化只在 API 冻结期做，避免破坏契约 | v1.0 API 冻结窗口 |
 | **Migration Controller 独立模块** | 概念边界已定（migration §9）；代码拆分只在独立扩缩容有真实需求时做 | 多舰队独立迁移集群场景 |
 | **Routing 策略扩展** | 权重、灰度放量的白名单、维护前引导(把玩家引向非维护服)——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |

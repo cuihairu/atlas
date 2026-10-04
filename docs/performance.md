@@ -81,16 +81,16 @@ startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然�
 
 **基于故障注入的演练清单**（每个场景都有对应的既有保证与验证方式）：
 
-| 故障场景 | 既有保证（文档出处） | 验证方式 |
+| 故障场景 | 既有保证（文档出处） | 验证方式（自动化位置） |
 | --- | --- | --- |
-| 游戏服网络分区 | 心跳超龄 suspect → offline，客户端列表不抖动（[lifecycle.md](lifecycle.md) §3-§4） | 健康巡检演练 |
-| 游戏服重启 / 心跳延迟 | 重注册幂等恢复；3:1:6 节奏容忍抖动（lifecycle §4.2） | 注册幂等契约测试（storetest） |
-| 重复注册 / 重复迁移 | 注册幂等 upsert；迁移幂等可重放（[migration.md](migration.md) §7） | 契约测试 + 迁移编排测试 |
-| Atlas 副本宕机 | 无状态多副本 + HAProxy 心跳扇入（[ha.md](ha.md)） | HA 部署演练 |
-| Redis 数据丢失 | 档案在 PG，TTL 自清理，心跳重填（[data-model.md](data-model.md) §6） | Redis flushall 演练 |
-| PG 短暂不可用 | pgx 池 + 健康检查自动回收死连接（本文 §4） | 连接池故障演练 |
-| 迁移中途失败 | 先复制、后切换、再清理，源数据常驻（migration §7） | rollback 流程演练 |
+| 游戏服网络分区 | 心跳超龄 suspect → offline，客户端列表不抖动（[lifecycle.md](lifecycle.md) §3-§4） | ✅ 自动化：`internal/health` 巡检演练（OnlineToSuspect / SuspectToOffline / SuspectRecovered）+ discovery 可见性测试 |
+| 游戏服重启 / 心跳延迟 | 重注册幂等恢复；3:1:6 节奏容忍抖动（lifecycle §4.2） | ✅ 自动化：`internal/store/storetest` 重注册契约（suspect/offline 重置表）+ redisstore miniredis 契约 |
+| 重复注册 / 重复迁移 | 注册幂等 upsert；迁移幂等可重放（[migration.md](migration.md) §7） | ✅ 自动化：storetest 幂等 upsert + `internal/admin` 迁移编排 / rollback 用例 |
+| Redis 数据丢失 | 档案在 PG，TTL 自清理，心跳重填（[data-model.md](data-model.md) §6） | ✅ 自动化（2026-10-04）：`internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills`（miniredis FLUSHALL → 缺失即缺席、心跳重填） |
+| PG 短暂不可用 | pgx 池 + 健康检查自动回收死连接（本文 §4） | 服务层故障传播 ✅（discovery 后端降级测试、registry 错误路径）；连接池自愈仍属部署演练（ha.md） |
+| 迁移中途失败 | 先复制、后切换、再清理，源数据常驻（migration §7） | ✅ 自动化：`internal/admin` rollback 流程用例（pending/completed/not-found 三分支） |
+| Atlas 副本宕机 | 无状态多副本 + HAProxy 心跳扇入（[ha.md](ha.md)） | 部署级演练（ha.md，属多副本编排，不进单元套件） |
 
-这些场景的**自动化回归套件**已列上路线图（P1）：把上表逐项变成
-`go test` 可复现的故障用例，防止"正确性靠人品"。完整基准方法见
+除部署级两行（PG 连接池自愈、Atlas 副本宕机）外，矩阵已全部变成
+`go test` 可复现的故障用例——从此"正确性不靠人品"。完整基准方法见
 [性能基准](/benchmarks)。

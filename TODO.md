@@ -34,20 +34,26 @@
 
 > 立档位置：docs/performance.md §7 演练矩阵——把「正确性不靠人品」的七个
 > 场景逐项变成 `go test` 可复现的故障用例，叠在现有健康巡检 / 契约套件上。
-> 最后一个「Atlas 副本宕机」是部署级演练，以清单形式保留在 ha.md 不自动化。
+> 仅 PG 连接池自愈与 Atlas 副本宕机两行保留为部署级演练（ha.md）不自动化。
 
-- [ ] 游戏服网络分区：心跳停止 → suspect → offline 推进 + 客户端列表不抖动
-      （lifecycle §3-§4 语义自动化）
-- [ ] 游戏服重启 / 心跳延迟：重注册幂等恢复；3:1:6 节奏容忍抖动
-      （lifecycle §4.2）
-- [ ] 重复注册 / 重复迁移：upsert 幂等；迁移幂等可重放（migration §7）
-- [ ] Redis 数据丢失（flushall）：档案仍在 PG，心跳重填，无残留 stale 视图
-      （data-model §6）
-- [ ] PG 短暂不可用：连接池自愈后写路径恢复，读路径不阻塞
-      （performance §4）
-- [ ] 迁移中途失败：先复制后切换再清理，任意一步失败可回滚 / 重放
-      （migration §7）
-- [ ] 巡检任务：跑绿后把用例接进 CI（ci.yml 同包内自然纳入）
+- [x] 游戏服网络分区：心跳停止 → suspect → offline 推进 + 客户端列表不抖动
+      ——既有 health/monitor_test.go 巡检演练 + discovery 可见性测试已覆盖，
+      矩阵表格指认落点
+- [x] 游戏服重启 / 心跳延迟：重注册幂等恢复；3:1:6 节奏容忍抖动
+      ——既有 storetest 重注册契约（suspect/offline 重置表）+ redisstore
+      miniredis 契约
+- [x] 重复注册 / 重复迁移：upsert 幂等；迁移幂等可重放
+      ——既有 storetest 幂等 upsert + admin 迁移编排 / rollback 用例
+- [x] Redis 数据丢失（flushall）：档案仍在 PG，心跳重填，无残留 stale 视图
+      ——新增 redisstore `TestDataLossFlushAll_HeartbeatRefills`（miniredis
+      FLUSHALL → 缺失即缺席 → 心跳重填，静默服务器不代劳）；顺带把
+      redisstore 契约测试从「真实 Redis 才跑」升级为 miniredis 兜底常跑
+- [x] PG 短暂不可用：服务层故障传播已有（discovery 后端降级测试 +
+      registry 错误路径）；连接池自愈保留部署演练（ha.md）
+- [x] 迁移中途失败：先复制后切换再清理，任意一步失败可回滚 / 重放
+      ——既有 admin rollback 三分支用例
+- [x] 巡检任务：跑绿并接进 CI（redisstore 契约此前默认 skip，本次起
+      ci.yml 同包内自然纳入常跑）
 
 ---
 
