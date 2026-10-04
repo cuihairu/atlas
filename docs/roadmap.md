@@ -85,8 +85,8 @@ flowchart TB
 | **API 稳定化与 v1.0** | 冻结 REST/gRPC 契约、承诺兼容性、正式 v1.0 release | API 面在生产环境验证充分 |
 | ✅ **Discovery 读路径管线化**（P1，2026-10-04 交付） | `RuntimeStore.GetRuntimes` 批量读：Redis pipeline 一次 Exec（N 次 RTT → 1–2 次，Cluster 按 slot 分批）、memory 单锁读全；列表路径批量合并、单点详情不变；契约测试与降级语义钉住（commit 9f99745 / 8201f57） | 已完成；基准与往返估算见 [性能设计](/performance) §2 / [基准页](/benchmarks) §3 |
 | ✅ **故障模式回归套件**（P1，2026-10-04 交付） | 「正确性优先于 QPS」演练矩阵（[性能设计](/performance) §7）逐项自动化：分区巡检 / 重注册契约 / 幂等与 rollback / Redis FLUSHALL 数据丢失（miniredis 兜底，契约不再 skip）；仅 PG 连接池自愈与副本宕机保留为部署级演练（ha.md） | 已完成，验证位置见 §7 表格 |
-| **状态三态显式化** | Desired / Observed / Effective 概念已写入文档（lifecycle §0）；代码字段/接口命名演化只在 API 冻结期做，避免破坏契约 | v1.0 API 冻结窗口 |
-| **Migration Controller 独立模块** | 概念边界已定（migration §9）；代码拆分只在独立扩缩容有真实需求时做 | 多舰队独立迁移集群场景 |
+| 🔒 **状态三态显式化（已定档）** | 概念定稿（lifecycle §0 / architecture §4.4 / data-model 存储批注）+ 代码批注落位（`ServerStatus` 类型与 `Server.Status` 字段已标注三态分层）；**字段 / 接口重命名未做**——只在 v1.0 API 冻结窗口执行，避免契约碎片化 | v1.0 API 冻结窗口（触发即执行） |
+| 🔒 **Migration Controller 独立模块（已定档）** | 概念边界定稿（migration §9）且代码分流已在位（`internal/admin` 编排 / `internal/directory` 投影零交叉）；**代码拆分未做**——只在独立扩缩容有真实需求时执行 | 多舰队独立迁移集群 / 独立扩缩容（触发即执行） |
 | ✅ **Routing 维护前引导**（P1，2026-10-04 交付） | 推荐感知维护窗口：活动窗口或 Lead 内（缺省 5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）开始的服务器进入排除——strict/fallback 两阶段一致生效，全排除如实 404；diagnose 逐台摊开窗口判定（`maintenance_window` 字段 + `maintenance_window=active|upcoming` 原因），`eligible` 计入窗口 | 已完成，语义见 [API §Routing](/api#routing) 与 [生命周期 §5](/lifecycle#_5-计划维护窗口-v0-1-20) |
 | **Routing 策略扩展（余项）** | 权重、灰度放量的白名单——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |
 | **公告与窗口批量编排** | 舰队级窗口模板、批量创建、与迁移编排联动 | 多服务器运营场景验证 |

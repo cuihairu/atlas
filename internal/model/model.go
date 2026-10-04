@@ -50,6 +50,13 @@ func (s *Server) HasNotifyMode(mode string) bool {
 
 // ServerStatus is the lifecycle state of a game server. The full state machine
 // is documented in docs/lifecycle.md.
+//
+// 状态三态 (lifecycle.md §0): this type carries both sides of the split —
+// Server.Status is the reconciled Effective state every external view
+// advertises, Heartbeat.Status is the Observed state reported by the game
+// server. Renames that name the three roles explicitly in fields are
+// reserved for the v1.0 API freeze window so the wire contract evolves once,
+// not piecemeal (TODO v0.2+ 定档).
 type ServerStatus string
 
 const (
@@ -182,6 +189,11 @@ type Server struct {
 	// NotifyCallbackURL.
 	NotifyMode        string       `json:"notify_mode,omitempty"`
 	NotifyCallbackURL string       `json:"notify_callback_url,omitempty"`
+	// Status is the Effective (生效态) lifecycle state advertised to every
+	// external view — discovery, routing, stats, clients. Operator intent
+	// (Desired) and heartbeat observation (Observed) reconcile into it; the
+	// layering is defined in docs/lifecycle.md §0 and the storage split in
+	// docs/data-model.md.
 	Status            ServerStatus `json:"status"`
 	Players           int          `json:"players"`
 	Load              float64      `json:"load"`
