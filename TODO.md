@@ -145,6 +145,13 @@
 - [x] realm/shard 创建响应 created_at 零值 → 按窗口范式三库对齐，全量清点无第六处
 - [x] NATS 消费者测试断言竞态 → 等待 handler 调用 + 毒丸探活，`-count=3` 稳定
 
+### 巡检修复（2026-10-04）✅
+
+- [x] telemetry `TestSamplerLockstepSeries` 假钟数据竞争——`tick++` 在采样
+      goroutine（sample 内）与测试 goroutine（Series 内）并发改写无同步，
+      race 下稳定失败、非 race 偶发：改 `atomic.Int64` 计数 + 深度断言
+      轮询等待（commit 50ea126）
+
 ### 可观测性深化 · 首期（2026-10-03）✅
 
 - [x] X-Request-ID 贯通三监听口（生成/沿用/回显/访问日志，健康路径免打扰）
