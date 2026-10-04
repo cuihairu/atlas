@@ -3,8 +3,8 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。禁词表清查（自研/领先/完美/极致类）全仓零命中，
-> 清味与口径整改已归档，见「文档清味 + 禁吹牛（2026-10-05）」段。
+> 当前批次：待队列下一批。立档待处置两项（ListServers 漏读 / Clone
+> 重复实现）已清零，见「巡检点火 · 立档问题处置（2026-10-05）」段。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -164,12 +164,34 @@
 - [x] 门禁：改动包 `-race` 绿、`go vet ./...` 绿、service/handler 层
       全部 >80%（httpapi 86.7 / crossserver 92.3 / admin 92.7 / fleet 94.6 /
       registry 88.0 / routing 91.4）
-- 巡检新发现（如实记档，未处置——修复涉及契约/语义，留独立批次）：
-  ① 三库 `ListServers` 均 cap 200（storetest 钉住的契约），而
-  `crossserver.listServersAll` 按每页 500 判终页、`fleet.Index.Reconcile`
-  以 Limit 500 循环——**舰队 >200 台时信号寻址与索引重建漏读**；
-  `routing.Diagnose` Limit 200 单页截断同理；② `model.CrossServerSpec.Clone()`
-  方法与 `CloneCrossServerSpec` 函数重复实现，生产只用函数（方法本批已补测）
+- 巡检新发现（如实记档）：① 三库 `ListServers` 均 cap 200 而调用方按
+  500/50 判页——**舰队 >200 台漏读**，已处置（commit 7e36e88，见
+  「巡检点火 · 立档问题处置」段）；② `model.CrossServerSpec.Clone()` 方法
+  与函数重复实现——已收敛为函数一处（commit f493154）
+
+### 巡检点火 · 立档问题处置（2026-10-05）✅
+
+> 覆盖率批立档的两项真问题清零，顺藤摸出同根三处一并处置。
+> 受影响包复测：crossserver 91.6 / fleet 95.0 / routing 93.6 /
+> health 83.9 / httpapi 86.8 / serversconfig 96.9，全过 80% 门禁；
+> 全仓测试 + 改动包 `-race` + `go vet ./...` 绿。
+
+- [x] **ListServers 上限对齐**（commit 7e36e88）：`store.ListServersMaxLimit=200`
+      单一事实源（接口注释钉住 cap 200 + 默认页 50 两契约）；三库 ListServers
+      改用常量（字符/迁移 cap 不动）；`crossserver.listServersAll` pageSize
+      500→cap、`fleet.Reconcile` Limit 500→cap、`serversconfig` 200→常量；
+      `routing.Diagnose` 单页 200 → 游标分页。**同根新发现三处一并修**：
+      Recommend `listMatching`（空 Limit→默认 50 截断候选，>50 台舰队后段
+      永不被推荐）、health `sweep`（同 50 截断，后段永不 suspect/offline）、
+      admin fallback 单页 200 对齐常量（该端点本就 client 翻页）
+- [x] 回归 4 条 + 契约钉子：跨服寻址 250 台、舰队索引重建 250 台、
+      Diagnose 250 台全量判决、listMatching 60 台全候选、sweep 60 台全
+      suspect；storetest 补「默认页 = 50 行」钉子；api.md 分页节补
+      「单页上限 200」
+- [x] **Clone 收敛**（commit f493154）：删除无生产调用方的
+      `CrossServerSpec.Clone()` 方法（白名单字段式拷贝对未来新增字段
+      不安全），保留生产在用的 `CloneCrossServerSpec`（`out := spec`
+      整体拷贝再替换容器）；双向写穿断言并入既有契约测试
 
 ### 文档清味 + 禁吹牛（2026-10-05）✅
 
