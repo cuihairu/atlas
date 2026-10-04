@@ -252,3 +252,38 @@ flowchart LR
 | 迁移编排 | 具体的数据导入导出 |
 
 Atlas 是**编排者与索引持有者**，不是数据搬运工。
+
+---
+
+## 9. 概念边界：Migration Controller 与 Directory 分离
+
+迁移是控制面能力，不是目录的附属品。两者在**概念与代码模块**上始终分开：
+
+| | Directory | Migration Controller |
+| --- | --- | --- |
+| 职责 | 角色索引的查询与写入投影 | 迁移的编排状态机（plan / status / cutover / rollback / 校验） |
+| 数据 | `character_index` 行 | `server_migrations` 行 |
+| 变更对象 | 单个角色的 `server_id`（只归 Directory 改） | 迁移记录本身；需要动索引时**调用** Directory 的原子操作 |
+| 对外形态 | `GET/POST/PATCH/DELETE /v1/directory/*` | `POST /v1/admin/migrations*`（独立资源、独立状态机） |
+
+```mermaid
+flowchart LR
+    OPS["运维"] --> MC["Migration Controller<br/>控制面编排"]
+    MC -->|"原子切换 server_id"| DIR["Directory<br/>角色索引"]
+    MC -->|"状态机 / 校验 / 回滚"| MIG[(server_migrations)]
+    MC -.->|"数据搬运指令<br/>（导出/导入/冻结）"| GS["Game Server / Migration Worker"]
+```
+
+**分工的铁律**：
+
+- Atlas（Migration Controller）管**谁迁到哪里、当前迁移状态、cutover、
+  rollback、索引校验**——这是控制面职责，定位声明见
+  [architecture.md](architecture.md#_1-总览)。
+- 角色数据复制、角色冻结、数据库导出 / 导入、游戏服侧状态迁移
+  **归 Game Server / Migration Worker**——数据搬运不是 Atlas 的活。
+
+当前版本两者共存在 Atlas 进程内（API 层已是独立资源），未来若要拆成
+独立模块 / 服务，边界从今天就以此为准——至少不得在代码层把
+"迁移编排"与"角色索引投影"揉成一个包。v0.1 系列的
+`internal/admin`（迁移服务）与 `internal/directory`（索引投影）天然分流，
+拆分的唯一动因是独立扩缩容，而不是清理职能。

@@ -187,6 +187,47 @@ Realm 内的分区。MMORPG 中的"一区""二区"。
 账号的形态标注（测试号/内部号/渠道号）同样走 `metadata`
 （如 `account_type=test`）。
 
+**Control Plane 边界（2026-10-04 定位裁决）：** Atlas 回答目录性问题，
+不回答游戏运行时问题——定位声明与 NEVER-owns 清单见
+[architecture.md](architecture.md#_1-总览)，状态三态模型见
+[lifecycle.md](lifecycle.md#_0-状态三态-desired-observed-effective)。
+
+### metadata 的边界：opaque 元数据，不是业务数据库
+
+`metadata` 是 Atlas 唯一内建的业务语义过滤通道，但它的定位是
+**不透明键值（opaque metadata）**：
+
+| 允许 | 不允许 |
+| --- | --- |
+| 平台可理解的分类键：`class` / `faction` / `channel` / `account_type`（静态、低基数、用于列出/过滤） | 平台据此做业务决策的字段：`combat_power` / `guild_rank` / `arena_rating` / `dungeon_progress`… |
+| 展示与回显（管理台列表、详情、搜索） | 数值型业务属性的持续跟踪（Atlas 不理解，也不该假装理解） |
+| 简单键值过滤（`metadata_key=class&metadata_value=warrior`） | 任何依赖"值的大小/排序/区间"的查询——那是游戏数据库的事 |
+
+判据：**如果某个键的值会随玩家/对局动态变化、且游戏逻辑依赖其语义，
+它就不属于 metadata**——那是游戏业务数据库的列。metadata 只容纳
+"分类标签"级别的静态口径。既不无限增长业务字段，也不把 Atlas 变成
+metadata 数据库。
+
+### 角色归属与位置的边界（Character vs Locator，概念预留）
+
+`character.server_id` 回答的是**归属**："这个角色属于哪个服务器"。
+它**不是** "角色此时此刻在哪"——两者在未来会分叉成两个概念：
+
+```text
+Locator（位置，未来可能，当前不实现）
+  ├── home_server     归属服务器（= 现在的 server_id）
+  ├── current_server  当前所在服（跨服活动时的临时所在）
+  ├── current_instance 当前实例 / 副本 / Zone
+  └── session         当前会话
+```
+
+当前版本**只实现归属层**：`server_id` = 角色家服；跨服活动期间"角色
+此刻在哪"由游戏侧对局/匹配服务自持（见 config-center.md §2.1 运行时
+ID 边界），Atlas 不追踪。`character.login` / `character.moved` 事件在
+事件协议里已定义（sync.md 事件表），未来若需要"位置层"，在事件协议
+支持下扩展投影即达，**不改变现在的概念模型**——但"归属"与"位置"
+两个词从今天起就是两个概念，不再混用。
+
 ### 最重要的设计原则
 
 > **Atlas 中的角色信息是 Projection / Index，不是 Source of Truth。**

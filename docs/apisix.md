@@ -39,6 +39,20 @@ Atlas 官方提供两个 APISIX 网关插件（源码与单元测试在
 插件与 Atlas 的边界与 [架构设计](/architecture) 一致：认证、限流属于通用网关能力，
 由 APISIX 承担；Atlas 只消费注入后的身份头，不重复校验 token。
 
+**身份头信任规则（安全基线）：**
+
+1. **网关覆盖，不信任客户端透传。** 无论客户端是否自带 `X-Atlas-Player-ID` /
+   `X-Player-Token`，网关必须先**剥离再注入**（`atlas-auth` 的实现即如此：
+   token 校验通过后重写身份头，客户端携带的同名头永远被覆盖）。基于可信
+   网关重新标记（stamp）而不是"如果为空才注入"——伪造头在 Atlas 眼里不存在。
+2. **Atlas 把身份头当 untrusted 元数据。** 公网端点（:8080）消费 `X-Atlas-Player-ID`
+   仅用于 Routing 的角色粘滞与 Directory 的账号维度展示，**不据此做权限决策**；
+   管理面（:8082 API Key + RBAC）与注册面（:8081 Service Token，支持
+   [mTLS](/security)）各自独立鉴权，与玩家身份头无关——即便网关被穿透，
+   伪造的玩家身份头也碰不到内部端口。
+3. **内部服务调用建议 mTLS / 签名身份**（registry 已支持 mTLS，见
+   [安全模型](/security)），不依赖裸 Header 作为服务身份。
+
 ## 安装
 
 1. 把两个 `.lua` 拷进 APISIX 插件搜索路径（默认 `apisix/plugins/`，或通过
@@ -106,7 +120,7 @@ plugins:
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
 | `token_header` | `X-Player-Token` | 玩家 token 头；`Authorization: Bearer <token>` 同样接受 |
-| `account_header` | `X-Atlas-Player-ID` | 注入 Atlas 的身份头 |
+| `account_header` | `X-Atlas-Player-ID` | 注入 Atlas 的身份头——**注入前先剥离客户端携带的同名入站头**（覆盖而非透传，见上文信任规则） |
 | `accounts` | — | token → account id 静态映射；生产环境应替换为自身 token 服务的校验（插件提供挂载点，业务无侵入） |
 | `required` | `true` | 缺 token / 未知 token 返回 401；`false` 时匿名放行（Directory 浏览类接口） |
 | `strip_token` | `false` | 转发前剥离玩家 token 头 |
