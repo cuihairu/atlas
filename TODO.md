@@ -3,8 +3,8 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。立档待处置两项（ListServers 漏读 / Clone
-> 重复实现）已清零，见「巡检点火 · 立档问题处置（2026-10-05）」段。
+> 当前批次：待队列下一批。立档待处置项（ListServers 漏读 / Clone 重复 /
+> dead CORS）已全部清零，见「巡检点火」两段（2026-10-05）。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -169,6 +169,25 @@
   「巡检点火 · 立档问题处置」段）；② `model.CrossServerSpec.Clone()` 方法
   与函数重复实现——已收敛为函数一处（commit f493154）
 
+### 巡检点火 · CORS 挂载（2026-10-05）✅
+
+> 对账批唯一遗留（dead config）按配置钉法自主定夺：选「挂载」不选
+> 「删除」——dashboard 本地开发跨域是真实场景，删了读配置功能就没了。
+> commit 7653798（5 文件 +133/-28）：
+
+- [x] `CORSMiddleware(allowedOrigins)` 重写为显式白名单：来源只认
+      `ATLAS_CORS_ORIGINS`（逗号分隔），空配置**零 CORS 头不放开**；
+      匹配来源回显 origin + `Vary: Origin`（不发 blanket `*`）；
+      `*` 显式配置才全放开（开发用）；白名单外与无 Origin 请求原样透传，
+      preflight 不放行
+- [x] 挂载点：公网 :8080 与管理 :8082，均放最外层（preflight 在
+      Tracing/限流/鉴权之前短路——管理口 preflight 不带 Admin Key，
+      必须在鉴权外应答）；注册口 :8081 机器流量不挂（注释钉理由）
+- [x] 测试矩阵重写（未配置/白名单内/白名单外/无 Origin/`*` 五态，
+      GET 与 preflight 双路径）；httpapi 复测 87.0%，race 绿，vet 绿
+- [x] 文档同步：api.md「监听地址与探针」补 CORS 段、security.md
+      配置速查补 `ATLAS_CORS_ORIGINS` 行
+
 ### 巡检点火 · 立档问题处置（2026-10-05）✅
 
 > 覆盖率批立档的两项真问题清零，顺藤摸出同根三处一并处置。
@@ -236,9 +255,9 @@
   `ATLAS_PG_POOL_*` 为通配写法或已载于 performance.md；PORT / IMAGE / TAG /
   TUNNEL_PORT / MIGRATIONS_DIR / PG_PASSWORD 为 compose 部署层变量；
   `ATLAS_TEST_*` / `ATLAS_TRANSPORT`（examples 自用）豁免
-- 遗留（如实记录，未处置）：`ATLAS_CORS_ORIGINS` 读取无消费、
-  `CORSMiddleware` 生产路径未挂载——dead config，文档有意不收录，
-  待后续批次挂载或删除
+- 遗留（如实记录）：`ATLAS_CORS_ORIGINS` 读取无消费、
+  `CORSMiddleware` 生产路径未挂载——已处置（commit 7653798，见
+  「巡检点火 · CORS 挂载（2026-10-05）」段）
 
 ### 巡检修复（2026-10-04）✅
 
