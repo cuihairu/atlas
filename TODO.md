@@ -3,8 +3,9 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。立档待处置项（ListServers 漏读 / Clone 重复 /
-> dead CORS）已全部清零，见「巡检点火」两段（2026-10-05）。
+> 当前批次：待队列下一批。巡检点火三项（立档两项 / dead CORS /
+> 决策面 N+1 收尾）全部清零；roadmap 余下候选均挂「真实需求」前置，
+> 无可自立项，等下一批指令或真实需求反馈。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -69,12 +70,13 @@
 > 一律 fail closed 传播（宁可不决策，不拿未知状态决策），
 > 与 maintenanceBlocklist 的 fail-closed 先例同哲学。
 
-- [ ] 三处调用点改 `GetRuntimes`：缺席 key = 从未心跳（sweep starting
+- [x] 三处调用点改 `GetRuntimes`：缺席 key = 从未心跳（sweep starting
       超龄分支语义保留）；整体 err 传播（sweep 本轮不翻转任何状态、
-      Recommend/Diagnose 如实报错）
-- [ ] 契约测试：runtime 故障 fail closed 三钉（sweep 不误判 + 两决策
-      路径报错）+ starting 无心跳缺席语义钉子
-- [ ] 文档同步：performance.md §2 / roadmap 管线化行补记决策面收尾
+      Recommend/Diagnose 如实报错）（commit eb1021c）
+- [x] 契约测试：runtime 故障 fail closed 三钉（sweep 不误判 + 两决策
+      路径报错）+ starting 无心跳缺席语义钉子；既有 sweep 矩阵全绿
+- [x] 文档同步：performance.md §2 / roadmap 管线化行补记决策面收尾
+      （health 覆盖 83.9→87.2，race/vet 绿）
 
 ## 工程落地清单 · Routing 维护前引导（P1，正确性）
 
