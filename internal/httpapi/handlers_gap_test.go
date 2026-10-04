@@ -366,29 +366,85 @@ func TestReadyzReady(t *testing.T) {
 	}
 }
 
-// TestCORSMiddleware covers header emission and OPTIONS short-circuit.
+// TestCORSMiddleware pins the allowlist contract: empty config emits no
+// CORS headers at all; only origins from ATLAS_CORS_ORIGINS get headers
+// (echoed, with Vary); "*" is explicit allow-all; everything outside the
+// allowlist passes through untouched.
 func TestCORSMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	})
-	h := CORSMiddleware(next)
+	allowed := ""
+	req := func(origin, method string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "/x", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		rec := httptest.NewRecorder()
+		CORSMiddleware(allowed)(next).ServeHTTP(rec, r)
+		return rec
+	}
 
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodOptions, "/x", nil))
-	if rec.Code != http.StatusNoContent {
-		t.Errorf("OPTIONS = %d, want 204", rec.Code)
+	// Unconfigured: nothing opens, preflight is not blessed either.
+	rec := req("https://app.example.com", http.MethodOptions)
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("unconfigured OPTIONS = %d, want passthrough 418", rec.Code)
 	}
-	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
-		t.Errorf("allow-origin = %q, want *", got)
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("unconfigured request must not emit CORS headers")
 	}
 
-	rec2 := httptest.NewRecorder()
-	h.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/x", nil))
-	if rec2.Code != http.StatusTeapot {
-		t.Errorf("GET = %d, want 418 (next not called?)", rec2.Code)
+	// Allowlisted origin: headers echo the origin, preflight is 204.
+	allowed = "https://app.example.com, https://admin.example.com"
+	rec = req("https://app.example.com", http.MethodGet)
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("allowlisted GET = %d, want 418 (next not called?)", rec.Code)
 	}
-	if rec2.Header().Get("Access-Control-Allow-Methods") == "" {
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Errorf("allow-origin = %q, want the echoed origin", got)
+	}
+	if rec.Header().Get("Vary") != "Origin" {
+		t.Error("Vary: Origin missing for allowlisted origin")
+	}
+	if rec.Header().Get("Access-Control-Allow-Methods") == "" {
 		t.Error("allow-methods header missing")
+	}
+	rec = req("https://app.example.com", http.MethodOptions)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("allowlisted OPTIONS = %d, want 204", rec.Code)
+	}
+
+	// Origin outside the allowlist: no headers, request untouched.
+	rec = req("https://evil.example.com", http.MethodGet)
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("non-allowlisted GET = %d, want passthrough 418", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("non-allowlisted origin must not get CORS headers")
+	}
+	rec = req("https://evil.example.com", http.MethodOptions)
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("non-allowlisted OPTIONS = %d, want passthrough (no 204)", rec.Code)
+	}
+
+	// No Origin header (same-origin / machine traffic): untouched.
+	rec = req("", http.MethodGet)
+	if rec.Code != http.StatusTeapot {
+		t.Errorf("originless GET = %d, want passthrough 418", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("originless request must not emit CORS headers")
+	}
+
+	// Explicit "*": blanket allow (development configuration).
+	allowed = "*"
+	rec = req("https://anything.example.net", http.MethodGet)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf(`"*" config allow-origin = %q, want *`, got)
+	}
+	rec = req("https://anything.example.net", http.MethodOptions)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf(`"*" config OPTIONS = %d, want 204`, rec.Code)
 	}
 }
 

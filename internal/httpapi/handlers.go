@@ -1460,21 +1460,57 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 // ensure time import is used
 var _ = time.Now
 
-// CORSMiddleware adds CORS headers for cross-origin requests from the dashboard.
-func CORSMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "86400")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+// CORSMiddleware guards cross-origin browser access with an explicit
+// allowlist. Origins come from ATLAS_CORS_ORIGINS (comma-separated):
+// empty config emits no CORS headers at all — nothing opens by default,
+// an unconfigured Atlas stays same-origin only. An explicit "*" allows
+// any origin (development only). Allowlisted origins are echoed back
+// with Vary: Origin rather than a blanket "*"; preflight OPTIONS
+// short-circuits 204 only for allowlisted origins, everything else
+// passes through untouched.
+func CORSMiddleware(allowedOrigins string) func(http.Handler) http.Handler {
+	allowAll := false
+	allowed := make(map[string]struct{})
+	for _, o := range strings.Split(allowedOrigins, ",") {
+		if o = strings.TrimSpace(o); o == "" {
+			continue
 		}
+		if o == "*" {
+			allowAll = true
+			continue
+		}
+		allowed[o] = struct{}{}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if allowedOrigins == "" || origin == "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if allowAll {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if _, ok := allowed[origin]; !ok {
+				// Outside the allowlist: no headers, no preflight blessing.
+				next.ServeHTTP(w, r)
+				return
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Add("Vary", "Origin")
+			}
 
-		next.ServeHTTP(w, r)
-	})
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // ── Maintenance windows & announcements (TODO v0.1.20) ──────────

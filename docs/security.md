@@ -87,6 +87,7 @@ ATLAS_RATE_LIMIT_DEFAULT="1000:2000"   # 未命中前缀的兜底规则
 | `ATLAS_AUDIT_ENABLED` | `1` | Admin 操作审计 |
 | `ATLAS_RATE_LIMITS` | （空） | 按前缀的限流规则 |
 | `ATLAS_RATE_LIMIT_DEFAULT` | （空） | 限流兜底规则 |
+| `ATLAS_CORS_ORIGINS` | （空） | 跨域白名单（逗号分隔，公网/管理口生效）；空 = 不产生 CORS 头，`*` 仅供开发 |
 
 速率建议：注册接口最严（低 RPS + 小突发），心跳次之（按服务器数 × 心跳频率估算），发现/目录读取最宽。
 

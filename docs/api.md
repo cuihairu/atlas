@@ -755,6 +755,8 @@ service AdminService {       // 对应 /v1/admin/*
 
 生产部署通常经反代把 :8080/:8081/:8082 合一（见 [sdk-go.md](sdk-go.md) 双传输表）。探针按口区分：公网与注册口是 `GET /healthz`，管理口是 `GET /readyz`。
 
+**跨域（CORS）**：公网口与管理口挂 CORS 中间件，来源只认 `ATLAS_CORS_ORIGINS` 显式配置（逗号分隔，如 `https://ops.example.com,https://app.example.com`；`*` 仅供开发放开全部）。未配置时不产生任何 CORS 头——浏览器同源之外一律不可用，默认不放开。注册口服务游戏服（机器流量），不挂 CORS。管理口 CORS 在鉴权外层：preflight `OPTIONS` 不带 Admin Key 也能被浏览器放行。
+
 ### 认证
 
 Atlas 将 API 划分为三个安全域，各自独立配置：

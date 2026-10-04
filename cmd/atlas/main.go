@@ -462,15 +462,21 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+	// CORS outermost: preflight clears before anything else, and only for
+	// origins ATLAS_CORS_ORIGINS explicitly allows (empty config = no CORS
+	// headers at all).
+	publicHandler := httpapi.CORSMiddleware(cfg.CORSAllowedOrigins)(httpapi.Tracing(logger)(publicMux))
 	publicSrv := &http.Server{
 		Addr:         cfg.HTTPAddr,
-		Handler:      httpapi.Tracing(logger)(publicMux),
+		Handler:      publicHandler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	// ── Registry API (internal network) ────────────────────
+	// No CORS middleware here: this port serves game servers (machine
+	// traffic), never browsers.
 	regMux := http.NewServeMux()
 	handler.RegisterRegistryRoutes(regMux)
 	regMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -532,6 +538,10 @@ func main() {
 	}
 	adminHandler = metrics.RequestCounter(prom.AdminRequests)(adminHandler)
 	adminHandler = httpapi.Tracing(logger)(adminHandler)
+	// CORS outermost (outside auth): preflight OPTIONS carries no admin
+	// key, and the dashboard dev server needs it answered before the
+	// browser will send the real request.
+	adminHandler = httpapi.CORSMiddleware(cfg.CORSAllowedOrigins)(adminHandler)
 	adminSrv := &http.Server{
 		Addr:         cfg.AdminAddr,
 		Handler:      adminHandler,
