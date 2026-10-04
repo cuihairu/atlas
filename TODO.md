@@ -3,9 +3,9 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。巡检点火三项（立档两项 / dead CORS /
-> 决策面 N+1 收尾）全部清零；roadmap 余下候选均挂「真实需求」前置，
-> 无可自立项，等下一批指令或真实需求反馈。
+> 当前批次：待队列下一批。文档-实现对账 sweep 已完成（2026-10-05，6b9466c）；
+> 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
+> roadmap 余下候选均挂「真实需求」前置，无可自立项，等下一批指令或真实需求反馈。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -28,9 +28,10 @@
 - [x] 契约测试：storetest `RunRuntime` 扩展批量语义
       （部分缺失 → 缺失键缺席、其余值正确；空 id 列表无副作用）
       + discovery 批量读契约与后端故障降级两条测试（commit 9f99745 / 8201f57）
-- [x] 基准与文档：复测确认服务层分配无变化（回归以分配数为准）、
-      benchmarks.md §3 往返估算表改为 1–2 次 RTT 口径 / performance.md §2
-      更新 / roadmap 勾销（commit 见下一条）
+- [x] 基准与文档：复测确认服务层分配仅 +5 allocs/千台（批量读的 ids
+      切片与结果 map 容器，回归以分配数为准；文档精确化见 2026-10-05
+      对账 sweep）、benchmarks.md §3 往返估算表改为 1–2 次 RTT 口径 /
+      performance.md §2 更新 / roadmap 勾销（commit 见下一条）
 
 ## 工程落地清单 · 故障模式回归套件（P1）
 
@@ -117,6 +118,22 @@
 ---
 
 ## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
+
+### 文档-实现对账 sweep（2026-10-05）✅
+
+> 自立项：README / performance / roadmap / benchmarks / api 逐条对账当前实现。
+> 门禁全仓绿 + race + vet；修正 5 处（commit 6b9466c）。
+
+- [x] 端点数 45（47 注册 − 探针）、gRPC 5 服务 22 RPC、错误码表全集合对、
+      roadmap 8 个 commit hash、链接全检、Makefile 目标、覆盖数字无具体 %
+      声明——均一致
+- [x] 命令示例实机验证：起服跑通注册→心跳→发现→目录投影→跨服查询→
+      推荐（粘滞 has_character / 兜底 lowest_load）与响应字段
+- [x] 修正：benchmarks.md §2 B/op+allocs 列刷新为复测钉值（ns/QPS 标注
+      2026-10-03 空载基线）；两处「分配数不变」→ +5 allocs（ids 切片与
+      结果 map）；performance.md 心跳 350 万 QPS 出处从并发扇入改为
+      `BenchmarkHeartbeat`；api.md RATE_LIMITED 出处钉内置令牌桶
+      （APISIX 为可选叠加）；grpc 钉值 v1.86.0 → v1.86.0-dev（对齐 go.mod）
 
 ### 条件触发定档（2026-10-04）✅
 
