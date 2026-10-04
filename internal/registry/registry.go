@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 )
@@ -55,6 +56,9 @@ type Service struct {
 	// ("block" rejects 创角, "warn" allows it with a notice). See
 	// WithMaintenanceEnforce.
 	maintenanceEnforce string
+	// metrics records registry write-path latency (register/heartbeat/
+	// unregister); nil means unobserved (tests, embedded use).
+	metrics *metrics.Metrics
 }
 
 // New creates a new registry service.
@@ -64,6 +68,13 @@ func New(servers store.ServerStore, runtime store.RuntimeStore, logger *slog.Log
 		runtime: runtime,
 		logger:  logger,
 	}
+}
+
+// WithMetrics attaches Prometheus instrumentation (optional). Registry
+// write-path latency is observed per operation — see metrics.RegistryWrites.
+func (s *Service) WithMetrics(m *metrics.Metrics) *Service {
+	s.metrics = m
+	return s
 }
 
 // MaintenanceEnforceBlock / MaintenanceEnforceWarn are the accepted values
@@ -120,6 +131,9 @@ func (s *Service) CheckRegistration(ctx context.Context, serverID string) (Regis
 // Register registers a game server. It is idempotent: re-registering the same
 // server ID updates its fields rather than returning ErrConflict.
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Server, error) {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveRegistryWrite("register", time.Since(t0)) }()
+
 	startedAt := time.Now()
 	if req.StartedAt != nil {
 		startedAt = *req.StartedAt
@@ -181,6 +195,9 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 // afterwards, so callers can tell online from suspect / offline (an offline
 // server must re-register to re-enter rotation).
 func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heartbeat) (model.ServerStatus, error) {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveRegistryWrite("heartbeat", time.Since(t0)) }()
+
 	if err := hb.Validate(); err != nil {
 		return "", err
 	}
@@ -233,6 +250,9 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 
 // Unregister marks a server as offline and removes its runtime data.
 func (s *Service) Unregister(ctx context.Context, serverID string) error {
+	t0 := time.Now()
+	defer func() { s.metrics.ObserveRegistryWrite("unregister", time.Since(t0)) }()
+
 	// Verify existence.
 	if _, err := s.servers.GetServer(ctx, serverID); err != nil {
 		return fmt.Errorf("unregister unknown server %s: %w", serverID, err)

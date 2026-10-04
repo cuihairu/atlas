@@ -363,6 +363,7 @@ func main() {
 	prom := metrics.New(composite)
 	discSvc.WithMetrics(prom)
 	dirSvc.WithMetrics(prom)
+	regSvc.WithMetrics(prom)
 
 	// Start health monitor.
 	monitor := health.New(composite, cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval, logger).WithMetrics(prom)

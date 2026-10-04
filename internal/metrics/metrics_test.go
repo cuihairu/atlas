@@ -120,6 +120,33 @@ func TestObserveDirectoryWrite(t *testing.T) {
 	nilMetrics.ObserveDirectoryWrite("create", time.Millisecond)
 }
 
+func TestObserveRegistryWrite(t *testing.T) {
+	m, _ := newTestMetrics(t)
+
+	m.ObserveRegistryWrite("register", 3*time.Millisecond)
+	m.ObserveRegistryWrite("register", 2*time.Millisecond)
+	m.ObserveRegistryWrite("heartbeat", 800*time.Microsecond)
+	m.ObserveRegistryWrite("unregister", 250*time.Microsecond)
+
+	out := scrape(t, m)
+	if !hasLine(out, `atlas_registry_write_duration_seconds_count{op="register"} 2`) {
+		t.Errorf("expected 2 register observations:\n%s", out)
+	}
+	if !hasLine(out, `atlas_registry_write_duration_seconds_count{op="heartbeat"} 1`) {
+		t.Errorf("expected 1 heartbeat observation:\n%s", out)
+	}
+	if !hasLine(out, `atlas_registry_write_duration_seconds_count{op="unregister"} 1`) {
+		t.Errorf("expected 1 unregister observation:\n%s", out)
+	}
+	if !strings.Contains(out, `atlas_registry_write_duration_seconds_bucket{op="register",le="0.005"} 2`) {
+		t.Errorf("expected register observations in the 5ms bucket:\n%s", out)
+	}
+
+	// Nil receiver must be a no-op.
+	var nilMetrics *Metrics
+	nilMetrics.ObserveRegistryWrite("heartbeat", time.Millisecond)
+}
+
 func hasLine(out, want string) bool {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.TrimSpace(line) == want {

@@ -3,10 +3,15 @@ package registry
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store/memory"
 )
@@ -317,4 +322,51 @@ func TestCheckRegistrationFailClosed(t *testing.T) {
 	if v, err := weird.CheckRegistration(ctx, "game-9"); err != nil || v.Code != "SERVER_IN_MAINTENANCE" {
 		t.Fatalf("unknown enforce mode verdict = %+v err=%v", v, err)
 	}
+}
+
+// TestRegistryWriteMetrics pins the write-path instrumentation: register /
+// heartbeat / unregister each land one latency observation, labeled by op.
+func TestRegistryWriteMetrics(t *testing.T) {
+	mem := memory.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	met := metrics.New(mem)
+	svc := New(mem, mem, logger).WithMetrics(met)
+	ctx := context.Background()
+
+	if _, err := svc.Register(ctx, testRequest()); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if _, err := svc.Heartbeat(ctx, "game-1001", model.Heartbeat{Players: 1, Load: 0.1}); err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+	if err := svc.Unregister(ctx, "game-1001"); err != nil {
+		t.Fatalf("Unregister: %v", err)
+	}
+
+	out := scrapeMetrics(t, met)
+	for _, want := range []string{
+		`atlas_registry_write_duration_seconds_count{op="register"} 1`,
+		`atlas_registry_write_duration_seconds_count{op="heartbeat"} 1`,
+		`atlas_registry_write_duration_seconds_count{op="unregister"} 1`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func scrapeMetrics(t *testing.T, m *metrics.Metrics) string {
+	t.Helper()
+	ts := httptest.NewServer(m.Handler())
+	t.Cleanup(ts.Close)
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("scrape: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	return string(body)
 }

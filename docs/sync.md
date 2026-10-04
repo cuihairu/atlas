@@ -290,6 +290,7 @@ flowchart LR
 | `atlas_health_transitions_total{from,to}` | 生命周期状态迁移量 |
 | `atlas_registry_heartbeat_lag_seconds` | 心跳年龄分布 |
 | `atlas_registry_servers_total{status}` | 各状态服务器数 |
+| `atlas_registry_write_duration_seconds{op}` | 注册/心跳/注销写路径延迟——心跳写变慢先于此显形，随后才是假 suspect/offline |
 | `atlas_discovery_requests_total{filter}` | 发现查询量 |
 | `atlas_admin_requests_total{endpoint,status}` | Admin 请求量 |
 

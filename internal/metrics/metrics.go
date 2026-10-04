@@ -39,6 +39,11 @@ type Metrics struct {
 	// DirectoryWrites observes directory write-path latency by operation
 	// (REST create/update/delete and event-bus projection application).
 	DirectoryWrites *prometheus.HistogramVec
+	// RegistryWrites observes registry write-path latency (register /
+	// heartbeat / unregister) — the hottest write path in the fleet: a
+	// slower heartbeat write shows up here long before players feel it
+	// (stale runtime → phantom suspect/offline sweeps).
+	RegistryWrites *prometheus.HistogramVec
 }
 
 // New builds the metric set. The store backs the scrape-time gauges.
@@ -69,6 +74,11 @@ func New(s store.Store) *Metrics {
 			Help:    "Directory write-path latency by operation (service-API create/update/delete, or projection event name).",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		}, []string{"op"}),
+		RegistryWrites: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "atlas_registry_write_duration_seconds",
+			Help:    "Registry write-path latency by operation (register/heartbeat/unregister); the heartbeat line is the fleet's hottest write.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		}, []string{"op"}),
 	}
 
 	reg.MustRegister(
@@ -77,6 +87,7 @@ func New(s store.Store) *Metrics {
 		m.AdminRequests,
 		m.HealthTransitions,
 		m.DirectoryWrites,
+		m.RegistryWrites,
 		newStoreCollector(s),
 	)
 	return m
@@ -115,6 +126,14 @@ func (m *Metrics) CountHealthTransition(from, to model.ServerStatus) {
 func (m *Metrics) ObserveDirectoryWrite(op string, d time.Duration) {
 	if m != nil {
 		m.DirectoryWrites.WithLabelValues(op).Observe(d.Seconds())
+	}
+}
+
+// ObserveRegistryWrite records a registry write-path operation latency.
+// op is "register", "heartbeat" or "unregister".
+func (m *Metrics) ObserveRegistryWrite(op string, d time.Duration) {
+	if m != nil {
+		m.RegistryWrites.WithLabelValues(op).Observe(d.Seconds())
 	}
 }
 

@@ -655,6 +655,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 | `atlas_admin_requests_total{endpoint,status}` | counter | 管理 API 请求（按路由与状态码） |
 | `atlas_health_transitions_total{from,to}` | counter | 服务器生命周期状态迁移 |
 | `atlas_directory_write_duration_seconds{op}` | histogram | 角色目录写路径延迟（`op` = 服务层 `create`/`update`/`delete`，或事件投影名 `created`/`updated`/`deleted`/…——生产写路径 REST/gRPC 均经事件总线投影） |
+| `atlas_registry_write_duration_seconds{op}` | histogram | 注册写路径延迟（`op` = `register` / `heartbeat` / `unregister`）——全舰队最热写路径：心跳落盘变慢会先表现为该指标抬升，随后才出现假 suspect/offline 巡检误判 |
 
 ### 请求追踪（X-Request-ID）
 
