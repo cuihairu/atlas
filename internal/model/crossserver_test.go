@@ -168,6 +168,7 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 	spec.Topology.Clusters[0].Servers[0] = "game-mutated"
 	spec.Groups[0].Servers[0] = "game-mutated"
 	spec.Features["cross_battle"] = false
+	spec.MatchDomains[0].Servers[0] = "game-mutated"
 	spec.MatchDomains[0].Params["mmr"] = "9999"
 	spec.CrossPlayTypes = append(spec.CrossPlayTypes, CrossPlayType{ID: "chat"})
 
@@ -180,6 +181,9 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 	if !clone.Features["cross_battle"] {
 		t.Error("clone shares the features map")
 	}
+	if clone.MatchDomains[0].Servers[0] != "game-1" {
+		t.Error("clone shares the match-domain servers array")
+	}
 	if clone.MatchDomains[0].Params["mmr"] != "0-3000" {
 		t.Error("clone shares the params map")
 	}
@@ -189,46 +193,11 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 	if HashCrossServerSpec(spec) == HashCrossServerSpec(clone) {
 		t.Error("mutated original still hashes like the clone")
 	}
-}
-
-// TestCrossServerSpecCloneMethod drives the Clone method itself. The
-// production path currently goes through the CloneCrossServerSpec function
-// above (the method is a second implementation with no production caller);
-// both must stay deep-copy safe so neither can alias a stored snapshot.
-func TestCrossServerSpecCloneMethod(t *testing.T) {
-	spec := testCrossSpec()
-	clone := spec.Clone()
-
-	// Mutate every slice/map layer of the original.
-	spec.Topology.Clusters[0].Servers[0] = "game-mutated"
-	spec.Groups[0].Servers[0] = "game-mutated"
-	spec.Features["cross_battle"] = false
-	spec.MatchDomains[0].Servers[0] = "game-mutated"
-	spec.MatchDomains[0].Params["mmr"] = "9999"
-	spec.CrossPlayTypes[0].ID = "mutated"
-
-	if clone.Topology.Clusters[0].Servers[0] != "game-1" {
-		t.Error("Clone: cluster servers array is shared")
-	}
-	if clone.Groups[0].Servers[0] != "game-1" {
-		t.Error("Clone: group servers array is shared")
-	}
-	if !clone.Features["cross_battle"] {
-		t.Error("Clone: features map is shared")
-	}
-	if clone.MatchDomains[0].Servers[0] != "game-1" {
-		t.Error("Clone: match-domain servers array is shared")
-	}
-	if clone.MatchDomains[0].Params["mmr"] != "0-3000" {
-		t.Error("Clone: params map is shared")
-	}
-	if clone.CrossPlayTypes[0].ID != "battlefield" {
-		t.Error("Clone: type table slice is shared")
-	}
 
 	// Writes through the clone must not reach the original either.
 	clone.MatchDomains[0].Params["cap"] = "5"
 	if _, ok := spec.MatchDomains[0].Params["cap"]; ok {
-		t.Error("Clone: mutating the clone wrote through to the source")
+		t.Error("mutating the clone wrote through to the source")
 	}
 }
+

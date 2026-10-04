@@ -101,35 +101,6 @@ const (
 	CrossPlayTeam        = "team"        // 跨服组队/招募 Cross-Server Team Up（xp）
 )
 
-// Clone returns a deep copy of the spec: every slice and map is rebuilt,
-// so a caller mutating its copy can never write through into a stored
-// snapshot. Same zero-sharing rule the server store applies to tags —
-// the SQL stores get this for free from their JSON round-trip, memory
-// must do it explicitly.
-func (s CrossServerSpec) Clone() CrossServerSpec {
-	out := CrossServerSpec{
-		Topology:       CrossServerTopology{Clusters: make([]CrossServerCluster, len(s.Topology.Clusters))},
-		Groups:         make([]CrossServerGroup, len(s.Groups)),
-		Features:       maps.Clone(s.Features),
-		MatchDomains:   make([]CrossServerMatchDomain, len(s.MatchDomains)),
-		CrossPlayTypes: slices.Clone(s.CrossPlayTypes),
-	}
-	for i, c := range s.Topology.Clusters {
-		c.Servers = slices.Clone(c.Servers)
-		out.Topology.Clusters[i] = c
-	}
-	for i, g := range s.Groups {
-		g.Servers = slices.Clone(g.Servers)
-		out.Groups[i] = g
-	}
-	for i, d := range s.MatchDomains {
-		d.Servers = slices.Clone(d.Servers)
-		d.Params = maps.Clone(d.Params)
-		out.MatchDomains[i] = d
-	}
-	return out
-}
-
 // TargetAll 是变更目标里的通配符：任何服务器都应重新拉取
 // （全局变更，如玩法开关表整体改动）。
 const TargetAll = "*"
