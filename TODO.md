@@ -3,9 +3,10 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：**工程落地清单（P1）**——从 docs/roadmap.md「v0.2+ 候选方向」与
-> docs/performance.md §7 立档项加载，按「正确性优先于 QPS」排序：
-> Discovery 读路径管线化、故障模式回归套件打头。
+> 当前批次：**工程落地清单（v0.2+ 择优）**——从 docs/roadmap.md「v0.2+
+> 候选方向」按「正确性优先于 QPS」择优两项原子任务：Routing 维护前引导
+> （安全约束，正确性缺口）打头，Registry 写路径指标（把写延迟劣化在生产
+> 显形，护住心跳判活的正确性）跟进。
 >
 > 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
 
@@ -54,6 +55,43 @@
       ——既有 admin rollback 三分支用例
 - [x] 巡检任务：跑绿并接进 CI（redisstore 契约此前默认 skip，本次起
       ci.yml 同包内自然纳入常跑）
+
+---
+
+## 工程落地清单 · Routing 维护前引导（P1，正确性）
+
+> 立档位置：docs/roadmap.md「v0.2+ 候选方向」Routing 策略扩展行。
+> 维护窗口从创建到巡检翻转状态之间、以及窗口开始前的引导期，推荐流量
+> 完全无感知：玩家可能被推荐进正在 / 即将维护的服务器，落点即被踢。
+> 按「正确性优先于 QPS」择优——这是安全约束，不是偏好过滤。
+
+- [x] 接口与实现：`routing.Service` 感知维护窗口——活动中（覆盖 now）或
+      Lead 内开始的服务器从 strict/fallback 两阶段推荐中排除（缺省 Lead
+      5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）；全被排除如实 404
+      （宁可无服可推，不引向即将维护的服务器）；结束未清扫的窗口不挡；
+      窗口库故障 fail closed（commit e318936）
+- [x] Diagnose 同步：逐台判定新增 `maintenance_window` 字段与拒绝原因，
+      `Eligible` 计入窗口；推荐与诊断同一管线不漂移（commit e318936）
+- [x] 契约测试：窗口排除（active / upcoming / Lead 外 / 已结束）、fallback
+      也排除、nil 窗口库兼容、窗口库故障传播、同服多窗口取最紧迫、
+      Diagnose 镜像、handler 层 JSON 面（commit e318936）
+- [x] 文档同步：api.md §Routing 推荐前置过滤 + diagnose 字段、
+      lifecycle.md §5 / operations.md §3 窗口段、roadmap.md 行更新
+      （commit e318936）
+
+## 工程落地清单 · Registry 写路径指标（P2，可观测性）
+
+> 立档位置：docs/roadmap.md「v0.2+ 候选方向」可观测性深化行「更多写路径
+> 指标」。注册 / 心跳 / 注销是全系统最热写路径：写延迟劣化会先于玩家可
+> 感知症状出现（心跳落盘变慢 → 假 suspect/offline 雪崩）——指标是把这类
+> 正确性隐患在生产显形的手段。复刻目录写路径指标（首期）范式。
+
+- [ ] 指标与埋点：`atlas_registry_write_duration_seconds{op}`（op =
+      register / heartbeat / unregister）直方图 + `WithMetrics` 可选注入，
+      服务层三写路径 defer 观测
+- [ ] 测试：metrics 标签 / 桶 / nil 接收器 + registry 三写路径观测断言
+- [ ] 文档同步：api.md / architecture.md / sync.md 指标表补行，
+      roadmap.md 可观测性行更新
 
 ---
 
