@@ -229,11 +229,12 @@ func Apply(ctx context.Context, servers store.ServerStore, p *Profile) (ApplyRes
 	}
 
 	// Release config-owned servers that are no longer declared. ListServers
-	// is cursor-paginated (ID-ascending, limit-capped), so walk pages until
-	// exhausted.
+	// is cursor-paginated (ID-ascending, limit-capped), so walk pages at
+	// exactly the store cap until exhausted — a bigger request is clamped,
+	// which would end the walk after page one.
 	cursor := ""
 	for {
-		page, err := servers.ListServers(ctx, store.ServerFilter{Limit: 200, Cursor: cursor})
+		page, err := servers.ListServers(ctx, store.ServerFilter{Limit: store.ListServersMaxLimit, Cursor: cursor})
 		if err != nil {
 			return res, fmt.Errorf("apply servers config (reconcile): %w", err)
 		}
@@ -247,7 +248,7 @@ func Apply(ctx context.Context, servers store.ServerStore, p *Profile) (ApplyRes
 			}
 			res.Released++
 		}
-		if len(page) < 200 {
+		if len(page) < store.ListServersMaxLimit {
 			break
 		}
 		cursor = page[len(page)-1].ID

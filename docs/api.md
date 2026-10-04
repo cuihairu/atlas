@@ -204,7 +204,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
 }
 ```
 
-**分页**：`?limit=50&cursor=...`，游标基于 `server_id`。
+**分页**：`?limit=50&cursor=...`，游标基于 `server_id`。服务端单页上限 200，更大的 `limit` 按 200 返回；需要完整集合的调用方以游标翻页。
 
 **默认行为**：不带 `status` 参数时，默认过滤掉 `offline` 与 `disabled` 状态的服务器，客户端不应看到已死的服务器。
 

@@ -192,9 +192,9 @@ type ServerVerdict struct {
 }
 
 // Diagnose explains what Recommend would do for this request, server by
-// server. The whole fleet is listed (up to the store list cap) so the
-// rejected servers carry their rejection reason instead of silently
-// disappearing.
+// server. The whole fleet is listed (cursor-paginated at the store's
+// list cap) so the rejected servers carry their rejection reason instead
+// of silently disappearing.
 func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error) {
 	if req.Status == "" {
 		req.Status = model.StatusOnline
@@ -206,9 +206,22 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 		return nil, fmt.Errorf("list maintenance windows: %w", err)
 	}
 
-	all, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: 200})
-	if err != nil {
-		return nil, fmt.Errorf("list servers: %w", err)
+	// The whole fleet, cursor-paginated at the store's list cap: one bare
+	// call truncates at the cap, and servers past it would silently vanish
+	// from the diagnosis — the exact disappearance this endpoint exists
+	// to rule out.
+	var all []*model.Server
+	cursor := ""
+	for {
+		page, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: store.ListServersMaxLimit, Cursor: cursor})
+		if err != nil {
+			return nil, fmt.Errorf("list servers: %w", err)
+		}
+		all = append(all, page...)
+		if len(page) < store.ListServersMaxLimit {
+			break
+		}
+		cursor = page[len(page)-1].ID
 	}
 
 	// The same predicate listMatching pushes into the store filter — applied
@@ -315,18 +328,32 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 	return d, nil
 }
 
-// listMatching applies strict request filters.
+// listMatching applies strict request filters to the complete filtered
+// set, cursor-paginated at the store's list cap. A bare call would take
+// the store's 50-row default page and silently drop every candidate past
+// it — with 60+ eligible servers only the lowest IDs would ever be
+// recommended.
 func (s *Service) listMatching(ctx context.Context, req Request) ([]*model.Server, error) {
-	servers, err := s.servers.ListServers(ctx, store.ServerFilter{
-		Status:   req.Status,
-		Region:   req.Region,
-		Version:  req.Version,
-		Platform: req.Platform,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list servers: %w", err)
+	var out []*model.Server
+	cursor := ""
+	for {
+		page, err := s.servers.ListServers(ctx, store.ServerFilter{
+			Status:   req.Status,
+			Region:   req.Region,
+			Version:  req.Version,
+			Platform: req.Platform,
+			Limit:    store.ListServersMaxLimit,
+			Cursor:   cursor,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list servers: %w", err)
+		}
+		out = append(out, page...)
+		if len(page) < store.ListServersMaxLimit {
+			return out, nil
+		}
+		cursor = page[len(page)-1].ID
 	}
-	return servers, nil
 }
 
 // maintenanceBlocklist returns, per server, the maintenance window that

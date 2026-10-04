@@ -1067,7 +1067,8 @@ func (h *Handler) handleAdminListServers(w http.ResponseWriter, r *http.Request)
 		Version:  filter.Version,
 		Platform: filter.Platform,
 		Status:   filter.Status,
-		Limit:    200,
+		// Single page: the client walks with cursor + next_cursor.
+		Limit: store.ListServersMaxLimit,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())

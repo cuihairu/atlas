@@ -77,10 +77,22 @@ func (m *Monitor) Run(ctx context.Context) {
 // sweep checks all auto-managed servers and transitions their status if
 // heartbeats have aged past the configured thresholds.
 func (m *Monitor) sweep(ctx context.Context) error {
-	// List all servers regardless of status.
-	servers, err := m.store.ListServers(ctx, store.ServerFilter{})
-	if err != nil {
-		return fmt.Errorf("list servers: %w", err)
+	// List all servers regardless of status, cursor-paginated at the
+	// store's list cap. A bare call takes the store's 50-row default
+	// page: servers past it would never be checked, so they would never
+	// transition to suspect/offline no matter how long they stay silent.
+	var servers []*model.Server
+	cursor := ""
+	for {
+		page, err := m.store.ListServers(ctx, store.ServerFilter{Limit: store.ListServersMaxLimit, Cursor: cursor})
+		if err != nil {
+			return fmt.Errorf("list servers: %w", err)
+		}
+		servers = append(servers, page...)
+		if len(page) < store.ListServersMaxLimit {
+			break
+		}
+		cursor = page[len(page)-1].ID
 	}
 
 	now := m.now()

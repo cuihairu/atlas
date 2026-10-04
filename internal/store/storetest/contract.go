@@ -462,6 +462,16 @@ func servers(t *testing.T, ctx context.Context, s Core) {
 		t.Errorf("limit 500 returned %d servers, want the 200 cap", len(bulk))
 	}
 
+	// Limit 0 falls back to the 50-row default page, not "unlimited":
+	// callers that need the complete set must cursor-paginate at the cap.
+	def, err := s.ListServers(ctx, store.ServerFilter{Region: capRegion})
+	if err != nil {
+		t.Fatalf("list with default limit: %v", err)
+	}
+	if len(def) != 50 {
+		t.Errorf("default list returned %d servers, want the 50-row default page", len(def))
+	}
+
 	// Delete is idempotent-failing: the second delete maps to ErrNotFound.
 	if err := s.DeleteServer(ctx, srv3.ID); err != nil {
 		t.Fatalf("delete: %v", err)

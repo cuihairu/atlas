@@ -287,16 +287,19 @@ func Matches(srv *model.Server, f ListFilter) bool {
 // Reconcile rebuilds the whole snapshot from the authoritative stores.
 // Called once at startup (the seed) and periodically by the reconciler.
 func (x *Index) Reconcile(ctx context.Context, servers store.ServerStore, runtime store.RuntimeStore) error {
-	// Full base list, paginated by cursor.
+	// Full base list, cursor-paginated at the store's per-call cap: the
+	// store clamps any larger request down to the cap, so the short-page
+	// termination must measure against the cap (asking for 500 against a
+	// 200 cap stopped the walk after page one).
 	var all []*model.Server
 	cursor := ""
 	for {
-		page, err := servers.ListServers(ctx, store.ServerFilter{Limit: 500, Cursor: cursor})
+		page, err := servers.ListServers(ctx, store.ServerFilter{Limit: store.ListServersMaxLimit, Cursor: cursor})
 		if err != nil {
 			return err
 		}
 		all = append(all, page...)
-		if len(page) < 500 {
+		if len(page) < store.ListServersMaxLimit {
 			break
 		}
 		cursor = page[len(page)-1].ID

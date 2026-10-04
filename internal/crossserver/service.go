@@ -532,9 +532,11 @@ func receivesSignals(status model.ServerStatus) bool {
 
 // listServersAll pages through the whole fleet (cursor = last ID, stores
 // order by ID) so addressing and callback dispatch never silently stop at
-// a page size.
+// a page size. The page size must equal the store's per-call cap: a
+// larger request is clamped, and the short-page termination would then
+// stop after page one (the >200-server truncation bug).
 func (s *Service) listServersAll(ctx context.Context) ([]*model.Server, error) {
-	const pageSize = 500
+	const pageSize = store.ListServersMaxLimit
 	var out []*model.Server
 	cursor := ""
 	for page := 0; page < 10000; page++ {

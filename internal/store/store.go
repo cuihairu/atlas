@@ -61,6 +61,16 @@ type CharacterSearchFilter struct {
 	Cursor        string
 }
 
+// ListServersMaxLimit is the per-call cap every ListServers implementation
+// applies (storetest pins the number across all stores), and the default
+// page when ServerFilter.Limit is zero or negative is 50 rows. Both are
+// page-size guards, not "the whole set": a caller that needs every
+// (filtered) server must cursor-paginate at exactly this page size —
+// requesting more gets clamped to the cap, so a "returned less than I
+// asked" termination check would stop after the first page and silently
+// drop the rest of the fleet.
+const ListServersMaxLimit = 200
+
 // ServerStore persists game server records.
 type ServerStore interface {
 	// RegisterServer upserts a server record. It is idempotent: if a server
@@ -72,7 +82,8 @@ type ServerStore interface {
 	GetServer(ctx context.Context, id string) (*model.Server, error)
 
 	// ListServers returns servers matching the filter, sorted by ID,
-	// paginated with cursor-based pagination.
+	// paginated with cursor-based pagination, at most ListServersMaxLimit
+	// per call (50 when Limit is zero).
 	ListServers(ctx context.Context, f ServerFilter) ([]*model.Server, error)
 
 	// UpdateServerStatus changes the status field of a server.

@@ -124,8 +124,8 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
+	if limit > store.ListServersMaxLimit {
+		limit = store.ListServersMaxLimit
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,

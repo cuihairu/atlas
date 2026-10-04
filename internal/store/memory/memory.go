@@ -127,8 +127,8 @@ func (s *Store) ListServers(_ context.Context, f store.ServerFilter) ([]*model.S
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
+	if limit > store.ListServersMaxLimit {
+		limit = store.ListServersMaxLimit
 	}
 
 	// Collect matching servers.
