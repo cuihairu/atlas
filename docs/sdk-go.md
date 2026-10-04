@@ -17,7 +17,7 @@ cli, err := atlas.New(atlas.Options{
     Addr:      "localhost:8080",             // REST 基地址；gRPC 用 ATLAS_GRPC_ADDR
     Transport: atlas.TransportREST,          // 默认 rest；可选 grpc
     RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKEN"), // Registry 域 Bearer
-    AdminAPIKey:   os.Getenv("ATLAS_ADMIN_API_KEY"), // Admin 域 Bearer
+    AdminAPIKey:   adminKey,                          // Admin 域 Bearer——值须为服务端 ATLAS_ADMIN_API_KEYS 之一（env 名部署自定）
     MaxRetries:    3,                        // 瞬时失败重试（网络错误 + 5xx）
     BaseBackoff:   100 * time.Millisecond,   // 指数退避基数（全抖动）
 })
@@ -50,7 +50,7 @@ loop.Set(playerCount, loadFactor)
 
 | | REST | gRPC |
 | --- | --- | --- |
-| 地址 | `ATLAS_HTTP_ADDR` 等（:8080/:8081/:8082，通常经反代合一） | `ATLAS_GRPC_ADDR`（:9090） |
+| 地址 | `ATLAS_HTTP_ADDR` / `ATLAS_REGISTRY_ADDR` / `ATLAS_ADMIN_ADDR`（:8080/:8081/:8082，通常经反代合一） | `ATLAS_GRPC_ADDR`（:9090） |
 | 认证 | Bearer 头 | `authorization` metadata |
 | 错误 | `*atlas.Error{Code: "SERVER_NOT_FOUND", ...}` | `*atlas.Error{Code: "NotFound", ...}`（gRPC 状态名） |
 | 适用 | 运维工具、低频调用 | 游戏服高频心跳、SDK 内部 |

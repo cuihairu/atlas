@@ -422,6 +422,14 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 
 运维管理。由**运维工具**调用，不暴露给客户端。
 
+三组扩展管理端点归专题文档维护，gRPC 无对应 RPC（REST-only）：
+
+| 端点 | 用途 | 文档 |
+| --- | --- | --- |
+| `GET/POST /v1/admin/servers/{id}/tags`、`DELETE …/tags/{code}` | 运营标记（含公开性控制） | [concepts.md 标签段](concepts.md) |
+| `GET/PUT /v1/admin/crossserver/config` | 跨服配置读 / 全文发布（含 notify 扩散报告） | [config-center.md](config-center.md) |
+| `GET /v1/admin/audit` | Admin 操作审计流（`ATLAS_AUDIT_ENABLED`，默认开） | [security.md](security.md) |
+
 ### POST /v1/admin/servers/{id}/maintenance
 
 进入维护状态。新玩家不可进入，老玩家可继续游戏。
@@ -669,7 +677,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 
 ## gRPC API
 
-REST 之外的第二种传输方式，与 REST **完全同源**：五个服务一一对应五组端点，共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。
+REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Registry / Discovery / Directory / Routing 与 REST 端点一一对应；AdminService 覆盖 10 个核心运维操作（生命周期、统计、角色检索、迁移），而 realms / shards / tags / 维护窗口 / 公告 / 审计 / 跨服配置 / diagnose / 限流 / 序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
 - **proto 定义**：[`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
@@ -734,6 +742,19 @@ service AdminService {       // 对应 /v1/admin/*
 
 ## 通用约定
 
+### 监听地址与探针
+
+四个监听口各自可配（默认值即常见部署形态）：
+
+| 监听口 | 环境变量 | 默认 | 承载 |
+| --- | --- | --- | --- |
+| 公网 | `ATLAS_HTTP_ADDR` | `:8080` | Discovery / Directory / Routing 推荐 + `GET /healthz` |
+| 注册 | `ATLAS_REGISTRY_ADDR` | `:8081` | Registry 注册 / 心跳 / 注销 + 跨服配置拉取 + `GET /healthz` |
+| 管理 | `ATLAS_ADMIN_ADDR` | `:8082` | Admin API + `GET /readyz` + `GET /metrics`（Prometheus） |
+| gRPC | `ATLAS_GRPC_ADDR` | `:9090` | 五服务 22 RPC；设为空字符串关闭 |
+
+生产部署通常经反代把 :8080/:8081/:8082 合一（见 [sdk-go.md](sdk-go.md) 双传输表）。探针按口区分：公网与注册口是 `GET /healthz`，管理口是 `GET /readyz`。
+
 ### 认证
 
 Atlas 将 API 划分为三个安全域，各自独立配置：
@@ -757,7 +778,9 @@ Atlas 将 API 划分为三个安全域，各自独立配置：
 | 安全域 | 端点 | 调用方 | 认证方式 | 配置 |
 | --- | --- | --- | --- | --- |
 | **Registry** | `/v1/registry/*` | 游戏服务器（内部网络） | Service Token（`Authorization: Bearer <token>` 或 `X-Atlas-Token`）+ IP 白名单 | `ATLAS_REGISTRY_TOKENS` + `ATLAS_REGISTRY_IP_WHITELIST` |
-| **Public** | `/v1/discovery/*` `/v1/directory/*` | 客户端（公网） | 网关层处理（玩家 AccessToken），Atlas 不校验 | 网关配置 |
+| **Public** | `/v1/discovery/*` `/v1/directory/*` `/v1/routing/*` | 客户端（公网） | 网关层处理（玩家 AccessToken），Atlas 不校验 | 网关配置 |
+
+`GET /v1/crossserver/config` 双口挂载：注册口 :8081（游戏服拉取，主路径）与公网口 :8080（无注册网关场景），见 [config-center.md](config-center.md)。
 | **Admin** | `/v1/admin/*` | GM 工具 / 运维 | API Key（`Authorization: Bearer <key>`）+ IP 白名单 | `ATLAS_ADMIN_API_KEYS` + `ATLAS_ADMIN_IP_WHITELIST` |
 
 **为什么 Public 端点不在 Atlas 内做认证？**

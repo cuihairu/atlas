@@ -42,7 +42,7 @@ flowchart TB
 | ✅ 事件同步 | EventAdapter 抽象 + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
 | ✅ Prometheus 指标 | :8082 `/metrics` + Grafana 概览看板 | v0.1.3 |
 | ✅ Routing 接入推荐 | `GET /v1/routing/recommended`，同账号角色粘滞 | v0.1.x |
-| ✅ gRPC 双传输 | 5 服务 22 RPC，:9090，与 REST 同一 API 面 | v0.1.5 |
+| ✅ gRPC 双传输 | 5 服务 22 RPC，:9090（核心面与 REST 同源，管理面扩展端点为 REST-only） | v0.1.5 |
 | ✅ 六语言 SDK | Go(双传输) / C++ / Python(同步异步) / JS/TS / Java / C#，自动心跳内置 | v0.1.6 ~ v0.1.11 |
 | ✅ APISIX 插件 | atlas-auth 玩家 token 鉴权注入 + atlas-ratelimit 端点组限流 | v0.1.13 |
 | ✅ Realm / Shard 管理 | Admin CRUD + 三存储实现 + 索引迁移 | v0.1.14 |
@@ -133,7 +133,7 @@ Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、
 
 ```text
 atlas/
-├── cmd/atlas/              主服务入口
+├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard）
 ├── internal/
 │   ├── model/              领域模型（Server, Character, Realm, Shard…）
 │   ├── store/              存储接口
@@ -153,12 +153,17 @@ atlas/
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
 │   ├── tlsutil/            mTLS 辅助
+│   ├── crossserver/        跨服配置中心（发布 / 订阅 / 回调 / 轮询）
+│   ├── fleet/              舰队实时索引（load-series / 匹配判定）
+│   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
+│   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
 │   ├── config/             环境变量配置
 │   └── version/            版本信息
 ├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
 ├── sdk/                    六语言 SDK（go/cpp/python/js/java/csharp）
 ├── plugins/apisix/         APISIX 接入插件
+├── dashboard/              内置管理台（前端源码与构建产物）
 ├── examples/               各语言可运行示例
 ├── deploy/                 haproxy / postgres / redis 部署配置
 ├── deployments/docker/     Dockerfile + docker-compose

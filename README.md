@@ -167,7 +167,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 ## API Quick Reference
 
-Atlas v0.1.1 暴露 28 个 REST 端点，分为五组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
+Atlas v0.1.1 暴露 45 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
@@ -202,11 +202,17 @@ Atlas v0.1.1 暴露 28 个 REST 端点，分为五组（另有 `/healthz` / `/re
 | --- | --- | --- |
 | `GET` | `/v1/routing/recommended` | 按负载/容量/已有角色推荐接入目标 |
 
+### 跨服配置（config center）
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `GET` | `/v1/crossserver/config` | 游戏服拉取跨服配置（:8081 主路径，:8080 兼无注册网关场景；支持 ETag 条件请求） |
+
 ### Admin（运维管理，:8082，RBAC + 审计）
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `POST` | `/v1/admin/servers/{id}/drain` · `enable` · `disable` | 生命周期操作 |
+| `POST` | `/v1/admin/servers/{id}/maintenance` · `drain` · `enable` · `disable` | 生命周期操作 |
 | `POST/GET/DELETE` | `/v1/admin/servers/{id}/maintenance-window` · `/v1/admin/maintenance-windows…` | 计划维护窗口（到期自动进入维护并恢复） |
 | `POST/GET/DELETE` | `/v1/admin/announcements…` | 公告管理（info / warning / critical） |
 | `POST/GET` | `/v1/admin/realms` · `/v1/admin/shards` | 大区 / 分片管理 |
@@ -221,7 +227,7 @@ Atlas v0.1.1 暴露 28 个 REST 端点，分为五组（另有 `/healthz` / `/re
 
 ```text
 atlas/
-├── cmd/atlas/              主服务入口
+├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard）
 ├── internal/
 │   ├── model/              领域模型（Server, Character, Status…）
 │   ├── store/              存储接口
@@ -241,12 +247,17 @@ atlas/
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
 │   ├── tlsutil/            mTLS 辅助
+│   ├── crossserver/        跨服配置中心（发布 / 订阅 / 回调 / 轮询）
+│   ├── fleet/              舰队实时索引（load-series / 匹配判定）
+│   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
+│   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
 │   ├── config/             环境变量配置
 │   └── version/            版本信息
 ├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
 ├── sdk/                    六语言 SDK（go/cpp/python/js/java/csharp）
 ├── plugins/apisix/         APISIX 接入插件
+├── dashboard/              内置管理台（前端源码与构建产物）
 ├── examples/               各语言可运行示例
 ├── deploy/                 haproxy / postgres / redis 部署配置
 ├── deployments/docker/     Dockerfile + docker-compose
@@ -280,7 +291,7 @@ Atlas
 - **[六语言 SDK](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#，自动心跳内置
 - **[APISIX 插件](docs/apisix.md)** — 玩家 token 鉴权注入 + 端点组限流
 - **[健康告警](docs/lifecycle.md)** — suspect / offline 占比阈值告警 + webhook 通知
-- **[gRPC](docs/api.md#grpc-api)** — 与 REST 同一 API 面的双传输
+- **[gRPC](docs/api.md#grpc-api)** — 五服务 22 RPC 双传输（核心面与 REST 同源，管理面扩展端点为 REST-only）
 
 ---
 
