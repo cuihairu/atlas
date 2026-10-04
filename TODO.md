@@ -3,10 +3,9 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：**工程落地清单（v0.2+ 择优）**——从 docs/roadmap.md「v0.2+
-> 候选方向」按「正确性优先于 QPS」择优两项原子任务：Routing 维护前引导
-> （安全约束，正确性缺口）打头，Registry 写路径指标（把写延迟劣化在生产
-> 显形，护住心跳判活的正确性）跟进。
+> 当前批次：**收尾清零 + 全量对账**——待命区两项条件触发项定档归档
+> （三态批注落码、包分流核验），随后按「文档与实现对账」令做一轮
+> 全量文档 vs 实现清点，偏差逐条修。
 >
 > 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
 
@@ -96,17 +95,20 @@
 
 ---
 
-## 待命（条件触发，不再展开——提升即从 roadmap 择优）
-
-- [ ] 状态三态显式化（Desired / Observed / Effective）——概念已定稿
-      （lifecycle §0 / architecture §4.4），代码字段命名演化只在 v1.0
-      API 冻结窗口做，避免破坏契约
-- [ ] Migration Controller 独立模块——概念边界已定（migration §9），
-      代码拆分只在独立扩缩容有真实需求时做
-
----
-
 ## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
+
+### 条件触发定档（2026-10-04）✅
+
+> 两项从「待命」转「定档」：概念与契约安全的代码前置全部就位，
+> 重命名 / 拆分本体**未做**，触发条件钉在 roadmap 对应行——触发即执行。
+
+- [x] 状态三态显式化——概念定稿（lifecycle §0 / architecture §4.4 /
+      data-model 存储批注），代码三态批注落位（`ServerStatus` 类型 +
+      `Server.Status` 字段，commit 4a2ff75）；字段 / 接口重命名定档
+      v1.0 API 冻结窗口执行
+- [x] Migration Controller 独立模块——概念边界定稿（migration §9），
+      代码分流核验通过（`internal/admin` 编排 / `internal/directory`
+      投影零交叉）；拆分定档「独立扩缩容真实需求」触发
 
 ### v0.1 系列（0.1.0 ~ 0.1.20）✅
 
