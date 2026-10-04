@@ -69,6 +69,10 @@ platform
 endpoint
 capacity
 status      # 注册即 starting，首个有效心跳自动提升 online
+metadata    # 注册元数据（可选，键值对）：平台不解释内容，存储/回显并支持
+            # 管理台列表与 /v1/admin/servers 的 metadata_key=value 过滤
+            # （如 cluster=cluster-ea、channel=tap）。与配置化声明
+            # （server-config.md）的 metadata 字段同一语义。
 ```
 
 **幂等性**：重复注册同一 `server_id` 视为更新（幂等 upsert，可变字段被覆盖），
@@ -427,6 +431,55 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 禁用服务器。客户端完全不可见。
 
 状态机语义详见 [lifecycle.md](lifecycle.md)。
+
+### GET /v1/admin/stats
+
+舰队统计（总服务器/在线/玩家/容量 + `servers_by_status/region/version/type/realm/shard/tag`
+facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引——注册/心跳/
+注销实时维护，与 /servers 筛选条、列表同源（数字一致 by construction）。
+
+### GET /v1/admin/servers
+
+管理台舰队列表（比公网发现口多最近心跳/元数据等管理面字段）。
+**Query**：`?id=`（子串）、`?status=`、`?region=`、`?type=`、`?realm=`、
+`?shard=`、`?version=`、`?platform=`、`?tag=`、`?metadata_key=` +
+`?metadata_value=`（键值对）、`?limit=`、`?cursor=`。过滤器可自由组合，
+游标分页与公网列表同契约（下一页取 ID 严格大于 cursor）。
+
+### GET /v1/admin/characters/search
+
+角色索引检索。**Query**：`?q=`（名字子串）、`?server_id=`、`?account_id=`
+（玩家 ID，不透明引用）、`?metadata_key=` + `?metadata_value=`（业务概念
+过滤通道，如 `class=warrior`；平台不内建职业字段）、`?min_level=`、
+`?max_level=`、`?limit=`、`?cursor=`。
+
+### GET /v1/admin/diagnose/routing
+
+玩家视角排查（管理台「排查/诊断」页后端）。**Query** 同
+`/v1/routing/recommended`（`?account_id=`、`?region=`、`?version=`、
+`?platform=`）。返回**同一条推荐管线摊开的中间结果**：匹配阶段
+（strict/fallback）、逐台判定（排序位、严格/回退命中、是否已有角色、
+可入选、拒绝原因）、冠军与归因；带 `account_id` 时附该账号的目录条目。
+
+### GET /v1/admin/rate-limits
+
+网关限流只读视图：解析后的生效规则（路径前缀最长匹配）+ 默认规则 +
+429 计数（按端点规则 / 按客户端 IP）。配置本身走环境变量
+（`ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT`）+ 重启生效。
+
+### GET /v1/admin/load-series
+
+负载时间序列（概览页图表）。**Query**：`?window=`（`5m|10m|30m|1h|10h`）、
+`?server_id=`、`?region=`（scope 优先级 server > region > fleet）。返回
+`points[]`（`t` / `players` / `load`），来自后端内存环形采样（15s 采样、
+≥10h 保留；重启清零，无 TSDB）。
+
+### GET /v1/admin/bus-series
+
+消息总线曲线（概览页总线面板）。**Query**：`?window=` 同上。按主题返回
+积压深度 `depth[]` 曲线、生产/消费速率（窗口内计数器差分）与当前累计量
+（`published` / `consumed` / `in_flight`）；`adapter` 标明事件适配器类型。
+
 
 ### POST /v1/admin/realms
 

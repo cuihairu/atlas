@@ -164,16 +164,28 @@ Realm 内的分区。MMORPG 中的"一区""二区"。
 
 | 字段 | 说明 |
 | --- | --- |
-| `account_id` | 所属账号 |
+| `account_id` | 所属账号（**不透明引用**，见下方边界声明） |
 | `server_id` | 所在服务器 |
 | `character_id` | 角色唯一标识 |
 | `name` | 角色名 |
 | `level` | 等级（列表展示用，允许秒级滞后） |
-| `class_id` | 职业 |
+| `class_id` | **已弃用**（仅存量兼容，见下方边界声明）——职业等业务概念走 `metadata`（如 `class=warrior`） |
 | `avatar` | 头像（可选） |
-| `metadata` | 游戏自定义键值（可选） |
+| `metadata` | 游戏自定义键值（可选；平台唯一内建的业务语义过滤通道） |
 | `last_login_at` | 最近登录时间 |
 | `created_at` / `updated_at` | 索引创建 / 更新时间 |
+
+### 平台边界声明（去业务硬编码裁决，2026-10-04）
+
+**职业是游戏业务概念，平台不内建。** Atlas 不理解「职业/门派/种族」
+这类游戏侧分类——`class_id` 字段与列仅作存量数据兼容保留（DB 列保留、
+搜索参数已移除），新接入一律用 `metadata` 表达（`class=warrior`、
+`faction=horde`、`vip_level=6`…），筛选走元数据键值过滤。
+
+**账号口径：只持不透明引用。** `account_id` 是一个 int64 引用，Atlas
+不识别手机号/邮箱/openid/unionid，不做账号认证，不联动任何账号系统。
+账号的形态标注（测试号/内部号/渠道号）同样走 `metadata`
+（如 `account_type=test`）。
 
 ### 最重要的设计原则
 
@@ -187,7 +199,7 @@ flowchart LR
 
 | 归属 | 数据 |
 | --- | --- |
-| **Atlas 保存** | `account_id`、`server_id`、`character_id`、`name`、`level`、`class_id`、`last_login_at` |
+| **Atlas 保存** | `account_id`（不透明引用）、`server_id`、`character_id`、`name`、`level`、`last_login_at`（`class_id` 仅存量兼容） |
 | **游戏服务器保存** | 装备、背包、任务、技能、好友、邮件……一切权威角色数据 |
 
 ### 为什么必须是 Projection
