@@ -551,7 +551,23 @@ func main() {
 	}
 
 	// ── gRPC API (all five services, TODO v0.1.5) ──────────
-	grpcSrv := grpc.NewServer()
+	// Same security domains as REST (docs/api.md §认证): Registry and
+	// Admin RPCs are guarded when tokens/keys are configured, unconfigured
+	// stays the open dev mode. The Go SDK already sends the right
+	// credential per call over gRPC (grpc.go callCtx).
+	var grpcSrv *grpc.Server
+	if len(regTokens) > 0 || len(regIPs) > 0 || len(adminKeys) > 0 || len(adminIPs) > 0 {
+		grpcSrv = grpc.NewServer(grpc.ChainUnaryInterceptor(atlasgrpc.UnaryAuth(atlasgrpc.AuthConfig{
+			RegistryTokens: regTokens,
+			RegistryIPs:    regIPs,
+			AdminKeys:      adminKeys,
+			AdminRoles:     adminRoles,
+			AdminIPs:       adminIPs,
+			Logger:         logger,
+		})))
+	} else {
+		grpcSrv = grpc.NewServer()
+	}
 	atlasgrpc.New(regSvc, discSvc, dirSvc, rtSvc, admSvc, evtAdapter).RegisterServices(grpcSrv)
 
 	// Graceful shutdown on SIGINT/SIGTERM.

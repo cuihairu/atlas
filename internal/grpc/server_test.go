@@ -45,6 +45,14 @@ func testLogger() *slog.Logger {
 
 func newTestConn(t *testing.T) *testConn {
 	t.Helper()
+	return newTestConnAuth(t, nil)
+}
+
+// newTestConnAuth wires the same services with an optional auth
+// interceptor, so auth tests exercise the real full-method paths the
+// server reports ("/<proto package>.<Service>/<Method>").
+func newTestConnAuth(t *testing.T, authCfg *AuthConfig) *testConn {
+	t.Helper()
 	ctx := context.Background()
 
 	mem := memory.New()
@@ -67,7 +75,12 @@ func newTestConn(t *testing.T) *testConn {
 	)
 
 	lis := bufconn.Listen(1 << 20)
-	g := grpc.NewServer()
+	var g *grpc.Server
+	if authCfg != nil {
+		g = grpc.NewServer(grpc.ChainUnaryInterceptor(UnaryAuth(*authCfg)))
+	} else {
+		g = grpc.NewServer()
+	}
 	srv.RegisterServices(g)
 	go g.Serve(lis) //nolint:errcheck // test server
 	t.Cleanup(g.Stop)
