@@ -174,6 +174,47 @@ func realmsShards(t *testing.T, ctx context.Context, s Core) {
 	if all, err := s.ListShards(ctx, "", 10); err != nil || len(all) != 2 {
 		t.Errorf("list all shards = %v, %v; want 2", all, err)
 	}
+
+	// ListRealms: created_at descending, limit > 0 caps, limit <= 0 is
+	// uncapped. Ordering is asserted as non-increasing rather than exact
+	// newest-first: the SQL backends keep only microsecond precision, so
+	// back-to-back creates can tie (same-root constraint as ListShards
+	// above — membership must not depend on tie-breaking).
+	thirdRealmID := id("realm")
+	if err := s.CreateRealm(ctx, &model.Realm{ID: thirdRealmID, Name: "third"}); err != nil {
+		t.Fatalf("create third realm: %v", err)
+	}
+	created := map[string]bool{realmID: true, otherRealmID: true, thirdRealmID: true}
+	allRealms, err := s.ListRealms(ctx, 0)
+	if err != nil {
+		t.Fatalf("list realms uncapped: %v", err)
+	}
+	if len(allRealms) != 3 {
+		t.Errorf("list realms uncapped = %d entries, want 3", len(allRealms))
+	}
+	for _, r := range allRealms {
+		if !created[r.ID] {
+			t.Errorf("list realms returned unknown %s", r.ID)
+		}
+	}
+	for i := 1; i < len(allRealms); i++ {
+		if allRealms[i-1].CreatedAt.Before(allRealms[i].CreatedAt) {
+			t.Errorf("list realms ordering violated at %d: %v before %v",
+				i, allRealms[i-1].CreatedAt, allRealms[i].CreatedAt)
+		}
+	}
+	cappedRealms, err := s.ListRealms(ctx, 2)
+	if err != nil {
+		t.Fatalf("list realms capped: %v", err)
+	}
+	if len(cappedRealms) != 2 {
+		t.Errorf("list realms limit=2 = %d entries, want 2", len(cappedRealms))
+	}
+	for i := 1; i < len(cappedRealms); i++ {
+		if cappedRealms[i-1].CreatedAt.Before(cappedRealms[i].CreatedAt) {
+			t.Errorf("capped realm ordering violated at %d", i)
+		}
+	}
 }
 
 // servers covers registration defaults and backfill, idempotent
@@ -1122,6 +1163,35 @@ func RunRuntime(t *testing.T, rt store.RuntimeStore) {
 		t.Errorf("get runtimes(nil) = %v, %v; want empty map, nil error", empty, err)
 	}
 
+	// ListRuntimes: the fleet-wide snapshot view stats aggregation relies
+	// on — every recorded server is present with its values, servers
+	// without a runtime are absent, and delete drops the key from the
+	// listing. Subset assertions: other subtests may hold their own
+	// heartbeats on the same store.
+	rtB := id("rt")
+	if err := rt.RecordHeartbeat(ctx, rtB, model.Heartbeat{
+		Players: 7, Load: 0.1, Status: model.StatusOnline,
+	}); err != nil {
+		t.Fatalf("record second heartbeat: %v", err)
+	}
+	listed, err := rt.ListRuntimes(ctx)
+	if err != nil {
+		t.Fatalf("list runtimes: %v", err)
+	}
+	if got, ok := listed[srvID]; !ok {
+		t.Errorf("list runtimes missing %s", srvID)
+	} else if got.Players != 42 || got.Status != model.StatusOnline {
+		t.Errorf("listed runtime = %+v, want players=42 online", got)
+	}
+	if got, ok := listed[rtB]; !ok {
+		t.Errorf("list runtimes missing %s", rtB)
+	} else if got.Players != 7 {
+		t.Errorf("listed second runtime = %+v, want players=7", got)
+	}
+	if _, ok := listed[id("rt")]; ok {
+		t.Error("list runtimes contains a server that never heartbeated")
+	}
+
 	if err := rt.DeleteRuntime(ctx, id("rt")); !isNotFound(err) {
 		t.Errorf("delete missing runtime = %v, want ErrNotFound", err)
 	}
@@ -1130,6 +1200,16 @@ func RunRuntime(t *testing.T, rt store.RuntimeStore) {
 	}
 	if _, err := rt.GetRuntime(ctx, srvID); !isNotFound(err) {
 		t.Errorf("runtime after delete = %v, want ErrNotFound", err)
+	}
+	listedAfter, err := rt.ListRuntimes(ctx)
+	if err != nil {
+		t.Fatalf("list runtimes after delete: %v", err)
+	}
+	if _, ok := listedAfter[srvID]; ok {
+		t.Errorf("list runtimes still contains deleted %s", srvID)
+	}
+	if _, ok := listedAfter[rtB]; !ok {
+		t.Errorf("list runtimes lost unrelated %s after delete", rtB)
 	}
 }
 
