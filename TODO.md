@@ -17,15 +17,18 @@
 > （1,000 台 ≈ 300ms）降到常数 1–2 次，改动限定 `internal/store/redisstore`
 > 与 discovery 读路径。完成后同步刷新 benchmarks.md / performance.md 数字。
 
-- [ ] 接口与实现：`RuntimeStore` 新增批量读 `GetRuntimes(ctx, ids)`；
+- [x] 接口与实现：`RuntimeStore` 新增批量读 `GetRuntimes(ctx, ids)`；
       memory 单次锁内读全（缺失即缺席）、Redis pipeline 一次 Exec
       （单节点 1 RTT，Cluster 按 slot 分批）；`GetRuntime` 单点语义不变
-- [ ] 调用方：`discovery.ListServers` 列表路径改批量合并；
-      `GetServer` 详情路径维持单点读
-- [ ] 契约测试：storetest `RunRuntime` 扩展批量语义
+      （commit 9f99745）
+- [x] 调用方：`discovery.ListServers` 列表路径改批量合并；
+      `GetServer` 详情路径维持单点读（commit 8201f57）
+- [x] 契约测试：storetest `RunRuntime` 扩展批量语义
       （部分缺失 → 缺失键缺席、其余值正确；空 id 列表无副作用）
-- [ ] 基准与文档：`BenchmarkListServers` 系列复测 + benchmarks.md §3
-      往返估算表 / performance.md §2 更新，回归警戒线同步修订
+      + discovery 批量读契约与后端故障降级两条测试（commit 9f99745 / 8201f57）
+- [x] 基准与文档：复测确认服务层分配无变化（回归以分配数为准）、
+      benchmarks.md §3 往返估算表改为 1–2 次 RTT 口径 / performance.md §2
+      更新 / roadmap 勾销（commit 见下一条）
 
 ## 工程落地清单 · 故障模式回归套件（P1）
 

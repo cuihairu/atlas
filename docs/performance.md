@@ -31,7 +31,7 @@ pipe.Expire(ctx, key, runtimeTTL) // 120s —— 失联自动消失,无清理任
 
 玩家登录拉服务器列表。`internal/discovery` 读路径做三件事：过滤（region/realm/状态）、运行时合并（在线人数/负载）、对外标记过滤（`model.PublicTags`——内存里的切片过滤，零分配级别的开销）。列表是**准实时**数据，网关可安全做 1–5s 短 TTL 缓存；`region` + `limit` 把单响应控制在 100 台量级。
 
-服务层基准（memory store，不含网络）：100 台全量 34µs、1,000 台 419µs。**已知边界**：生产用 Redis 时当前实现对每台服务器做一次 `GetRuntime`（N 次往返，1,000 台 ≈ 300ms）——[基准页](/benchmarks#_3-读数)把这条列为**最值得做的后续优化（管线化：MGET / pipeline 合并 runtime 读取，N 次 RTT → 1–2 次）**，不藏着。该优化已在路线图立档（P1），实现后同步刷新本文与基准页数字。
+服务层基准（memory store，不含网络）：100 台全量 34µs、1,000 台 419µs，管线化前后服务层分配数不变（~1,068 allocs/1,000 台，无额外内存代价）。**Redis 读路径已管线化（P1，2026-10-04 落地）**：列表合并不再逐台 `GetRuntime`，`RuntimeStore.GetRuntimes` 批量读由 Redis **pipeline 一次 Exec** 完成——**N 次网络往返 → 1–2 次**（单节点 1 次；Cluster 模式按 slot 分批，每批 1 次），1,000 台的 Redis 后端估算从 ~300ms 降到 ~2ms 量级（[基准页](/benchmarks#_3-读数)有明细估算）。单点详情 `GetServer` 维持单次读，天然最少往返。
 
 ### 注册（upsert 单语句）
 
