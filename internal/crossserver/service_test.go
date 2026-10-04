@@ -460,8 +460,11 @@ func TestBusSignalAddressesAffectedServers(t *testing.T) {
 	assertReceivers("add member", res, "game-1001", "game-2001")
 
 	// 3) Removing a live member still addresses it — it has to tear the
-	// feature down even though it is no longer in the document.
+	// feature down even though it is no longer in the document. The group
+	// follows the member out (拓扑为准: a group must stay inside a cluster,
+	// so a member leaving the topology leaves the group too).
 	spec.Topology.Clusters[0].Servers = []string{"game-1002", "game-2001"}
+	spec.Groups[0].Servers = []string{"game-2001"}
 	res = save(spec, "remove member")
 	assertReceivers("remove member", res, "game-1001", "game-2001")
 
@@ -474,8 +477,10 @@ func TestBusSignalAddressesAffectedServers(t *testing.T) {
 	assertReceivers("feature flip", res, model.TargetAll)
 
 	// 5) Removing the last live member still addresses it (the
-	// old-membership rule), even though only offline servers remain.
+	// old-membership rule), even though only offline servers remain. The
+	// group empties with the topology (same 拓扑为准 rule as step 3).
 	spec.Topology.Clusters[0].Servers = []string{"game-1002"}
+	spec.Groups[0].Servers = nil
 	res = save(spec, "last live member removed")
 	assertReceivers("last live member removed", res, "game-2001")
 

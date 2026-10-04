@@ -253,6 +253,46 @@ func ValidateCrossServerSpec(spec CrossServerSpec) error {
 			return err
 		}
 	}
+
+	// 拓扑为准（三者关系裁决，docs/config-center.md §三者关系与冲突裁决）。
+	// clusters 是服务器互通的技术边界：一台服务器至多属于一个集群
+	// （重叠即拓扑错误）；参与分组是运营编排的软集合，必须完整落在
+	// 一个集群内 —— 圈进跨拓扑或拓扑外服务器直接拒绝，错误信息说明
+	// 该去哪改（先补拓扑，或把分组拆开）。
+	serverCluster := make(map[string]string)
+	for _, c := range spec.Topology.Clusters {
+		for _, srv := range c.Servers {
+			if prev, ok := serverCluster[srv]; ok {
+				return fmt.Errorf("topology: server %q belongs to both cluster %q and %q — clusters are disjoint interconnect boundaries", srv, prev, c.ID)
+			}
+			serverCluster[srv] = c.ID
+		}
+	}
+	for i, g := range spec.Groups {
+		if len(g.Servers) == 0 {
+			continue
+		}
+		cluster := ""
+		var outside, spanning []string
+		for _, srv := range g.Servers {
+			c, ok := serverCluster[srv]
+			if !ok {
+				outside = append(outside, srv)
+				continue
+			}
+			if cluster == "" {
+				cluster = c
+			} else if c != cluster {
+				spanning = append(spanning, srv)
+			}
+		}
+		switch {
+		case len(outside) > 0:
+			return fmt.Errorf("groups[%d] %q: servers %v are not in any topology cluster — declare the cluster membership first (拓扑为准，分组受拓扑约束)", i, g.ID, outside)
+		case len(spanning) > 0:
+			return fmt.Errorf("groups[%d] %q: servers %v span clusters %q + others — a group must sit inside ONE cluster (拓扑为准，分组受拓扑约束；跨拓扑请拆成多个分组)", i, g.ID, spanning, cluster)
+		}
+	}
 	for key := range spec.Features {
 		if err := validateConfigKey(key); err != nil {
 			return fmt.Errorf("features.%s: %w", key, err)

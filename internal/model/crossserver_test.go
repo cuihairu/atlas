@@ -85,6 +85,18 @@ func TestValidateCrossServerSpec(t *testing.T) {
 		{"empty server id in cluster", func(s *CrossServerSpec) { s.Topology.Clusters[0].Servers = []string{"game-1", ""} }},
 		{"duplicate server in cluster", func(s *CrossServerSpec) { s.Topology.Clusters[0].Servers = []string{"game-1", "game-1"} }},
 		{"missing group id", func(s *CrossServerSpec) { s.Groups[0].ID = "" }},
+		// 拓扑为准（三者关系裁决）: groups are ops sets constrained by the
+		// topology — members must sit inside ONE cluster.
+		{"group member outside every cluster", func(s *CrossServerSpec) {
+			s.Groups[0].Servers = []string{"game-1", "game-9"}
+		}},
+		{"group spans two clusters", func(s *CrossServerSpec) {
+			s.Topology.Clusters = append(s.Topology.Clusters, CrossServerCluster{ID: "c2", Servers: []string{"game-3"}})
+			s.Groups[0].Servers = []string{"game-1", "game-3"}
+		}},
+		{"server in two clusters", func(s *CrossServerSpec) {
+			s.Topology.Clusters = append(s.Topology.Clusters, CrossServerCluster{ID: "c2", Servers: []string{"game-1"}})
+		}},
 		{"bad feature key", func(s *CrossServerSpec) { s.Features["Cross Battle!"] = true }},
 		{"feature key too long", func(s *CrossServerSpec) {
 			s.Features["a"+string(make([]byte, 64))] = true
