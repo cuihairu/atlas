@@ -62,6 +62,9 @@ message RegisterRequest {
   string platform = 8;
   Endpoint endpoint = 9;
   int32 capacity = 10;
+  // Arbitrary key-value pairs (engine hints, cluster / zone / language
+  // markers — see model.Server.Metadata).
+  map<string, string> metadata = 11;
 }
 
 message RegisterResponse {
@@ -135,6 +138,9 @@ message CreateCharacterRequest {
   string name = 4;
   int32 level = 5;
   int32 class_id = 6;
+  // Arbitrary key-value pairs synced from the game server (engine hints,
+  // guild, vip_level... — see model.Character.Metadata).
+  map<string, string> metadata = 7;
 }
 
 message CreateCharacterResponse {
@@ -180,6 +186,9 @@ message UpdateCharacterRequest {
   optional int32 level = 5;
   optional int32 class_id = 6;
   optional string avatar = 7;
+  // A message-level presence test still distinguishes "absent = no change"
+  // from "present = replace the whole map".
+  map<string, string> metadata = 8;
 }
 
 message UpdateCharacterResponse {
@@ -249,11 +258,19 @@ message GetStatsResponse {
 message SearchCharactersRequest {
   string name = 1;
   string server_id = 2;
-  optional int32 class_id = 3;
+  // class_id is deprecated (platform de-hardening): 职业 is a game-business
+  // concept, filtered via metadata (metadata_key="class") instead. The field
+  // stays on the wire for compat but the server no longer honours it.
+  optional int32 class_id = 3 [deprecated = true];
   optional int32 min_level = 4;
   optional int32 max_level = 5;
   int32 limit = 6;
   string cursor = 7;
+  // AccountID filters by the opaque account reference (玩家 ID 搜索).
+  int64 account_id = 8;
+  // Metadata key=value pair filter (same contract as the REST search).
+  string metadata_key = 9;
+  string metadata_value = 10;
 }
 
 message SearchCharactersResponse {

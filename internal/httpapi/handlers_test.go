@@ -1093,11 +1093,11 @@ func TestAdminSearchInvalidFilters(t *testing.T) {
 	defer ts.Close()
 
 	for name, q := range map[string]string{
-		"class_id":  "?class_id=abc",
-		"min_level": "?min_level=abc",
-		"max_level": "?max_level=abc",
-		"limit":     "?limit=abc",
-		"limit<=0":  "?limit=0",
+		"account_id": "?account_id=abc",
+		"min_level":  "?min_level=abc",
+		"max_level":  "?max_level=abc",
+		"limit":      "?limit=abc",
+		"limit<=0":   "?limit=0",
 	} {
 		resp := getJSON(t, ts, "/v1/admin/characters/search"+q)
 		if resp.StatusCode != http.StatusBadRequest {

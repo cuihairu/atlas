@@ -36,6 +36,14 @@ type RateLimiter struct {
 	// clients are denied once the cap is reached (fail closed).
 	maxBuckets int
 	now        func() time.Time
+
+	// 429 accounting for the admin 网关/系统配置 page: rejections counted
+	// per matched rule (endpoint) and per client IP. The client map stops
+	// growing at maxClientStats entries (spoofed-XFF guard); already-tracked
+	// clients keep counting.
+	rejectedByEndpoint map[string]int
+	rejectedByClient   map[string]int
+	maxClientStats     int
 }
 
 type rateNamedRule struct {
@@ -59,11 +67,14 @@ func NewRateLimiter(rules map[string]RateRule, def RateRule) *RateLimiter {
 		def.Burst = int(math.Max(1, def.RPS))
 	}
 	return &RateLimiter{
-		rules:      named,
-		def:        def,
-		buckets:    make(map[string]*rateBucket),
-		maxBuckets: 65536,
-		now:        time.Now,
+		rules:              named,
+		def:                def,
+		buckets:            make(map[string]*rateBucket),
+		maxBuckets:         65536,
+		now:                time.Now,
+		rejectedByEndpoint: make(map[string]int),
+		rejectedByClient:   make(map[string]int),
+		maxClientStats:     4096,
 	}
 }
 
@@ -71,6 +82,7 @@ func NewRateLimiter(rules map[string]RateRule, def RateRule) *RateLimiter {
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !rl.allow(r.URL.Path, extractIP(r)) {
+			rl.recordRejection(r.URL.Path, extractIP(r))
 			w.Header().Set("Retry-After", "1")
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED",
 				"too many requests for this endpoint; retry later")
@@ -78,6 +90,57 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// recordRejection counts one 429 by the rule the path matched and by client.
+func (rl *RateLimiter) recordRejection(path, clientIP string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.rejectedByEndpoint[pathPrefixKey(path, rl.rules, rl.def)]++
+	if _, tracked := rl.rejectedByClient[clientIP]; tracked || len(rl.rejectedByClient) < rl.maxClientStats {
+		rl.rejectedByClient[clientIP]++
+	}
+}
+
+// RateLimitRuleView is one parsed rule in the read-only view.
+type RateLimitRuleView struct {
+	Prefix string  `json:"prefix"`
+	RPS    float64 `json:"rps"`
+	Burst  int     `json:"burst"`
+}
+
+// RateLimitStats is the read-only snapshot for the admin 网关/系统配置
+// page: the parsed effective rules (not the raw env strings) plus the 429
+// hit counts. Mutation is env-config + restart only.
+type RateLimitStats struct {
+	Enabled            bool                `json:"enabled"`
+	Rules              []RateLimitRuleView `json:"rules"`
+	Default            RateRule            `json:"default"`
+	RejectedByEndpoint map[string]int      `json:"rejected_by_endpoint"`
+	RejectedByClient   map[string]int      `json:"rejected_by_client"`
+}
+
+// Stats snapshots the parsed rule set and 429 counters. Rules are already
+// longest-prefix-first — the matching order the middleware applies.
+func (rl *RateLimiter) Stats() RateLimitStats {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	out := RateLimitStats{
+		Enabled:            true,
+		Default:            rl.def,
+		RejectedByEndpoint: make(map[string]int, len(rl.rejectedByEndpoint)),
+		RejectedByClient:   make(map[string]int, len(rl.rejectedByClient)),
+	}
+	for _, nr := range rl.rules {
+		out.Rules = append(out.Rules, RateLimitRuleView{Prefix: nr.prefix, RPS: nr.rule.RPS, Burst: nr.rule.Burst})
+	}
+	for k, v := range rl.rejectedByEndpoint {
+		out.RejectedByEndpoint[k] = v
+	}
+	for k, v := range rl.rejectedByClient {
+		out.RejectedByClient[k] = v
+	}
+	return out
 }
 
 // allow consumes one token for (path, clientIP), refilling the bucket by

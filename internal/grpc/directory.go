@@ -40,6 +40,7 @@ func (s *Server) CreateCharacter(ctx context.Context, req *pb.CreateCharacterReq
 		Name:        req.Name,
 		Level:       &level,
 		ClassID:     &classID,
+		Metadata:    pbMetadata(req.Metadata),
 		Timestamp:   time.Now(),
 	}
 	if err := s.events.Publish(ctx, evt); err != nil {
@@ -111,6 +112,9 @@ func (s *Server) UpdateCharacter(ctx context.Context, req *pb.UpdateCharacterReq
 	}
 	if req.Avatar != nil {
 		evt.Avatar = req.Avatar
+	}
+	if req.Metadata != nil {
+		evt.Metadata = pbMetadata(req.Metadata)
 	}
 
 	if err := s.events.Publish(ctx, evt); err != nil {

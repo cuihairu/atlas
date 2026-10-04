@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +19,12 @@ import (
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
+	"github.com/cuihairu/atlas/internal/fleet"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/store"
+	"github.com/cuihairu/atlas/internal/telemetry"
 )
 
 // Handler holds all Atlas HTTP handlers and their dependencies.
@@ -36,6 +39,10 @@ type Handler struct {
 	events      event.EventAdapter
 	logger      *slog.Logger
 	audit       *AuditLog
+	fleet       *fleet.Index
+	limiter     *RateLimiter
+	telemetry   *telemetry.Sampler
+	bus         *event.CountingAdapter
 }
 
 // New creates a new Handler.
@@ -58,6 +65,38 @@ func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service,
 // ring; wrap the admin mux in AuditLog.Middleware to record operations.
 func (h *Handler) WithAudit(a *AuditLog) *Handler {
 	h.audit = a
+	return h
+}
+
+// WithFleetIndex attaches the in-memory fleet aggregate (BUGS ③). When set,
+// admin stats and the admin server list read the same snapshot the index
+// maintains on every register / heartbeat / unregister — the decree that
+// keeps overview counts, filter-bar facets, and list numbers identical.
+func (h *Handler) WithFleetIndex(idx *fleet.Index) *Handler {
+	h.fleet = idx
+	return h
+}
+
+// WithRateLimiter attaches the listener rate limiter for the read-only
+// 网关/系统配置 page (TODO 系统配置): parsed effective rules plus 429 hit
+// counts. Configuration itself stays env-driven — the page never mutates.
+func (h *Handler) WithRateLimiter(rl *RateLimiter) *Handler {
+	h.limiter = rl
+	return h
+}
+
+// WithTelemetry attaches the lightweight series sampler for the 概览负载
+// 时间视图 and 消息总线 panels. Without it the endpoints report empty
+// series (older embedders keep the same response shape).
+func (h *Handler) WithTelemetry(s *telemetry.Sampler) *Handler {
+	h.telemetry = s
+	return h
+}
+
+// WithBusStats attaches the counting event adapter backing the 消息总线
+// panel's current counters.
+func (h *Handler) WithBusStats(c *event.CountingAdapter) *Handler {
+	h.bus = c
 	return h
 }
 
@@ -131,7 +170,17 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/admin/servers/{id}/enable", h.handleAdminEnable)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/disable", h.handleAdminDisable)
 	mux.HandleFunc("GET /v1/admin/stats", h.handleAdminStats)
+	mux.HandleFunc("GET /v1/admin/servers", h.handleAdminListServers)
 	mux.HandleFunc("GET /v1/admin/characters/search", h.handleAdminSearchCharacters)
+	// 玩家视角排查 (TODO 排查/诊断): the routing decision walked through the
+	// same Recommend pipeline with intermediates exposed, plus the account's
+	// characters / directory entries.
+	mux.HandleFunc("GET /v1/admin/diagnose/routing", h.handleAdminDiagnoseRouting)
+	// 网关/系统配置只读页: parsed rate-limit rules + 429 hit counts.
+	mux.HandleFunc("GET /v1/admin/rate-limits", h.handleAdminRateLimits)
+	// 负载时间视图 (概览) 与 消息总线 panels: lightweight ring-buffer series.
+	mux.HandleFunc("GET /v1/admin/load-series", h.handleAdminLoadSeries)
+	mux.HandleFunc("GET /v1/admin/bus-series", h.handleAdminBusSeries)
 	mux.HandleFunc("POST /v1/admin/migrations", h.handleAdminCreateMigration)
 	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
 	mux.HandleFunc("GET /v1/admin/migrations/{id}", h.handleAdminGetMigration)
@@ -192,8 +241,9 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Capacity int            `json:"capacity"`
 		// Config-center notify declaration (subscribe | callback | poll);
 		// callback mode also carries the URL atlas signals.
-		NotifyMode        string `json:"notify_mode,omitempty"`
-		NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
+		NotifyMode        string            `json:"notify_mode,omitempty"`
+		NotifyCallbackURL string            `json:"notify_callback_url,omitempty"`
+		Metadata          map[string]string `json:"metadata,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -214,6 +264,7 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Capacity:          req.Capacity,
 		NotifyMode:        req.NotifyMode,
 		NotifyCallbackURL: req.NotifyCallbackURL,
+		Metadata:          req.Metadata,
 	}
 
 	srv, err := h.registry.Register(r.Context(), regReq)
@@ -365,12 +416,13 @@ func (h *Handler) handleGetServer(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AccountID   int64  `json:"account_id"`
-		ServerID    string `json:"server_id"`
-		CharacterID int64  `json:"character_id"`
-		Name        string `json:"name"`
-		Level       int    `json:"level"`
-		ClassID     int    `json:"class_id"`
+		AccountID   int64             `json:"account_id"`
+		ServerID    string            `json:"server_id"`
+		CharacterID int64             `json:"character_id"`
+		Name        string            `json:"name"`
+		Level       int               `json:"level"`
+		ClassID     int               `json:"class_id"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -414,6 +466,7 @@ func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) 
 		Name:        req.Name,
 		Level:       &level,
 		ClassID:     &classID,
+		Metadata:    &req.Metadata,
 		Timestamp:   time.Now(),
 	}
 	if err := h.events.Publish(r.Context(), evt); err != nil {
@@ -562,12 +615,13 @@ func (h *Handler) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		AccountID int64   `json:"account_id"`
-		ServerID  string  `json:"server_id"`
-		Name      *string `json:"name,omitempty"`
-		Level     *int    `json:"level,omitempty"`
-		ClassID   *int    `json:"class_id,omitempty"`
-		Avatar    *string `json:"avatar,omitempty"`
+		AccountID int64             `json:"account_id"`
+		ServerID  string            `json:"server_id"`
+		Name      *string           `json:"name,omitempty"`
+		Level     *int              `json:"level,omitempty"`
+		ClassID   *int              `json:"class_id,omitempty"`
+		Avatar    *string           `json:"avatar,omitempty"`
+		Metadata  map[string]string `json:"metadata,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -584,6 +638,9 @@ func (h *Handler) handlePatchCharacter(w http.ResponseWriter, r *http.Request) {
 		Level:       req.Level,
 		ClassID:     req.ClassID,
 		Avatar:      req.Avatar,
+	}
+	if req.Metadata != nil {
+		evt.Metadata = &req.Metadata
 	}
 	if err := h.events.Publish(r.Context(), evt); err != nil {
 		h.writeEventError(w, err)
@@ -729,6 +786,17 @@ func (h *Handler) handleAdminDisable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleAdminStats(w http.ResponseWriter, r *http.Request) {
+	// BUGS ③: with the fleet index wired, the aggregate facets come from the
+	// single in-memory snapshot every admin view reads. The store remains
+	// the source for character totals — the index does not track characters.
+	if h.fleet != nil {
+		stats := h.fleet.Stats()
+		if st, err := h.admin.GetStats(r.Context()); err == nil {
+			stats.TotalCharacters = st.TotalCharacters
+		}
+		writeJSON(w, http.StatusOK, stats)
+		return
+	}
 	stats, err := h.admin.GetStats(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
@@ -737,22 +805,328 @@ func (h *Handler) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// handleAdminDiagnoseRouting is the 玩家视角排查 entry (排查/诊断): given an
+// account (and optional client filters mirroring the recommend request), it
+// returns the routing walkthrough — same pipeline as /v1/routing/recommended
+// with the intermediates exposed — plus the account's characters / directory
+// entries so the operator sees both sides of the decision.
+func (h *Handler) handleAdminDiagnoseRouting(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	req := routing.Request{
+		Region:   q.Get("region"),
+		Version:  q.Get("version"),
+		Platform: q.Get("platform"),
+	}
+	if acct := q.Get("account_id"); acct != "" {
+		n, err := strconv.ParseInt(acct, 10, 64)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid account_id")
+			return
+		}
+		req.AccountID = n
+	}
+	if st := q.Get("status"); st != "" {
+		status := model.ServerStatus(st)
+		if !status.Valid() {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid status")
+			return
+		}
+		req.Status = status
+	}
+
+	diag, err := h.routing.Diagnose(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	resp := map[string]any{"diagnosis": diag}
+	// Account dimension: characters (the directory projection IS the index
+	// entry list — account_id, server_id, character_id, last_login_at).
+	if req.AccountID > 0 {
+		chars, err := h.directory.ListByAccount(r.Context(), req.AccountID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+			return
+		}
+		resp["characters"] = chars
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAdminRateLimits serves the read-only rate-limit view: the parsed
+// effective rules (prefix / rps / burst, longest-prefix-first) plus 429
+// counts by endpoint rule and client IP. Changes go through env config and
+// a restart — this endpoint never mutates.
+func (h *Handler) handleAdminRateLimits(w http.ResponseWriter, r *http.Request) {
+	if h.limiter == nil {
+		writeJSON(w, http.StatusOK, RateLimitStats{
+			Enabled:            false,
+			RejectedByEndpoint: map[string]int{},
+			RejectedByClient:   map[string]int{},
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, h.limiter.Stats())
+}
+
+// parseSeriesWindow maps the chart window tiers (5m/10m/30m/1h/10h) shared
+// by the 负载时间视图 and 消息总线 panels. Empty defaults to 1h.
+func parseSeriesWindow(raw string) (time.Duration, bool) {
+	switch raw {
+	case "", "1h":
+		return time.Hour, true
+	case "5m":
+		return 5 * time.Minute, true
+	case "10m":
+		return 10 * time.Minute, true
+	case "30m":
+		return 30 * time.Minute, true
+	case "10h":
+		return 10 * time.Hour, true
+	}
+	return 0, false
+}
+
+// loadPoint is one merged sample of the two chart lines.
+type loadPoint struct {
+	T       time.Time `json:"t"`
+	Players float64   `json:"players"`
+	Load    float64   `json:"load"`
+}
+
+// handleAdminLoadSeries serves the 概览负载时间视图: players / load series
+// for the whole fleet, one region, or one server (drill-down), over the
+// shared window tiers. Scope resolution: server_id > region > fleet.
+func (h *Handler) handleAdminLoadSeries(w http.ResponseWriter, r *http.Request) {
+	window, ok := parseSeriesWindow(r.URL.Query().Get("window"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "window must be one of 5m/10m/30m/1h/10h")
+		return
+	}
+	q := r.URL.Query()
+	scope, prefix := "fleet", "load.fleet."
+	if id := q.Get("server_id"); id != "" {
+		scope, prefix = "server", "load.server."+id+"."
+	} else if region := q.Get("region"); region != "" {
+		scope, prefix = "region", "load.region."+region+"."
+	}
+
+	players, load := []telemetry.Point{}, []telemetry.Point{}
+	if h.telemetry != nil {
+		players = h.telemetry.Series(prefix+"players", window)
+		load = h.telemetry.Series(prefix+"load", window)
+	}
+
+	// Same-probe rings tick in lockstep: zip index-wise, shortest wins.
+	n := len(players)
+	if len(load) < n {
+		n = len(load)
+	}
+	points := make([]loadPoint, 0, n)
+	for i := 0; i < n; i++ {
+		points = append(points, loadPoint{T: players[i].T, Players: players[i].V, Load: load[i].V})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scope":  scope,
+		"window": r.URL.Query().Get("window"),
+		"points": points,
+	})
+}
+
+// handleAdminBusSeries serves the 消息总线 panel: per topic the backlog
+// depth curve plus produce / consume rates computed from the cumulative
+// counters over the window. Current totals come from the counting adapter.
+func (h *Handler) handleAdminBusSeries(w http.ResponseWriter, r *http.Request) {
+	window, ok := parseSeriesWindow(r.URL.Query().Get("window"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "window must be one of 5m/10m/30m/1h/10h")
+		return
+	}
+
+	type topicView struct {
+		Topic       string            `json:"topic"`
+		Published   int64             `json:"published"`
+		Consumed    int64             `json:"consumed"`
+		InFlight    int64             `json:"in_flight"`
+		ProduceRate float64           `json:"produce_rate"`
+		ConsumeRate float64           `json:"consume_rate"`
+		Depth       []telemetry.Point `json:"depth"`
+	}
+	topics := map[string]*topicView{}
+	if h.telemetry != nil {
+		for _, name := range h.telemetry.Names("bus.") {
+			// name = bus.<topic>.<field> — topics themselves contain
+			// dots (atlas.characters…), so the field is the LAST segment.
+			rest := name[len("bus."):]
+			field := rest[strings.LastIndex(rest, ".")+1:]
+			topic := strings.TrimSuffix(rest, "."+field)
+			if topic == "" || field == "" {
+				continue
+			}
+			tv := topics[topic]
+			if tv == nil {
+				tv = &topicView{Topic: topic}
+				topics[topic] = tv
+			}
+			switch field {
+			case "depth":
+				tv.Depth = h.telemetry.Series(name, window)
+			case "produced":
+				tv.ProduceRate = telemetry.Rate(h.telemetry.Series(name, window))
+			case "consumed":
+				tv.ConsumeRate = telemetry.Rate(h.telemetry.Series(name, window))
+			}
+		}
+	}
+
+	out := make([]*topicView, 0, len(topics))
+	for _, tv := range topics {
+		out = append(out, tv)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Topic < out[j].Topic })
+
+	// Current counters straight from the adapter (exact even before the
+	// next sampler tick).
+	adapter := ""
+	if h.bus != nil {
+		adapter = h.bus.Name()
+		for _, st := range h.bus.Stats() {
+			tv := topics[st.Topic]
+			if tv == nil {
+				tv = &topicView{Topic: st.Topic}
+				topics[st.Topic] = tv
+				out = append(out, tv)
+			}
+			tv.Published, tv.Consumed, tv.InFlight = st.Published, st.Consumed, st.InFlight
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"adapter": adapter,
+		"window":  r.URL.Query().Get("window"),
+		"topics":  out,
+	})
+}
+
+// handleAdminListServers serves the admin fleet list with the full filter
+// bar: status / region / type / realm / shard / version / platform / tag,
+// plus a server-ID substring search and a metadata key=value pair — the same
+// dimensions the /servers page composes. Reads the fleet index when wired so
+// list, stats, and filter facets share one aggregate (BUGS ③).
+func (h *Handler) handleAdminListServers(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	status := model.ServerStatus(q.Get("status"))
+	if status != "" && !status.Valid() {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid status")
+		return
+	}
+	limit := 0
+	if l := q.Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err != nil || n <= 0 || n > 200 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid limit")
+			return
+		}
+		limit = n
+	}
+	filter := fleet.ListFilter{
+		ID:            q.Get("id"),
+		Status:        status,
+		Region:        q.Get("region"),
+		Realm:         q.Get("realm"),
+		Shard:         q.Get("shard"),
+		Version:       q.Get("version"),
+		Type:          q.Get("type"),
+		Platform:      q.Get("platform"),
+		Tag:           q.Get("tag"),
+		MetadataKey:   q.Get("metadata_key"),
+		MetadataValue: q.Get("metadata_value"),
+		Limit:         limit,
+		Cursor:        q.Get("cursor"),
+	}
+
+	if h.fleet != nil {
+		servers, next := h.fleet.List(filter)
+		resp := map[string]any{"servers": servers}
+		if next != "" {
+			resp["next_cursor"] = next
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	// No index wired (embedders, bare tests): fall back to the store with
+	// the subset ServerFilter understands, post-filtering the rest so the
+	// response contract stays identical.
+	servers, err := h.store.ListServers(r.Context(), store.ServerFilter{
+		Region:   filter.Region,
+		Realm:    filter.Realm,
+		Shard:    filter.Shard,
+		Version:  filter.Version,
+		Platform: filter.Platform,
+		Status:   filter.Status,
+		Limit:    200,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	matched := make([]*model.Server, 0, len(servers))
+	for _, srv := range servers {
+		if fleet.Matches(srv, filter) {
+			matched = append(matched, srv)
+		}
+	}
+	sort.Slice(matched, func(i, j int) bool { return matched[i].ID < matched[j].ID })
+	if filter.Cursor != "" {
+		start := 0
+		for i, srv := range matched {
+			if srv.ID > filter.Cursor {
+				start = i
+				break
+			}
+			start = i + 1
+		}
+		matched = matched[start:]
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	next := ""
+	if len(matched) > limit {
+		matched = matched[:limit]
+		next = matched[limit-1].ID
+	}
+	resp := map[string]any{"servers": matched}
+	if next != "" {
+		resp["next_cursor"] = next
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) handleAdminSearchCharacters(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	filter := store.CharacterSearchFilter{
-		Name:     q.Get("q"),
-		ServerID: q.Get("server_id"),
-		Cursor:   q.Get("cursor"),
+		Name:          q.Get("q"),
+		ServerID:      q.Get("server_id"),
+		MetadataKey:   q.Get("metadata_key"),
+		MetadataValue: q.Get("metadata_value"),
+		Cursor:        q.Get("cursor"),
 	}
 
-	if classStr := q.Get("class_id"); classStr != "" {
-		n, err := strconv.Atoi(classStr)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid class_id")
+	// 玩家 ID 搜索: the opaque account reference. class_id is no longer a
+	// built-in parameter (platform de-hardening — filter via
+	// metadata_key=class instead).
+	if acctStr := q.Get("account_id"); acctStr != "" {
+		n, err := strconv.ParseInt(acctStr, 10, 64)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid account_id")
 			return
 		}
-		filter.ClassID = &n
+		filter.AccountID = n
 	}
 	if minStr := q.Get("min_level"); minStr != "" {
 		n, err := strconv.Atoi(minStr)

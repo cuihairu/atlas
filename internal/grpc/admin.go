@@ -67,17 +67,18 @@ func (s *Server) GetStats(ctx context.Context, _ *pb.GetStatsRequest) (*pb.GetSt
 	return out, nil
 }
 
-// SearchCharacters mirrors GET /v1/admin/characters/search.
+// SearchCharacters mirrors GET /v1/admin/characters/search. The deprecated
+// class_id field is accepted but ignored (platform de-hardening): filter via
+// metadata_key/metadata_value instead.
 func (s *Server) SearchCharacters(ctx context.Context, req *pb.SearchCharactersRequest) (*pb.SearchCharactersResponse, error) {
 	filter := store.CharacterSearchFilter{
-		Name:     req.Name,
-		ServerID: req.ServerId,
-		Limit:    int(req.Limit),
-		Cursor:   req.Cursor,
-	}
-	if req.ClassId != nil {
-		v := int(*req.ClassId)
-		filter.ClassID = &v
+		Name:          req.Name,
+		ServerID:      req.ServerId,
+		AccountID:     req.AccountId,
+		MetadataKey:   req.MetadataKey,
+		MetadataValue: req.MetadataValue,
+		Limit:         int(req.Limit),
+		Cursor:        req.Cursor,
 	}
 	if req.MinLevel != nil {
 		v := int(*req.MinLevel)

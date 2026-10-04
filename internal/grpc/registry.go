@@ -28,6 +28,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	if req.Endpoint != nil {
 		regReq.Endpoint = model.Endpoint{Host: req.Endpoint.Host, Port: int(req.Endpoint.Port)}
 	}
+	regReq.Metadata = req.Metadata
 
 	srv, err := s.registry.Register(ctx, regReq)
 	if err != nil {

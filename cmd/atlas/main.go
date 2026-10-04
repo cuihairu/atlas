@@ -35,6 +35,7 @@ import (
 	natsEvent "github.com/cuihairu/atlas/internal/event/nats"
 	rabbitEvent "github.com/cuihairu/atlas/internal/event/rabbitmq"
 	redisEvent "github.com/cuihairu/atlas/internal/event/redis"
+	"github.com/cuihairu/atlas/internal/fleet"
 	"github.com/cuihairu/atlas/internal/health"
 	"github.com/cuihairu/atlas/internal/httpapi"
 	"github.com/cuihairu/atlas/internal/metrics"
@@ -46,6 +47,7 @@ import (
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
 	redisStore "github.com/cuihairu/atlas/internal/store/redisstore"
 	"github.com/cuihairu/atlas/internal/store/sharded"
+	"github.com/cuihairu/atlas/internal/telemetry"
 	"github.com/cuihairu/atlas/internal/tlsutil"
 	"github.com/cuihairu/atlas/internal/version"
 )
@@ -162,6 +164,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fleet aggregate index (BUGS ③): region / status / version / type /
+	// realm / shard / tag counts plus the server-ID index live in memory,
+	// maintained on the write path by decorators around the stores. Every
+	// admin view — overview stats, /servers filter bar, admin list — reads
+	// this one aggregate instead of each page recounting on its own. Seeded
+	// below after the servers config is applied; a periodic reconcile is the
+	// safety net for cross-replica writes this process did not observe.
+	fleetIdx := fleet.New()
+	serverStore = fleet.TrackServers(serverStore, fleetIdx)
+	runtimeStore = fleet.TrackRuntime(runtimeStore, fleetIdx)
+
 	// Character index sharding (TODO v0.1.16): ATLAS_CHAR_SHARDS > 1 routes
 	// every character operation through an account-hash sharded composite.
 	if cfg.CharShards > 1 {
@@ -197,6 +210,17 @@ func main() {
 			"released", res.Released,
 		)
 	}
+
+	// Startup seed: load the fleet already in the stores into the index —
+	// SQL-backed processes start with an empty index and only new writes
+	// would reach the decorators. Failure is non-fatal: the reconciler
+	// retries on its next tick while the previous snapshot keeps serving.
+	if err := fleetIdx.Reconcile(ctx, serverStore, runtimeStore); err != nil {
+		logger.Warn("fleet index seed failed; reconcile ticks will retry", "error", err)
+	}
+	fleetCtx, fleetCancel := context.WithCancel(context.Background())
+	defer fleetCancel()
+	go fleet.RunReconciler(fleetCtx, fleetIdx, serverStore, runtimeStore, 30*time.Second)
 
 	// Create services.
 	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
@@ -246,6 +270,63 @@ func main() {
 		logger.Error("unknown event adapter (expected 'http', 'redis', 'kafka', 'nats' or 'rabbitmq')", "adapter", cfg.EventAdapter)
 		os.Exit(1)
 	}
+
+	// 消息总线观测 (TODO 观测深化): wrap the adapter with per-topic
+	// publish/consume/in-flight counters — the data face for the admin bus
+	// panel. Wrapped before any subscriber or publisher is wired, so every
+	// event the process handles is counted exactly once.
+	evtCounting := event.WrapCounting(evtAdapter)
+	evtAdapter = evtCounting
+
+	// Lightweight series sampler (概览负载时间视图 / 消息总线曲线): 15s
+	// samples, ≥10h retention, in-memory rings — no TSDB by decree. Probes:
+	// fleet load per server/region/fleet, bus counters per topic.
+	sampler := telemetry.NewSampler(15*time.Second, 10*time.Hour+5*time.Minute)
+	sampler.Probe(func() map[string]float64 {
+		out := map[string]float64{}
+		// Fleet / region / per-server load scopes from the same index every
+		// admin view reads (BUGS ③): drill-down and overview agree.
+		type agg struct {
+			players, loadSum float64
+			n                int
+		}
+		regions := map[string]*agg{}
+		fleet := &agg{}
+		for _, srv := range fleetIdx.ListAll() {
+			out["load.server."+srv.ID+".players"] = float64(srv.Players)
+			out["load.server."+srv.ID+".load"] = srv.Load
+			rg := regions[srv.Region]
+			if rg == nil {
+				rg = &agg{}
+				regions[srv.Region] = rg
+			}
+			rg.players += float64(srv.Players)
+			rg.loadSum += srv.Load
+			rg.n++
+			fleet.players += float64(srv.Players)
+			fleet.loadSum += srv.Load
+			fleet.n++
+		}
+		fleetScope := func(prefix string, a *agg) {
+			out[prefix+".players"] = a.players
+			if a.n > 0 {
+				out[prefix+".load"] = a.loadSum / float64(a.n)
+			}
+		}
+		fleetScope("load.fleet", fleet)
+		for region, a := range regions {
+			fleetScope("load.region."+region, a)
+		}
+		for _, st := range evtCounting.Stats() {
+			out["bus."+st.Topic+".depth"] = float64(st.InFlight)
+			out["bus."+st.Topic+".produced"] = float64(st.Published)
+			out["bus."+st.Topic+".consumed"] = float64(st.Consumed)
+		}
+		return out
+	})
+	samplerCtx, samplerCancel := context.WithCancel(context.Background())
+	defer samplerCancel()
+	go sampler.Run(samplerCtx)
 
 	evtCtx, evtCancel := context.WithCancel(context.Background())
 	defer evtCancel()
@@ -298,7 +379,10 @@ func main() {
 
 	// Set up HTTP handlers.
 	rtSvc := routing.New(serverStore, runtimeStore, charStore)
-	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, composite, evtAdapter, logger)
+	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, composite, evtAdapter, logger).
+		WithFleetIndex(fleetIdx).
+		WithTelemetry(sampler).
+		WithBusStats(evtCounting)
 
 	// Parse auth config.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
@@ -361,6 +445,7 @@ func main() {
 		}
 		limiter = httpapi.NewRateLimiter(rules, def)
 		logger.Info("rate limiting enabled", "rules", len(rules), "default_rps", def.RPS, "default_burst", def.Burst)
+		handler.WithRateLimiter(limiter) // read-only rules view on /v1/admin/rate-limits
 	}
 
 	// ── Public API (Discovery + Directory) ─────────────────

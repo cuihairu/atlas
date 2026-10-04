@@ -74,3 +74,12 @@ func pbMigration(m *model.Migration) *pb.Migration {
 		CompletedAt:   fmtTimePtr(m.CompletedAt),
 	}
 }
+
+// pbMetadata lifts a proto map into the event patch shape; nil stays nil so
+// an absent field means "no change" (PATCH semantics).
+func pbMetadata(m map[string]string) *map[string]string {
+	if m == nil {
+		return nil
+	}
+	return &m
+}

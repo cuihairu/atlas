@@ -7,7 +7,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v3.21.12
-// source: atlas.proto
+// source: api/proto/atlas.proto
 
 package atlaspb
 
@@ -198,7 +198,7 @@ var RegistryService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "atlas.proto",
+	Metadata: "api/proto/atlas.proto",
 }
 
 const (
@@ -338,7 +338,7 @@ var DiscoveryService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "atlas.proto",
+	Metadata: "api/proto/atlas.proto",
 }
 
 const (
@@ -630,7 +630,7 @@ var DirectoryService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "atlas.proto",
+	Metadata: "api/proto/atlas.proto",
 }
 
 const (
@@ -732,7 +732,7 @@ var RoutingService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "atlas.proto",
+	Metadata: "api/proto/atlas.proto",
 }
 
 const (
@@ -1176,5 +1176,5 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "atlas.proto",
+	Metadata: "api/proto/atlas.proto",
 }
