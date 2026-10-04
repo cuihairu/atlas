@@ -3,9 +3,11 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：**收尾清零 + 全量对账**——待命区两项条件触发项定档归档
-> （三态批注落码、包分流核验），随后按「文档与实现对账」令做一轮
-> 全量文档 vs 实现清点，偏差逐条修。
+> 当前批次：**覆盖率回补（巡检补令）**——CI 口径 total 70.4% → ≥80%
+> （10-03 为 85.8%，crossserver / fleet / tracing 新面拉低），只补测试
+> 不改语义，门禁全绿按 CI 口径复测后推送。
+>
+> 前批「收尾清零 + 全量对账」已完成：定档归档与对账纠真见下。
 >
 > 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
 
@@ -146,6 +148,34 @@
 - [x] 重注册状态语义三库分裂（postgres/mysql offline 无法复活、memory 覆盖运维态）→ 统一契约：仅 suspect/offline 重置 starting
 - [x] realm/shard 创建响应 created_at 零值 → 按窗口范式三库对齐，全量清点无第六处
 - [x] NATS 消费者测试断言竞态 → 等待 handler 调用 + 毒丸探活，`-count=3` 稳定
+
+### 全量对账 · 首轮（2026-10-04）✅
+
+> 按「文档与实现对账」全局令做全量清点：env 双向 diff、42 条 HTTP 路由 vs
+> api.md、8 指标 vs 指标表、22 RPC vs proto/实现、目录树 vs 实际、SDK 示例
+> 变量。偏差逐条修（commit 5c31776）：
+
+- [x] gRPC「与 REST 完全同源 / 同一 API 面」过强表述 → 精确为「核心五服务
+      同源共用内部 service，管理面扩展端点 REST-only」（api.md / README /
+      roadmap 三处）
+- [x] README「28 个 REST 端点」计数失真 → 45 个业务端点、六组速查
+      （补跨服配置组；Admin 速查补 maintenance）
+- [x] api.md：Admin 节补扩展端点索引（tags / crossserver / audit → 专题
+      文档）；认证表 Public 域补 `/v1/routing/*` 与 crossserver 双口说明；
+      新增「监听地址与探针」小节（四个 ATLAS_*_ADDR 变量 +
+      healthz 公网/注册口、readyz 管理口按口区分）
+- [x] sdk-go.md：示例自造 `ATLAS_ADMIN_API_KEY` 名改为「值须为服务端
+      `ATLAS_ADMIN_API_KEYS` 之一」；双传输地址行补全三监听变量
+- [x] README / roadmap 目录树对齐实际：cmd 四工具（atlas / crossagent /
+      demoagents / reshard）、internal 补 crossserver / fleet /
+      serversconfig / telemetry、补 dashboard/
+- 无偏差核实：指标名双向一致；22 RPC = proto = 实现；`ATLAS_ALERT_*` /
+  `ATLAS_PG_POOL_*` 为通配写法或已载于 performance.md；PORT / IMAGE / TAG /
+  TUNNEL_PORT / MIGRATIONS_DIR / PG_PASSWORD 为 compose 部署层变量；
+  `ATLAS_TEST_*` / `ATLAS_TRANSPORT`（examples 自用）豁免
+- 遗留（如实记录，未处置）：`ATLAS_CORS_ORIGINS` 读取无消费、
+  `CORSMiddleware` 生产路径未挂载——dead config，文档有意不收录，
+  待后续批次挂载或删除
 
 ### 巡检修复（2026-10-04）✅
 
