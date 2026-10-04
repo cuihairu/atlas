@@ -4,6 +4,26 @@
 
 ---
 
+## 0. 状态三态：Desired / Observed / Effective
+
+作为控制面，Atlas 对每台服务器区分**三类状态**，语义分层、互不替代：
+
+| 态 | 定义 | 来源 | 现网对应 |
+| --- | --- | --- | --- |
+| **Desired（期望态）** | 运维声明的意图：这台服应该处于什么状态 | 运维操作（`maintenance` / `drain` / `disable` / `enable`）与计划维护窗口 | 状态机的 `draining` / `maintenance` / `disabled` |
+| **Observed（观测态）** | 心跳观测到的事实：这台服还活着吗、负载多少 | 游戏服务器心跳 + 健康监控按 `last_seen_at` 年龄判定 | 状态机的 `starting` / `online` / `suspect` / `offline` |
+| **Effective（生效态）** | 对外广告的状态：客户端 / 发现 / 推荐 / 统计实际看到的 | Desired ⊕ Observed 的合成结果，落库 `servers.status` | 所有对外视图暴露的 `status` |
+
+**合成规则**：
+
+1. **运维意图优先于观测**——`disabled` 永不被自动状态机覆盖；`maintenance` / `draining` 期间新心跳不把服务器拉回 `online`（自动状态转移仅作用于运维未设防的 auto-managed 状态，见 §4）。
+2. **观测只推进"监控接管"的集合**——`starting / online / suspect / offline` 由心跳年龄驱动；运维设置的状态不参与自动转移（§4.1 告警分母即此集合）。
+3. **三态并存不互斥**——同一服务器可以同时是"期望维护 + 观测 online + 生效 maintenance"；对外永远只暴露 **Effective** 一个状态，不存在"两处状态打架"的语义（见 data-model.md 的存储批注）。
+
+> **为什么把三态写死**：控制面一半是"声明"（Desired），一半是"观测"（Observed），二者合成才是玩家真正看到的（Effective）。不命名这套模型，未来"PG 里 status 长这样、Redis 里 status 长那样"就会变成不可调和的矛盾——实际上它们分属不同层次，本就该各说各话。
+
+---
+
 ## 1. 状态机
 
 ```mermaid
@@ -179,7 +199,7 @@ level=WARN msg="health alert" alert=offline_ratio state=firing    count=1 auto_m
 
 **语义要点**：
 
-- 告警对象是「监控接管」的服务器集合（starting / online / suspect / offline）；维护、禁用由运维设置，不参与分母。
+- 告警对象是「监控接管」的服务器集合——即 §0 三态里的 **Observed 侧**（starting / online / suspect / offline）；维护、禁用是 Desired 态，由运维设置，不参与分母。
 - **锁存语义**：占比越限时发一条 `firing`，之后持续越限**不重复发送**；回落到阈值以下才发一条 `recovered`。不会刷屏。
 - webhook 载荷字段：`alert`（`suspect_ratio` / `offline_ratio`）、`state`（`firing` / `recovered`）、`count` / `auto_managed_total`（不健康数 / 分母）、`ratio` / `threshold`、`fired_at`（RFC3339 UTC）。
 - webhook 投递失败只记错误日志，不影响巡检循环。

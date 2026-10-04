@@ -8,6 +8,26 @@
 
 Atlas 是一个面向在线游戏的**控制面（Control Plane）**。它不处理游戏逻辑，不存储角色权威数据，只负责回答"服务器在哪、是否可用、玩家的角色在哪"这一类目录性问题。
 
+> **定位声明（2026-10-04）：Atlas is a game infrastructure control plane, not a game backend.**
+>
+> Atlas 回答**目录性问题**："我是谁？""谁在线？""我的角色在哪？""应该推荐哪个服务器？"
+> ——永远不回答**游戏运行时问题**："这个玩家现在能不能进？""这场对局怎么撮合？"
+> "这个副本实例开在哪台机器？""角色的背包里有什么？"
+>
+> **Atlas NEVER owns：**
+>
+> ```text
+> ❌ 角色权威数据           —— Directory 永远是 Projection（concepts.md §7）
+> ❌ 对局 / 战斗状态        —— 匹配、排队、房间、实例分配是 Scheduler 的事
+> ❌ 玩家 Session          —— 登录态、会话恢复归游戏侧管理服务，不进 Atlas
+> ❌ 数值 / 经济 / 排行榜    —— 背包、道具、战力、榜单是游戏业务数据库的事
+> ❌ 账号认证              —— 玩家身份由网关 / 账号系统校验，Atlas 只消费身份元数据
+> ```
+>
+> 上述能力的**上游决策权不在 Atlas**：它们可以与 Atlas 集成（例如调度器
+> 读 Discovery 的候选集），但**永远不内建**。任何新功能立项先回答：
+> "这是目录性问题还是运行时问题？"——运行时问题一律不进来。
+
 ```mermaid
 flowchart TB
     Player["玩家客户端"]
@@ -49,9 +69,9 @@ flowchart TB
 | 层 | 组件 | 职责 |
 | --- | --- | --- |
 | 接入层 | APISIX | TLS 终结、认证鉴权、限流、路由、负载均衡、WAF、可观测性 |
-| 服务层 | Atlas Core | Registry / Discovery / Directory / Routing 四大模块 |
-| 数据层 | Redis | 运行时状态：心跳、状态、负载、在线数 |
-| 数据层 | PostgreSQL | 持久事实：服务器档案、拓扑、角色索引、迁移记录 |
+| 服务层 | Atlas Core | Registry / Discovery / Directory / Routing 四大模块。Routing 只做**推荐 / 定位元数据**，不做调度执行（边界声明见 §1） |
+| 数据层 | Redis | Observed 运行时状态：心跳、负载、在线数（判活依据 `last_seen_at`） |
+| 数据层 | PostgreSQL | 持久事实 + Effective 状态：服务器档案、拓扑、角色索引、迁移记录（`servers.status` 为合成结果，见 §4.4） |
 | 来源层 | Game Server | 角色数据的 Source of Truth，经 Atlas 写入接口（HTTP `:8080` POST `/v1/directory/characters`，或 gRPC `:9090` `DirectoryService`，同一实现）投递索引事件；不直连消息队列 |
 
 ---
@@ -170,6 +190,21 @@ Atlas 只保存投影，不保存权威数据。详见 [sync.md](sync.md)。
 > `character.login` / `character.moved` 两类事件已定义并可被消费，但当前版本
 > **没有内建触发源**（写端点只产生 created / updated / deleted），见
 > [sync.md](sync.md) 事件表注。
+
+### 4.4 状态语义：Desired / Observed / Effective
+
+作为控制面，Atlas 对每台服务器区分三类状态，**语义分层、互不打架**：
+
+| 态 | 定义 | 落点 |
+| --- | --- | --- |
+| **Desired（期望态）** | 运维声明：`maintenance` / `drain` / `disable` / `enable`；计划维护窗口到点自动写入 | 管理操作 → PG `servers.status` |
+| **Observed（观测态）** | 心跳观测：`starting` / `online` / `suspect` / `offline` 由 `last_seen_at` 年龄推进 | Redis runtime HASH；健康监控巡检后回写 PG |
+| **Effective（生效态）** | 对外广告的合成结果，所有对外视图（发现 / 推荐 / 统计）只暴露它 | PG `servers.status` |
+
+合成规则：**Desired 优先于 Observed、永不互斥**——`disabled` 永不被自动状态机覆盖，
+`maintenance` / `draining` 期间心跳不把状态拉回 `online`。完整定义见
+[lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)，存储批注见
+[data-model.md](data-model.md)。
 
 ---
 

@@ -68,6 +68,10 @@ CREATE INDEX idx_servers_shard        ON servers (shard_id);
 | `offline` | 已下线 |
 | `disabled` | 运维禁用 |
 
+> **语义批注（三态模型，见 [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)）**：
+> 本表 `servers.status` 落库的是 **Effective（生效态）**——合成结果，所有对外视图
+> （发现 / 推荐 / 统计）读它的就是这个值，不存在与别处 `status` 打架的语义。
+
 `players`、`load`、`last_seen_at` **不在此表**，它们在 Redis 中。
 
 ---
@@ -169,7 +173,7 @@ CREATE INDEX idx_migration_status ON server_migrations (status);
 
 | 字段 | 示例 | 说明 |
 | --- | --- | --- |
-| `status` | `online` | 服务器当前状态，取值域见 [lifecycle.md](lifecycle.md) |
+| `status` | `online` | 心跳上报的**观测态**（Observed 侧，见 [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)），判活依据是 `last_seen_at` 而非本字段 |
 | `players` | `843` | 当前在线玩家数（整数字符串） |
 | `load` | `0.42` | 负载比，`[0, 1]` 浮点字符串 |
 | `last_seen_at` | `2026-01-01T12:00:00Z` | 最近一次心跳的写入时间（RFC3339），判活依据 |
