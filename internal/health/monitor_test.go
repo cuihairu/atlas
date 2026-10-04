@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/cuihairu/atlas/internal/model"
+	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
 )
 
-func newTestMonitor(mem *memory.Store, suspectAfter, offlineAfter time.Duration) *Monitor {
+func newTestMonitor(mem store.Store, suspectAfter, offlineAfter time.Duration) *Monitor {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	return New(mem, suspectAfter, offlineAfter, time.Hour, logger) // interval doesn't matter for sweep tests
 }

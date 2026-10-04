@@ -58,6 +58,24 @@
 
 ---
 
+## 工程落地清单 · 决策层读路径 N+1 收尾（P1，正确性×性能）
+
+> 立档位置：上批 ListServers 对齐批的现场发现——`health sweep` /
+> `routing.Recommend` / `routing.Diagnose` 仍在逐台 `GetRuntime`
+> （整舰队 N 次往返），而 Discovery 管线化批已交付 `GetRuntimes`
+> 批量读（Redis 单 pipeline、缺失缺席）。复用既有契约收尾。
+> 与 discovery 展示层「降级容忍」不同，这三处是**决策层**：
+> 推荐按 live 负载排序、巡检按 runtime 年龄判死——批量读失败
+> 一律 fail closed 传播（宁可不决策，不拿未知状态决策），
+> 与 maintenanceBlocklist 的 fail-closed 先例同哲学。
+
+- [ ] 三处调用点改 `GetRuntimes`：缺席 key = 从未心跳（sweep starting
+      超龄分支语义保留）；整体 err 传播（sweep 本轮不翻转任何状态、
+      Recommend/Diagnose 如实报错）
+- [ ] 契约测试：runtime 故障 fail closed 三钉（sweep 不误判 + 两决策
+      路径报错）+ starting 无心跳缺席语义钉子
+- [ ] 文档同步：performance.md §2 / roadmap 管线化行补记决策面收尾
+
 ## 工程落地清单 · Routing 维护前引导（P1，正确性）
 
 > 立档位置：docs/roadmap.md「v0.2+ 候选方向」Routing 策略扩展行。

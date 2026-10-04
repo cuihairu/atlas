@@ -104,13 +104,34 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		m.logger.Error("maintenance window application failed", "error", err)
 	}
 
+	// Auto-managed servers only, then one batched runtime read for the
+	// whole set (N single-key reads → 1–2 round trips, the same
+	// GetRuntimes call Discovery's list path uses). An absent key means
+	// the server has never sent a heartbeat; a store failure fails the
+	// whole sweep — judging liveness on unknown state would mark live
+	// servers offline.
+	var autoManaged []*model.Server
 	for _, srv := range servers {
-		if !srv.Status.AutoManaged() {
-			continue
+		if srv.Status.AutoManaged() {
+			autoManaged = append(autoManaged, srv)
 		}
-
-		rt, err := m.store.GetRuntime(ctx, srv.ID)
+	}
+	rtMap := map[string]model.Runtime{}
+	if len(autoManaged) > 0 {
+		ids := make([]string, len(autoManaged))
+		for i, srv := range autoManaged {
+			ids[i] = srv.ID
+		}
+		var err error
+		rtMap, err = m.store.GetRuntimes(ctx, ids)
 		if err != nil {
+			return fmt.Errorf("read runtimes: %w", err)
+		}
+	}
+
+	for _, srv := range autoManaged {
+		rt, ok := rtMap[srv.ID]
+		if !ok {
 			// No runtime data; this server has never sent a heartbeat.
 			// If it's been starting for too long, mark offline.
 			if srv.Status == model.StatusStarting {

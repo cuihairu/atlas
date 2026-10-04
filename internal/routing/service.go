@@ -130,11 +130,8 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 	}
 
 	// Merge runtime player counts and load so scoring sees live data.
-	for _, srv := range candidates {
-		if rt, err := s.runtime.GetRuntime(ctx, srv.ID); err == nil {
-			srv.Players = rt.Players
-			srv.Load = rt.Load
-		}
+	if err := s.mergeRuntimes(ctx, candidates); err != nil {
+		return nil, "", err
 	}
 
 	owned := s.ownedServers(ctx, req.AccountID)
@@ -241,11 +238,8 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 
 	// Runtime merge for every server (the merge Recommend applies to its
 	// candidates): eligibility must be judged on live players/load too.
-	for _, srv := range all {
-		if rt, err := s.runtime.GetRuntime(ctx, srv.ID); err == nil {
-			srv.Players = rt.Players
-			srv.Load = rt.Load
-		}
+	if err := s.mergeRuntimes(ctx, all); err != nil {
+		return nil, err
 	}
 
 	var candidates []*model.Server
@@ -354,6 +348,35 @@ func (s *Service) listMatching(ctx context.Context, req Request) ([]*model.Serve
 		}
 		cursor = page[len(page)-1].ID
 	}
+}
+
+// mergeRuntimes folds live players/load into the given servers with one
+// batched read (the same GetRuntimes call Discovery's list path uses —
+// one Redis pipeline exec instead of N single-key round trips). Missing
+// keys are simply skipped: no snapshot means the server has not
+// heartbeated, and its archive values stand. The error propagates —
+// this is a decision surface, not a display: ranking candidates on
+// unknown load risks steering players into a full or dying server,
+// the same fail-closed rule the maintenance blocklist follows.
+func (s *Service) mergeRuntimes(ctx context.Context, servers []*model.Server) error {
+	if len(servers) == 0 {
+		return nil
+	}
+	ids := make([]string, len(servers))
+	for i, srv := range servers {
+		ids[i] = srv.ID
+	}
+	rtMap, err := s.runtime.GetRuntimes(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("read runtimes: %w", err)
+	}
+	for _, srv := range servers {
+		if rt, ok := rtMap[srv.ID]; ok {
+			srv.Players = rt.Players
+			srv.Load = rt.Load
+		}
+	}
+	return nil
 }
 
 // maintenanceBlocklist returns, per server, the maintenance window that
