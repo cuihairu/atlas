@@ -3,7 +3,8 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。文档-实现对账 sweep 已完成（2026-10-05，6b9466c）；
+> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工两增量
+> （storetest 契约补全 c5de2bf、gRPC 鉴权缺口 905bc9b）已完成（2026-10-05）；
 > 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
 > roadmap 余下候选均挂「真实需求」前置，无可自立项，等下一批指令或真实需求反馈。
 >
@@ -118,6 +119,24 @@
 ---
 
 ## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
+
+### 巡检派工（2026-10-05）✅
+
+> 自立项两增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口。
+> 门禁全仓绿 + race + vet；本地真库 pg+mysql 全跑通过、实机双模式 e2e 验证。
+
+- [x] storetest 最后两个未钉契约：ListRealms（created_at 降序断言按
+      非增写、规避 SQL µs 平局；limit>0 截断 / ≤0 无上限）与 ListRuntimes
+      （全量快照视图：在录必现 / 未心跳缺席 / 删除即出列 / 无键不误伤）
+      ——commit c5de2bf
+- [x] gRPC :9090 鉴权缺口（AdminService 10 个 RPC 此前零鉴权，REST 等价
+      操作需 Key+RBAC+白名单+审计）：UnaryAuth 拦截器按三安全域校验，
+      与 REST 共用同一批环境变量、未配置=开发开放；域前缀从 pb
+      ServiceDesc 派生——初版硬编码 /admin.AdminService/ 与 proto 包
+      atlas.v1 不符导致放行、单测同错假绿，实机 e2e 抓出后改为派生 +
+      bufconn 端到端测试钉真实全方法名——commit 905bc9b（含 api.md
+      认证表脚注截断修复、RBAC 行补全、security.md gRPC 同规与
+      「审计仅 REST、:9090 明文」如实标注）
 
 ### 文档-实现对账 sweep（2026-10-05）✅
 
