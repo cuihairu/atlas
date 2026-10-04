@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -116,5 +117,17 @@ func TestTracingDefaultStatusWhenHandlerSilent(t *testing.T) {
 func TestRequestIDFromContextEmpty(t *testing.T) {
 	if id := RequestIDFromContext(context.Background()); id != "" {
 		t.Errorf("expected empty id from bare context, got %q", id)
+	}
+}
+
+// TestSprintfTimeIDFormat pins the entropy fallback format: a 128-bit id
+// rendered as hex, so downstream X-Request-ID validation accepts it.
+func TestSprintfTimeIDFormat(t *testing.T) {
+	id := sprintfTimeID()
+	if len(id) != 32 {
+		t.Fatalf("sprintfTimeID length = %d, want 32 hex chars", len(id))
+	}
+	if _, err := hex.DecodeString(id); err != nil {
+		t.Fatalf("sprintfTimeID = %q, not valid hex: %v", id, err)
 	}
 }

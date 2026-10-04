@@ -150,3 +150,15 @@ func TestAckExplicit(t *testing.T) {
 		t.Fatalf("ack: %v", err)
 	}
 }
+
+// TestAdapterBasics pins the adapter identity: async by definition (the
+// consumer loop owns delivery) and named for the bus selection env.
+func TestAdapterBasics(t *testing.T) {
+	a := &Adapter{}
+	if a.Name() != "redis" {
+		t.Errorf("Name() = %q, want redis", a.Name())
+	}
+	if a.Synchronous() {
+		t.Error("Synchronous() = true, want false (delivery is async)")
+	}
+}

@@ -514,3 +514,17 @@ func TestSearchCharactersFilters(t *testing.T) {
 		t.Errorf("second rollback: expected InvalidArgument, got %v", err)
 	}
 }
+
+// TestPbMetadataPatchSemantics pins the proto map lift: nil stays nil so an
+// absent field keeps PATCH "no change" meaning, a present map is handed
+// over by pointer.
+func TestPbMetadataPatchSemantics(t *testing.T) {
+	if got := pbMetadata(nil); got != nil {
+		t.Errorf("pbMetadata(nil) = %v, want nil", got)
+	}
+	m := map[string]string{"zone": "pvp"}
+	got := pbMetadata(m)
+	if got == nil || (*got)["zone"] != "pvp" {
+		t.Errorf("pbMetadata(map) = %v, want pointer carrying the map", got)
+	}
+}

@@ -219,3 +219,31 @@ func TestStatsFinalizeDerivesOnlineServers(t *testing.T) {
 		t.Errorf("empty online = %d, want 0", empty.OnlineServers)
 	}
 }
+
+func TestEndpointString(t *testing.T) {
+	if got := (Endpoint{Host: "10.0.0.1", Port: 30001}).String(); got != "10.0.0.1:30001" {
+		t.Errorf("Endpoint.String() = %q, want 10.0.0.1:30001", got)
+	}
+	// A bare hostname still renders — JoinHostPort handles hosts that
+	// would otherwise need brackets.
+	if got := (Endpoint{Host: "game.internal", Port: 80}).String(); got != "game.internal:80" {
+		t.Errorf("Endpoint.String() = %q, want game.internal:80", got)
+	}
+}
+
+func TestMigrationStatusValid(t *testing.T) {
+	valid := []MigrationStatus{
+		MigrationPending, MigrationMigrating, MigrationVerifying,
+		MigrationCompleted, MigrationFailed, MigrationRolledBack,
+	}
+	for _, s := range valid {
+		if !s.Valid() {
+			t.Errorf("Valid(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []MigrationStatus{"", "running", "MIGRATING"} {
+		if s.Valid() {
+			t.Errorf("Valid(%q) = true, want false", s)
+		}
+	}
+}

@@ -108,3 +108,18 @@ func TestLoad_HAInvalidValuesIgnored(t *testing.T) {
 		t.Errorf("invalid duration should be ignored, got %v", cfg.PGPoolMaxConnLifetime)
 	}
 }
+
+func TestEnvOr(t *testing.T) {
+	t.Setenv("ATLAS_TEST_ENVOR", "set")
+	if got := envOr("ATLAS_TEST_ENVOR", "fallback"); got != "set" {
+		t.Errorf("envOr with value = %q, want set", got)
+	}
+	// Empty (but present) counts as unset — same contract Load relies on.
+	t.Setenv("ATLAS_TEST_ENVOR", "")
+	if got := envOr("ATLAS_TEST_ENVOR", "fallback"); got != "fallback" {
+		t.Errorf("envOr with empty value = %q, want fallback", got)
+	}
+	if got := envOr("ATLAS_TEST_ENVOR_MISSING", "fallback"); got != "fallback" {
+		t.Errorf("envOr missing = %q, want fallback", got)
+	}
+}
