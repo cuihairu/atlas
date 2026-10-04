@@ -9,7 +9,7 @@ Atlas 的性能目标由它的位置决定：它坐在**所有玩家登录路径
 | 语言 | Go（标准库 `net/http`，Go 1.22+ 方法路由） | 编译型、goroutine 承载扇入、部署物是单个静态二进制 |
 | PostgreSQL 驱动 | pgx v5 原生（扩展协议 + `pgxpool`） | 预编译语句 + 二进制传输省去每次解析；连接池内建 |
 | Redis | go-redis v9，hash + pipeline | 运行时视图（心跳）是天然 KV，`HSET`+`EXPIRE` 一条管线单 RTT |
-| gRPC | google.golang.org/grpc（钉 v1.86.0） | 跨语言 SDK 共用同一套服务定义；版本钉死避免供应链漂移 |
+| gRPC | google.golang.org/grpc（钉 v1.86.0-dev） | 跨语言 SDK 共用同一套服务定义；版本钉死避免供应链漂移 |
 | Kafka | segmentio/kafka-go | 纯 Go 无 cgo——容器镜像不依赖系统库，交叉构建不受累 |
 | 管理台 | React + antd（静态产物） | 管理台不打进服务进程，API 进程零前端开销 |
 
@@ -25,13 +25,13 @@ pipe.HSet(ctx, key, fields)      // status/players/load/last_seen
 pipe.Expire(ctx, key, runtimeTTL) // 120s —— 失联自动消失,无清理任务
 ```
 
-一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核 ~350 万 QPS（`BenchmarkHeartbeatParallel` 64 并发扇入 646ns/op）——1 万 QPS 的真实负载用一个核的 0.3%。瓶颈从来不在心跳本身，而在 Redis 与网络。
+一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核 ~350 万 QPS（`BenchmarkHeartbeat` 287ns/op；64 台并发扇入 `BenchmarkHeartbeatParallel` 646ns/op ≈ 1.5M×核）——1 万 QPS 的真实负载用一个核的 0.3%。瓶颈从来不在心跳本身，而在 Redis 与网络。
 
 ### 发现 / 选服（读路径之王）
 
 玩家登录拉服务器列表。`internal/discovery` 读路径做三件事：过滤（region/realm/状态）、运行时合并（在线人数/负载）、对外标记过滤（`model.PublicTags`——内存里的切片过滤，零分配级别的开销）。列表是**准实时**数据，网关可安全做 1–5s 短 TTL 缓存；`region` + `limit` 把单响应控制在 100 台量级。
 
-服务层基准（memory store，不含网络）：100 台全量 34µs、1,000 台 419µs，管线化前后服务层分配数不变（~1,068 allocs/1,000 台，无额外内存代价）。**Redis 读路径已管线化（P1，2026-10-04 落地）**：列表合并不再逐台 `GetRuntime`，`RuntimeStore.GetRuntimes` 批量读由 Redis **pipeline 一次 Exec** 完成——**N 次网络往返 → 1–2 次**（单节点 1 次；Cluster 模式按 slot 分批，每批 1 次），1,000 台的 Redis 后端估算从 ~300ms 降到 ~2ms 量级（[基准页](/benchmarks#_3-读数)有明细估算）。单点详情 `GetServer` 维持单次读，天然最少往返。**决策面同批收尾（2026-10-05）**：健康巡检 sweep 与 Routing 推荐/诊断的运行时合并也从逐台读换 `GetRuntimes` 批量——巡检整舰队每轮从 N 次往返降到 1–2 次。与列表展示的「降级容忍」不同，这三处失败一律传播（决策层不拿未知负载排序、不拿未知状态判死）。
+服务层基准（memory store，不含网络）：100 台全量 34µs、1,000 台 419µs，管线化后服务层分配每千台仅 +5 allocs（~1,068 allocs/1,000 台，批量读的 ids 切片与结果 map 容器），内存代价可忽略。**Redis 读路径已管线化（P1，2026-10-04 落地）**：列表合并不再逐台 `GetRuntime`，`RuntimeStore.GetRuntimes` 批量读由 Redis **pipeline 一次 Exec** 完成——**N 次网络往返 → 1–2 次**（单节点 1 次；Cluster 模式按 slot 分批，每批 1 次），1,000 台的 Redis 后端估算从 ~300ms 降到 ~2ms 量级（[基准页](/benchmarks#_3-读数)有明细估算）。单点详情 `GetServer` 维持单次读，天然最少往返。**决策面同批收尾（2026-10-05）**：健康巡检 sweep 与 Routing 推荐/诊断的运行时合并也从逐台读换 `GetRuntimes` 批量——巡检整舰队每轮从 N 次往返降到 1–2 次。与列表展示的「降级容忍」不同，这三处失败一律传播（决策层不拿未知负载排序、不拿未知状态判死）。
 
 ### 注册（upsert 单语句）
 

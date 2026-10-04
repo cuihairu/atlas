@@ -815,7 +815,7 @@ Atlas 将 API 划分为三个安全域，各自独立配置：
 | 404 | `CHARACTER_NOT_FOUND` | 角色索引不存在 |
 | 409 | `ALREADY_REGISTERED` | 注册冲突（保留给未来的强校验场景） |
 | 409 | `SERVER_MANAGED_BY_CONFIG` | 注册对象由服务器配置文件托管（见 [server-config.md](server-config.md)） |
-| 429 | `RATE_LIMITED` | 触发 APISIX 限流 |
+| 429 | `RATE_LIMITED` | 触发内置令牌桶限流（按最长路径前缀 × 客户端 IP，见 [security.md](security.md)）；APISIX 网关层限流为可选叠加 |
 | 503 | `STORAGE_UNAVAILABLE` | Redis / PostgreSQL 不可用 |
 
 ### 版本

@@ -20,19 +20,21 @@ QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映�
 
 ## 2. 基线数字
 
-2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27：
+2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27。ns/op 与 QPS 列测于
+2026-10-03 空载；B/op 与 allocs/op 为 2026-10-05 复测钉值（分配数确定，不受机器
+负载影响，与基线期的差异来自管线化等后续代码变更）：
 
 | 基准 | 场景 | ns/op | B/op | allocs/op | 单核 QPS |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `BenchmarkRegister` | 新服务器注册（写路径 + 初始心跳） | 2,287 | 949 | 8 | ~437k |
-| `BenchmarkReRegister` | 幂等重注册（控制面重启恢复路径） | 622 | 328 | 5 | ~1.6M |
-| `BenchmarkHeartbeat` | 心跳热路径（每服务器每 10s 一次） | 287 | 256 | 1 | ~3.5M |
-| `BenchmarkHeartbeatParallel` | 64 台服务器并发心跳扇入 | 646 | 272 | 3 | ~1.5M×14 核 |
-| `BenchmarkGetServer` | 单服务器详情（含运行时合并） | 281 | 320 | 2 | ~3.6M |
-| `BenchmarkListServers/fleet_100` | 全量列表（100 台，含运行时合并） | 34.2µ | 31KB | 160 | ~29k |
-| `BenchmarkListServers/fleet_1000` | 全量列表（1,000 台） | 419µ | 277KB | 1,063 | ~2.4k |
-| `BenchmarkListServers/fleet_5000` | 全量列表（5,000 台） | 2.9m | 1.4MB | 5,068 | ~345 |
-| `BenchmarkListServersRegion` | region 过滤 + limit 100（1,000 台） | 443µ | 280KB | 1,113 | ~2.3k |
+| `BenchmarkRegister` | 新服务器注册（写路径 + 初始心跳） | 2,287 | 1,095 | 11 | ~437k |
+| `BenchmarkReRegister` | 幂等重注册（控制面重启恢复路径） | 622 | 712 | 6 | ~1.6M |
+| `BenchmarkHeartbeat` | 心跳热路径（每服务器每 10s 一次） | 287 | 320 | 1 | ~3.5M |
+| `BenchmarkHeartbeatParallel` | 64 台服务器并发心跳扇入 | 646 | 336 | 3 | ~1.5M×14 核 |
+| `BenchmarkGetServer` | 单服务器详情（含运行时合并） | 281 | 384 | 2 | ~3.6M |
+| `BenchmarkListServers/fleet_100` | 全量列表（100 台，含运行时合并） | 34.2µ | 43KB | 165 | ~29k |
+| `BenchmarkListServers/fleet_1000` | 全量列表（1,000 台） | 419µ | 339KB | 1,068 | ~2.4k |
+| `BenchmarkListServers/fleet_5000` | 全量列表（5,000 台） | 2.9m | 1.7MB | 5,073 | ~345 |
+| `BenchmarkListServersRegion` | region 过滤 + limit 100（1,000 台） | 443µ | 347KB | 1,118 | ~2.3k |
 
 ## 3. 读数
 
@@ -53,8 +55,9 @@ QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映�
 | 1,000 | 419µs | ~2ms（~200KB） |
 | 5,000 | 2.9ms | ~7ms（~1MB） |
 
-  服务层分配管线化前后一致（fleet_1000 为 ~1,068 allocs/op，回归判断
-  以分配数为准，见 §4），管线化的收益全部在网络往返上。
+  服务层分配管线化后每千台仅 +5 allocs/op（fleet_1000 为 ~1,068，来自批量读的
+  ids 切片与结果 map 容器；回归判断以分配数为准，见 §4），管线化的收益全部在
+  网络往返上。
 
   缓解手段（仍然有效）：网关对 `/v1/discovery/servers` 做短 TTL 缓存（列表是
   准实时数据，1–5s 缓存不改变语义）；`region` / `limit` 过滤把单次响应控制在
