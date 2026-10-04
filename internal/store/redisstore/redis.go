@@ -84,6 +84,40 @@ func (s *Store) GetRuntime(ctx context.Context, id string) (*model.Runtime, erro
 	return decodeRuntime(vals), nil
 }
 
+// GetRuntimes reads every snapshot in a single pipeline exec — one network
+// round trip on a single node (cluster mode batches per slot). Keys that
+// don't exist (or expire between queueing and exec) are absent from the
+// result, matching ListRuntimes' scan tolerance. This is the read-path
+// batching that turns discovery's N single-key reads into 1–2 round trips
+// (docs/performance.md §2 known boundary, P1).
+func (s *Store) GetRuntimes(ctx context.Context, ids []string) (map[string]model.Runtime, error) {
+	if len(ids) == 0 {
+		return map[string]model.Runtime{}, nil
+	}
+
+	pipe := s.client.Pipeline()
+	cmds := make([]*redis.MapStringStringCmd, len(ids))
+	for i, id := range ids {
+		cmds[i] = pipe.HGetAll(ctx, runtimeKey(id))
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		return nil, fmt.Errorf("get runtimes: %w", err)
+	}
+
+	out := make(map[string]model.Runtime, len(ids))
+	for i, id := range ids {
+		vals, err := cmds[i].Result()
+		if err != nil {
+			continue // backend-level error on this key; degrade, don't fail the fleet
+		}
+		if len(vals) == 0 {
+			continue // expired between queueing and exec
+		}
+		out[id] = *decodeRuntime(vals)
+	}
+	return out, nil
+}
+
 // decodeRuntime builds a Runtime from the Redis hash fields. Parse errors on
 // individual fields degrade to zero values: a partial heartbeat is better
 // than a failed read, matching GetRuntime's historical tolerance.

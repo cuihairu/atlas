@@ -1088,6 +1088,30 @@ func RunRuntime(t *testing.T, rt store.RuntimeStore) {
 	if _, err := rt.GetRuntime(ctx, id("rt")); !isNotFound(err) {
 		t.Errorf("get missing runtime = %v, want ErrNotFound", err)
 	}
+
+	// Batch read (read-path pipelining): present keys keep their values,
+	// missing keys are simply absent — no ErrNotFound per key — and an
+	// empty id list is a no-op. This is the contract discovery's list
+	// path relies on (docs/performance.md §2).
+	batch, err := rt.GetRuntimes(ctx, []string{srvID, id("rt")})
+	if err != nil {
+		t.Fatalf("get runtimes: %v", err)
+	}
+	if len(batch) != 1 {
+		t.Errorf("get runtimes = %d keys, want 1 (missing keys must be absent)", len(batch))
+	}
+	if got, ok := batch[srvID]; !ok {
+		t.Errorf("get runtimes missing %s", srvID)
+	} else if got.Players != 42 || got.Load != 0.75 || got.Status != model.StatusOnline {
+		t.Errorf("batch runtime roundtrip = %+v, want players=42 load=0.75 online", got)
+	} else if got.LastSeenAt.IsZero() {
+		t.Error("batch runtime last_seen_at not stamped")
+	}
+	empty, err := rt.GetRuntimes(ctx, nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("get runtimes(nil) = %v, %v; want empty map, nil error", empty, err)
+	}
+
 	if err := rt.DeleteRuntime(ctx, id("rt")); !isNotFound(err) {
 		t.Errorf("delete missing runtime = %v, want ErrNotFound", err)
 	}

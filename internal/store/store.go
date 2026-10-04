@@ -174,6 +174,13 @@ type RuntimeStore interface {
 	// GetRuntime returns the latest runtime snapshot for a server.
 	GetRuntime(ctx context.Context, id string) (*model.Runtime, error)
 
+	// GetRuntimes returns runtime snapshots for the given server IDs,
+	// keyed by server ID. Implementations batch the read into as few
+	// backend round trips as possible (the Redis store uses a single
+	// pipeline exec). Snapshots that don't exist (or expired) are simply
+	// absent from the result — no ErrNotFound per key.
+	GetRuntimes(ctx context.Context, ids []string) (map[string]model.Runtime, error)
+
 	// ListRuntimes returns every runtime snapshot currently stored, keyed by
 	// server ID. Fleet-wide stats (TotalPlayers) aggregate through this —
 	// the persistent StatsStore cannot see Redis-backed runtime state.

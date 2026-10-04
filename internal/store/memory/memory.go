@@ -412,6 +412,21 @@ func (s *Store) GetRuntime(_ context.Context, id string) (*model.Runtime, error)
 	return &rt, nil
 }
 
+// GetRuntimes batches the lookup in one pass under a single read lock.
+// Missing snapshots are simply absent from the result.
+func (s *Store) GetRuntimes(_ context.Context, ids []string) (map[string]model.Runtime, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make(map[string]model.Runtime, len(ids))
+	for _, id := range ids {
+		if rt, ok := s.runtimes[id]; ok {
+			out[id] = rt
+		}
+	}
+	return out, nil
+}
+
 func (s *Store) ListRuntimes(_ context.Context) (map[string]model.Runtime, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
