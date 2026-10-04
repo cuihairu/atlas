@@ -88,6 +88,156 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 	return winner, s.reasonFor(candidates, winner, owned, strict), nil
 }
 
+// ── 玩家视角排查 (管理台「排查/诊断」) ────────────────────────────────
+//
+// Diagnose runs the exact Recommend pipeline with every intermediate result
+// exposed: which servers the strict filters kept, whether the fallback pass
+// took over, per-server eligibility for a login right now, the ranking, and
+// the winner's reason. It calls the same listMatching predicate, the same
+// runtime merge, the same ownedServers tiebreak, the same sortCandidates and
+// reasonFor — 摊开中间结果, never a second criteria set (the 排查页 decree).
+
+// Diagnosis is the full walkthrough of one recommendation request.
+type Diagnosis struct {
+	// Request as normalized (Status defaulted to online when empty).
+	Request Request `json:"request"`
+	// Stage: "strict" (filters matched), "fallback" (status-only pass took
+	// over), or "none" (no server matched even status-only).
+	Stage string `json:"stage"`
+	// Servers covers the whole fleet with per-server verdicts, candidates
+	// first (rank ascending), then the rejected with reasons.
+	Servers []ServerVerdict `json:"servers"`
+	// WinnerID / WinnerReason name the server Recommend would return (the
+	// top-ranked eligible candidate) and why. Empty when none.
+	WinnerID     string `json:"winner_id,omitempty"`
+	WinnerReason string `json:"winner_reason,omitempty"`
+}
+
+// ServerVerdict explains one server's place in the decision.
+type ServerVerdict struct {
+	Server *model.Server `json:"server"`
+	// Rank is the 1-based position among the sorted candidates; 0 = not a
+	// candidate (see Reason for why).
+	Rank int `json:"rank"`
+	// MatchedStrict / MatchedFallback report which pass kept the server.
+	MatchedStrict   bool `json:"matched_strict"`
+	MatchedFallback bool `json:"matched_fallback"`
+	// Owned: the account already has a character here (tiebreak #1).
+	Owned bool `json:"owned"`
+	// Eligible: the server would accept this login right now — status
+	// accepts traffic and headroom remains.
+	Eligible bool `json:"eligible"`
+	// Reason names the rejection cause for non-candidates ("status=maintenance"),
+	// or, for the winner, the ranking reason from reasonFor.
+	Reason string `json:"reason,omitempty"`
+}
+
+// Diagnose explains what Recommend would do for this request, server by
+// server. The whole fleet is listed (up to the store list cap) so the
+// rejected servers carry their rejection reason instead of silently
+// disappearing.
+func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error) {
+	if req.Status == "" {
+		req.Status = model.StatusOnline
+	}
+
+	all, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: 200})
+	if err != nil {
+		return nil, fmt.Errorf("list servers: %w", err)
+	}
+
+	// The same predicate listMatching pushes into the store filter — applied
+	// locally so non-matching servers stay visible with a reason.
+	matchStrict := func(srv *model.Server) bool {
+		return srv.Status == req.Status &&
+			(req.Region == "" || srv.Region == req.Region) &&
+			(req.Version == "" || srv.Version == req.Version) &&
+			(req.Platform == "" || srv.Platform == req.Platform)
+	}
+	matchFallback := func(srv *model.Server) bool { return srv.Status == req.Status }
+
+	// Runtime merge for every server (the merge Recommend applies to its
+	// candidates): eligibility must be judged on live players/load too.
+	for _, srv := range all {
+		if rt, err := s.runtime.GetRuntime(ctx, srv.ID); err == nil {
+			srv.Players = rt.Players
+			srv.Load = rt.Load
+		}
+	}
+
+	var candidates []*model.Server
+	stage := "strict"
+	for _, srv := range all {
+		if matchStrict(srv) {
+			candidates = append(candidates, srv)
+		}
+	}
+	if len(candidates) == 0 {
+		stage = "fallback"
+		for _, srv := range all {
+			if matchFallback(srv) {
+				candidates = append(candidates, srv)
+			}
+		}
+		if len(candidates) == 0 {
+			stage = "none"
+		}
+	}
+
+	owned := s.ownedServers(ctx, req.AccountID)
+	sortCandidates(candidates, owned)
+
+	d := &Diagnosis{Request: req, Stage: stage}
+	inCandidates := make(map[string]int, len(candidates))
+	for i, srv := range candidates {
+		inCandidates[srv.ID] = i + 1
+	}
+
+	for _, srv := range all {
+		v := ServerVerdict{
+			Server:          srv,
+			Rank:            inCandidates[srv.ID],
+			MatchedStrict:   matchStrict(srv),
+			MatchedFallback: matchFallback(srv),
+			Owned:           owned[srv.ID],
+			Eligible:        srv.Status.AcceptsTraffic() && !srv.OverCapacity(),
+		}
+		switch {
+		case v.Rank > 0:
+			// Candidate: the winner carries the ranking reason.
+			if v.Rank == 1 {
+				v.Reason = s.reasonFor(candidates, srv, owned, stage == "strict")
+			}
+		default:
+			// Not a candidate: name the first failing dimension of the
+			// strict request (status outranks the profile filters). Even a
+			// server that would match the fallback pass gets its strict
+			// rejection reason — the fallback only runs when strict matched
+			// nothing at all.
+			switch {
+			case srv.Status != req.Status:
+				v.Reason = fmt.Sprintf("status=%s (需要 %s)", srv.Status, req.Status)
+			case req.Region != "" && srv.Region != req.Region:
+				v.Reason = fmt.Sprintf("region=%s (需要 %s)", srv.Region, req.Region)
+			case req.Version != "" && srv.Version != req.Version:
+				v.Reason = fmt.Sprintf("version=%s (需要 %s)", srv.Version, req.Version)
+			case req.Platform != "" && srv.Platform != req.Platform:
+				v.Reason = fmt.Sprintf("platform=%s (需要 %s)", srv.Platform, req.Platform)
+			default:
+				v.Reason = "no match"
+			}
+		}
+		d.Servers = append(d.Servers, v)
+	}
+
+	if len(candidates) > 0 {
+		winner := candidates[0]
+		d.WinnerID = winner.ID
+		d.WinnerReason = s.reasonFor(candidates, winner, owned, stage == "strict")
+	}
+	return d, nil
+}
+
 // listMatching applies strict request filters.
 func (s *Service) listMatching(ctx context.Context, req Request) ([]*model.Server, error) {
 	servers, err := s.servers.ListServers(ctx, store.ServerFilter{
