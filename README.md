@@ -5,8 +5,8 @@
 <h1 align="center">Atlas</h1>
 
 <p align="center">
-  <strong>Atlas — Service Discovery and Character Directory for Online Games</strong><br/>
-  <em>Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施。</em>
+  <strong>Atlas — Game Infrastructure Directory / Control Plane for Online Games</strong><br/>
+  <em>Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施 —— 服务器注册、发现、角色目录、接入推荐、生命周期与运维协调。</em>
 </p>
 
 <p align="center">
@@ -48,6 +48,19 @@ Atlas 的核心目标不是"返回一份服务器列表"，而是建立游戏后
 > **Atlas 是独立服务，网关层可选。**
 >
 > Atlas 可以独立运行。APISIX、Kong、Envoy、Nginx 都可以作为接入层，负责 TLS、认证、限流、WAF 与可观测性。Atlas 推荐 APISIX（动态路由 + 限流插件 + 国内社区），但不限制网关选型。
+
+### 边界声明（Control Plane，2026-10-04 定稿）
+
+> **Atlas is a game infrastructure control plane, not a game backend.**
+>
+> Atlas 回答**目录性问题**："我是谁？""谁在线？""我的角色在哪？""该进哪台服？"
+> 永远不回答**游戏运行时问题**："现在能不能进？""这场对局怎么撮合？"
+> "实例开在哪？""背包里有什么？"
+>
+> **Atlas NEVER owns**：角色权威数据 / 对局与战斗状态 / 玩家 Session / 数值经济与排行榜 / 账号认证。
+> 上述能力可与 Atlas 集成（调度器读 Discovery 候选集、玩家服务写 Directory 事件），
+> 但**永远不内建**。完整定位与模块边界见 [docs/architecture.md](docs/architecture.md)，
+> 三态状态模型（Desired / Observed / Effective）见 [docs/lifecycle.md](docs/lifecycle.md)。
 
 ## 使用场景
 
@@ -295,6 +308,18 @@ flowchart LR
     CORE -.->|可选集成| APISIX["APISIX 插件"]
 ```
 
+**5. Routing 只做"推荐 / 定位"，不做"调度 / 执行"。**
+
+Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开哪"。匹配、排队、房间、实例分配属于 Scheduler 职责，尽管它们可以读 Discovery 的候选集，但 Atlas 不内建这些决策。
+
+**6. 服务器状态是三态：Desired / Observed / Effective。**
+
+运维声明（维护 / 排水 / 禁用）是 Desired，心跳观测是 Observed，对外广告永远是两者的合成 Effective——互不打架，各说各话。详见 [docs/lifecycle.md](docs/lifecycle.md)。
+
+**7. `metadata` 是 opaque 元数据，不是业务数据库。**
+
+平台唯一内建的业务语义过滤通道，只承载"分类标签"级静态口径；数值型、动态的业务属性（战力、段位、进度…）归游戏数据库，Atlas 不理解也不假装理解。详见 [docs/concepts.md](docs/concepts.md)。
+
 ---
 
 ## 文档
@@ -329,7 +354,7 @@ flowchart LR
 | [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：Registry / Discovery / Directory / 健康监控 / REST API |
 | [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | 系列收官：Routing、gRPC 双传输、六语言 SDK、消息总线适配器、Realm/Shard 管理、维护窗口与公告、安全加固（mTLS/RBAC/审计）、高可用、角色索引分片 |
 
-**明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据。
+**明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据、匹配/排队/房间、实例与 Zone 分配、玩家 Session、背包/经济/排行榜等游戏业务数据（详见 [docs/roadmap.md](docs/roadmap.md)「明确不做」清单）。
 
 后续候选方向见 [docs/roadmap.md](docs/roadmap.md)。
 
