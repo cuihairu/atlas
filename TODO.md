@@ -86,12 +86,13 @@
 > 感知症状出现（心跳落盘变慢 → 假 suspect/offline 雪崩）——指标是把这类
 > 正确性隐患在生产显形的手段。复刻目录写路径指标（首期）范式。
 
-- [ ] 指标与埋点：`atlas_registry_write_duration_seconds{op}`（op =
+- [x] 指标与埋点：`atlas_registry_write_duration_seconds{op}`（op =
       register / heartbeat / unregister）直方图 + `WithMetrics` 可选注入，
-      服务层三写路径 defer 观测
-- [ ] 测试：metrics 标签 / 桶 / nil 接收器 + registry 三写路径观测断言
-- [ ] 文档同步：api.md / architecture.md / sync.md 指标表补行，
-      roadmap.md 可观测性行更新
+      服务层三写路径 defer 观测（commit fef3567）
+- [x] 测试：metrics 标签 / 桶 / nil 接收器 + registry 三写路径观测断言
+      （commit fef3567）
+- [x] 文档同步：api.md / architecture.md / sync.md 指标表补行，
+      roadmap.md 可观测性行更新（commit fef3567）
 
 ---
 
