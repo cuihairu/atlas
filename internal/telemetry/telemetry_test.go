@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,22 +12,40 @@ func TestSamplerLockstepSeries(t *testing.T) {
 	if s.Capacity() != 20 {
 		t.Fatalf("capacity = %d, want 20 (retention/interval)", s.Capacity())
 	}
-	tick := 0
-	now := time.Now()
-	s.tickAt = func() time.Time { tick++; return now.Add(time.Duration(tick) * 10 * time.Millisecond) }
+	// The fake clock runs on TWO goroutines — the sampler stamps ticks in
+	// sample(), the test reads Series() — so the counter must be atomic; a
+	// plain int here is a data race the detector reliably catches.
+	var tick atomic.Int64
+	base := time.Now()
+	s.tickAt = func() time.Time {
+		n := tick.Add(1)
+		return base.Add(time.Duration(n) * 10 * time.Millisecond)
+	}
 
 	s.Probe(func() map[string]float64 {
-		return map[string]float64{"load.fleet.players": float64(tick) * 10, "load.fleet.load": 0.5}
+		return map[string]float64{"load.fleet.players": float64(tick.Load()) * 10, "load.fleet.load": 0.5}
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go s.Run(ctx)
-	time.Sleep(55 * time.Millisecond)
-	cancel()
+	defer cancel()
 
-	players := s.Series("load.fleet.players", 200*time.Millisecond)
-	if len(players) < 3 {
-		t.Fatalf("series too short: %d points", len(players))
+	// Poll for the expected depth instead of sleeping a fixed budget: the
+	// ticker pacing in Run is real time, and race instrumentation can stretch
+	// tick intervals far beyond the 10ms nominal — a 55ms sleep then finds
+	// only 2 points and fails a healthy sampler. Polling keeps the assertion
+	// (≥3 advancing samples in a 200ms window) under any scheduler pressure.
+	deadline := time.Now().Add(3 * time.Second)
+	var players []Point
+	for {
+		players = s.Series("load.fleet.players", 200*time.Millisecond)
+		if len(players) >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("series too short after deadline: %d points", len(players))
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if last := players[len(players)-1]; last.V <= players[0].V {
 		t.Errorf("series not advancing: first=%v last=%v", players[0].V, last.V)
