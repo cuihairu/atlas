@@ -3,8 +3,8 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：**文档清味批（用户令）**——按规范文档清机器味 + 禁吹牛扫描
-> （README 与 docs 全量，一次提交）；随后接续其它队列批次。
+> 当前批次：待队列下一批。禁词表清查（自研/领先/完美/极致类）全仓零命中，
+> 清味与口径整改已归档，见「文档清味 + 禁吹牛（2026-10-05）」段。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -170,6 +170,25 @@
   以 Limit 500 循环——**舰队 >200 台时信号寻址与索引重建漏读**；
   `routing.Diagnose` Limit 200 单页截断同理；② `model.CrossServerSpec.Clone()`
   方法与 `CloneCrossServerSpec` 函数重复实现，生产只用函数（方法本批已补测）
+
+### 文档清味 + 禁吹牛（2026-10-05）✅
+
+> 按《文档写作风格规范》+《产品文案用词规范》清 README 与 docs 全量，
+> 一次提交（commit 0b5b54d，7 文件 9 处），docs build（死链门禁）过。
+> 禁词表（自研 / 遥遥领先 / 首创 / 完美 / 极致 / 赋能 / 生态 / 闭环 /
+> 颠覆 / 行业第一）全仓 grep 零命中，README 已补技术底座来源行。
+
+- [x] 假深度句式（不是…而是…）4 处：README 定位、index tagline、
+      security-audit 开篇、performance §7——改为直接陈述
+- [x] 禁吹牛口径 3 处：api-quickstart「从零到跑通」→「跑通」；
+      architecture 网关表「原生最强」无据比较级 →「原生支持」；
+      README 首屏补底座来源（Go 1.27 / net/http + gRPC / pgx / go-redis /
+      go-sql-driver / Prometheus / Kafka-NATS-RabbitMQ 客户端，Apache-2.0）
+- [x] 空洞程度词 2 处：data-model / architecture「可大幅降低 PG 压力」
+      → 机制事实「这份流量走 Redis，不进 PG」
+- 判断保留（非违规，如实记档）：✅/❌/🔒 为能力矩阵状态标记非装饰；
+      粗体冒号列表全为字段/配置项列举型（56 处）；「永不 / 永远」为
+      技术不变式陈述非产品承诺；破折号多为单个插入说明未构成滥用
 
 ### 全量对账 · 首轮（2026-10-04）✅
 
