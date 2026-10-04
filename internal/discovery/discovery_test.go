@@ -229,6 +229,124 @@ func TestWithMetrics(t *testing.T) {
 	}
 }
 
+// recordingRuntime wraps a runtime store and records how the read path
+// calls it — the pipelining contract is "one batched read, not N single".
+type recordingRuntime struct {
+	rt      store.RuntimeStore
+	gotIDs  []string
+	calls   int
+	degrade error // when set, GetRuntimes returns it
+}
+
+func (f *recordingRuntime) RecordHeartbeat(ctx context.Context, id string, hb model.Heartbeat) error {
+	return f.rt.RecordHeartbeat(ctx, id, hb)
+}
+func (f *recordingRuntime) GetRuntime(ctx context.Context, id string) (*model.Runtime, error) {
+	return f.rt.GetRuntime(ctx, id)
+}
+func (f *recordingRuntime) GetRuntimes(ctx context.Context, ids []string) (map[string]model.Runtime, error) {
+	f.calls++
+	f.gotIDs = append(f.gotIDs, ids...)
+	if f.degrade != nil {
+		return nil, f.degrade
+	}
+	return f.rt.GetRuntimes(ctx, ids)
+}
+func (f *recordingRuntime) ListRuntimes(ctx context.Context) (map[string]model.Runtime, error) {
+	return f.rt.ListRuntimes(ctx)
+}
+func (f *recordingRuntime) DeleteRuntime(ctx context.Context, id string) error {
+	return f.rt.DeleteRuntime(ctx, id)
+}
+
+// TestListServersBatchedRuntimeRead pins the read-path contract: the list
+// path issues exactly one batched read carrying every server ID (the Redis
+// store turns this into a single pipeline exec, docs/performance.md §2),
+// and servers without runtime snapshots stay in the list, unmerged.
+func TestListServersBatchedRuntimeRead(t *testing.T) {
+	mem := memory.New()
+	rec := &recordingRuntime{rt: mem}
+	svc := New(mem, rec)
+	ctx := context.Background()
+
+	seed(t, mem, "srv-a", "cn-east", model.StatusOnline, 10)
+	seed(t, mem, "srv-b", "cn-east", model.StatusOnline, 20)
+	seed(t, mem, "srv-c", "cn-east", model.StatusOnline, 30)
+	// No runtime snapshot: registered but never heartbeated.
+	if err := mem.RegisterServer(ctx, &model.Server{
+		ID: "srv-bare", Name: "bare", Type: "game", Region: "cn-east",
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Status:   model.StatusOnline,
+	}); err != nil {
+		t.Fatalf("seed bare: %v", err)
+	}
+
+	got, err := svc.ListServers(ctx, store.ServerFilter{})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if rec.calls != 1 {
+		t.Errorf("GetRuntimes calls = %d, want 1 (batched, not N single-key reads)", rec.calls)
+	}
+	if len(rec.gotIDs) != 4 {
+		t.Fatalf("batch carried %d ids (%v), want all 4", len(rec.gotIDs), rec.gotIDs)
+	}
+	want := map[string]bool{"srv-a": true, "srv-b": true, "srv-c": true, "srv-bare": true}
+	for id := range want {
+		found := false
+		for _, got := range rec.gotIDs {
+			if got == id {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("batch missing id %q (got %v)", id, rec.gotIDs)
+		}
+	}
+	byID := make(map[string]*model.Server, len(got))
+	for _, srv := range got {
+		byID[srv.ID] = srv
+	}
+	for id, players := range map[string]int{"srv-a": 10, "srv-b": 20, "srv-c": 30} {
+		srv, ok := byID[id]
+		if !ok {
+			t.Fatalf("server %s missing from result", id)
+		}
+		if srv.Players != players {
+			t.Errorf("%s players = %d, want %d (merged)", id, srv.Players, players)
+		}
+	}
+	if bare := byID["srv-bare"]; bare == nil || bare.Players != 0 || bare.LastSeenAt != nil {
+		t.Errorf("bare server must appear with no runtime merged: %+v", bare)
+	}
+}
+
+// TestListServersRuntimeDegrade: when the runtime backend is unavailable the
+// list still returns archive-only rows — degradation, not failure.
+func TestListServersRuntimeDegrade(t *testing.T) {
+	mem := memory.New()
+	rec := &recordingRuntime{rt: mem, degrade: errors.New("redis down")}
+	svc := New(mem, rec)
+	ctx := context.Background()
+
+	seed(t, mem, "srv-a", "cn-east", model.StatusOnline, 10)
+	seed(t, mem, "srv-b", "cn-east", model.StatusOnline, 20)
+
+	got, err := svc.ListServers(ctx, store.ServerFilter{})
+	if err != nil {
+		t.Fatalf("list with runtime down must not fail: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d servers, want 2 (degraded to archive rows)", len(got))
+	}
+	for _, srv := range got {
+		if srv.Players != 0 || srv.LastSeenAt != nil {
+			t.Errorf("runtime data leaked despite degrade: %+v", srv)
+		}
+	}
+}
+
 func TestTagsPublicOnlyInView(t *testing.T) {
 	mem := memory.New()
 	svc := New(mem, mem)

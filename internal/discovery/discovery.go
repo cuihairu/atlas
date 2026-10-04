@@ -56,17 +56,23 @@ func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*mod
 		servers = filtered
 	}
 
-	// Merge runtime data into each server.
-	for _, srv := range servers {
-		rt, err := s.runtime.GetRuntime(ctx, srv.ID)
-		if err != nil {
-			// Runtime data may not exist yet; that's OK.
-			continue
-		}
-		srv.Players = rt.Players
-		srv.Load = rt.Load
-		srv.LastSeenAt = &rt.LastSeenAt
+	// Merge runtime data into each server: one batched read, not N single
+	// key reads — the Redis store executes this as a single pipeline exec
+	// (N round trips → 1–2, docs/performance.md §2). Missing snapshots are
+	// simply absent from the result.
+	ids := make([]string, len(servers))
+	for i, srv := range servers {
+		ids[i] = srv.ID
 	}
+	if rtMap, err := s.runtime.GetRuntimes(ctx, ids); err == nil {
+		for _, srv := range servers {
+			if rt, ok := rtMap[srv.ID]; ok {
+				srv.Players = rt.Players
+				srv.Load = rt.Load
+				srv.LastSeenAt = &rt.LastSeenAt
+			}
+		}
+	} // else: runtime unavailable; degrade to archive-only rows (historical tolerance)
 
 	// Discovery is the player-facing view: only public tags travel (internal
 	// markers stay on the admin surface). The admin API reads the store
