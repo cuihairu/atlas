@@ -21,8 +21,12 @@ export interface ServerEndpoint {
 export interface Server {
   id: string;
   name: string;
+  type?: string;
   region: string;
   version: string;
+  platform?: string;
+  realm_id?: string | null;
+  shard_id?: string | null;
   status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting';
   /** Player-facing responses expose only public tags. */
   tags?: ServerTag[];
@@ -32,6 +36,43 @@ export interface Server {
   endpoint?: ServerEndpoint;
   created_at?: string;
   updated_at?: string;
+  /** 开服时间（进程本次启动），详情页在线时长从这里起算。 */
+  started_at?: string;
+  /** 最近心跳时间；空 = 尚无心跳。 */
+  last_seen_at?: string | null;
+  /** 注册元数据（平台不解释内容，只透传与过滤）。 */
+  metadata?: Record<string, string>;
+}
+
+/** 在线时长人性化：3天2小时 / 45分钟（item 9 口径）。 */
+export function humanDuration(fromISO?: string | null, toISO?: string | null): string {
+  if (!fromISO) return '—';
+  const from = new Date(fromISO).getTime();
+  if (Number.isNaN(from)) return '—';
+  const to = toISO ? new Date(toISO).getTime() : Date.now();
+  let sec = Math.max(0, Math.floor((to - from) / 1000));
+  const days = Math.floor(sec / 86400);
+  sec -= days * 86400;
+  const hours = Math.floor(sec / 3600);
+  sec -= hours * 3600;
+  const mins = Math.floor(sec / 60);
+  const zh = getLangSafe();
+  if (zh) {
+    if (days > 0) return `${days}天${hours}小时`;
+    if (hours > 0) return `${hours}小时${mins}分钟`;
+    return `${mins}分钟`;
+  }
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+function getLangSafe(): boolean {
+  try {
+    return (localStorage.getItem('atlas-lang') ?? 'zh') !== 'en';
+  } catch {
+    return true;
+  }
 }
 
 export interface ServerTagListResponse {
@@ -49,8 +90,17 @@ export interface AdminStats {
   online_servers: number;
   total_players: number;
   total_capacity: number;
+  total_characters?: number;
   servers_by_status: Record<string, number>;
   servers_by_region: Record<string, number>;
+  servers_by_version?: Record<string, number>;
+  /** 筛选条 facets（fleet 聚合，item 12 裁决：所有视图读同一聚合）。 */
+  servers_by_type?: Record<string, number>;
+  servers_by_realm?: Record<string, number>;
+  servers_by_shard?: Record<string, number>;
+  servers_by_tag?: Record<string, number>;
+  /** 舰队里出现过的 metadata 键（供筛选下拉）。 */
+  server_metadata_keys?: string[];
 }
 
 export interface Character {
@@ -60,7 +110,89 @@ export interface Character {
   name: string;
   level: number;
   class_id: string;
-  last_login?: string;
+  /** Go 侧序列化为 last_login_at（此前前端误写 last_login，恒渲染 -）。 */
+  last_login_at?: string | null;
+  metadata?: Record<string, string>;
+}
+
+// ── 玩家视角排查（/v1/admin/diagnose/routing）───────────────────────
+// 与 Go routing.Diagnosis / ServerVerdict 同构：recommend 同一条管线的
+// 中间结果摊开（排序 / 逐维判定 / 归因），不另设判据。
+
+export interface DiagnosisServerVerdict {
+  /** 内嵌完整服务器记录（与列表同构）。 */
+  server: Server | null;
+  /** 候选池排序位（1 起）；0 = 未入候选（看 reason）。 */
+  rank: number;
+  matched_strict: boolean;
+  matched_fallback: boolean;
+  owned: boolean;
+  eligible: boolean;
+  /** 未入候选时的拒绝原因（region=na (需要 eu)）或冠军归因。 */
+  reason?: string;
+}
+
+export interface RoutingDiagnosis {
+  request: {
+    region?: string;
+    version?: string;
+    platform?: string;
+    status?: string;
+    account_id?: number;
+  };
+  /** strict（过滤器命中）/ fallback（仅状态兜底）/ none（全空）。 */
+  stage: 'strict' | 'fallback' | 'none';
+  servers: DiagnosisServerVerdict[];
+  winner_id?: string;
+  winner_reason?: string;
+}
+
+// ── 网关/系统配置只读页（/v1/admin/rate-limits）─────────────────────
+
+export interface RateLimitRuleView {
+  prefix: string;
+  rps: number;
+  burst: number;
+}
+
+export interface RateLimitStats {
+  enabled: boolean;
+  default?: RateLimitRuleView;
+  rules: RateLimitRuleView[];
+  rejected_by_endpoint: Record<string, number>;
+  rejected_by_client: Record<string, number>;
+}
+
+// ── 负载时间视图 / 消息总线曲线（/v1/admin/load-series · bus-series）──
+
+export type SeriesWindow = '5m' | '10m' | '30m' | '1h' | '10h';
+
+export interface LoadSeriesPoint {
+  t: string;
+  players: number;
+  load: number;
+}
+
+export interface LoadSeriesResponse {
+  scope: 'fleet' | 'region' | 'server';
+  window: string;
+  points: LoadSeriesPoint[];
+}
+
+export interface BusTopicSeries {
+  topic: string;
+  published: number;
+  consumed: number;
+  in_flight: number;
+  produce_rate: number;
+  consume_rate: number;
+  depth: { t: string; v: number }[];
+}
+
+export interface BusSeriesResponse {
+  adapter: string;
+  window: string;
+  topics: BusTopicSeries[];
 }
 
 export interface CharacterSearchResponse {

@@ -16,6 +16,11 @@ import type {
   CrossServerSpec,
   CrossServerConfig,
   CrossServerSaveResponse,
+  RoutingDiagnosis,
+  RateLimitStats,
+  LoadSeriesResponse,
+  BusSeriesResponse,
+  SeriesWindow,
 } from '../types';
 
 // Same-origin by default: the vite dev/preview proxy splits the API by path
@@ -147,6 +152,56 @@ export function getStats(): Promise<AdminStats> {
   return request('/v1/admin/stats', undefined, ADMIN_BASE);
 }
 
+// 管理台舰队列表（/v1/admin/servers）：完整筛选条（状态/区域/类型/
+// realm/shard/版本/平台/标记 + ID 子串 + metadata 键值对），读 fleet 聚合
+// 索引——与总览数字同源（item 12 裁决）。含心跳/元数据等管理面字段。
+export function adminListServers(params?: {
+  id?: string;
+  status?: string;
+  region?: string;
+  realm?: string;
+  shard?: string;
+  version?: string;
+  type?: string;
+  platform?: string;
+  tag?: string;
+  metadata_key?: string;
+  metadata_value?: string;
+  limit?: number;
+  cursor?: string;
+}): Promise<ServerListResponse> {
+  return request(`/v1/admin/servers${qs(params ?? {})}`, undefined, ADMIN_BASE);
+}
+
+// 玩家视角排查（/v1/admin/diagnose/routing）：recommend 同管线中间结果。
+export function diagnoseRouting(params: {
+  account_id?: string;
+  region?: string;
+  version?: string;
+  platform?: string;
+}): Promise<{ diagnosis: RoutingDiagnosis; characters?: Character[] }> {
+  return request(`/v1/admin/diagnose/routing${qs(params)}`, undefined, ADMIN_BASE);
+}
+
+// 网关/系统配置只读页：解析后的限流规则 + 429 计数。
+export function getRateLimits(): Promise<RateLimitStats> {
+  return request('/v1/admin/rate-limits', undefined, ADMIN_BASE);
+}
+
+// 负载时间视图（概览）：players / load 双线，窗口分层 5m–10h。
+export function getLoadSeries(params: {
+  window?: SeriesWindow;
+  server_id?: string;
+  region?: string;
+}): Promise<LoadSeriesResponse> {
+  return request(`/v1/admin/load-series${qs(params)}`, undefined, ADMIN_BASE);
+}
+
+// 消息总线曲线：每主题积压深度 + 生产/消费速率。
+export function getBusSeries(params: { window?: SeriesWindow }): Promise<BusSeriesResponse> {
+  return request(`/v1/admin/bus-series${qs(params)}`, undefined, ADMIN_BASE);
+}
+
 export function getServerTags(id: string): Promise<ServerTagListResponse> {
   return request(`/v1/admin/servers/${id}/tags`, undefined, ADMIN_BASE);
 }
@@ -187,13 +242,17 @@ export function serverDisable(id: string): Promise<void> {
 export function searchCharacters(params: {
   q?: string;
   server_id?: string;
-  class_id?: string;
+  /** 玩家 ID 搜索：不透明 account 引用（平台不解释口径）。 */
+  account_id?: string;
+  /** 元数据键值过滤（class 等业务概念走这里，平台不内建）。 */
+  metadata_key?: string;
+  metadata_value?: string;
   min_level?: number;
   max_level?: number;
   limit?: number;
   cursor?: string;
 }): Promise<CharacterSearchResponse> {
-  return request(`/v1/admin/characters/search${qs(params)}`);
+  return request(`/v1/admin/characters/search${qs(params)}`, undefined, ADMIN_BASE);
 }
 
 export function createMigration(body: {

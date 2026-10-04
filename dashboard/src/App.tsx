@@ -10,6 +10,8 @@ import Characters from './pages/Characters';
 import Migrations from './pages/Migrations';
 import Operations from './pages/Operations';
 import CrossServer from './pages/CrossServer';
+import PlayerDiagnose from './pages/PlayerDiagnose';
+import SystemConfig from './pages/SystemConfig';
 import { probeAdmin } from './api/client';
 import { useLang, antdLocale } from './i18n';
 import { useTheme } from './theme';
@@ -62,6 +64,8 @@ export default function App() {
                 <Route path="/migrations" element={<Migrations />} />
                 <Route path="/operations" element={<Operations />} />
                 <Route path="/crossserver" element={<CrossServer />} />
+                <Route path="/diagnose" element={<PlayerDiagnose />} />
+                <Route path="/system" element={<SystemConfig />} />
               </Route>
             </Route>
           </Routes>

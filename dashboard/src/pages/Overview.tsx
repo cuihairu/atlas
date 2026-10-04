@@ -11,6 +11,8 @@ import StatsCard from '../components/StatsCard';
 import StatusTag from '../components/StatusTag';
 import ServerMap from '../components/ServerMap';
 import PlayerTrend from '../components/PlayerTrend';
+import LoadTimeView from '../components/LoadTimeView';
+import BusPanel from '../components/BusPanel';
 import { getStats, listServers } from '../api/client';
 import { useLang, t } from '../i18n';
 import type { AdminStats, Server } from '../types';
@@ -73,6 +75,16 @@ export default function Overview() {
 
       <div style={{ marginTop: 24 }}>
         <ServerMap />
+      </div>
+
+      {/* 负载时间视图（item 11）：窗口分层 + 舰队/区域/单服下钻。 */}
+      <div style={{ marginTop: 24 }}>
+        <LoadTimeView />
+      </div>
+
+      {/* 消息总线积压（item 13）：深度曲线 + 生产/消费速率。 */}
+      <div style={{ marginTop: 24 }}>
+        <BusPanel />
       </div>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>

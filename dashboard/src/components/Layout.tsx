@@ -11,6 +11,8 @@ import {
   MoonOutlined,
   GlobalOutlined,
   LogoutOutlined,
+  MedicineBoxOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useLang, setLang, t, type Lang } from '../i18n';
@@ -37,6 +39,8 @@ export default function AppLayout() {
     { key: '/migrations', icon: <SwapOutlined />, label: t('migrations') },
     { key: '/operations', icon: <NotificationOutlined />, label: t('operations') },
     { key: '/crossserver', icon: <ClusterOutlined />, label: t('crossserverConfig') },
+    { key: '/diagnose', icon: <MedicineBoxOutlined />, label: t('menuDiagnose') },
+    { key: '/system', icon: <SettingOutlined />, label: t('systemConfig') },
   ];
 
   // Determine selected key from path

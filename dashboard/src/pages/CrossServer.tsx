@@ -10,7 +10,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, ClusterOutlined, AppstoreOutlined, PartitionOutlined,
-  SaveOutlined, ReloadOutlined, TagsOutlined,
+  SaveOutlined, ReloadOutlined, TagsOutlined, BookOutlined, CodeOutlined,
 } from '@ant-design/icons';
 import { useLang, t } from '../i18n';
 import { getCrossServerConfig, updateCrossServerConfig } from '../api/client';
@@ -49,6 +49,68 @@ function ServerIdsInput({ value, onChange }: { value?: string[]; onChange?: (v: 
     />
   );
 }
+
+/** 七类玩法参考表（item 6）：与 docs/config-center.md §2.2 的七类简介
+ * 同源——一句话定义 / 参与形态 / 典型配置 / 生命周期。静态术语参考，
+ * 供运营填写类型表时对齐口径；不随 spec 保存。 */
+const SEVEN_TYPES: {
+  id: string;
+  name: string;
+  summary: string;
+  participation: string;
+  config: string;
+  lifecycle: string;
+}[] = [
+  {
+    id: 'battlefield', name: '跨服战场/竞技',
+    summary: '跨服 PVP 匹配对局（战场/竞技场）',
+    participation: '各服玩家进同一匹配池，撮合成局后跨服进图',
+    config: 'matchmaking=true（必用 match_domain 按段位分池）；ranking=true（段位/战绩榜）',
+    lifecycle: 'seasonal（赛季重置）',
+  },
+  {
+    id: 'dungeon', name: '跨服副本/BOSS',
+    summary: '多人协作 PVE（副本/世界 BOSS）',
+    participation: '跨服组队进同一副本实例，协作击杀',
+    config: 'matchmaking=true（组队撮合）；榜单交给 ranking 类型',
+    lifecycle: 'persistent 常驻（单局实例限时）',
+  },
+  {
+    id: 'ranking', name: '跨服排行榜',
+    summary: '数据汇聚排名',
+    participation: '各服上报成绩，按榜聚合出全服榜',
+    config: '不走匹配；本类型即汇聚本体',
+    lifecycle: 'seasonal（赛季榜）或 persistent（总榜）',
+  },
+  {
+    id: 'guildwar', name: '跨服公会战/领地战',
+    summary: '组织对组织对抗（公会战/领地战）',
+    participation: '公会为单位报名，多服争夺领地/据点',
+    config: '不用匹配（报名制）；ranking=true（战绩/占领榜）',
+    lifecycle: 'seasonal（赛季）',
+  },
+  {
+    id: 'trade', name: '跨服交易行/拍卖',
+    summary: '经济互通（交易行/拍卖）',
+    participation: '各服寄售与竞价共享同一市场',
+    config: '无匹配、无榜单',
+    lifecycle: 'persistent 常驻',
+  },
+  {
+    id: 'chat', name: '跨服聊天/社交',
+    summary: '频道互通（聊天/社交）',
+    participation: '各服玩家进同一频道发言',
+    config: '无匹配、无榜单',
+    lifecycle: 'persistent 常驻',
+  },
+  {
+    id: 'team', name: '跨服组队/招募',
+    summary: '跨服组队入口（组队/招募）',
+    participation: '各服玩家跨服挂招募、申请入队',
+    config: 'matchmaking=true（队伍撮合）',
+    lifecycle: 'persistent 常驻',
+  },
+];
 
 export default function CrossServer() {
   useLang();
@@ -333,6 +395,15 @@ export default function CrossServer() {
     },
   ];
 
+  const sevenTypeColumns = [
+    { title: 'id', dataIndex: 'id', width: 110, render: (v: string) => <Typography.Text code>{v}</Typography.Text> },
+    { title: t('csTypeName'), dataIndex: 'name', width: 130 },
+    { title: t('csTypeSummary'), dataIndex: 'summary', width: 180 },
+    { title: t('csTypeParticipation'), dataIndex: 'participation', width: 220 },
+    { title: t('csTypicalConfig'), dataIndex: 'config' },
+    { title: t('csTypeLifecycle'), dataIndex: 'lifecycle', width: 170 },
+  ];
+
   const clusterColumns = [
     { title: t('id'), dataIndex: 'id', width: 130 },
     { title: t('name'), dataIndex: 'name', width: 140, render: (v: string) => v || '—' },
@@ -427,7 +498,7 @@ export default function CrossServer() {
             </Button>
           </Space>
         }
-        title={t('crossserverConfig')}
+        title={t('csCapability')}
       >
         <Descriptions size="small" column={4}>
           <Descriptions.Item label={t('csVersion')}>
@@ -443,7 +514,18 @@ export default function CrossServer() {
           <Descriptions.Item label={t('csNotifyBus')}>
             {lastNotify ? lastNotify.bus : (meta?.version ? 'atlas.config' : '—')}
           </Descriptions.Item>
+          <Descriptions.Item label={t('csHotUpdate')} span={2}>
+            {t('csHotUpdateMode')}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('csAccessTiers')} span={2}>
+            <Space size={4} wrap>
+              <Tag color="blue">{t('csAccessTierPublic')}</Tag>
+              <Tag color="geekblue">{t('csAccessTierRegistry')}</Tag>
+              <Tag color="purple">{t('csAccessTierAdmin')}</Tag>
+            </Space>
+          </Descriptions.Item>
         </Descriptions>
+        <div style={{ marginTop: 4, color: '#888', fontSize: 12 }}>{t('csHotUpdateModes')}</div>
         {lastNotify && !lastNotify.idempotent && (
           <Alert
             style={{ marginTop: 8 }}
@@ -466,9 +548,42 @@ export default function CrossServer() {
       </Card>
 
       <Card
-        title={<Space><ClusterOutlined />{t('csTopology')}</Space>}
+        title={<Space><BookOutlined />{t('csSevenTypes')}</Space>}
+        extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{t('csSevenTypesTip')}</Typography.Text>}
+      >
+        <Table
+          rowKey="id" size="small" columns={sevenTypeColumns}
+          dataSource={SEVEN_TYPES} pagination={false}
+        />
+      </Card>
+
+      <Card title={<Space><CodeOutlined />{t('csCopyExamples')}</Space>}>
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label={t('csExamplePull')}>
+            <Typography.Text code copyable style={{ whiteSpace: 'pre-wrap', display: 'block' }}>
+              {'curl -s localhost:8080/v1/crossserver/config'}
+            </Typography.Text>
+          </Descriptions.Item>
+          <Descriptions.Item label={t('csExamplePoll')}>
+            <Typography.Text code copyable style={{ whiteSpace: 'pre-wrap', display: 'block' }}>
+              {'curl -s "localhost:8080/v1/crossserver/config?version=3&hash=1a2b3c4d5e6f7a8b"'}
+            </Typography.Text>
+          </Descriptions.Item>
+          <Descriptions.Item label={t('csExamplePublish')}>
+            <Typography.Text code copyable style={{ whiteSpace: 'pre-wrap', display: 'block' }}>
+              {"curl -X PUT localhost:8082/v1/admin/crossserver/config \\\n  -H 'Authorization: Bearer <admin-api-key>' \\\n  -H 'Content-Type: application/json' \\\n  -d @spec.json"}
+            </Typography.Text>
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      <Card
+        title={<Space><ClusterOutlined />{t('csTopologyBaseline')}</Space>}
         extra={<Button icon={<PlusOutlined />} onClick={() => editCluster()}>{t('csAddCluster')}</Button>}
       >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+          {t('csTopologyBaselineTip')}
+        </Typography.Paragraph>
         <Table
           rowKey="id" size="small" columns={clusterColumns}
           dataSource={spec.topology.clusters} pagination={false}
@@ -477,9 +592,12 @@ export default function CrossServer() {
       </Card>
 
       <Card
-        title={<Space><PartitionOutlined />{t('csGroups')}</Space>}
+        title={<Space><PartitionOutlined />{t('csGroupsConstrained')}</Space>}
         extra={<Button icon={<PlusOutlined />} onClick={() => editGroup()}>{t('csAddGroup')}</Button>}
       >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12 }}>
+          {t('csGroupsConstrainedTip')}
+        </Typography.Paragraph>
         <Table
           rowKey="id" size="small" columns={groupColumns}
           dataSource={spec.groups} pagination={false}

@@ -20,6 +20,7 @@ import {
   serverDisable,
 } from '../api/client';
 import type { Server, ServerTag, TagTier, Character } from '../types';
+import { humanDuration } from '../types';
 
 function timeLocale(): string {
   return getLang() === 'zh' ? 'zh-CN' : 'en-US';
@@ -157,15 +158,38 @@ export default function ServerDetail() {
           <Descriptions.Item label={t('id')}>{server.id}</Descriptions.Item>
           <Descriptions.Item label={t('name')}>{server.name}</Descriptions.Item>
           <Descriptions.Item label={t('region')}>{server.region}</Descriptions.Item>
+          <Descriptions.Item label={t('type')}>{server.type || '—'}</Descriptions.Item>
           <Descriptions.Item label={t('version')}>{server.version}</Descriptions.Item>
           <Descriptions.Item label={t('status')}>
             <StatusTag status={server.status} />
           </Descriptions.Item>
+          {server.realm_id && (
+            <Descriptions.Item label={t('realm')}>{server.realm_id}</Descriptions.Item>
+          )}
+          {server.shard_id && (
+            <Descriptions.Item label={t('shard')}>{server.shard_id}</Descriptions.Item>
+          )}
+          {server.platform && (
+            <Descriptions.Item label={t('platform')}>{server.platform}</Descriptions.Item>
+          )}
           {server.endpoint && (
             <Descriptions.Item label={t('endpoint')}>
               {server.endpoint.host}:{server.endpoint.port}
             </Descriptions.Item>
           )}
+        </Descriptions>
+        {/* 时间三件套（item 9）：开服时间 / 最近心跳 / 在线时长（人性化）。 */}
+        <Descriptions column={{ xs: 1, sm: 3 }} style={{ marginTop: 8 }} size="small">
+          <Descriptions.Item label={t('serverStarted')}>
+            {server.started_at ? new Date(server.started_at).toLocaleString(timeLocale()) : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('lastSeen')}>
+            {server.last_seen_at ? new Date(server.last_seen_at).toLocaleString(timeLocale()) : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label={t('onlineDuration')}>
+            {/* 在线时长 = 开服 → 最近心跳（无心跳则到当前时刻）。 */}
+            {humanDuration(server.started_at, server.last_seen_at ?? undefined)}
+          </Descriptions.Item>
         </Descriptions>
         <div style={{ marginTop: 8 }}>
           <span style={{ marginRight: 8 }}>{t('tags')}:</span>
@@ -175,6 +199,18 @@ export default function ServerDetail() {
             <span style={{ color: '#999' }}>-</span>
           )}
         </div>
+      </Card>
+
+      <Card title={t('metadata')} style={{ marginBottom: 24 }} size="small">
+        {server.metadata && Object.keys(server.metadata).length > 0 ? (
+          <Space size={[8, 8]} wrap>
+            {Object.entries(server.metadata).map(([k, v]) => (
+              <Tag key={k} color="geekblue">{k}={v}</Tag>
+            ))}
+          </Space>
+        ) : (
+          <span style={{ color: '#999' }}>{t('noData')}</span>
+        )}
       </Card>
 
       <Card title={t('liveMetrics')} style={{ marginBottom: 24 }}>
@@ -308,12 +344,11 @@ export default function ServerDetail() {
             { title: t('characterId'), dataIndex: 'character_id', ellipsis: true },
             { title: t('name'), dataIndex: 'name' },
             { title: t('level'), dataIndex: 'level', width: 80 },
-            { title: t('class'), dataIndex: 'class_id', width: 100 },
             { title: t('accountId'), dataIndex: 'account_id', ellipsis: true },
             {
               title: t('lastLogin'),
-              dataIndex: 'last_login',
-              render: (v?: string) => (v ? new Date(v).toLocaleString(timeLocale()) : '-'),
+              dataIndex: 'last_login_at',
+              render: (v?: string | null) => (v ? new Date(v).toLocaleString(timeLocale()) : '-'),
             },
           ]}
         />
