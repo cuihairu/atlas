@@ -17,7 +17,8 @@
 </p>
 
 <p align="center">
-  Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.
+  Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.<br/>
+  技术底座：Go 1.27，REST（net/http）与 gRPC 双传输，存储接 PostgreSQL（pgx/v5）/ MySQL（go-sql-driver）/ Redis（go-redis），指标用 Prometheus client，事件总线适配 Kafka / NATS / RabbitMQ 客户端——全部基于开源组件构建，仓库自身以 Apache-2.0 发布。
 </p>
 
 ---
@@ -34,9 +35,7 @@
 
 ## 定位
 
-Atlas 的核心目标不是"返回一份服务器列表"，而是建立游戏后端的 **Game Infrastructure Directory**。
-
-它围绕三个问题构建：
+Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕三个问题构建：
 
 | 模块 | 回答的问题 | 说明 |
 | --- | --- | --- |

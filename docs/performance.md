@@ -68,7 +68,7 @@ pgx 连接池全部参数可用环境变量覆盖（`ATLAS_PG_POOL_MAX_CONNS / M
 
 ## 7. 正确性优先于 QPS
 
-控制面的难点**不是吞下 1 万 QPS 心跳**，而是大批服务器同时
+吞下 1 万 QPS 心跳不难（单核基准 350 万 QPS，见[性能基准](/benchmarks)），难点在大批服务器同时
 startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然：
 
 ```text

@@ -1,6 +1,6 @@
 # 安全审计
 
-安全不是一次性的交付，而是**周期性的复查**。本文记录 Atlas 的审计范围、检查清单与
+安全审计是周期性复查，不做一次性的交付。本文记录 Atlas 的审计范围、检查清单与
 历次审计结论；自动化部分由 CI 承担（[workflow](https://github.com/cuihairu/atlas/blob/main/.github/workflows/security-audit.yml)：
 每周一执行 `govulncheck` + 两处 npm `audit`），人工部分按版本节点执行并在此追加记录。
 

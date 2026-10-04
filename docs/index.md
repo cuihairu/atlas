@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Atlas
   text: Game Infrastructure Directory / Control Plane
-  tagline: 面向在线游戏的服务器注册、发现与角色目录基础设施。不是返回一份服务器列表，而是回答三个问题——"我是谁？""谁在线？""我的角色在哪？" 它是控制面（Control Plane），不是游戏后端。
+  tagline: 面向在线游戏的服务器注册、发现与角色目录基础设施。回答三个问题——"我是谁？""谁在线？""我的角色在哪？" 它是控制面（Control Plane），不是游戏后端。
   image:
     src: /logo.svg
     alt: Atlas
