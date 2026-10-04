@@ -2,17 +2,20 @@
 
 ## 最终定位
 
-> **Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.**
+> **Atlas is a game infrastructure control plane for online games — Server Registry / Server Discovery / Player Character Directory / Routing & Placement Metadata / Server Lifecycle / Operational Coordination. Not a game backend, not a server list service.**
 
 ```mermaid
 flowchart TB
-    A["Atlas<br/>Game Infrastructure Directory"] --> R["Server Registry<br/>“我是谁?”"]
+    A["Atlas<br/>Game Infrastructure Directory / Control Plane"] --> R["Server Registry<br/>“我是谁?”"]
     A --> D["Server Discovery<br/>“谁在线?”"]
     A --> C["Character Directory<br/>“我的角色在哪?”"]
     A --> O["Ops 管理面<br/>“何时维护? 玩家知道什么?”"]
+    A --> T["Routing<br/>“该进哪台服?”"]
 ```
 
-这个定位比单纯的 Game Server Discovery 更完整，而且以后做游戏服务器框架、账号系统时都能复用。
+定位声明与 NEVER-owns 边界（角色权威数据 / 对局状态 / 玩家 Session / 数值经济 / 账号认证）见
+[architecture.md](architecture.md#_1-总览) 首屏；这个定位比单纯的 Game Server Discovery 更完整，
+而且与游戏服务器框架、账号系统天然互补。
 
 ---
 
@@ -58,12 +61,18 @@ flowchart TB
 ```text
 ❌ Kubernetes Operator      —— Atlas 是普通无状态服务，compose/k8s 自行编排即可
 ❌ Service Mesh 集成        —— 不绑定任何 mesh，保持标准 REST/gRPC
-❌ 复杂调度算法             —— Routing 只做推荐元数据，不做调度器
+❌ 复杂调度算法             —— Routing 只做推荐/定位元数据，不做调度器
 ❌ 强绑定 APISIX            —— 网关永远是可选集成层
 ❌ 角色权威数据              —— Directory 永远是 Projection
+❌ 匹配 / 排队 / 房间        —— 撮合决策是 Scheduler 的职责，Atlas 不进匹配池
+❌ 实例 / Zone 分配          —— 实例创建与放置归实例管理器，Atlas 只发布候选集
+❌ 玩家 Session / 登录态     —— 会话恢复归游戏侧管理服务
+❌ 背包 / 经济 / 排行榜等业务表 —— 游戏业务数据库的事，Atlas 连列都不建
 ```
 
 这些不是"还没做"，是**设计决定**：Atlas 是控制面目录服务，以上每一项都有更合适的归属。
+它们可以与 Atlas 集成（调度器读 Discovery 候选集、玩家服务写 Directory 事件），
+但**不内建**——判别式见 [architecture.md](architecture.md#_1-总览) 定位声明。
 
 ---
 
@@ -74,7 +83,11 @@ flowchart TB
 | 方向 | 说明 | 前置条件 |
 | --- | --- | --- |
 | **API 稳定化与 v1.0** | 冻结 REST/gRPC 契约、承诺兼容性、正式 v1.0 release | API 面在生产环境验证充分 |
-| **Routing 策略扩展** | 权重、灰度放量的白名单、维护前引导(把玩家引向非维护服) | 有真实运营需求反馈 |
+| **Discovery 读路径管线化**（P1，已立档） | runtime 读取 MGET / pipeline 合并，N 次 RTT → 1–2 次（[性能设计](/performance) §2 已知边界） | 基准页回归线；改动限定 `internal/store/redisstore` |
+| **故障模式回归套件**（P1，已立档） | 把「正确性优先于 QPS」清单（[性能设计](/performance) §7）逐项自动化：Redis down / PG down / 分区 / 重复注册 / 重复迁移 / 迁移中途失败 | 现有健康巡检 / 契约套件之上叠加 |
+| **状态三态显式化** | Desired / Observed / Effective 概念已写入文档（lifecycle §0）；代码字段/接口命名演化只在 API 冻结期做，避免破坏契约 | v1.0 API 冻结窗口 |
+| **Migration Controller 独立模块** | 概念边界已定（migration §9）；代码拆分只在独立扩缩容有真实需求时做 | 多舰队独立迁移集群场景 |
+| **Routing 策略扩展** | 权重、灰度放量的白名单、维护前引导(把玩家引向非维护服)——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |
 | **公告与窗口批量编排** | 舰队级窗口模板、批量创建、与迁移编排联动 | 多服务器运营场景验证 |
 | **可观测性深化** | 首期已落地（请求级追踪 X-Request-ID 贯通三监听口 + 目录写路径延迟指标 `atlas_directory_write_duration_seconds`）；后续：请求级 span tracing、更多写路径指标 | 生产部署规模上来之后 |
 | **Kubernetes 部署样例** | Helm chart / Operator 仍是"明确不做"，但部署样例可讨论 | 有部署需求提出 |
@@ -102,6 +115,16 @@ APISIX 从第一天起就是**可选集成层**，不是依赖。这个原则贯
 ### 5. 层级结构保持可选
 
 Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、MOBA、SLG 的拓扑差异是永久的。
+
+### 6. 边界先定死，再扩功能（Control Plane 纪律）
+
+任何新功能立项先回答"这是目录性问题还是运行时问题"：
+
+- 目录性问题（谁在线 / 角色在哪 / 该进哪台服 / 何时维护）——候选，按需求排期；
+- 运行时问题（能进不能进 / 怎么撮合 / 实例开哪 / 背包有什么）——**不内建**，给出与 Atlas 的集成点即可。
+
+这条纪律是「明确不做」清单的活判据，防止 Atlas 膨胀成游戏平台后端。
+定位声明见 [architecture.md](architecture.md#_1-总览)，模块边界见 [migration.md](migration.md) §9。
 
 ---
 
