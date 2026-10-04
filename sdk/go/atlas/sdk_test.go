@@ -189,7 +189,7 @@ func newGRPCClient(t *testing.T) *Client {
 		registry.New(mem, mem, logger),
 		discovery.New(mem, mem),
 		dirSvc,
-		routing.New(mem, mem, mem),
+		routing.New(mem, mem, mem, mem),
 		admin.New(mem),
 		adapter,
 	)

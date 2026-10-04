@@ -31,7 +31,7 @@ func TestRecommendFiltersByRegion(t *testing.T) {
 	seed(t, mem, "na-1", "na", model.StatusOnline, 1, 0.01, 100)
 	seed(t, mem, "eu-old", "eu", model.StatusOffline, 0, 0, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	srv, reason, err := svc.Recommend(context.Background(), Request{Region: "eu"})
 	if err != nil {
 		t.Fatalf("Recommend: %v", err)
@@ -50,7 +50,7 @@ func TestRecommendHighestCapacity(t *testing.T) {
 	seed(t, mem, "a", "eu", model.StatusOnline, 50, 0.5, 100)
 	seed(t, mem, "b", "eu", model.StatusOnline, 10, 0.5, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	srv, reason, err := svc.Recommend(context.Background(), Request{Region: "eu"})
 	if err != nil {
 		t.Fatalf("Recommend: %v", err)
@@ -75,7 +75,7 @@ func TestRecommendPrefersOwnedServer(t *testing.T) {
 		t.Fatalf("upsert: %v", err)
 	}
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	srv, reason, err := svc.Recommend(context.Background(), Request{Region: "eu", AccountID: 7})
 	if err != nil {
 		t.Fatalf("Recommend: %v", err)
@@ -92,7 +92,7 @@ func TestRecommendFallsBackWhenFiltersMatchNothing(t *testing.T) {
 	mem := memory.New()
 	seed(t, mem, "na-1", "na", model.StatusOnline, 10, 0.2, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	srv, reason, err := svc.Recommend(context.Background(), Request{Region: "eu"})
 	if err != nil {
 		t.Fatalf("Recommend: %v", err)
@@ -109,7 +109,7 @@ func TestRecommendNoServerAvailable(t *testing.T) {
 	mem := memory.New()
 	seed(t, mem, "only-offline", "eu", model.StatusOffline, 0, 0, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	_, _, err := svc.Recommend(context.Background(), Request{Region: "eu"})
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
@@ -120,7 +120,7 @@ func TestRecommendSkipsOfflineEvenWithoutFilters(t *testing.T) {
 	mem := memory.New()
 	seed(t, mem, "down", "eu", model.StatusSuspect, 0, 0, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	_, _, err := svc.Recommend(context.Background(), Request{})
 	if !errors.Is(err, model.ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for non-online candidates, got %v", err)
@@ -143,7 +143,7 @@ func TestDiagnoseMirrorsRecommendPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	req := Request{AccountID: 42, Region: "eu"}
 
 	// Recommend is the contract Diagnose must mirror.
@@ -195,7 +195,7 @@ func TestDiagnoseFallbackStageAndAccountEntries(t *testing.T) {
 	mem := memory.New()
 	seed(t, mem, "na-1", "na", model.StatusOnline, 1, 0.01, 100)
 
-	svc := New(mem, mem, mem)
+	svc := New(mem, mem, mem, mem)
 	diag, err := svc.Diagnose(context.Background(), Request{Region: "eu"})
 	if err != nil {
 		t.Fatal(err)

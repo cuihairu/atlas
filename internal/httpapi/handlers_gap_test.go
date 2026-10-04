@@ -327,7 +327,7 @@ func TestAdminAuditEndpoint(t *testing.T) {
 		_, err := dirSvc.ApplyEvent(context.Background(), e)
 		return err
 	})
-	rtSvc := routing.New(mem, mem, mem)
+	rtSvc := routing.New(mem, mem, mem, mem)
 
 	audit := NewAuditLog(100, 4096, logger)
 	crossSvc := crossserver.New(mem, mem, events, logger)

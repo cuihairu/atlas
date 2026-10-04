@@ -380,6 +380,14 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 未指定 `status` 时只推荐 `online` 的服务器。
 
+**维护前引导**（窗口感知，v0.2+ 候选已落地）：服务器处于**活动维护窗口**
+内、或离窗口开始不足 `ATLAS_ROUTING_MAINTENANCE_LEAD`（默认 5 分钟）——
+即使生命周期状态仍是 `online`（健康巡检尚未翻转）也不推荐，玩家落点永远
+是"接下来几分钟内不会被维护"的服务器。窗口排除是**安全约束**不是偏好
+过滤：strict 与 fallback 两阶段都生效，全舰队都处于窗口时如实返回
+`404 NO_SERVER_AVAILABLE`（宁可无服可推，不引向即将掉线的服务器）。窗口
+已结束（巡检尚未删除记录）的服务器恢复推荐。
+
 ```text
 GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ```
@@ -459,7 +467,10 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 `/v1/routing/recommended`（`?account_id=`、`?region=`、`?version=`、
 `?platform=`）。返回**同一条推荐管线摊开的中间结果**：匹配阶段
 （strict/fallback）、逐台判定（排序位、严格/回退命中、是否已有角色、
-可入选、拒绝原因）、冠军与归因；带 `account_id` 时附该账号的目录条目。
+可入选、维护窗口 `maintenance_window`——活动/Lead 内窗口原样附在判定上、
+拒绝原因 `status=…` / `maintenance_window=active|upcoming`）、冠军与归因；
+带 `account_id` 时附该账号的目录条目。管线与推荐完全一致：窗口排除在
+诊断里同样生效并可见，逐台判定字段 `eligible` 计入窗口。
 
 ### GET /v1/admin/rate-limits
 

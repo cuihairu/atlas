@@ -132,6 +132,14 @@ type Config struct {
 	// Env: ATLAS_MAINTENANCE_ENFORCE, default "block".
 	MaintenanceEnforce string
 
+	// RoutingMaintenanceLead is the pre-maintenance steering horizon
+	// (维护前引导): a server whose maintenance window starts within this lead
+	// is excluded from routing recommendations even while still "online" —
+	// players must not land on a server about to enter maintenance. Zero
+	// falls back to the routing default (5m); active windows always block.
+	// Env: ATLAS_ROUTING_MAINTENANCE_LEAD, default 5m.
+	RoutingMaintenanceLead time.Duration
+
 	// CharShards is the logical shard count for the character index
 	// (TODO v0.1.16). Values > 1 wrap the backing character store in an
 	// account-hash sharded composite (store/sharded): key-routed operations
@@ -274,6 +282,11 @@ func Load() Config {
 	if v := os.Getenv("ATLAS_HEALTH_INTERVAL"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.HealthInterval = d
+		}
+	}
+	if v := os.Getenv("ATLAS_ROUTING_MAINTENANCE_LEAD"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			cfg.RoutingMaintenanceLead = d
 		}
 	}
 	if v := os.Getenv("ATLAS_ALERT_SUSPECT_RATIO"); v != "" {

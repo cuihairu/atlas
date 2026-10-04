@@ -83,7 +83,7 @@ func setupFleetFixtureOn(t *testing.T, mem *memory.Store) *fleetFixture {
 		t.Fatal(err)
 	}
 
-	rtSvc := routing.New(tracked, tracked, tracked)
+	rtSvc := routing.New(tracked, tracked, tracked, tracked)
 	crossSvc := crossserver.New(tracked, tracked, events, logger)
 
 	// Series sampler: probe reads the fleet index (same aggregate the admin

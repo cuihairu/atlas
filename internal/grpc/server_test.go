@@ -61,7 +61,7 @@ func newTestConn(t *testing.T) *testConn {
 		registry.New(mem, mem, testLogger()),
 		discovery.New(mem, mem),
 		dirSvc,
-		routing.New(mem, mem, mem),
+		routing.New(mem, mem, mem, mem),
 		admin.New(mem),
 		adapter,
 	)

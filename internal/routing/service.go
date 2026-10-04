@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
@@ -19,6 +20,12 @@ const (
 	ReasonHasCharacter    = "has_character"
 	ReasonFallback        = "fallback"
 )
+
+// DefaultPreMaintenanceLead is how far ahead of a maintenance window start
+// recommendations stop steering players to that server (维护前引导): the
+// server is still "online" — the health monitor only flips it at start_at —
+// but landing there means the session gets dropped minutes into play.
+const DefaultPreMaintenanceLead = 5 * time.Minute
 
 // Request describes what kind of server to recommend.
 type Request struct {
@@ -40,11 +47,47 @@ type Service struct {
 	servers    store.ServerStore
 	runtime    store.RuntimeStore
 	characters store.CharacterStore
+	// windows supplies maintenance windows; a server with an active or
+	// imminent window is excluded from recommendations (安全约束). nil
+	// means window awareness is off — only used by tests, never in prod.
+	windows store.MaintenanceWindowStore
+
+	// now is the clock seam for window arithmetic (tests freeze it).
+	now func() time.Time
+	// maintLead is the pre-maintenance steering horizon: a window starting
+	// within this lead disqualifies its server even though the monitor has
+	// not flipped it to maintenance yet. 0 = only active windows block.
+	maintLead time.Duration
 }
 
 // New creates a routing service.
-func New(servers store.ServerStore, runtime store.RuntimeStore, characters store.CharacterStore) *Service {
-	return &Service{servers: servers, runtime: runtime, characters: characters}
+func New(servers store.ServerStore, runtime store.RuntimeStore, characters store.CharacterStore, windows store.MaintenanceWindowStore) *Service {
+	return &Service{
+		servers:    servers,
+		runtime:    runtime,
+		characters: characters,
+		windows:    windows,
+		now:        time.Now,
+		maintLead:  DefaultPreMaintenanceLead,
+	}
+}
+
+// WithMaintenanceLead overrides the pre-maintenance steering horizon
+// (default DefaultPreMaintenanceLead). A non-positive lead disables the
+// upcoming-window exclusion; active windows still block.
+func (s *Service) WithMaintenanceLead(d time.Duration) *Service {
+	if d > 0 {
+		s.maintLead = d
+	} else {
+		s.maintLead = 0
+	}
+	return s
+}
+
+// withClock freezes the window arithmetic for tests.
+func (s *Service) withClock(now func() time.Time) *Service {
+	s.now = now
+	return s
 }
 
 // Recommend picks the best server for the request and explains why.
@@ -58,16 +101,29 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 		req.Status = model.StatusOnline
 	}
 
+	// 维护前引导 (TODO v0.2+ candidate): servers with an active maintenance
+	// window — or one starting within the lead — are not safe landing spots,
+	// no matter how the rest of the request filters look. Like status, the
+	// window exclusion applies to the fallback pass too: recommending a
+	// server that drops sessions minutes after join is worse than 404.
+	now := s.now()
+	blocked, err := s.maintenanceBlocklist(ctx, now)
+	if err != nil {
+		return nil, "", err
+	}
+
 	candidates, err := s.listMatching(ctx, req)
 	if err != nil {
 		return nil, "", err
 	}
+	candidates = withoutBlocked(candidates, blocked)
 	strict := len(candidates) > 0
 	if !strict {
 		candidates, err = s.listMatching(ctx, Request{Status: req.Status})
 		if err != nil {
 			return nil, "", err
 		}
+		candidates = withoutBlocked(candidates, blocked)
 		if len(candidates) == 0 {
 			return nil, "", fmt.Errorf("no %s server available: %w", req.Status, model.ErrNotFound)
 		}
@@ -124,8 +180,11 @@ type ServerVerdict struct {
 	MatchedFallback bool `json:"matched_fallback"`
 	// Owned: the account already has a character here (tiebreak #1).
 	Owned bool `json:"owned"`
+	// MaintenanceWindow is the window disqualifying this server right now
+	// (active, or starting within the pre-maintenance lead); nil when none.
+	MaintenanceWindow *model.MaintenanceWindow `json:"maintenance_window,omitempty"`
 	// Eligible: the server would accept this login right now — status
-	// accepts traffic and headroom remains.
+	// accepts traffic, headroom remains, and no maintenance window blocks.
 	Eligible bool `json:"eligible"`
 	// Reason names the rejection cause for non-candidates ("status=maintenance"),
 	// or, for the winner, the ranking reason from reasonFor.
@@ -141,20 +200,31 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 		req.Status = model.StatusOnline
 	}
 
+	now := s.now()
+	blocked, err := s.maintenanceBlocklist(ctx, now)
+	if err != nil {
+		return nil, fmt.Errorf("list maintenance windows: %w", err)
+	}
+
 	all, err := s.servers.ListServers(ctx, store.ServerFilter{Limit: 200})
 	if err != nil {
 		return nil, fmt.Errorf("list servers: %w", err)
 	}
 
 	// The same predicate listMatching pushes into the store filter — applied
-	// locally so non-matching servers stay visible with a reason.
+	// locally so non-matching servers stay visible with a reason. The
+	// maintenance window exclusion rides along the same way it does in
+	// Recommend: a hard constraint applied to both passes.
 	matchStrict := func(srv *model.Server) bool {
-		return srv.Status == req.Status &&
+		return blocked[srv.ID] == nil &&
+			srv.Status == req.Status &&
 			(req.Region == "" || srv.Region == req.Region) &&
 			(req.Version == "" || srv.Version == req.Version) &&
 			(req.Platform == "" || srv.Platform == req.Platform)
 	}
-	matchFallback := func(srv *model.Server) bool { return srv.Status == req.Status }
+	matchFallback := func(srv *model.Server) bool {
+		return blocked[srv.ID] == nil && srv.Status == req.Status
+	}
 
 	// Runtime merge for every server (the merge Recommend applies to its
 	// candidates): eligibility must be judged on live players/load too.
@@ -195,12 +265,13 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 
 	for _, srv := range all {
 		v := ServerVerdict{
-			Server:          srv,
-			Rank:            inCandidates[srv.ID],
-			MatchedStrict:   matchStrict(srv),
-			MatchedFallback: matchFallback(srv),
-			Owned:           owned[srv.ID],
-			Eligible:        srv.Status.AcceptsTraffic() && !srv.OverCapacity(),
+			Server:            srv,
+			Rank:              inCandidates[srv.ID],
+			MatchedStrict:     matchStrict(srv),
+			MatchedFallback:   matchFallback(srv),
+			Owned:             owned[srv.ID],
+			MaintenanceWindow: blocked[srv.ID],
+			Eligible:          srv.Status.AcceptsTraffic() && !srv.OverCapacity() && blocked[srv.ID] == nil,
 		}
 		switch {
 		case v.Rank > 0:
@@ -210,13 +281,19 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 			}
 		default:
 			// Not a candidate: name the first failing dimension of the
-			// strict request (status outranks the profile filters). Even a
-			// server that would match the fallback pass gets its strict
-			// rejection reason — the fallback only runs when strict matched
-			// nothing at all.
+			// strict request (status and maintenance window outrank the
+			// profile filters). Even a server that would match the fallback
+			// pass gets its strict rejection reason — the fallback only runs
+			// when strict matched nothing at all.
 			switch {
 			case srv.Status != req.Status:
 				v.Reason = fmt.Sprintf("status=%s (需要 %s)", srv.Status, req.Status)
+			case blocked[srv.ID] != nil:
+				if blocked[srv.ID].Active(now) {
+					v.Reason = "maintenance_window=active"
+				} else {
+					v.Reason = "maintenance_window=upcoming"
+				}
 			case req.Region != "" && srv.Region != req.Region:
 				v.Reason = fmt.Sprintf("region=%s (需要 %s)", srv.Region, req.Region)
 			case req.Version != "" && srv.Version != req.Version:
@@ -250,6 +327,70 @@ func (s *Service) listMatching(ctx context.Context, req Request) ([]*model.Serve
 		return nil, fmt.Errorf("list servers: %w", err)
 	}
 	return servers, nil
+}
+
+// maintenanceBlocklist returns, per server, the maintenance window that
+// disqualifies it from recommendations: an active window wins over an
+// upcoming one, earlier start wins over later. One list call covers the
+// whole fleet — windows are transient and few, and the health monitor
+// already lists them the same way per sweep. An empty result (or nil
+// window store) means no server is blocked. Failures propagate: a
+// recommendation built on unknown window state is untrustworthy, so we
+// fail closed rather than steer into a server that may be about to fall.
+func (s *Service) maintenanceBlocklist(ctx context.Context, now time.Time) (map[string]*model.MaintenanceWindow, error) {
+	if s.windows == nil {
+		return nil, nil
+	}
+	windows, err := s.windows.ListMaintenanceWindows(ctx, "", 0)
+	if err != nil {
+		return nil, fmt.Errorf("list maintenance windows: %w", err)
+	}
+	blocked := make(map[string]*model.MaintenanceWindow, len(windows))
+	for _, w := range windows {
+		if !windowBlocks(w, now, s.maintLead) {
+			continue
+		}
+		if cur, ok := blocked[w.ServerID]; ok && !windowBeats(w, cur, now) {
+			continue
+		}
+		blocked[w.ServerID] = w
+	}
+	return blocked, nil
+}
+
+// windowBlocks reports whether the window disqualifies its server: it
+// covers now, or it starts within the lead horizon. An ended-but-not-yet-
+// swept window does not block — the monitor has restored the server even
+// if it has not deleted the record yet.
+func windowBlocks(w *model.MaintenanceWindow, now time.Time, lead time.Duration) bool {
+	if w.Active(now) {
+		return true
+	}
+	return lead > 0 && w.StartAt.After(now) && w.StartAt.Sub(now) <= lead
+}
+
+// windowBeats picks the more immediate blocker for the same server: active
+// outranks upcoming, earlier start outranks later.
+func windowBeats(a, b *model.MaintenanceWindow, now time.Time) bool {
+	if a.Active(now) != b.Active(now) {
+		return a.Active(now)
+	}
+	return a.StartAt.Before(b.StartAt)
+}
+
+// withoutBlocked drops servers disqualified by a maintenance window,
+// keeping the untouched slice when nothing is blocked.
+func withoutBlocked(candidates []*model.Server, blocked map[string]*model.MaintenanceWindow) []*model.Server {
+	if len(blocked) == 0 {
+		return candidates
+	}
+	out := make([]*model.Server, 0, len(candidates))
+	for _, srv := range candidates {
+		if blocked[srv.ID] == nil {
+			out = append(out, srv)
+		}
+	}
+	return out
 }
 
 // ownedServers returns the set of server IDs the account already has a

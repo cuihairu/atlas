@@ -87,7 +87,8 @@ flowchart TB
 | ✅ **故障模式回归套件**（P1，2026-10-04 交付） | 「正确性优先于 QPS」演练矩阵（[性能设计](/performance) §7）逐项自动化：分区巡检 / 重注册契约 / 幂等与 rollback / Redis FLUSHALL 数据丢失（miniredis 兜底，契约不再 skip）；仅 PG 连接池自愈与副本宕机保留为部署级演练（ha.md） | 已完成，验证位置见 §7 表格 |
 | **状态三态显式化** | Desired / Observed / Effective 概念已写入文档（lifecycle §0）；代码字段/接口命名演化只在 API 冻结期做，避免破坏契约 | v1.0 API 冻结窗口 |
 | **Migration Controller 独立模块** | 概念边界已定（migration §9）；代码拆分只在独立扩缩容有真实需求时做 | 多舰队独立迁移集群场景 |
-| **Routing 策略扩展** | 权重、灰度放量的白名单、维护前引导(把玩家引向非维护服)——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |
+| ✅ **Routing 维护前引导**（P1，2026-10-04 交付） | 推荐感知维护窗口：活动窗口或 Lead 内（缺省 5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）开始的服务器进入排除——strict/fallback 两阶段一致生效，全排除如实 404；diagnose 逐台摊开窗口判定（`maintenance_window` 字段 + `maintenance_window=active|upcoming` 原因），`eligible` 计入窗口 | 已完成，语义见 [API §Routing](/api#routing) 与 [生命周期 §5](/lifecycle#_5-计划维护窗口-v0-1-20) |
+| **Routing 策略扩展（余项）** | 权重、灰度放量的白名单——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |
 | **公告与窗口批量编排** | 舰队级窗口模板、批量创建、与迁移编排联动 | 多服务器运营场景验证 |
 | **可观测性深化** | 首期已落地（请求级追踪 X-Request-ID 贯通三监听口 + 目录写路径延迟指标 `atlas_directory_write_duration_seconds`）；后续：请求级 span tracing、更多写路径指标 | 生产部署规模上来之后 |
 | **Kubernetes 部署样例** | Helm chart / Operator 仍是"明确不做"，但部署样例可讨论 | 有部署需求提出 |

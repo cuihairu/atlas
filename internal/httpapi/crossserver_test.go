@@ -44,7 +44,7 @@ func setupCrossServer(t *testing.T) (*httptest.Server, *memory.Store, *signalRec
 
 	rec := &signalRecorder{adapter: events}
 	crossSvc := crossserver.New(mem, mem, events, logger)
-	handler := New(regSvc, discSvc, dirSvc, admSvc, routing.New(mem, mem, mem), crossSvc, mem, events, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, routing.New(mem, mem, mem, mem), crossSvc, mem, events, logger)
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
 	return httptest.NewServer(mux), mem, rec
@@ -575,7 +575,7 @@ func TestCrossServerConfigPullOnPublicPort(t *testing.T) {
 	crossSvc := crossserver.New(mem, mem, events, logger)
 	handler := New(
 		registry.New(mem, mem, logger), discovery.New(mem, mem), directory.New(mem),
-		admin.New(mem), routing.New(mem, mem, mem), crossSvc, mem, events, logger,
+		admin.New(mem), routing.New(mem, mem, mem, mem), crossSvc, mem, events, logger,
 	)
 
 	mux := http.NewServeMux()

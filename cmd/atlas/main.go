@@ -377,8 +377,14 @@ func main() {
 	defer monitorCancel()
 	go monitor.Run(monitorCtx)
 
-	// Set up HTTP handlers.
-	rtSvc := routing.New(serverStore, runtimeStore, charStore)
+	// Set up HTTP handlers. 维护前引导: the routing service reads
+	// maintenance windows so recommendations never land players on a server
+	// inside — or minutes from — a maintenance window. The lead horizon is
+	// tuned via ATLAS_ROUTING_MAINTENANCE_LEAD (default 5m in the service).
+	rtSvc := routing.New(serverStore, runtimeStore, charStore, composite)
+	if cfg.RoutingMaintenanceLead > 0 {
+		rtSvc = rtSvc.WithMaintenanceLead(cfg.RoutingMaintenanceLead)
+	}
 	handler := httpapi.New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, composite, evtAdapter, logger).
 		WithFleetIndex(fleetIdx).
 		WithTelemetry(sampler).

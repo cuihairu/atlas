@@ -71,6 +71,26 @@ func TestLoad_HAEnvParsing(t *testing.T) {
 	}
 }
 
+func TestLoad_RoutingMaintenanceLead(t *testing.T) {
+	// Not set: zero value, the routing service applies its 5m default.
+	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
+		t.Errorf("RoutingMaintenanceLead default = %v, want 0", cfg.RoutingMaintenanceLead)
+	}
+	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "2m"})
+	if cfg := Load(); cfg.RoutingMaintenanceLead != 2*time.Minute {
+		t.Errorf("RoutingMaintenanceLead = %v, want 2m", cfg.RoutingMaintenanceLead)
+	}
+	// Invalid values are ignored, leaving the zero default.
+	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "soon"})
+	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
+		t.Errorf("invalid lead should be ignored, got %v", cfg.RoutingMaintenanceLead)
+	}
+	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "0s"})
+	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
+		t.Errorf("0s lead should be ignored (stay 0), got %v", cfg.RoutingMaintenanceLead)
+	}
+}
+
 func TestLoad_HAInvalidValuesIgnored(t *testing.T) {
 	setenv(t, map[string]string{
 		"ATLAS_REDIS_POOL_SIZE":           "not-a-number",

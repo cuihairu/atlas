@@ -261,6 +261,14 @@ POST /v1/admin/servers/{id}/maintenance-window
 
 窗口默认（`announce` 缺省为 `true`）自动创建一条覆盖同时段、server 范围、warning 级别的公告并与窗口关联（见 §6 与 api.md）。窗口取消（DELETE）不会撤回已创建的公告，也不会把已在维护中的服务器拉出来。
 
+**推荐流量引导（维护前引导）**：路由推荐（`/v1/routing/recommended`）感知
+维护窗口——窗口活动期内、以及窗口开始前 `ATLAS_ROUTING_MAINTENANCE_LEAD`
+（默认 5 分钟）内的服务器不再被推荐，即使生命周期状态仍是 `online`（巡检
+尚未翻转）；窗口结束（记录删除前）即恢复。窗口排除对 strict / fallback
+两阶段推荐一致生效：宁可返回 `NO_SERVER_AVAILABLE`，也不把玩家引向即将
+进入维护的服务器。诊断接口（`/v1/admin/diagnose/routing`）逐台摊开窗口
+判定并附属窗口记录。
+
 ---
 
 ## 6. 与 API 的对应

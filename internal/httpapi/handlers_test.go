@@ -37,7 +37,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 		return err
 	})
 
-	rtSvc := routing.New(mem, mem, mem)
+	rtSvc := routing.New(mem, mem, mem, mem)
 	crossSvc := crossserver.New(mem, mem, events, logger)
 	handler := New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, mem, events, logger)
 	mux := http.NewServeMux()
