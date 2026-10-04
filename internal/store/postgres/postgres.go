@@ -75,8 +75,8 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
                      endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source,
-                     notify_mode, notify_callback_url)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                     notify_mode, notify_callback_url, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
     type          = EXCLUDED.type,
@@ -95,14 +95,15 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at    = EXCLUDED.updated_at,
     source        = EXCLUDED.source,
     notify_mode   = EXCLUDED.notify_mode,
-    notify_callback_url = EXCLUDED.notify_callback_url
+    notify_callback_url = EXCLUDED.notify_callback_url,
+    metadata      = EXCLUDED.metadata
 `
 	_, err := s.pool.Exec(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
 		srv.Status, srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
-		srv.NotifyMode, srv.NotifyCallbackURL,
+		srv.NotifyMode, srv.NotifyCallbackURL, metadataJSON(srv.Metadata),
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -114,7 +115,7 @@ func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error)
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
-       notify_mode, notify_callback_url
+       notify_mode, notify_callback_url, metadata
 FROM servers WHERE id = $1
 `
 	srv, err := scanServer(s.pool.QueryRow(ctx, q, id))
@@ -135,7 +136,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
-       notify_mode, notify_callback_url
+       notify_mode, notify_callback_url, metadata
 FROM servers WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -253,20 +254,21 @@ func (s *Store) UpsertCharacter(ctx context.Context, ch *model.Character) error 
 	ch.UpdatedAt = now
 
 	const q = `
-INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (account_id, server_id, character_id) DO UPDATE SET
     name          = EXCLUDED.name,
     level         = EXCLUDED.level,
     class_id      = EXCLUDED.class_id,
     avatar        = EXCLUDED.avatar,
     last_login_at = EXCLUDED.last_login_at,
-    updated_at    = EXCLUDED.updated_at
+    updated_at    = EXCLUDED.updated_at,
+    metadata      = EXCLUDED.metadata
 `
 	_, err := s.pool.Exec(ctx, q,
 		ch.AccountID, ch.ServerID, ch.CharacterID,
 		ch.Name, ch.Level, ch.ClassID, ch.Avatar,
-		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt,
+		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt, metadataJSON(ch.Metadata),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert character: %w", err)
@@ -276,7 +278,7 @@ ON CONFLICT (account_id, server_id, character_id) DO UPDATE SET
 
 func (s *Store) GetCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = $1 AND server_id = $2 AND character_id = $3
 `
@@ -289,7 +291,7 @@ WHERE account_id = $1 AND server_id = $2 AND character_id = $3
 
 func (s *Store) GetCharacterByCharacterID(ctx context.Context, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE character_id = $1
 `
@@ -324,6 +326,11 @@ func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID s
 	if patch.Avatar != nil {
 		setClauses = append(setClauses, fmt.Sprintf("avatar = $%d", n))
 		args = append(args, *patch.Avatar)
+		n++
+	}
+	if patch.Metadata != nil {
+		setClauses = append(setClauses, fmt.Sprintf("metadata = $%d", n))
+		args = append(args, metadataJSON(*patch.Metadata))
 		n++
 	}
 	if patch.LastLoginAt != nil {
@@ -368,7 +375,7 @@ func (s *Store) DeleteCharacter(ctx context.Context, accountID int64, serverID s
 
 func (s *Store) ListCharactersByAccount(ctx context.Context, accountID int64) ([]*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = $1
 ORDER BY server_id, character_id
@@ -391,7 +398,7 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	}
 
 	q := `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE server_id = $1`
 	args := []any{serverID}
@@ -428,7 +435,7 @@ func (s *Store) SearchCharacters(ctx context.Context, filter store.CharacterSear
 		filter.Limit = 200
 	}
 
-	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -443,10 +450,15 @@ FROM character_index WHERE 1=1`
 		args = append(args, filter.ServerID)
 		n++
 	}
-	if filter.ClassID != nil {
-		q += fmt.Sprintf(" AND class_id = $%d", n)
-		args = append(args, *filter.ClassID)
+	if filter.AccountID != 0 {
+		q += fmt.Sprintf(" AND account_id = $%d", n)
+		args = append(args, filter.AccountID)
 		n++
+	}
+	if filter.MetadataKey != "" {
+		q += fmt.Sprintf(" AND metadata->>$%d = $%d", n, n+1)
+		args = append(args, filter.MetadataKey, filter.MetadataValue)
+		n += 2
 	}
 	if filter.MinLevel != nil {
 		q += fmt.Sprintf(" AND level >= $%d", n)
@@ -633,6 +645,8 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 		}
 	}
 
+	stats.Finalize()
+
 	return stats, nil
 }
 
@@ -646,14 +660,14 @@ type scannable interface {
 
 func scanServer(row scannable) (*model.Server, error) {
 	var srv model.Server
-	var tagsRaw []byte
+	var tagsRaw, metaRaw []byte
 	err := row.Scan(
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 		&tagsRaw,
-		&srv.NotifyMode, &srv.NotifyCallbackURL,
+		&srv.NotifyMode, &srv.NotifyCallbackURL, &metaRaw,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -666,21 +680,32 @@ func scanServer(row scannable) (*model.Server, error) {
 			return nil, fmt.Errorf("decode server %s tags: %w", srv.ID, err)
 		}
 	}
+	if len(metaRaw) > 2 { // skip NULL ('') and '{}' — leave Metadata nil
+		if err := json.Unmarshal(metaRaw, &srv.Metadata); err != nil {
+			return nil, fmt.Errorf("decode server %s metadata: %w", srv.ID, err)
+		}
+	}
 	return &srv, nil
 }
 
 func scanCharacter(row scannable) (*model.Character, error) {
 	var ch model.Character
+	var metaRaw []byte
 	err := row.Scan(
 		&ch.AccountID, &ch.ServerID, &ch.CharacterID,
 		&ch.Name, &ch.Level, &ch.ClassID, &ch.Avatar,
-		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt,
+		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
+	}
+	if len(metaRaw) > 2 { // skip NULL ('') and '{}' — leave Metadata nil
+		if err := json.Unmarshal(metaRaw, &ch.Metadata); err != nil {
+			return nil, fmt.Errorf("decode character %d metadata: %w", ch.CharacterID, err)
+		}
 	}
 	return &ch, nil
 }
@@ -1084,4 +1109,17 @@ func (s *Store) GetCrossServerConfig(ctx context.Context) (*model.CrossServerCon
 		return nil, fmt.Errorf("decode cross-server config: %w", err)
 	}
 	return &cfg, nil
+}
+
+// metadataJSON marshals a metadata map for the JSONB columns; nil and empty
+// maps both write '{}' so rows never carry NULL metadata.
+func metadataJSON(m map[string]string) []byte {
+	if len(m) == 0 {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
 }

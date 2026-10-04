@@ -81,6 +81,7 @@ func (s *Store) RegisterServer(_ context.Context, srv *model.Server) error {
 		existing.Source = srv.Source
 		existing.NotifyMode = srv.NotifyMode
 		existing.NotifyCallbackURL = srv.NotifyCallbackURL
+		existing.Metadata = srv.Metadata
 		existing.StartedAt = srv.StartedAt
 		// A fresh registration proves a (re)boot: reset only a dead-ish
 		// lifecycle (suspect / offline) so the next heartbeat can promote it
@@ -229,6 +230,7 @@ func (s *Store) UpsertCharacter(_ context.Context, ch *model.Character) error {
 		existing.Level = ch.Level
 		existing.ClassID = ch.ClassID
 		existing.Avatar = ch.Avatar
+		existing.Metadata = ch.Metadata
 		existing.LastLoginAt = ch.LastLoginAt
 		existing.UpdatedAt = now
 		*ch = *existing
@@ -289,6 +291,9 @@ func (s *Store) UpdateCharacter(_ context.Context, accountID int64, serverID str
 	}
 	if patch.Avatar != nil {
 		ch.Avatar = *patch.Avatar
+	}
+	if patch.Metadata != nil {
+		ch.Metadata = *patch.Metadata
 	}
 	if patch.LastLoginAt != nil {
 		ch.LastLoginAt = patch.LastLoginAt
@@ -590,6 +595,7 @@ func (s *Store) GetStats(_ context.Context) (*model.Stats, error) {
 	}
 
 	stats.TotalCharacters = len(s.characters)
+	stats.Finalize()
 
 	return stats, nil
 }
@@ -605,7 +611,10 @@ func matchCharacter(ch *model.Character, f store.CharacterSearchFilter) bool {
 	if f.ServerID != "" && ch.ServerID != f.ServerID {
 		return false
 	}
-	if f.ClassID != nil && ch.ClassID != *f.ClassID {
+	if f.AccountID != 0 && ch.AccountID != f.AccountID {
+		return false
+	}
+	if f.MetadataKey != "" && ch.Metadata[f.MetadataKey] != f.MetadataValue {
 		return false
 	}
 	if f.MinLevel != nil && ch.Level < *f.MinLevel {

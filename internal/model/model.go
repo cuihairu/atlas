@@ -336,13 +336,40 @@ type Migration struct {
 
 // Stats aggregates server and character counts for the admin dashboard.
 type Stats struct {
-	TotalServers     int            `json:"total_servers"`
+	TotalServers  int `json:"total_servers"`
+	OnlineServers int `json:"online_servers"`
+	// ServersByStatus/Region/Version are the classic aggregate facets.
 	ServersByStatus  map[string]int `json:"servers_by_status"`
 	ServersByRegion  map[string]int `json:"servers_by_region"`
 	ServersByVersion map[string]int `json:"servers_by_version"`
-	TotalPlayers     int            `json:"total_players"`
-	TotalCapacity    int            `json:"total_capacity"`
-	TotalCharacters  int            `json:"total_characters"`
+	// ServersByType/Realm/Shard/Tag extend the facets to every admin filter
+	// bar dimension (BUGS ③: all views read the same aggregation — these
+	// come from the fleet index, so filter options and stats agree).
+	ServersByType  map[string]int `json:"servers_by_type,omitempty"`
+	ServersByRealm map[string]int `json:"servers_by_realm,omitempty"`
+	ServersByShard map[string]int `json:"servers_by_shard,omitempty"`
+	ServersByTag   map[string]int `json:"servers_by_tag,omitempty"`
+	// ServerMetadataKeys lists metadata keys present across the fleet —
+	// feeds the metadata-filter key dropdown from real data.
+	ServerMetadataKeys []string `json:"server_metadata_keys,omitempty"`
+	TotalPlayers       int      `json:"total_players"`
+	TotalCapacity      int      `json:"total_capacity"`
+	TotalCharacters    int      `json:"total_characters"`
+}
+
+// Finalize derives the computed Stats fields every producer must apply so
+// OnlineServers can never disagree with ServersByStatus (BUGS ①).
+func (s *Stats) Finalize() {
+	if s.ServersByStatus == nil {
+		s.ServersByStatus = map[string]int{}
+	}
+	if s.ServersByRegion == nil {
+		s.ServersByRegion = map[string]int{}
+	}
+	if s.ServersByVersion == nil {
+		s.ServersByVersion = map[string]int{}
+	}
+	s.OnlineServers = s.ServersByStatus[string(StatusOnline)]
 }
 
 // Realm is an administrative grouping of servers (a logical game world or

@@ -200,3 +200,22 @@ func TestAnnouncementValidateActiveAndLevels(t *testing.T) {
 		t.Error("announcement should be inactive outside interval")
 	}
 }
+
+func TestStatsFinalizeDerivesOnlineServers(t *testing.T) {
+	// BUGS ①: OnlineServers must always agree with ServersByStatus — the
+	// derivation lives in Finalize so no producer can drift.
+	s := &Stats{ServersByStatus: map[string]int{"online": 2, "suspect": 1}}
+	s.Finalize()
+	if s.OnlineServers != 2 {
+		t.Errorf("online = %d, want 2", s.OnlineServers)
+	}
+	// Nil maps are healed, not crashed (the null.some lesson).
+	empty := &Stats{}
+	empty.Finalize()
+	if empty.ServersByStatus == nil || empty.ServersByRegion == nil || empty.ServersByVersion == nil {
+		t.Error("Finalize must default the classic facet maps")
+	}
+	if empty.OnlineServers != 0 {
+		t.Errorf("empty online = %d, want 0", empty.OnlineServers)
+	}
+}

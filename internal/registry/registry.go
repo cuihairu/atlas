@@ -39,6 +39,11 @@ type RegisterRequest struct {
 	// StartedAt is the game server process start time. Zero means "now" —
 	// the registration time is used. TODO v0.1.20.
 	StartedAt *time.Time `json:"started_at,omitempty"`
+	// Metadata carries arbitrary key-value pairs (engine hints, cluster /
+	// zone / language markers — see model.Server). Re-registration replaces
+	// the whole map: undeclared keys are dropped, mirroring the profile
+	// upsert semantics of the other mutable fields.
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // Service manages server registration and heartbeats.
@@ -132,6 +137,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 		Capacity:          req.Capacity,
 		NotifyMode:        req.NotifyMode,
 		NotifyCallbackURL: req.NotifyCallbackURL,
+		Metadata:          req.Metadata,
 		StartedAt:         &startedAt,
 		Status:            model.StatusStarting,
 	}

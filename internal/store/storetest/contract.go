@@ -191,6 +191,7 @@ func servers(t *testing.T, ctx context.Context, s Core) {
 		Version: "1.0.0", Platform: "android",
 		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
 		Capacity: 1000,
+		Metadata: map[string]string{"cluster": "c1", "zone": "pvp"},
 	}
 	if err := s.RegisterServer(ctx, srv); err != nil {
 		t.Fatalf("register: %v", err)
@@ -218,6 +219,9 @@ func servers(t *testing.T, ctx context.Context, s Core) {
 	if got.Source != "" {
 		t.Errorf("source = %q, want empty (API-owned)", got.Source)
 	}
+	if got.Metadata["cluster"] != "c1" || got.Metadata["zone"] != "pvp" {
+		t.Errorf("metadata roundtrip = %v, want cluster=c1 zone=pvp", got.Metadata)
+	}
 	sameTime(t, "created_at", got.CreatedAt, srv.CreatedAt)
 
 	// Re-register overwrites profile fields but never the creation time,
@@ -244,6 +248,9 @@ func servers(t *testing.T, ctx context.Context, s Core) {
 	sameTime(t, "created_at after re-register", got.CreatedAt, firstCreatedAt)
 	if got.Status != model.StatusStarting {
 		t.Errorf("status after re-register = %q, want starting (live status kept)", got.Status)
+	}
+	if len(got.Metadata) != 0 {
+		t.Errorf("metadata after undeclared re-register = %v, want cleared (whole-map replace)", got.Metadata)
 	}
 
 	// Dead-lifecycle reset: suspect and offline hand the server back to the
@@ -550,12 +557,16 @@ func characters(t *testing.T, ctx context.Context, s Core) {
 	// an empty patch is a no-op.
 	level := 61
 	name := "gil-sun-strider"
-	if err := s.UpdateCharacter(ctx, account, serverA, 101, store.CharacterPatch{Name: &name, Level: &level}); err != nil {
+	meta := map[string]string{"class": "wizard", "vip_level": "6"}
+	if err := s.UpdateCharacter(ctx, account, serverA, 101, store.CharacterPatch{Name: &name, Level: &level, Metadata: &meta}); err != nil {
 		t.Fatalf("patch: %v", err)
 	}
 	got, _ = s.GetCharacter(ctx, account, serverA, 101)
 	if got.Name != name || got.Level != 61 || got.ClassID != 2 {
 		t.Errorf("patch not applied: %+v", got)
+	}
+	if got.Metadata["class"] != "wizard" || got.Metadata["vip_level"] != "6" {
+		t.Errorf("metadata patch roundtrip = %v, want class=wizard vip_level=6", got.Metadata)
 	}
 	if err := s.UpdateCharacter(ctx, account, serverA, missing, store.CharacterPatch{Level: &level}); !isNotFound(err) {
 		t.Errorf("patch missing = %v, want ErrNotFound", err)
@@ -608,11 +619,11 @@ func characters(t *testing.T, ctx context.Context, s Core) {
 		t.Fatalf("page3 = %v, %v; want empty (cursor marks the end)", page3, err)
 	}
 
-	// Search: name (case-insensitive contains), server, class, level range.
+	// Search: name (case-insensitive contains), server, account, metadata
+	// pair, level range.
 	if err := s.UpsertCharacter(ctx, mk(serverB, 2, "frodo", 10)); err != nil {
 		t.Fatalf("upsert frodo: %v", err)
 	}
-	cls := 1
 	minLvl, maxLvl := 30, 61
 	noMax := 1000
 
@@ -633,8 +644,16 @@ func characters(t *testing.T, ctx context.Context, s Core) {
 	if got, _ := find(store.CharacterSearchFilter{ServerID: serverB}); len(got) != 2 {
 		t.Errorf("server search = %d, want 2", len(got))
 	}
-	if got, _ := find(store.CharacterSearchFilter{ClassID: &cls, MinLevel: &minLvl, MaxLevel: &maxLvl}); len(got) != 2 {
-		t.Errorf("class+level search = %d, want 2 (61 and 40)", len(got))
+	// class_id is retired as a built-in filter (platform de-hardening):
+	// 职业 filters through metadata; account filters by the opaque 玩家 ID.
+	if got, _ := find(store.CharacterSearchFilter{MetadataKey: "class", MetadataValue: "wizard", MinLevel: &minLvl, MaxLevel: &maxLvl}); len(got) != 1 || got[0].Name != "gil-sun-strider" {
+		t.Errorf("metadata+level search = %+v, want gil-sun-strider", got)
+	}
+	if got, _ := find(store.CharacterSearchFilter{MetadataKey: "class", MetadataValue: "archer"}); len(got) != 0 {
+		t.Errorf("metadata no-match search = %d, want 0", len(got))
+	}
+	if got, _ := find(store.CharacterSearchFilter{AccountID: account, MaxLevel: &noMax}); len(got) != 4 {
+		t.Errorf("account search = %d, want 4 (every character of the account)", len(got))
 	}
 	if got, _ := find(store.CharacterSearchFilter{MaxLevel: &noMax}); len(got) != 4 {
 		t.Errorf("max-level search = %d, want 4 (covers every character)", len(got))

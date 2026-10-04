@@ -39,6 +39,10 @@ type Server struct {
 	Platform string   `json:"platform,omitempty"`
 	Endpoint Endpoint `json:"endpoint"`
 	Capacity int      `json:"capacity,omitempty"`
+	// Metadata mirrors the register API's metadata: arbitrary key-value
+	// pairs carried on the declared record (engine hints, cluster / zone /
+	// language markers — see model.Server.Metadata).
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // Profile is a named server group inside a config file.
@@ -175,6 +179,7 @@ func (s Server) toModel() *model.Server {
 		Platform: s.Platform,
 		Endpoint: ep,
 		Capacity: s.Capacity,
+		Metadata: s.Metadata,
 		Source:   "config",
 		Status:   model.StatusStarting,
 	}

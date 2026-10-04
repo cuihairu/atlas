@@ -42,14 +42,23 @@ type CharacterPatch struct {
 }
 
 // CharacterSearchFilter controls which characters are returned by SearchCharacters.
+//
+// ClassID was removed as a built-in filter (platform de-hardcoding decree):
+// 职业 is a game-business concept — it belongs in metadata (e.g.
+// metadata.class), not in platform query parameters. The DB class column
+// stays for read compat with existing projections.
 type CharacterSearchFilter struct {
 	Name     string
 	ServerID string
-	ClassID  *int
-	MinLevel *int
-	MaxLevel *int
-	Limit    int
-	Cursor   string
+	// AccountID filters by the opaque account reference (玩家 ID 搜索).
+	AccountID int64
+	// MetadataKey requires MetadataValue: the key=value pair filter.
+	MetadataKey   string
+	MetadataValue string
+	MinLevel      *int
+	MaxLevel      *int
+	Limit         int
+	Cursor        string
 }
 
 // ServerStore persists game server records.

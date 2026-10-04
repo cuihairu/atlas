@@ -69,8 +69,8 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
                      endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source,
-                     notify_mode, notify_callback_url)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     notify_mode, notify_callback_url, metadata)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
     type          = VALUES(type),
@@ -89,14 +89,15 @@ ON DUPLICATE KEY UPDATE
     updated_at    = VALUES(updated_at),
     source        = VALUES(source),
     notify_mode   = VALUES(notify_mode),
-    notify_callback_url = VALUES(notify_callback_url)
+    notify_callback_url = VALUES(notify_callback_url),
+    metadata      = VALUES(metadata)
 `
 	_, err := s.db.ExecContext(ctx, q,
 		srv.ID, srv.Name, srv.Type, srv.Region,
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
 		string(srv.Status), srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
-		srv.NotifyMode, srv.NotifyCallbackURL,
+		srv.NotifyMode, srv.NotifyCallbackURL, string(metadataJSON(srv.Metadata)),
 	)
 	if err != nil {
 		return fmt.Errorf("register server %s: %w", srv.ID, err)
@@ -108,7 +109,7 @@ func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error)
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
-       notify_mode, notify_callback_url
+       notify_mode, notify_callback_url, metadata
 FROM servers WHERE id = ?
 `
 	srv, err := scanServer(s.db.QueryRowContext(ctx, q, id))
@@ -129,7 +130,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
-       notify_mode, notify_callback_url
+       notify_mode, notify_callback_url, metadata
 FROM servers WHERE 1=1`
 	args := []any{}
 
@@ -244,20 +245,21 @@ func (s *Store) UpsertCharacter(ctx context.Context, ch *model.Character) error 
 	ch.UpdatedAt = now
 
 	const q = `
-INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
     level         = VALUES(level),
     class_id      = VALUES(class_id),
     avatar        = VALUES(avatar),
     last_login_at = VALUES(last_login_at),
-    updated_at    = VALUES(updated_at)
+    updated_at    = VALUES(updated_at),
+    metadata      = VALUES(metadata)
 `
 	_, err := s.db.ExecContext(ctx, q,
 		ch.AccountID, ch.ServerID, ch.CharacterID,
 		ch.Name, ch.Level, ch.ClassID, ch.Avatar,
-		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt,
+		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt, metadataJSON(ch.Metadata),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert character: %w", err)
@@ -267,7 +269,7 @@ ON DUPLICATE KEY UPDATE
 
 func (s *Store) GetCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = ? AND server_id = ? AND character_id = ?
 `
@@ -280,7 +282,7 @@ WHERE account_id = ? AND server_id = ? AND character_id = ?
 
 func (s *Store) GetCharacterByCharacterID(ctx context.Context, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE character_id = ?
 `
@@ -310,6 +312,10 @@ func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID s
 	if patch.Avatar != nil {
 		setClauses = append(setClauses, "avatar = ?")
 		args = append(args, *patch.Avatar)
+	}
+	if patch.Metadata != nil {
+		setClauses = append(setClauses, "metadata = ?")
+		args = append(args, string(metadataJSON(*patch.Metadata)))
 	}
 	if patch.LastLoginAt != nil {
 		setClauses = append(setClauses, "last_login_at = ?")
@@ -353,7 +359,7 @@ func (s *Store) DeleteCharacter(ctx context.Context, accountID int64, serverID s
 
 func (s *Store) ListCharactersByAccount(ctx context.Context, accountID int64) ([]*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = ?
 ORDER BY server_id, character_id
@@ -376,7 +382,7 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	}
 
 	q := `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index
 WHERE server_id = ?`
 	args := []any{serverID}
@@ -410,7 +416,7 @@ func (s *Store) SearchCharacters(ctx context.Context, filter store.CharacterSear
 		filter.Limit = 200
 	}
 
-	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at
+	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
 FROM character_index WHERE 1=1`
 	args := []any{}
 
@@ -422,9 +428,19 @@ FROM character_index WHERE 1=1`
 		q += " AND server_id = ?"
 		args = append(args, filter.ServerID)
 	}
-	if filter.ClassID != nil {
-		q += " AND class_id = ?"
-		args = append(args, *filter.ClassID)
+	if filter.AccountID != 0 {
+		q += " AND account_id = ?"
+		args = append(args, filter.AccountID)
+	}
+	if filter.MetadataKey != "" {
+		// MySQL JSON paths cannot be parameterized — only identifier-safe
+		// keys are embeddable; anything else can never match a stored key.
+		if path, ok := jsonPathKey(filter.MetadataKey); ok {
+			q += " AND JSON_UNQUOTE(JSON_EXTRACT(metadata, ?)) = ?"
+			args = append(args, path, filter.MetadataValue)
+		} else {
+			q += " AND 1 = 0"
+		}
 	}
 	if filter.MinLevel != nil {
 		q += " AND level >= ?"
@@ -619,6 +635,8 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 		}
 	}
 
+	stats.Finalize()
+
 	return stats, nil
 }
 
@@ -634,14 +652,14 @@ func scanServer(row scannable) (*model.Server, error) {
 	var srv model.Server
 	// Nullable: MySQL cannot default a TEXT column, so rows read NULL until
 	// an operator first writes tags (unlike postgres' '[]'::jsonb default).
-	var tagsRaw sql.NullString
+	var tagsRaw, metaRaw sql.NullString
 	err := row.Scan(
 		&srv.ID, &srv.Name, &srv.Type, &srv.Region,
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 		&tagsRaw,
-		&srv.NotifyMode, &srv.NotifyCallbackURL,
+		&srv.NotifyMode, &srv.NotifyCallbackURL, &metaRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -654,21 +672,32 @@ func scanServer(row scannable) (*model.Server, error) {
 			return nil, fmt.Errorf("decode server %s tags: %w", srv.ID, err)
 		}
 	}
+	if metaRaw.Valid && len(metaRaw.String) > 2 { // skip '' / '{}'
+		if err := json.Unmarshal([]byte(metaRaw.String), &srv.Metadata); err != nil {
+			return nil, fmt.Errorf("decode server %s metadata: %w", srv.ID, err)
+		}
+	}
 	return &srv, nil
 }
 
 func scanCharacter(row scannable) (*model.Character, error) {
 	var ch model.Character
+	var metaRaw sql.NullString
 	err := row.Scan(
 		&ch.AccountID, &ch.ServerID, &ch.CharacterID,
 		&ch.Name, &ch.Level, &ch.ClassID, &ch.Avatar,
-		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt,
+		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, store.ErrNotFound
 		}
 		return nil, err
+	}
+	if metaRaw.Valid && len(metaRaw.String) > 2 { // skip '' / '{}'
+		if err := json.Unmarshal([]byte(metaRaw.String), &ch.Metadata); err != nil {
+			return nil, fmt.Errorf("decode character %d metadata: %w", ch.CharacterID, err)
+		}
 	}
 	return &ch, nil
 }
@@ -1067,4 +1096,36 @@ func (s *Store) GetCrossServerConfig(ctx context.Context) (*model.CrossServerCon
 		return nil, fmt.Errorf("decode cross-server config: %w", err)
 	}
 	return &cfg, nil
+}
+
+// metadataJSON marshals a metadata map for the JSON columns; nil and empty
+// maps both write '{}' so rows never carry NULL metadata.
+func metadataJSON(m map[string]string) []byte {
+	if len(m) == 0 {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
+}
+
+// jsonPathKey validates a metadata key for embedding in a MySQL JSON path
+// (paths cannot be parameterized). Only identifier-safe characters are
+// embeddable; anything else can never match a key the platform stores, so
+// the caller filters to zero rows instead of risking injection.
+func jsonPathKey(key string) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	for _, r := range key {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_', r == '-', r == '.':
+		default:
+			return "", false
+		}
+	}
+	return "$.\"" + key + "\"", true
 }
