@@ -3,11 +3,12 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工三增量
-> （storetest 契约补全 c5de2bf、gRPC 鉴权缺口 905bc9b、gRPC 审计同族收尾
-> a127bef）已完成（2026-10-05）；巡检点火三项（立档两项 / dead CORS /
-> 决策面 N+1 收尾）全部清零；roadmap 余下候选均挂「真实需求」前置，无可自立项，
-> 等下一批指令或真实需求反馈。
+> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工四增量
+> （storetest 契约补全 c5de2bf、gRPC 鉴权 905bc9b、gRPC 审计 a127bef、
+> gRPC 限流 c07de18）已完成（2026-10-05）；**网络中断期 3 个 commit
+> （a127bef / b997d81 / c07de18）仅本地待推，网络恢复后统一补推**；
+> 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
+> roadmap 余下候选均挂「真实需求」前置，无可自立项，等下一批指令或真实需求反馈。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -123,9 +124,9 @@
 
 ### 巡检派工（2026-10-05）✅
 
-> 自立项三增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口 +
-> 同族审计收尾。门禁全仓绿 + race + vet；本地真库 pg+mysql 全跑通过、
-> 实机双模式 e2e 验证。
+> 自立项四增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口 +
+> 同族审计收尾 + 同族限流收尾。门禁全仓绿 + race + vet；本地真库 pg+mysql
+> 全跑通过、实机双模式 e2e 验证。
 
 - [x] storetest 最后两个未钉契约：ListRealms（created_at 降序断言按
       非增写、规避 SQL µs 平局；limit>0 截断 / ≤0 无上限）与 ListRuntimes
@@ -147,6 +148,14 @@
       为双传输单点落环+结构化日志；实机验证 gRPC 写经 GET /v1/admin/audit
       可见、被拒不进环、公共域不记；api.md / security.md 撤销「审计仅
       REST」旧表述——commit a127bef
+- [x] 同族第四层——gRPC 限流缺口（REST 有共享令牌桶、gRPC 零限流）：
+      UnaryRateLimit 拦截器限 Registry/Admin 两域（挂载域与 REST 一致，
+      公网口不设限），按全方法名前缀匹配规则、未命中落 default 桶，
+      拒绝返回 ResourceExhausted + RATE_LIMITED；链序镜像 REST（限流在
+      认证之外）；RateLimiter.Allow 导出，桶与拒统计双传输共享——实机
+      验证二次 GetStats 被拒且计入 GET /v1/admin/rate-limits 视图；
+      api.md 错误映射补 401/403/429 行（鉴权两行为 905bc9b 漏加）、
+      security.md §4/§1 补双传输与 TLS 范围——commit c07de18
 
 ### 文档-实现对账 sweep（2026-10-05）✅
 
