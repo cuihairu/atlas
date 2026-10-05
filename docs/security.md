@@ -15,6 +15,7 @@ ATLAS_REGISTRY_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后�
 - 仅配 cert/key：服务器侧 TLS（客户端可校验服务端身份）。
 - 追加 `ATLAS_REGISTRY_CLIENT_CA`：`RequireAndVerifyClientCert`，未持证书的连接在握手层直接失败。
 - 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。
+- 范围：仅作用于 REST 注册口 :8081。gRPC :9090 目前为明文传输（见 [api.md](api.md#grpc-api) 的 gRPC 节），游戏服与 Atlas 同内网时按网络层隔离部署。
 
 ## 2. Admin RBAC
 
@@ -79,6 +80,8 @@ ATLAS_RATE_LIMIT_DEFAULT="1000:2000"   # 未命中前缀的兜底规则
 - 超限返回 `429 RATE_LIMITED` + `Retry-After: 1`。
 - 桶表上限 65,536，防 XFF 伪造导致的内存膨胀（超出后拒绝新客户端，fail closed）。
 - 规则解析错误启动即退出。
+
+**双传输**：gRPC（:9090）与 REST 共用同一个限流器与桶表——按全方法名做前缀匹配（如 `/atlas.v1.RegistryService/Register=10:20`），未命中规则落 default 桶；Registry / Admin 两域受限，Public 三服务不设限（与公网口 :8080 一致）。拒绝返回 gRPC `ResourceExhausted` + `RATE_LIMITED` 消息（gRPC 无 `Retry-After` 头，按 code 退避），同一条拒绝计入 REST 视图 `GET /v1/admin/rate-limits` 的 `rejected_by_endpoint` / `rejected_by_client`——换传输逃不过桶。
 
 ## 配置速查
 

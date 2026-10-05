@@ -78,11 +78,23 @@ func NewRateLimiter(rules map[string]RateRule, def RateRule) *RateLimiter {
 	}
 }
 
+// Allow reports whether one more request on path from clientIP may pass,
+// counting the rejection in the stats when it may not. Transport-neutral:
+// the REST middleware and the gRPC rate-limit interceptor share this entry
+// point (and the same buckets), so one noisy caller cannot dodge the limit
+// by switching transports.
+func (rl *RateLimiter) Allow(path, clientIP string) bool {
+	if rl.allow(path, clientIP) {
+		return true
+	}
+	rl.recordRejection(path, clientIP)
+	return false
+}
+
 // Middleware returns the rate-limiting handler wrapper.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rl.allow(r.URL.Path, extractIP(r)) {
-			rl.recordRejection(r.URL.Path, extractIP(r))
+		if !rl.Allow(r.URL.Path, extractIP(r)) {
 			w.Header().Set("Retry-After", "1")
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED",
 				"too many requests for this endpoint; retry later")
