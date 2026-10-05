@@ -3,12 +3,13 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工四增量
+> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工五增量
 > （storetest 契约补全 c5de2bf、gRPC 鉴权 905bc9b、gRPC 审计 a127bef、
-> gRPC 限流 c07de18）已完成（2026-10-05）；**网络中断期（2026-10-05 起）
-> commit 仅本地待推，全量看 `git log origin/main..HEAD`，网络恢复后统一补推**；
-> 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
-> roadmap 余下候选均挂「真实需求」前置，无可自立项，等下一批指令或真实需求反馈。
+> gRPC 限流 c07de18、gRPC TLS c7c9947）已完成（2026-10-05）——四层防护
+> 双传输对齐；**网络中断期（2026-10-05 起）commit 仅本地待推，全量看
+> `git log origin/main..HEAD`，网络恢复后统一补推**；巡检点火三项
+> （立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；余项「其余五个
+> SDK 的 gRPC TLS」挂起待拍板（本地无工具链无法验证），等下一批指令。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -124,9 +125,9 @@
 
 ### 巡检派工（2026-10-05）✅
 
-> 自立项四增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口 +
-> 同族审计收尾 + 同族限流收尾。门禁全仓绿 + race + vet；本地真库 pg+mysql
-> 全跑通过、实机双模式 e2e 验证。
+> 自立项五增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口 +
+> 同族审计收尾 + 同族限流收尾 + 同族 TLS 收官。门禁全仓绿 + race + vet；
+> 本地真库 pg+mysql 全跑通过、实机双模式 e2e 验证。
 
 - [x] storetest 最后两个未钉契约：ListRealms（created_at 降序断言按
       非增写、规避 SQL µs 平局；limit>0 截断 / ≤0 无上限）与 ListRuntimes
@@ -156,6 +157,14 @@
       验证二次 GetStats 被拒且计入 GET /v1/admin/rate-limits 视图；
       api.md 错误映射补 401/403/429 行（鉴权两行为 905bc9b 漏加）、
       security.md §4/§1 补双传输与 TLS 范围——commit c07de18
+- [x] 同族收官——gRPC TLS/mTLS 缺口（security.md 四层之首仅覆盖
+      :8081）：新增 ATLAS_GRPC_TLS_CERT/_KEY/_CLIENT_CA 复用 tlsutil
+      （配 CA 即 mTLS，材料无效 fail fast，与 Registry 口独立，未配置
+      =明文历史行为）；Go SDK 新增 GRPCTLS/GRPCTLSCACert（grpcDialCreds
+      单测四路径）；其余 SDK 文档如实标注不支持+代理方案；实机四象限
+      （明文vs TLS 拒 / TLS 通 / mTLS 无证书拒 / mTLS 带证书通）——
+      commit c7c9947。四层防护至此双传输对齐；余项「其余五个 SDK 的
+      gRPC TLS 支持」因本地无对应工具链无法验证测试，挂起待拍板
 
 ### 文档-实现对账 sweep（2026-10-05）✅
 
