@@ -8,8 +8,8 @@
 > gRPC 限流 c07de18、gRPC TLS c7c9947）已完成（2026-10-05）——四层防护
 > 双传输对齐；**网络中断期（2026-10-05 起）commit 仅本地待推，全量看
 > `git log origin/main..HEAD`，网络恢复后统一补推**；巡检点火三项
-> （立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；余项「其余五个
-> SDK 的 gRPC TLS」挂起待拍板（本地无工具链无法验证），等下一批指令。
+> （立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；「其余 SDK gRPC
+> TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；等下一批指令。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -161,10 +161,11 @@
       :8081）：新增 ATLAS_GRPC_TLS_CERT/_KEY/_CLIENT_CA 复用 tlsutil
       （配 CA 即 mTLS，材料无效 fail fast，与 Registry 口独立，未配置
       =明文历史行为）；Go SDK 新增 GRPCTLS/GRPCTLSCACert（grpcDialCreds
-      单测四路径）；其余 SDK 文档如实标注不支持+代理方案；实机四象限
-      （明文vs TLS 拒 / TLS 通 / mTLS 无证书拒 / mTLS 带证书通）——
-      commit c7c9947。四层防护至此双传输对齐；余项「其余五个 SDK 的
-      gRPC TLS 支持」因本地无对应工具链无法验证测试，挂起待拍板
+      单测四路径）；实机四象限（明文vs TLS 拒 / TLS 通 / mTLS 无证书拒 /
+      mTLS 带证书通）——commit c7c9947。四层防护至此双传输对齐；
+      「其余五个 SDK 的 gRPC TLS」查实为幻影项——五语言 SDK 均为
+      REST-only（roadmap:46 与各 sdk-*.md 一致），无 gRPC 传输可谈 TLS，
+      顺带修正 security.md/api.md 两处因此误写的口径
 
 ### 文档-实现对账 sweep（2026-10-05）✅
 

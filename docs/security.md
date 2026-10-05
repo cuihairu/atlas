@@ -21,7 +21,7 @@ ATLAS_GRPC_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后�
 - 仅配 cert/key：服务器侧 TLS（客户端可校验服务端身份）。
 - 追加 `*_CLIENT_CA`：`RequireAndVerifyClientCert`，未持证书的连接在握手层直接失败。
 - 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。两个口可只开其一。
-- 客户端对接：Go SDK gRPC 传输以 `GRPCTLS: true` + `GRPCTLSCACert`（PEM CA 束）开启；REST 传输照常走 `https://` 基地址。其余 SDK 的 gRPC 传输当前不支持 TLS——要么不配 gRPC 证书保持明文（内网隔离部署），要么在 gRPC 口前置 TLS 代理。
+- 客户端对接：Go SDK gRPC 传输以 `GRPCTLS: true` + `GRPCTLSCACert`（PEM CA 束）开启；REST 传输照常走 `https://` 基地址。其余语言 SDK 目前仅提供 REST 传输（gRPC 传输为 Go SDK 独有），以 `https://` 基地址接 TLS 即可，不涉及 gRPC 口。
 
 ## 2. Admin RBAC
 

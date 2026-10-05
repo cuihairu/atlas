@@ -682,7 +682,7 @@ REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
 - **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。传输安全可选：`ATLAS_GRPC_TLS_CERT`/`_KEY`（可加 `_CLIENT_CA` 升 mTLS），未配置为明文。详见[认证](#认证)与 [security.md](security.md)。
 - **proto 定义**：[`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
-- **与 REST 的关系**：gRPC 不是替代品——SDK（v0.1.6+）双传输都可选，游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
+- **与 REST 的关系**：gRPC 不是替代品——Go SDK（v0.1.6+）双传输都可选（其余语言 SDK 为 REST 客户端），游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
 
 ```protobuf
 package atlas.v1;
