@@ -21,6 +21,7 @@ import (
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
 	httpadapter "github.com/cuihairu/atlas/internal/event/http"
+	atlashttpapi "github.com/cuihairu/atlas/internal/httpapi"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
@@ -45,13 +46,14 @@ func testLogger() *slog.Logger {
 
 func newTestConn(t *testing.T) *testConn {
 	t.Helper()
-	return newTestConnAuth(t, nil)
+	return newTestConnAuth(t, nil, nil)
 }
 
 // newTestConnAuth wires the same services with an optional auth
 // interceptor, so auth tests exercise the real full-method paths the
-// server reports ("/<proto package>.<Service>/<Method>").
-func newTestConnAuth(t *testing.T, authCfg *AuthConfig) *testConn {
+// server reports ("/<proto package>.<Service>/<Method>"). audit, when
+// non-nil, rides the chain after auth exactly like main.go wires it.
+func newTestConnAuth(t *testing.T, authCfg *AuthConfig, audit *atlashttpapi.AuditLog) *testConn {
 	t.Helper()
 	ctx := context.Background()
 
@@ -75,9 +77,16 @@ func newTestConnAuth(t *testing.T, authCfg *AuthConfig) *testConn {
 	)
 
 	lis := bufconn.Listen(1 << 20)
-	var g *grpc.Server
+	var chain []grpc.UnaryServerInterceptor
 	if authCfg != nil {
-		g = grpc.NewServer(grpc.ChainUnaryInterceptor(UnaryAuth(*authCfg)))
+		chain = append(chain, UnaryAuth(*authCfg))
+	}
+	if audit != nil {
+		chain = append(chain, UnaryAudit(audit))
+	}
+	var g *grpc.Server
+	if len(chain) > 0 {
+		g = grpc.NewServer(grpc.ChainUnaryInterceptor(chain...))
 	} else {
 		g = grpc.NewServer()
 	}

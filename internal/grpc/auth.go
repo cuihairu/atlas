@@ -14,6 +14,8 @@ package grpc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"strings"
@@ -25,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/cuihairu/atlas/api/pb"
+	atlashttpapi "github.com/cuihairu/atlas/internal/httpapi"
 )
 
 // Domain prefixes derived from the generated service descriptors, so a
@@ -127,6 +130,7 @@ func UnaryAuth(cfg AuthConfig) grpc.UnaryServerInterceptor {
 				return nil, err
 			}
 			role := roleAdmin
+			var keyFP string
 			if len(cfg.AdminKeys) > 0 {
 				key, ok := credentialFrom(ctx, false)
 				if !ok {
@@ -138,6 +142,8 @@ func UnaryAuth(cfg AuthConfig) grpc.UnaryServerInterceptor {
 					return nil, status.Error(codes.Unauthenticated,
 						"INVALID_API_KEY: the provided API key is not valid")
 				}
+				sum := sha256.Sum256([]byte(key))
+				keyFP = hex.EncodeToString(sum[:])[:12]
 				if r, ok := cfg.AdminRoles[key]; ok {
 					role = r
 				}
@@ -148,6 +154,9 @@ func UnaryAuth(cfg AuthConfig) grpc.UnaryServerInterceptor {
 				return nil, status.Error(codes.PermissionDenied,
 					"ROLE_NOT_ALLOWED: role "+role+" may only read Admin endpoints")
 			}
+			// Hand the resolved actor to the audit layer, mirroring how
+			// AdminAuth injects it for the REST chain (audit inside auth).
+			ctx = atlashttpapi.WithActor(ctx, atlashttpapi.Actor{Role: role, KeyFingerprint: keyFP})
 		}
 		return handler(ctx, req)
 	}

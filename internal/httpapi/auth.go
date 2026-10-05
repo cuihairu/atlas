@@ -63,6 +63,13 @@ func ActorFrom(ctx context.Context) Actor {
 	return a
 }
 
+// WithActor stores a resolved actor in the context. The gRPC auth
+// interceptor uses it to hand the actor to the audit layer, mirroring how
+// AdminAuth injects it for the REST middleware chain.
+func WithActor(ctx context.Context, a Actor) context.Context {
+	return context.WithValue(ctx, actorKey, a)
+}
+
 // AuthConfig controls access to Admin endpoints.
 type AuthConfig struct {
 	// APIKeys is the set of valid API keys. Clients must send one in the

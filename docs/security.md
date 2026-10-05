@@ -33,7 +33,7 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 
 - 未出现在 `ATLAS_ADMIN_ROLES` 的 Key 默认 `admin`（向后兼容只配 `ATLAS_ADMIN_API_KEYS` 的部署）。
 - 冒号缺失的条目按 admin 处理；未知角色名导致启动失败。
-- **gRPC 同规**：AdminService 的 10 个 RPC（:9090）走同一套 Key + 角色，viewer 仅可调 4 个读 RPC（GetStats / GetMigration / ListMigrations / SearchCharacters），写 RPC 返回 gRPC `PermissionDenied ROLE_NOT_ALLOWED`。RegistryService 的 3 个 RPC 同样受 `ATLAS_REGISTRY_TOKENS` + IP 白名单保护。两条传输共用同一批环境变量；gRPC 侧认证失败不进 REST 审计环（审计目前仅覆盖 REST 管理端点）。
+- **gRPC 同规**：AdminService 的 10 个 RPC（:9090）走同一套 Key + 角色，viewer 仅可调 4 个读 RPC（GetStats / GetMigration / ListMigrations / SearchCharacters），写 RPC 返回 gRPC `PermissionDenied ROLE_NOT_ALLOWED`。RegistryService 的 3 个 RPC 同样受 `ATLAS_REGISTRY_TOKENS` + IP 白名单保护。两条传输共用同一批环境变量。
 
 ## 3. 操作审计
 
@@ -62,6 +62,8 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 ```
 
 审计位于认证**之内**（拿到解析后的 actor）、限流**之外**；审计环不落盘，持久化交给日志采集管道（结构化日志行）。
+
+**双传输**：gRPC（:9090）的 AdminService RPC 记入同一个环——`path` 为全方法名（如 `/atlas.v1.AdminService/Disable`），读 RPC 记 `GET`（无 diff）、写 RPC 记 `POST`（diff 为 protojson 请求，同受 4KB 上限），gRPC status code 按 google.rpc 惯例映射为等价 HTTP 状态入环；actor 同为 `role:key指纹`（校验由 gRPC 认证拦截器完成，未配置 Key 的开发模式显示 `:anonymous`）。Registry / Discovery / Directory / Routing 的 RPC 不进审计环（与 REST 只审计 `/v1/admin/*` 一致）。
 
 ## 4. 限流（令牌桶）
 

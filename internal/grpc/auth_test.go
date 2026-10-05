@@ -194,7 +194,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		RegistryTokens: map[string]struct{}{token: {}},
 		AdminKeys:      map[string]struct{}{viewerKey: {}, opKey: {}},
 		AdminRoles:     map[string]string{viewerKey: "viewer", opKey: "operator"},
-	})
+	}, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

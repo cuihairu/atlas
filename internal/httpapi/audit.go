@@ -100,27 +100,35 @@ func (a *AuditLog) Middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		a.record(entry)
-		a.logger.Info("admin audit",
-			"actor", entry.Actor,
-			"method", entry.Method,
-			"path", entry.Path,
-			"query", entry.Query,
-			"status", entry.Status,
-			"body", string(entry.Body),
-			"time", entry.Time.Format(time.RFC3339Nano),
-		)
+		a.Record(entry)
 	})
 }
 
-func (a *AuditLog) record(e AuditEntry) {
+// Record appends an entry to the ring and mirrors it to the structured log.
+// Transport-neutral: the REST middleware and the gRPC UnaryAudit
+// interceptor both funnel through here, so ops tooling sees one ring and
+// one log vocabulary regardless of how the operation arrived.
+func (a *AuditLog) Record(e AuditEntry) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.ring = append(a.ring, e)
 	if len(a.ring) > a.max {
 		a.ring = a.ring[len(a.ring)-a.max:]
 	}
+	a.mu.Unlock()
+
+	a.logger.Info("admin audit",
+		"actor", e.Actor,
+		"method", e.Method,
+		"path", e.Path,
+		"query", e.Query,
+		"status", e.Status,
+		"body", string(e.Body),
+		"time", e.Time.Format(time.RFC3339Nano),
+	)
 }
+
+// MaxBody reports the per-entry payload bound the log enforces.
+func (a *AuditLog) MaxBody() int { return a.maxBody }
 
 // Recent returns up to n most recent entries, oldest first.
 func (a *AuditLog) Recent(n int) []AuditEntry {

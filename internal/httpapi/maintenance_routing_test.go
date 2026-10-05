@@ -71,10 +71,10 @@ func TestRoutingAvoidsMaintenanceWindowedServer(t *testing.T) {
 		Diagnosis struct {
 			WinnerID string `json:"winner_id"`
 			Servers  []struct {
-				Server            map[string]any          `json:"server"`
-				Rank              int                     `json:"rank"`
-				Eligible          bool                    `json:"eligible"`
-				Reason            string                  `json:"reason"`
+				Server            map[string]any           `json:"server"`
+				Rank              int                      `json:"rank"`
+				Eligible          bool                     `json:"eligible"`
+				Reason            string                   `json:"reason"`
 				MaintenanceWindow *model.MaintenanceWindow `json:"maintenance_window"`
 			} `json:"servers"`
 		} `json:"diagnosis"`
