@@ -38,6 +38,17 @@ type Options struct {
 	// counterpart, sent as Bearer).
 	AdminAPIKey string
 
+	// GRPCTLS enables TLS on the gRPC transport (server side:
+	// ATLAS_GRPC_TLS_CERT / ATLAS_GRPC_TLS_KEY). Plaintext stays the
+	// default, matching Atlas leaving the TLS env unset. REST is
+	// unaffected — give Addr an https:// URL instead.
+	GRPCTLS bool
+
+	// GRPCTLSCACert is a PEM CA bundle used to verify the Atlas gRPC
+	// server certificate when GRPCTLS is on (private or self-signed CAs).
+	// Empty = system roots.
+	GRPCTLSCACert string
+
 	// MaxRetries bounds retries for transient failures (network errors
 	// and 5xx responses). Zero means 3; negative disables retrying.
 	MaxRetries int

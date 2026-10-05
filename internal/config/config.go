@@ -161,6 +161,19 @@ type Config struct {
 	// Env: ATLAS_REGISTRY_CLIENT_CA, default "".
 	RegistryClientCA string
 
+	// GRPCTLSCert / GRPCTLSKey enable TLS on the gRPC listener (:9090)
+	// — same material semantics as the Registry pair above. Unset =
+	// plaintext, the historical behavior.
+	// Env: ATLAS_GRPC_TLS_CERT / ATLAS_GRPC_TLS_KEY, default "".
+	GRPCTLSCert string
+	GRPCTLSKey  string
+
+	// GRPCTLSClientCA upgrades gRPC TLS to mutual TLS: callers must
+	// present a certificate signed by this CA bundle. Requires the
+	// gRPC cert/key above.
+	// Env: ATLAS_GRPC_TLS_CLIENT_CA, default "".
+	GRPCTLSClientCA string
+
 	// AdminRoles configures RBAC as "key:role" pairs (admin/operator/viewer,
 	// comma-separated). Keys not listed here default to admin. TODO v0.1.17.
 	// Env: ATLAS_ADMIN_ROLES, default "".
@@ -263,6 +276,9 @@ func Load() Config {
 		RegistryTLSCert:     os.Getenv("ATLAS_REGISTRY_TLS_CERT"),
 		RegistryTLSKey:      os.Getenv("ATLAS_REGISTRY_TLS_KEY"),
 		RegistryClientCA:    os.Getenv("ATLAS_REGISTRY_CLIENT_CA"),
+		GRPCTLSCert:         os.Getenv("ATLAS_GRPC_TLS_CERT"),
+		GRPCTLSKey:          os.Getenv("ATLAS_GRPC_TLS_KEY"),
+		GRPCTLSClientCA:     os.Getenv("ATLAS_GRPC_TLS_CLIENT_CA"),
 		AdminRoles:          os.Getenv("ATLAS_ADMIN_ROLES"),
 		AuditEnabled:        os.Getenv("ATLAS_AUDIT_ENABLED") != "0",
 		RateLimits:          os.Getenv("ATLAS_RATE_LIMITS"),

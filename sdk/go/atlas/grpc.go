@@ -2,11 +2,15 @@ package atlas
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -31,10 +35,37 @@ type grpcBackend struct {
 	adminAPIKey   string
 }
 
+// grpcDialCreds picks the transport credentials for opts: TLS when
+// GRPCTLS is set (optionally pinning a private CA bundle), plaintext
+// otherwise — the default that matches Atlas leaving ATLAS_GRPC_TLS_*
+// unset.
+func grpcDialCreds(opts Options) (credentials.TransportCredentials, error) {
+	if !opts.GRPCTLS {
+		return insecure.NewCredentials(), nil
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if opts.GRPCTLSCACert != "" {
+		pem, err := os.ReadFile(opts.GRPCTLSCACert)
+		if err != nil {
+			return nil, fmt.Errorf("atlas: read grpc CA bundle: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("atlas: no valid certificates in grpc CA bundle %s", opts.GRPCTLSCACert)
+		}
+		tlsCfg.RootCAs = pool
+	}
+	return credentials.NewTLS(tlsCfg), nil
+}
+
 func newGRPCBackend(opts Options, policy retryPolicy) (*grpcBackend, error) {
+	creds, err := grpcDialCreds(opts)
+	if err != nil {
+		return nil, err
+	}
 	conn, err := grpc.NewClient(
 		opts.Addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(creds),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("atlas: grpc dial %s: %w", opts.Addr, err)

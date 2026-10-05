@@ -680,7 +680,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Registry / Discovery / Directory / Routing 与 REST 端点一一对应；AdminService 覆盖 10 个核心运维操作（生命周期、统计、角色检索、迁移），而 realms / shards / tags / 维护窗口 / 公告 / 审计 / 跨服配置 / diagnose / 限流 / 序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
-- **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。详见[认证](#认证)与 [security.md](security.md)。注意 :9090 目前为明文传输，Registry TLS/mTLS 仅覆盖 REST 注册口 :8081
+- **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。传输安全可选：`ATLAS_GRPC_TLS_CERT`/`_KEY`（可加 `_CLIENT_CA` 升 mTLS），未配置为明文。详见[认证](#认证)与 [security.md](security.md)。
 - **proto 定义**：[`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
 - **与 REST 的关系**：gRPC 不是替代品——SDK（v0.1.6+）双传输都可选，游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
 

@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	atlasgrpc "github.com/cuihairu/atlas/internal/grpc"
 
@@ -575,12 +576,31 @@ func main() {
 	if auditLog != nil {
 		grpcInterceptors = append(grpcInterceptors, atlasgrpc.UnaryAudit(auditLog))
 	}
-	var grpcSrv *grpc.Server
-	if len(grpcInterceptors) > 0 {
-		grpcSrv = grpc.NewServer(grpc.ChainUnaryInterceptor(grpcInterceptors...))
-	} else {
-		grpcSrv = grpc.NewServer()
+	// TLS/mTLS mirrors the Registry listener (docs/security.md §1): same
+	// tlsutil material checks and fail-fast, unset = plaintext.
+	grpcSrvOpts := []grpc.ServerOption{}
+	grpcTLSOpts := tlsutil.Options{
+		CertFile:     cfg.GRPCTLSCert,
+		KeyFile:      cfg.GRPCTLSKey,
+		ClientCAFile: cfg.GRPCTLSClientCA,
 	}
+	if grpcTLSOpts.Enabled() {
+		grpcTLS, err := tlsutil.ServerConfig(grpcTLSOpts)
+		if err != nil {
+			logger.Error("invalid grpc TLS config", "error", err)
+			os.Exit(1)
+		}
+		grpcSrvOpts = append(grpcSrvOpts, grpc.Creds(credentials.NewTLS(grpcTLS)))
+		if cfg.GRPCTLSClientCA != "" {
+			logger.Info("grpc mTLS enabled (client certificates required)")
+		} else {
+			logger.Info("grpc TLS enabled")
+		}
+	}
+	if len(grpcInterceptors) > 0 {
+		grpcSrvOpts = append(grpcSrvOpts, grpc.ChainUnaryInterceptor(grpcInterceptors...))
+	}
+	grpcSrv := grpc.NewServer(grpcSrvOpts...)
 	atlasgrpc.New(regSvc, discSvc, dirSvc, rtSvc, admSvc, evtAdapter).RegisterServices(grpcSrv)
 
 	// Graceful shutdown on SIGINT/SIGTERM.

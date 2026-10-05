@@ -2,20 +2,26 @@
 
 v0.1.17 起 Atlas 内建四层防护：Registry mTLS、Admin RBAC、操作审计与限流。所有能力均为**可选启用**，默认行为与既往版本一致。
 
-## 1. Registry mTLS（服务间）
+## 1. TLS / mTLS（Registry :8081 与 gRPC :9090）
 
-Registry API 面向内网游戏服务器，配置证书后开启 TLS；再配置客户端 CA 即升级为**双向 TLS**——客户端必须出示受信任 CA 签发的证书。
+两个面向内网的服务间监听口——REST 注册口与 gRPC 五服务口——共用同一套 TLS 语义，各自独立配置：配置证书后开启 TLS；再配置客户端 CA 即升级为**双向 TLS**——客户端必须出示受信任 CA 签发的证书。
 
 ```bash
+# Registry 口
 ATLAS_REGISTRY_TLS_CERT=/etc/atlas/server.crt.pem
 ATLAS_REGISTRY_TLS_KEY=/etc/atlas/server.key.pem
 ATLAS_REGISTRY_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后为 mTLS
+
+# gRPC 口
+ATLAS_GRPC_TLS_CERT=/etc/atlas/server.crt.pem
+ATLAS_GRPC_TLS_KEY=/etc/atlas/server.key.pem
+ATLAS_GRPC_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后为 mTLS
 ```
 
 - 仅配 cert/key：服务器侧 TLS（客户端可校验服务端身份）。
-- 追加 `ATLAS_REGISTRY_CLIENT_CA`：`RequireAndVerifyClientCert`，未持证书的连接在握手层直接失败。
-- 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。
-- 范围：仅作用于 REST 注册口 :8081。gRPC :9090 目前为明文传输（见 [api.md](api.md#grpc-api) 的 gRPC 节），游戏服与 Atlas 同内网时按网络层隔离部署。
+- 追加 `*_CLIENT_CA`：`RequireAndVerifyClientCert`，未持证书的连接在握手层直接失败。
+- 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。两个口可只开其一。
+- 客户端对接：Go SDK gRPC 传输以 `GRPCTLS: true` + `GRPCTLSCACert`（PEM CA 束）开启；REST 传输照常走 `https://` 基地址。其余 SDK 的 gRPC 传输当前不支持 TLS——要么不配 gRPC 证书保持明文（内网隔离部署），要么在 gRPC 口前置 TLS 代理。
 
 ## 2. Admin RBAC
 
@@ -89,6 +95,8 @@ ATLAS_RATE_LIMIT_DEFAULT="1000:2000"   # 未命中前缀的兜底规则
 | --- | --- | --- |
 | `ATLAS_REGISTRY_TLS_CERT` / `_KEY` | （空） | Registry TLS 服务端证书 |
 | `ATLAS_REGISTRY_CLIENT_CA` | （空） | 客户端 CA，配置即 mTLS |
+| `ATLAS_GRPC_TLS_CERT` / `_KEY` | （空） | gRPC TLS 服务端证书 |
+| `ATLAS_GRPC_TLS_CLIENT_CA` | （空） | gRPC 客户端 CA，配置即 mTLS |
 | `ATLAS_ADMIN_ROLES` | （空） | Admin RBAC `key:role` 列表 |
 | `ATLAS_AUDIT_ENABLED` | `1` | Admin 操作审计 |
 | `ATLAS_RATE_LIMITS` | （空） | 按前缀的限流规则 |

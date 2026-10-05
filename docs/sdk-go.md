@@ -52,6 +52,7 @@ loop.Set(playerCount, loadFactor)
 | --- | --- | --- |
 | 地址 | `ATLAS_HTTP_ADDR` / `ATLAS_REGISTRY_ADDR` / `ATLAS_ADMIN_ADDR`（:8080/:8081/:8082，通常经反代合一） | `ATLAS_GRPC_ADDR`（:9090） |
 | 认证 | Bearer 头 | `authorization` metadata |
+| 传输安全 | `https://` 基地址 | `GRPCTLS: true` + `GRPCTLSCACert`（私有 CA 束；服务端 `ATLAS_GRPC_TLS_CERT`/`_KEY`，可加 `_CLIENT_CA`） |
 | 错误 | `*atlas.Error{Code: "SERVER_NOT_FOUND", ...}` | `*atlas.Error{Code: "NotFound", ...}`（gRPC 状态名） |
 | 适用 | 运维工具、低频调用 | 游戏服高频心跳、SDK 内部 |
 
