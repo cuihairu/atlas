@@ -556,12 +556,12 @@ func main() {
 	// Admin RPCs are guarded when tokens/keys are configured, unconfigured
 	// stays the open dev mode. The Go SDK already sends the right
 	// credential per call over gRPC (grpc.go callCtx). Order mirrors the
-	// REST muxes: metrics outermost (like RequestCounter wrapping
+	// REST muxes: tracing outermost (every call gets a request id, even
+	// rejected ones), then metrics (like RequestCounter wrapping
 	// limiter → auth → audit, so rejected calls count), rate limit
 	// outside auth (cheap per-IP rejection before any key check), audit
 	// inside auth — Admin RPCs land in the same ring as REST operations.
-	var grpcInterceptors []grpc.UnaryServerInterceptor
-	grpcInterceptors = append(grpcInterceptors, atlasgrpc.UnaryMetrics(prom))
+	grpcInterceptors := []grpc.UnaryServerInterceptor{atlasgrpc.UnaryTrace(logger), atlasgrpc.UnaryMetrics(prom)}
 	if limiter != nil {
 		grpcInterceptors = append(grpcInterceptors, atlasgrpc.UnaryRateLimit(limiter))
 	}

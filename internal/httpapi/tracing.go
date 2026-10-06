@@ -37,15 +37,22 @@ func RequestIDFromContext(ctx context.Context) string {
 	return id
 }
 
+// WithRequestID attaches a request id to the context; the gRPC trace
+// interceptor uses it so handlers see the same correlation handle on both
+// transports.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDCtxKey{}, id)
+}
+
 // Tracing returns middleware that assigns/propagates a request id and logs
 // request completion. Wrap it outermost so rejections from inner auth or
 // rate-limit layers are traced too.
 func Tracing(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			id := sanitizeRequestID(r.Header.Get(RequestIDHeader))
+			id := SanitizeRequestID(r.Header.Get(RequestIDHeader))
 			if id == "" {
-				id = newRequestID()
+				id = NewRequestID()
 			}
 			w.Header().Set(RequestIDHeader, id)
 			ctx := context.WithValue(r.Context(), requestIDCtxKey{}, id)
@@ -78,9 +85,10 @@ func quietPath(p string) bool {
 	return false
 }
 
-// sanitizeRequestID accepts only a conservative charset (header values are
-// free-form bytes; this id ends up in logs).
-func sanitizeRequestID(id string) string {
+// SanitizeRequestID accepts only a conservative charset (header values are
+// free-form bytes; this id ends up in logs). Exported so the gRPC trace
+// interceptor enforces the identical charset on x-request-id metadata.
+func SanitizeRequestID(id string) string {
 	if id == "" || len(id) > maxRequestIDLen {
 		return ""
 	}
@@ -95,8 +103,8 @@ func sanitizeRequestID(id string) string {
 	return id
 }
 
-// newRequestID mints a 128-bit random hex id.
-func newRequestID() string {
+// NewRequestID mints a 128-bit random hex id.
+func NewRequestID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		// crypto/rand failing means the system entropy source is gone;
