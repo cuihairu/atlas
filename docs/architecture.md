@@ -279,7 +279,7 @@ Atlas 对外暴露的运维指标建议覆盖：
 | `atlas_directory_write_duration_seconds{op}` | 角色目录写路径延迟（REST 写 + 事件投影） |
 | `atlas_registry_write_duration_seconds{op}` | 注册/心跳/注销写路径延迟（最热写路径，写劣化先于此显形） |
 
-三个 HTTP 监听口另有请求级追踪：`X-Request-ID` 沿用/生成并回显，请求完成时记录含 request_id 的访问日志（`/healthz`、`/readyz`、`/metrics` 除外），详见 docs/api.md「请求追踪」。
+三个 HTTP 监听口与 gRPC 口另有请求级追踪：`X-Request-ID`（gRPC 为 `x-request-id` metadata）沿用/生成并回显，请求完成时记录含 request_id 的访问日志（`/healthz`、`/readyz`、`/metrics` 除外），被限流/鉴权拒绝的请求同样有 id，详见 docs/api.md「请求追踪」。
 
 这些指标同时服务于容量规划与告警（例如 `suspect` 状态服务器数突增）。
 
