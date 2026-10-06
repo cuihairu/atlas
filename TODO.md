@@ -8,7 +8,9 @@
 > gRPC 限流 c07de18、gRPC TLS c7c9947）已完成（2026-10-05）——四层防护
 > 双传输对齐；中断期积压已全部推送（至 60f03e5，含幻影项销账与口径修正）；
 > 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
-> 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；等下一批指令。
+> 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；
+> 续跑两增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口
+> （见「可观测性续跑（2026-10-07）」段）；剩余 OpenTelemetry span 树挂起待拍板。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -117,6 +119,27 @@
       （commit fef3567）
 - [x] 文档同步：api.md / architecture.md / sync.md 指标表补行，
       roadmap.md 可观测性行更新（commit fef3567）
+
+---
+
+## 可观测性续跑（2026-10-07）✅
+
+> 停电恢复续跑令两增量：roadmap「可观测性深化」残留的 gRPC 口缺口收尾，
+> 双传输对齐主题收官。剩余 OpenTelemetry span 树挂起待拍板（新依赖 +
+> 导出后端选型，非自查可做项）。
+
+- [x] `atlas_admin_requests_total` 接入 gRPC Admin RPC：`UnaryMetrics`
+      拦截器挂最外层（与 REST RequestCounter 包住限流/鉴权同序，被拒
+      调用照计），endpoint=全方法名、status=httpStatusOf 映射 HTTP 码，
+      非-admin 域不碰计数器（对齐 REST 计数面不加项）；文档四处同步
+      （commit aa52b80）
+- [x] X-Request-ID 贯通 gRPC 口：`UnaryTrace` 拦截器最外层（被拒 RPC
+      同样有 id），`x-request-id` metadata 沿用/生成（与 REST 同字符集
+      同 64 字符上限）/回显到响应 metadata（错误路径同样回显），上下文
+      经 `httpapi.WithRequestID` 与 REST 同键、handler 侧同一读取口；
+      `grpc request` 访问日志（request_id/method/code/duration_ms）；
+      实机四连验证（合法沿用/同 id 被限流仍带 id/非法替换/缺省生成）
+      ——commit 见本批归档提交
 
 ---
 
