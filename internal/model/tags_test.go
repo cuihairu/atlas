@@ -44,11 +44,11 @@ func TestValidateServerTags(t *testing.T) {
 
 	bad := []ServerTag{
 		{Code: "hot", Label: "火热", Tier: TierHot},
-		{Code: "HOT", Label: "火热", Tier: TierHot},         // uppercase code
-		{Code: "-x", Label: "x", Tier: TierNeutral},           // bad shape
-		{Code: "ok", Label: "", Tier: TierNeutral},            // missing label
-		{Code: "ok2", Label: "x", Tier: "sparkly"},            // unknown tier
-		{Code: "hot", Label: "dup", Tier: TierNeutral},        // duplicate code
+		{Code: "HOT", Label: "火热", Tier: TierHot},      // uppercase code
+		{Code: "-x", Label: "x", Tier: TierNeutral},    // bad shape
+		{Code: "ok", Label: "", Tier: TierNeutral},     // missing label
+		{Code: "ok2", Label: "x", Tier: "sparkly"},     // unknown tier
+		{Code: "hot", Label: "dup", Tier: TierNeutral}, // duplicate code
 	}
 	for i, tag := range bad {
 		if err := ValidateServerTags([]ServerTag{ok[0], tag}); err == nil {
@@ -89,7 +89,9 @@ func TestRegistrationBlocked(t *testing.T) {
 	}
 
 	// 禁止注册 always wins, even in warn mode.
-	s := base(func(s *Server) { s.Tags = []ServerTag{{Code: TagNoRegister, Label: "禁止注册", Tier: TierWarning, Public: true}} })
+	s := base(func(s *Server) {
+		s.Tags = []ServerTag{{Code: TagNoRegister, Label: "禁止注册", Tier: TierWarning, Public: true}}
+	})
 	if code, msg := s.RegistrationBlocked(false); code != "REGISTRATION_FORBIDDEN" || msg == "" {
 		t.Fatalf("no_register block = %q %q", code, msg)
 	}
@@ -98,7 +100,9 @@ func TestRegistrationBlocked(t *testing.T) {
 	}
 
 	// 维护中 via tag: blocks by default, warns when warnOnly.
-	s = base(func(s *Server) { s.Tags = []ServerTag{{Code: TagMaintenance, Label: "维护中", Tier: TierWarning, Public: true}} })
+	s = base(func(s *Server) {
+		s.Tags = []ServerTag{{Code: TagMaintenance, Label: "维护中", Tier: TierWarning, Public: true}}
+	})
 	if code, _ := s.RegistrationBlocked(false); code != "SERVER_IN_MAINTENANCE" {
 		t.Fatalf("maintenance tag block = %q", code)
 	}

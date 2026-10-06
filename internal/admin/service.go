@@ -424,9 +424,9 @@ func (s *Service) AddServerTag(ctx context.Context, serverID string, req AddServ
 	}
 
 	tag := model.FillTag(model.ServerTag{
-		Code:   req.Code,
-		Label:  req.Label,
-		Tier:   req.Tier,
+		Code:  req.Code,
+		Label: req.Label,
+		Tier:  req.Tier,
 	}, req.Public)
 
 	merged := make([]model.ServerTag, 0, len(srv.Tags)+1)

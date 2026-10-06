@@ -187,17 +187,17 @@ type Server struct {
 	// declares coexisting channels ("subscribe,callback"); an empty value is
 	// undeclared — effective poll. Callback anywhere in the list requires
 	// NotifyCallbackURL.
-	NotifyMode        string       `json:"notify_mode,omitempty"`
-	NotifyCallbackURL string       `json:"notify_callback_url,omitempty"`
+	NotifyMode        string `json:"notify_mode,omitempty"`
+	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 	// Status is the Effective (生效态) lifecycle state advertised to every
 	// external view — discovery, routing, stats, clients. Operator intent
 	// (Desired) and heartbeat observation (Observed) reconcile into it; the
 	// layering is defined in docs/lifecycle.md §0 and the storage split in
 	// docs/data-model.md.
-	Status            ServerStatus `json:"status"`
-	Players           int          `json:"players"`
-	Load              float64      `json:"load"`
-	LastSeenAt        *time.Time   `json:"last_seen_at,omitempty"`
+	Status     ServerStatus `json:"status"`
+	Players    int          `json:"players"`
+	Load       float64      `json:"load"`
+	LastSeenAt *time.Time   `json:"last_seen_at,omitempty"`
 	// StartedAt is the game server process start time reported at register
 	// (TODO v0.1.20); re-registration (process restart) updates it, so
 	// discovery can surface uptime. Nil on records registered before v0.1.20.

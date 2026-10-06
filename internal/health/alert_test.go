@@ -29,8 +29,8 @@ func (c *recordCapture) Handle(_ context.Context, r slog.Record) error {
 }
 
 func (c *recordCapture) Enabled(_ context.Context, _ slog.Level) bool { return true }
-func (c *recordCapture) WithAttrs(_ []slog.Attr) slog.Handler        { return c }
-func (c *recordCapture) WithGroup(_ string) slog.Handler             { return c }
+func (c *recordCapture) WithAttrs(_ []slog.Attr) slog.Handler         { return c }
+func (c *recordCapture) WithGroup(_ string) slog.Handler              { return c }
 
 func (c *recordCapture) alerts() []map[string]string {
 	c.mu.Lock()

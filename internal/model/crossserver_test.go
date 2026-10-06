@@ -200,4 +200,3 @@ func TestCloneCrossServerSpecIndependent(t *testing.T) {
 		t.Error("mutating the clone wrote through to the source")
 	}
 }
-

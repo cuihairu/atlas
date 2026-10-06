@@ -142,12 +142,12 @@ func TestCreatedAtStamp(t *testing.T) {
 
 	// Same for announcements.
 	a := &model.Announcement{
-		ID:        "ann-createdat",
-		ServerID:  nil,
-		Title:     "test",
-		Level:     "info",
-		StartsAt:  now.Add(-time.Hour),
-		EndsAt:    now.Add(time.Hour),
+		ID:       "ann-createdat",
+		ServerID: nil,
+		Title:    "test",
+		Level:    "info",
+		StartsAt: now.Add(-time.Hour),
+		EndsAt:   now.Add(time.Hour),
 	}
 	if err := s.CreateAnnouncement(ctx, a); err != nil {
 		t.Fatalf("create announcement: %v", err)

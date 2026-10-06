@@ -47,12 +47,12 @@ func (t TagTier) Valid() bool {
 // Preset tag codes. These are stable machine codes: clients match on Code,
 // never on Label (labels are operator-editable display text).
 const (
-	TagHot         = "hot"          // 火热
-	TagFull        = "full"         // 爆满
-	TagNoRegister  = "no_register"  // 禁止注册 — blocks character creation
-	TagMaintenance = "maintenance"  // 维护中 — block or warn, per config
-	TagNew         = "new"          // 新服
-	TagRecommended = "recommended"  // 推荐
+	TagHot         = "hot"         // 火热
+	TagFull        = "full"        // 爆满
+	TagNoRegister  = "no_register" // 禁止注册 — blocks character creation
+	TagMaintenance = "maintenance" // 维护中 — block or warn, per config
+	TagNew         = "new"         // 新服
+	TagRecommended = "recommended" // 推荐
 )
 
 // ServerTag is one operator-set marker on a server.

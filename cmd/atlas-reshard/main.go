@@ -10,12 +10,16 @@
 //
 // --from-dsn      source PostgreSQL connection string (single store).
 // --to-dsn        comma-separated destination connection strings. One entry
-//                 means a plain single-store copy; N entries build an
-//                 N-way sharded destination (account-hash routed).
+//
+//	means a plain single-store copy; N entries build an
+//	N-way sharded destination (account-hash routed).
+//
 // --shards        only valid together with a single --to-dsn: replicate the
-//                 logical shard layout over one physical store (N logical
-//                 shards, same physical tables) — useful to verify routing
-//                 before splitting storage.
+//
+//	logical shard layout over one physical store (N logical
+//	shards, same physical tables) — useful to verify routing
+//	before splitting storage.
+//
 // --batch         source read page size (default 500).
 //
 // The tool never deletes source data and never switches live traffic: stop

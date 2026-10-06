@@ -132,7 +132,7 @@ func TestApplyLifecycle(t *testing.T) {
 	apiOwned := &model.Server{
 		ID: "api-srv", Region: "cn", Version: "1.0.0",
 		Endpoint: model.Endpoint{Host: "10.0.0.9", Port: 30001},
-		Status: model.StatusOnline, StartedAt: &started, Source: "api",
+		Status:   model.StatusOnline, StartedAt: &started, Source: "api",
 	}
 	if err := s.RegisterServer(ctx, apiOwned); err != nil {
 		t.Fatalf("register api server: %v", err)
