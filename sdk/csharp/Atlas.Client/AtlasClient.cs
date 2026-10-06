@@ -280,6 +280,11 @@ public sealed class AtlasClient : IDisposable, IAsyncDisposable
                 if (bodyJson is not null)
                     req.Content = new StringContent(bodyJson, Encoding.UTF8, "application/json");
                 ApplyAuth(req.Headers, auth);
+                if (_opts.DefaultHeaders is not null)
+                {
+                    foreach (var kv in _opts.DefaultHeaders)
+                        req.Headers.TryAddWithoutValidation(kv.Key, kv.Value);
+                }
 
                 using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
                 var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

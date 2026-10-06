@@ -29,6 +29,7 @@ var options = new AtlasClientOptions
     RegistryBaseUrl = "http://localhost:8081", // Registry 独立端口（可选）
     RegistryToken = "...",                     // Registry 域 Bearer
     AdminApiKey = "...",                       // Admin 域 API Key
+    DefaultHeaders = new() { ["X-Request-ID"] = "..." }, // 每次调用都带的静态头（可选，关联 id 见 docs/api.md「请求追踪」）
 };
 using var client = new AtlasClient(options);
 

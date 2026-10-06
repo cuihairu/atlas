@@ -315,6 +315,29 @@ public sealed class AtlasClientTests
     }
 
     [Fact]
+    public async Task DefaultHeaders_RideOnEveryCall()
+    {
+        using var fake = new FakeAtlas();
+        fake.On(r => r is { Method: "GET", Path: "/v1/admin/stats" },
+            """{"total_servers":0,"servers_by_status":{},"total_players":0,"total_capacity":0}""");
+
+        using var client = new AtlasClient(new AtlasClientOptions
+        {
+            BaseUrl = fake.BaseUrl,
+            AdminApiKey = "admin-key",
+            MaxRetries = 0,
+            BaseBackoffMs = 1,
+            DefaultHeaders = new Dictionary<string, string> { ["X-Request-ID"] = "cs-req-1" },
+        });
+        var stats = await client.StatsAsync();
+
+        Assert.Equal(0, stats.TotalServers);
+        var req = fake.Requests.Single();
+        Assert.True(req.HasHeader("X-Request-ID", "cs-req-1"));
+        Assert.True(req.HasHeader("Authorization", "Bearer admin-key")); // auth intact
+    }
+
+    [Fact]
     public async Task SearchCharacters_UsesAdminPath()
     {
         using var fake = new FakeAtlas();

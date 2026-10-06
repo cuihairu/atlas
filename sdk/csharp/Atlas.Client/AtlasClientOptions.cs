@@ -20,6 +20,11 @@ public sealed class AtlasClientOptions
     /// counterpart, sent as Bearer).</summary>
     public string? AdminApiKey { get; set; }
 
+    /// <summary>Static headers sent on every call (docs/api.md 请求追踪) —
+    /// e.g. a process-level "X-Request-ID" correlation id. Applied after
+    /// auth, keys verbatim.</summary>
+    public Dictionary<string, string>? DefaultHeaders { get; set; }
+
     /// <summary>Per-attempt HTTP timeout in milliseconds. 0 disables it.</summary>
     public int TimeoutMs { get; set; } = 10_000;
 
