@@ -540,3 +540,18 @@ test("auto heartbeat error callback", async () => {
     c.close();
   }
 });
+
+test("default headers ride on every call", async () => {
+  const s = await FakeAtlas.start();
+  s.routes.push(["GET", /\/v1\/admin\/stats$/, () => [200, { total_servers: 0 }]]);
+  const c = clientFor(s, { defaultHeaders: { "X-Request-ID": "js-req-1" } });
+  try {
+    assert.equal((await c.getStats()).totalServers, 0);
+  } finally {
+    c.close();
+    s.close();
+  }
+  const req = bodyOf(s, "GET", /\/v1\/admin\/stats$/);
+  assert.equal(req.headers["x-request-id"], "js-req-1");
+  assert.equal(req.headers.accept, "application/json");
+});

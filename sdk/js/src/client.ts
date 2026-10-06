@@ -47,6 +47,9 @@ export interface AtlasClientOptions {
   registryToken?: string;
   /** API key for the Admin scope. */
   adminApiKey?: string;
+  /** Static headers sent on every call (docs/api.md 请求追踪) — e.g. a
+   * process-level "X-Request-ID" correlation id. */
+  defaultHeaders?: Record<string, string>;
   /** Per-attempt timeout in ms (default 10000; 0 disables). */
   timeoutMs?: number;
   /** Retries for transient failures — network errors and 5xx (default 3). */
@@ -89,6 +92,7 @@ export class AtlasClient {
   private readonly registryBaseUrl: string;
   private readonly registryToken: string;
   private readonly adminApiKey: string;
+  private readonly defaultHeaders: Record<string, string>;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
   private readonly baseBackoffMs: number;
@@ -98,6 +102,7 @@ export class AtlasClient {
     this.registryBaseUrl = (options.registryBaseUrl ?? this.baseUrl).replace(/\/+$/, "");
     this.registryToken = options.registryToken ?? "";
     this.adminApiKey = options.adminApiKey ?? "";
+    this.defaultHeaders = options.defaultHeaders ?? {};
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.maxRetries = options.maxRetries ?? 3;
     this.baseBackoffMs = options.baseBackoffMs ?? 100;
@@ -119,6 +124,9 @@ export class AtlasClient {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (opts.json !== undefined) headers["Content-Type"] = "application/json";
     if (opts.bearer) headers.Authorization = `Bearer ${opts.bearer}`;
+    for (const [key, value] of Object.entries(this.defaultHeaders)) {
+      headers[key] = value;
+    }
 
     let attempt = 0;
     for (;;) {
