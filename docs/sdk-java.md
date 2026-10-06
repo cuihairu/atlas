@@ -25,7 +25,8 @@ try (AtlasClient client = new AtlasClient(new AtlasClientOptions()
         .setBaseUrl("http://localhost:8080")
         .setRegistryBaseUrl("http://localhost:8081")  // Registry 独立端口（可选）
         .setRegistryToken("...")                      // Registry 域 Bearer
-        .setAdminApiKey("..."))) {                    // Admin 域 API Key
+        .setAdminApiKey("...")                        // Admin 域 API Key
+        .setDefaultHeaders(Map.of("X-Request-ID", "..."))) { // 每次调用都带的静态头（可选，关联 id 见 api.md「请求追踪」）
 
     var reg = client.register(new RegisterRequest(      // 注册
             "game-1001", "Game 1001", "cn-east",
@@ -56,6 +57,7 @@ try (AtlasClient client = new AtlasClient(new AtlasClientOptions()
 | `setRegistryBaseUrl` | 同 `baseUrl` | Registry 独立端口（`:8081`）覆盖；反代合并部署时不用设 |
 | `setRegistryToken` | 空 | Registry 域 Bearer（`ATLAS_REGISTRY_TOKENS` 之一） |
 | `setAdminApiKey` | 空 | Admin 域 API Key（`ATLAS_ADMIN_API_KEYS` 之一） |
+| `setDefaultHeaders` | 空 | 每次调用都带的静态头（键原样覆盖；进程级 `X-Request-ID` 关联 id 走这里，见 api.md「请求追踪」） |
 | `setTimeoutMs` | `10000` | OkHttp `callTimeout`；`0` 关闭超时 |
 | `setMaxRetries` | `3` | 瞬时失败（网络错误 / 5xx）重试次数；4xx 不重试 |
 | `setBaseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |

@@ -22,6 +22,7 @@ client = AtlasClient(
     registry_base_url="http://localhost:8081",  # Registry 独立端口（可选）
     registry_token="...",                       # Registry 域 Bearer
     admin_api_key="...",                        # Admin 域 API Key
+    default_headers={"X-Request-ID": "..."},    # 每次调用都带的静态头（可选，关联 id 见 api.md「请求追踪」）
 )
 
 reg = client.register(RegisterRequest(            # 注册

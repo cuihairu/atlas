@@ -10,8 +10,8 @@
 > 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
 > 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；
 > 续跑三增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口、
-> Go SDK DefaultHeaders 关联头（见「可观测性续跑（2026-10-07）」段）；
-> 剩余 OpenTelemetry span 树挂起待拍板。
+> Go SDK DefaultHeaders 关联头；关联头随即铺齐五语言 SDK（见
+> 「可观测性续跑（2026-10-07）」段）；剩余 OpenTelemetry span 树挂起待拍板。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -147,6 +147,13 @@
       sdk-go.md 客户端示例与双传输表补「关联头」行；测试钉 REST
       httptest 头回读 + gRPC 真服务 wire 级 metadata 捕获；实机验证
       同一 id 双传输访问日志同现——commit 见本批归档提交
+- [x] 关联头通道铺齐五语言 SDK：Python `default_headers=` a5eec20、
+      JS `defaultHeaders` da0458f、Java `setDefaultHeaders` 7b313cd、
+      C# `DefaultHeaders` 866d382、C++ `Options.default_headers` 5ef329f
+      ——与 Go 同语义（Authorization 之后键原样生效），各自工具链测试
+      钉关联 id 到达 FakeAtlas 并与既有头共存；六处 README 快速上手补行，
+      五页 sdk-*.md 选项示例补齐（JS/Java/C# 含选项表行），api.md
+      「请求追踪」句改为五 SDK 全量口径；VitePress 构建过
 
 ---
 

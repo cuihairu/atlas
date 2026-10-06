@@ -20,6 +20,7 @@ const client = new AtlasClient({
   registryBaseUrl: "http://localhost:8081", // Registry 独立端口（可选）
   registryToken: "...",                     // Registry 域 Bearer
   adminApiKey: "...",                       // Admin 域 API Key
+  defaultHeaders: { "X-Request-ID": "..." }, // 每次调用都带的静态头（可选，关联 id 见 api.md「请求追踪」）
 });
 
 await client.register({                     // 注册
@@ -53,6 +54,7 @@ client.close();
 | `registryBaseUrl` | 同 `baseUrl` | Registry 独立端口（`:8081`）覆盖；反代合并部署时不用设 |
 | `registryToken` | 空 | Registry 域 Bearer（`ATLAS_REGISTRY_TOKENS` 之一） |
 | `adminApiKey` | 空 | Admin 域 API Key（`ATLAS_ADMIN_API_KEYS` 之一） |
+| `defaultHeaders` | 空 | 每次调用都带的静态头（键原样覆盖；进程级 `X-Request-ID` 关联 id 走这里，见 api.md「请求追踪」） |
 | `timeoutMs` | `10000` | 每次尝试的 `AbortSignal.timeout`；`0` 关闭超时 |
 | `maxRetries` | `3` | 瞬时失败（网络错误 / 超时 / 5xx）重试次数；4xx 不重试 |
 | `baseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |

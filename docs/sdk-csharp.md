@@ -21,6 +21,7 @@ var options = new AtlasClientOptions
     RegistryBaseUrl = "http://localhost:8081", // Registry 独立端口（可选）
     RegistryToken = "...",                     // Registry 域 Bearer
     AdminApiKey = "...",                       // Admin 域 API Key
+    DefaultHeaders = new() { ["X-Request-ID"] = "..." }, // 每次调用都带的静态头（可选，关联 id 见 api.md「请求追踪」）
 };
 using var client = new AtlasClient(options);
 
@@ -52,6 +53,7 @@ await client.UnregisterAsync("game-1001");
 | `RegistryBaseUrl` | 同 `BaseUrl` | Registry 独立端口（`:8081`）覆盖；反代合并部署时不用设 |
 | `RegistryToken` | 空 | Registry 域 Bearer（`ATLAS_REGISTRY_TOKENS` 之一） |
 | `AdminApiKey` | 空 | Admin 域 API Key（`ATLAS_ADMIN_API_KEYS` 之一） |
+| `DefaultHeaders` | 空 | 每次调用都带的静态头（键原样覆盖；进程级 `X-Request-ID` 关联 id 走这里，见 api.md「请求追踪」） |
 | `TimeoutMs` | `10000` | `HttpClient.Timeout`；`0` 关闭；超时按网络错误参与重试 |
 | `MaxRetries` | `3` | 瞬时失败（网络错误 / 5xx）重试次数；4xx 不重试 |
 | `BaseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |
