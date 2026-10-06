@@ -52,8 +52,10 @@ func newTestConn(t *testing.T) *testConn {
 // newTestConnAuth wires the same services with an optional auth
 // interceptor, so auth tests exercise the real full-method paths the
 // server reports ("/<proto package>.<Service>/<Method>"). audit, when
-// non-nil, rides the chain after auth exactly like main.go wires it.
-func newTestConnAuth(t *testing.T, authCfg *AuthConfig, audit *atlashttpapi.AuditLog) *testConn {
+// non-nil, rides the chain after auth exactly like main.go wires it;
+// extra interceptors are prepended (outermost first), mirroring main.go
+// where UnaryMetrics sits outside auth/audit.
+func newTestConnAuth(t *testing.T, authCfg *AuthConfig, audit *atlashttpapi.AuditLog, extra ...grpc.UnaryServerInterceptor) *testConn {
 	t.Helper()
 	ctx := context.Background()
 
@@ -78,6 +80,7 @@ func newTestConnAuth(t *testing.T, authCfg *AuthConfig, audit *atlashttpapi.Audi
 
 	lis := bufconn.Listen(1 << 20)
 	var chain []grpc.UnaryServerInterceptor
+	chain = append(chain, extra...)
 	if authCfg != nil {
 		chain = append(chain, UnaryAuth(*authCfg))
 	}

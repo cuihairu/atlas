@@ -660,7 +660,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 | `atlas_directory_characters_total` | gauge | 角色索引条目总数 |
 | `atlas_registry_heartbeat_lag_seconds` | histogram | 健康巡检时观测到的心跳延迟 |
 | `atlas_discovery_requests_total{filter}` | counter | 发现服务列表请求（按过滤条件） |
-| `atlas_admin_requests_total{endpoint,status}` | counter | 管理 API 请求（按路由与状态码） |
+| `atlas_admin_requests_total{endpoint,status}` | counter | 管理 API 请求（按路由与状态码；`endpoint` REST 为路由模式、gRPC Admin RPC 为全方法名，`status` 两传输同为 HTTP 状态码——gRPC code 按 google.rpc 约定映射，被限流/鉴权拒绝的调用同样计数） |
 | `atlas_health_transitions_total{from,to}` | counter | 服务器生命周期状态迁移 |
 | `atlas_directory_write_duration_seconds{op}` | histogram | 角色目录写路径延迟（`op` = 服务层 `create`/`update`/`delete`，或事件投影名 `created`/`updated`/`deleted`/…——生产写路径 REST/gRPC 均经事件总线投影） |
 | `atlas_registry_write_duration_seconds{op}` | histogram | 注册写路径延迟（`op` = `register` / `heartbeat` / `unregister`）——全舰队最热写路径：心跳落盘变慢会先表现为该指标抬升，随后才出现假 suspect/offline 巡检误判 |
@@ -681,6 +681,7 @@ REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
 - **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。传输安全可选：`ATLAS_GRPC_TLS_CERT`/`_KEY`（可加 `_CLIENT_CA` 升 mTLS），未配置为明文。详见[认证](#认证)与 [security.md](security.md)。
+- **观测同源**：Admin RPC 计入同一 `atlas_admin_requests_total`（`endpoint` 为 gRPC 全方法名、`status` 为映射后的 HTTP 状态码，被限流/鉴权拒绝的调用同样计数），注册/心跳写延迟与发现请求量本就走服务层指标——两条传输汇进同一套序列，指标表见上方 `GET /metrics` 端点。
 - **proto 定义**：[`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)，Go 包 `github.com/cuihairu/atlas/api/pb`
 - **与 REST 的关系**：gRPC 不是替代品——Go SDK（v0.1.6+）双传输都可选（其余语言 SDK 为 REST 客户端），游戏服侧高频心跳走 gRPC 更省开销，运维工具走 REST 更顺手
 

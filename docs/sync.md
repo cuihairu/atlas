@@ -292,6 +292,6 @@ flowchart LR
 | `atlas_registry_servers_total{status}` | 各状态服务器数 |
 | `atlas_registry_write_duration_seconds{op}` | 注册/心跳/注销写路径延迟——心跳写变慢先于此显形，随后才是假 suspect/offline |
 | `atlas_discovery_requests_total{filter}` | 发现查询量 |
-| `atlas_admin_requests_total{endpoint,status}` | Admin 请求量 |
+| `atlas_admin_requests_total{endpoint,status}` | Admin 请求量（REST 路由 + gRPC Admin 全方法名，状态码同词表） |
 
 排查索引脱节：先看 `atlas_directory_characters_total` 是否停滞，再看适配器日志里的重投递/死信记录，最后确认总线（broker）本身可达。

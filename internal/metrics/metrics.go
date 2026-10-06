@@ -63,7 +63,7 @@ func New(s store.Store) *Metrics {
 		}, []string{"filter"}),
 		AdminRequests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "atlas_admin_requests_total",
-			Help: "Admin API requests, labeled by route pattern and status code.",
+			Help: "Admin API requests, labeled by route pattern (REST) or gRPC full method, and status code.",
 		}, []string{"endpoint", "status"}),
 		HealthTransitions: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "atlas_health_transitions_total",
