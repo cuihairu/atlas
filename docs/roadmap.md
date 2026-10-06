@@ -90,7 +90,7 @@ flowchart TB
 | ✅ **Routing 维护前引导**（P1，2026-10-04 交付） | 推荐感知维护窗口：活动窗口或 Lead 内（缺省 5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）开始的服务器进入排除——strict/fallback 两阶段一致生效，全排除如实 404；diagnose 逐台摊开窗口判定（`maintenance_window` 字段 + `maintenance_window=active|upcoming` 原因），`eligible` 计入窗口 | 已完成，语义见 [API §Routing](/api#routing) 与 [生命周期 §5](/lifecycle#_5-计划维护窗口-v0-1-20) |
 | **Routing 策略扩展（余项）** | 权重、灰度放量的白名单——仍只做推荐元数据，不越调度边界 | 有真实运营需求反馈 |
 | **公告与窗口批量编排** | 舰队级窗口模板、批量创建、与迁移编排联动 | 多服务器运营场景验证 |
-| ✅ **可观测性深化（首期 + 注册写路径 + Admin 计数）** | 首期：请求级追踪 X-Request-ID 贯通三监听口 + 目录写路径延迟指标 `atlas_directory_write_duration_seconds`；二期（2026-10-04）：注册写路径指标 `atlas_registry_write_duration_seconds{op}`（`op` = register / heartbeat / unregister）——全舰队最热写路径，写劣化先于此显形；三期（2026-10-07）：`atlas_admin_requests_total` 接入 gRPC Admin RPC（endpoint=全方法名、status=映射 HTTP 码，链序与 REST 同为最外层、被拒调用同样计数） | 已完成；后续剩余：请求级 span tracing |
+| ✅ **可观测性深化（首期 + 注册写路径 + Admin 计数）** | 首期：请求级追踪 X-Request-ID 贯通三监听口 + 目录写路径延迟指标 `atlas_directory_write_duration_seconds`；二期（2026-10-04）：注册写路径指标 `atlas_registry_write_duration_seconds{op}`（`op` = register / heartbeat / unregister）——全舰队最热写路径，写劣化先于此显形；三期（2026-10-07）：`atlas_admin_requests_total` 接入 gRPC Admin RPC（endpoint=全方法名、status=映射 HTTP 码，链序与 REST 同为最外层、被拒调用同样计数）；四期（2026-10-07）：X-Request-ID 贯通 gRPC 口（`x-request-id` metadata 沿用/生成/回显 + `grpc request` 访问日志，追踪拦截器最外层，被拒 RPC 同样有 id） | 已完成；剩余 OpenTelemetry span 树挂起待拍板（新依赖 + 导出后端选型） |
 | **Kubernetes 部署样例** | Helm chart / Operator 仍是"明确不做"，但部署样例可讨论 | 有部署需求提出 |
 
 ---
