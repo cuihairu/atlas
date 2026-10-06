@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -47,6 +48,10 @@ struct Options {
     std::string registry_token;
     /// Admin domain bearer (ATLAS_ADMIN_API_KEYS counterpart).
     std::string admin_api_key;
+    /// Static headers sent on every call (docs/api.md 请求追踪) — e.g. a
+    /// process-level "X-Request-ID" correlation id. Applied after auth,
+    /// keys verbatim.
+    std::map<std::string, std::string> default_headers;
     /// Retries for transient failures (network errors + 5xx).
     int max_retries = 3;
     /// Backoff ceiling growth base; each attempt doubles it with full jitter.

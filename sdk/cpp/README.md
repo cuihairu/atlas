@@ -25,6 +25,7 @@ atlas::Client c; // 默认 http://localhost:8080
 atlas::Options o;
 o.base_url = "http://atlas:8080";
 o.registry_token = "..."; // Registry 域 Bearer
+o.default_headers = {{"X-Request-ID", "..."}}; // 每次调用都带的静态头（可选，关联 id 见 docs/api.md「请求追踪」）
 atlas::Client c2{o};
 
 auto reg = c2.Register(req);                          // 注册

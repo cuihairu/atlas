@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <mutex>
 #include <thread>
 
 #include <httplib.h>
@@ -23,6 +24,9 @@ struct TestServer {
     std::atomic<int> register_auth_ok{0};
     std::atomic<int> heartbeat_count{0};
     std::atomic<int> last_players{0};
+
+    std::mutex hdr_mu;
+    std::string last_request_id;
 
     TestServer() {
         srv.Get("/stop", [&](const httplib::Request&, httplib::Response& res) {
@@ -88,6 +92,16 @@ struct TestServer {
                 R"({"account_id":7,"server_id":"game-1","character_id":823712,"name":"Hero",)"
                 R"("level":1,"class_id":3,"created_at":"2026-10-01T00:00:00Z",)"
                 R"("updated_at":"2026-10-01T00:00:00Z"})",
+                "application/json");
+        });
+
+        srv.Get("/v1/admin/stats", [&](const httplib::Request& req, httplib::Response& res) {
+            {
+                std::lock_guard<std::mutex> lk(hdr_mu);
+                last_request_id = req.get_header_value("X-Request-ID");
+            }
+            res.set_content(
+                R"({"total_servers":0,"servers_by_status":{},"total_players":0,"total_capacity":0})",
                 "application/json");
         });
     }
@@ -196,6 +210,18 @@ void TestAutoHeartbeat(TestServer& ts) {
     CHECK(ts.last_players.load() == 42);
 }
 
+void TestDefaultHeaders(TestServer& ts) {
+    auto opts = TestOptions("http://127.0.0.1:" + std::to_string(ts.port));
+    opts.default_headers = {{"X-Request-ID", "cpp-req-1"}};
+    atlas::Client c(std::move(opts));
+
+    auto stats = c.GetStats();
+    CHECK(stats.total_servers == 0);
+
+    std::lock_guard<std::mutex> lk(ts.hdr_mu);
+    CHECK(ts.last_request_id == "cpp-req-1");
+}
+
 } // namespace
 
 int main() {
@@ -203,6 +229,7 @@ int main() {
     ts.Start();
     TestLifecycle(ts);
     TestAutoHeartbeat(ts);
+    TestDefaultHeaders(ts);
     if (failures == 0) {
         std::cout << "all atlas cpp sdk tests passed\n";
         return 0;

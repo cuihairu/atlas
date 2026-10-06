@@ -148,6 +148,10 @@ json Client::Impl::Do(const std::string& base_url, const std::string& method,
 
     httplib::Headers headers;
     if (!bearer.empty()) headers = httplib::Headers{{"Authorization", "Bearer " + bearer}};
+    for (const auto& [key, value] : opts.default_headers) {
+        headers.erase(key);
+        headers.emplace(key, value);
+    }
 
     std::string payload = body ? body->dump() : "";
     httplib::Result res = [&] {
