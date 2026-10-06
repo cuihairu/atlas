@@ -671,7 +671,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 
 - 入站带 `X-Request-ID`（gRPC 为 `x-request-id` metadata；合法字符 `[A-Za-z0-9._:-]`，≤64 字符）则沿用并回显到响应头（gRPC 回显到响应 metadata，被拒的 RPC 同样回显）；否则生成 128-bit 随机 hex id。
 - 请求完成时输出一条访问日志（REST `msg=http request`，gRPC `msg=grpc request`）：`request_id`、`method`、`path`/`code`、`status`、`duration_ms`。`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头、不记日志。
-- 网关（APISIX/nginx）透传同一 header、SDK 侧带同一 metadata，即可把一条请求在 REST 与 gRPC 多跳日志里串起来。被限流/鉴权拒绝的请求同样有 id（追踪中间件/拦截器在最外层）。
+- 网关（APISIX/nginx）透传同一 header、Go SDK 经 `Options.DefaultHeaders` 带固定关联头（双传输同语义；gRPC 侧也可对单个调用在 ctx 上附加 metadata），即可把请求在 REST 与 gRPC 多跳日志里串起来。被限流/鉴权拒绝的请求同样有 id（追踪中间件/拦截器在最外层）。
 
 ---
 

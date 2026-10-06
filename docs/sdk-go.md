@@ -18,6 +18,9 @@ cli, err := atlas.New(atlas.Options{
     Transport: atlas.TransportREST,          // 默认 rest；可选 grpc
     RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKEN"), // Registry 域 Bearer
     AdminAPIKey:   adminKey,                          // Admin 域 Bearer——值须为服务端 ATLAS_ADMIN_API_KEYS 之一（env 名部署自定）
+    DefaultHeaders: map[string]string{                // 每次调用都带的静态头（REST）/ metadata（gRPC）
+        "X-Request-ID": instanceID,                   // 例：进程实例级关联 id，见 api.md「请求追踪」
+    },
     MaxRetries:    3,                        // 瞬时失败重试（网络错误 + 5xx）
     BaseBackoff:   100 * time.Millisecond,   // 指数退避基数（全抖动）
 })
@@ -52,6 +55,7 @@ loop.Set(playerCount, loadFactor)
 | --- | --- | --- |
 | 地址 | `ATLAS_HTTP_ADDR` / `ATLAS_REGISTRY_ADDR` / `ATLAS_ADMIN_ADDR`（:8080/:8081/:8082，通常经反代合一） | `ATLAS_GRPC_ADDR`（:9090） |
 | 认证 | Bearer 头 | `authorization` metadata |
+| 关联头 | `DefaultHeaders` → HTTP 头 | `DefaultHeaders` → metadata；gRPC 另可对单个调用在 ctx 上附加 metadata（逐调用 id） |
 | 传输安全 | `https://` 基地址 | `GRPCTLS: true` + `GRPCTLSCACert`（私有 CA 束；服务端 `ATLAS_GRPC_TLS_CERT`/`_KEY`，可加 `_CLIENT_CA`） |
 | 错误 | `*atlas.Error{Code: "SERVER_NOT_FOUND", ...}` | `*atlas.Error{Code: "NotFound", ...}`（gRPC 状态名） |
 | 适用 | 运维工具、低频调用 | 游戏服高频心跳、SDK 内部 |

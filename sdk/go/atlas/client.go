@@ -49,6 +49,15 @@ type Options struct {
 	// Empty = system roots.
 	GRPCTLSCACert string
 
+	// DefaultHeaders are static headers (REST) / metadata (gRPC) sent on
+	// every call, both transports — e.g. a process-level "X-Request-ID"
+	// so an operator can grep every call one game-server instance made
+	// across REST and gRPC hop logs (docs/api.md §请求追踪). Per-call ids
+	// need no option over gRPC: attach metadata to the ctx you pass in.
+	// Keys are applied verbatim; don't set the same key here and on the
+	// gRPC ctx (gRPC metadata would carry duplicates).
+	DefaultHeaders map[string]string
+
 	// MaxRetries bounds retries for transient failures (network errors
 	// and 5xx responses). Zero means 3; negative disables retrying.
 	MaxRetries int
@@ -153,12 +162,13 @@ func New(opts Options) (*Client, error) {
 			httpClient = &http.Client{Timeout: 10 * time.Second}
 		}
 		c.backend = &restBackend{
-			base:          base,
-			registryBase:  restBase(opts.RegistryAddr, base),
-			http:          httpClient,
-			policy:        policy,
-			registryToken: opts.RegistryToken,
-			adminAPIKey:   opts.AdminAPIKey,
+			base:           base,
+			registryBase:   restBase(opts.RegistryAddr, base),
+			http:           httpClient,
+			policy:         policy,
+			registryToken:  opts.RegistryToken,
+			adminAPIKey:    opts.AdminAPIKey,
+			defaultHeaders: opts.DefaultHeaders,
 		}
 	case TransportGRPC:
 		gb, err := newGRPCBackend(opts, policy)

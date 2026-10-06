@@ -31,8 +31,9 @@ type grpcBackend struct {
 	routing  *pb.RoutingServiceClient
 	admin    *pb.AdminServiceClient
 
-	registryToken string
-	adminAPIKey   string
+	registryToken  string
+	adminAPIKey    string
+	defaultHeaders map[string]string
 }
 
 // grpcDialCreds picks the transport credentials for opts: TLS when
@@ -73,16 +74,17 @@ func newGRPCBackend(opts Options, policy retryPolicy) (*grpcBackend, error) {
 	reg, disc, dir, rt, adm := pb.NewRegistryServiceClient(conn), pb.NewDiscoveryServiceClient(conn),
 		pb.NewDirectoryServiceClient(conn), pb.NewRoutingServiceClient(conn), pb.NewAdminServiceClient(conn)
 	return &grpcBackend{
-		conn:          conn,
-		policy:        policy,
-		transport:     opts.Transport,
-		registry:      &reg,
-		discover:      &disc,
-		director:      &dir,
-		routing:       &rt,
-		admin:         &adm,
-		registryToken: opts.RegistryToken,
-		adminAPIKey:   opts.AdminAPIKey,
+		conn:           conn,
+		policy:         policy,
+		transport:      opts.Transport,
+		registry:       &reg,
+		discover:       &disc,
+		director:       &dir,
+		routing:        &rt,
+		admin:          &adm,
+		registryToken:  opts.RegistryToken,
+		adminAPIKey:    opts.AdminAPIKey,
+		defaultHeaders: opts.DefaultHeaders,
 	}, nil
 }
 
@@ -91,6 +93,13 @@ func newGRPCBackend(opts Options, policy retryPolicy) (*grpcBackend, error) {
 func (b *grpcBackend) callCtx(ctx context.Context, bearer string) (context.Context, context.CancelFunc) {
 	if bearer != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+bearer)
+	}
+	if len(b.defaultHeaders) > 0 {
+		kvs := make([]string, 0, 2*len(b.defaultHeaders))
+		for k, v := range b.defaultHeaders {
+			kvs = append(kvs, k, v)
+		}
+		ctx = metadata.AppendToOutgoingContext(ctx, kvs...)
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

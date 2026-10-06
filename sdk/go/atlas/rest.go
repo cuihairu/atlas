@@ -22,8 +22,9 @@ type restBackend struct {
 	http         *http.Client
 	policy       retryPolicy
 
-	registryToken string
-	adminAPIKey   string
+	registryToken  string
+	adminAPIKey    string
+	defaultHeaders map[string]string
 }
 
 // do performs one JSON round trip against the main base, retrying
@@ -87,6 +88,9 @@ func (b *restBackend) attempt(ctx context.Context, base, method, path string, pa
 	}
 	if bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	for k, v := range b.defaultHeaders {
+		req.Header.Set(k, v)
 	}
 	resp, err := b.http.Do(req)
 	if err != nil {

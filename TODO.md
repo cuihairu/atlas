@@ -9,8 +9,9 @@
 > 双传输对齐；中断期积压已全部推送（至 60f03e5，含幻影项销账与口径修正）；
 > 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
 > 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；
-> 续跑两增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口
-> （见「可观测性续跑（2026-10-07）」段）；剩余 OpenTelemetry span 树挂起待拍板。
+> 续跑三增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口、
+> Go SDK DefaultHeaders 关联头（见「可观测性续跑（2026-10-07）」段）；
+> 剩余 OpenTelemetry span 树挂起待拍板。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -140,6 +141,12 @@
       `grpc request` 访问日志（request_id/method/code/duration_ms）；
       实机四连验证（合法沿用/同 id 被限流仍带 id/非法替换/缺省生成）
       ——commit 见本批归档提交
+- [x] Go SDK `Options.DefaultHeaders`：每次调用都带的静态头（REST）/
+      metadata（gRPC）双传输同语义——补齐调用方关联头注入通道（此前
+      gRPC 可经 ctx metadata 透传、REST 无任何注入口，文档一度空头）；
+      sdk-go.md 客户端示例与双传输表补「关联头」行；测试钉 REST
+      httptest 头回读 + gRPC 真服务 wire 级 metadata 捕获；实机验证
+      同一 id 双传输访问日志同现——commit 见本批归档提交
 
 ---
 
