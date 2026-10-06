@@ -34,7 +34,8 @@ try (AtlasClient client = new AtlasClient(new AtlasClientOptions()
         .setBaseUrl("http://localhost:8080")
         .setRegistryBaseUrl("http://localhost:8081")  // Registry 独立端口（可选）
         .setRegistryToken("...")                      // Registry 域 Bearer
-        .setAdminApiKey("..."))) {                    // Admin 域 API Key
+        .setAdminApiKey("...")                        // Admin 域 API Key
+        .setDefaultHeaders(Map.of("X-Request-ID", "...")))) { // 每次调用都带的静态头（可选，关联 id 见 docs/api.md「请求追踪」）
 
     // 1. 注册并开启自动心跳（立即首发，之后每 10s 一次）
     RegisterRequest req = new RegisterRequest(

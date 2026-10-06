@@ -390,4 +390,23 @@ class AtlasClientTest {
                 c.listCharactersByServer("x").characters);
         assertNotNull(c.listServers());
     }
+
+    // ── Default headers (docs/api.md 请求追踪) ──
+
+    @Test
+    void defaultHeadersRideOnEveryCall() throws IOException {
+        start();
+        s.routes.add(FakeAtlas.route("GET", "/v1/admin/stats",
+                r -> FakeAtlas.reply(200, "{\"total_servers\":0}")));
+        try (AtlasClient custom = new AtlasClient(new AtlasClientOptions()
+                .setBaseUrl(s.url())
+                .setAdminApiKey("adm-key")
+                .setMaxRetries(0)
+                .setDefaultHeaders(Map.of("X-Request-ID", "java-req-1")))) {
+            assertEquals(0, custom.getStats().totalServers);
+        }
+        FakeAtlas.Recorded req = s.request("GET", Pattern.compile("/v1/admin/stats"));
+        assertEquals("java-req-1", req.headers().get("x-request-id"));
+        assertEquals("application/json", req.headers().get("accept"));
+    }
 }

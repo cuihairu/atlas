@@ -1,5 +1,7 @@
 package io.github.cuihairu.atlas;
 
+import java.util.Map;
+
 /** Client options with fluent setters; zero values fall back to the
  * same defaults as the Go/C++/Python/JS SDKs. */
 public class AtlasClientOptions {
@@ -8,6 +10,7 @@ public class AtlasClientOptions {
     private String registryBaseUrl;
     private String registryToken = "";
     private String adminApiKey = "";
+    private Map<String, String> defaultHeaders = Map.of();
     private long timeoutMs = 10_000;
     private int maxRetries = 3;
     private long baseBackoffMs = 100;
@@ -49,6 +52,17 @@ public class AtlasClientOptions {
     /** API key for the Admin scope. */
     public AtlasClientOptions setAdminApiKey(String adminApiKey) {
         this.adminApiKey = adminApiKey;
+        return this;
+    }
+
+    public Map<String, String> getDefaultHeaders() {
+        return defaultHeaders;
+    }
+
+    /** Static headers sent on every call (docs/api.md 请求追踪) — e.g. a
+     * process-level "X-Request-ID" correlation id. Copied defensively. */
+    public AtlasClientOptions setDefaultHeaders(Map<String, String> defaultHeaders) {
+        this.defaultHeaders = defaultHeaders == null ? Map.of() : Map.copyOf(defaultHeaders);
         return this;
     }
 

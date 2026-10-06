@@ -86,6 +86,9 @@ public class AtlasClient implements AutoCloseable {
         if (bearer != null && !bearer.isEmpty()) {
             rb.header("Authorization", "Bearer " + bearer);
         }
+        for (Map.Entry<String, String> e : opts.getDefaultHeaders().entrySet()) {
+            rb.header(e.getKey(), e.getValue());
+        }
         RequestBody body;
         if (jsonBody != null) {
             body = RequestBody.create(GsonUtil.GSON.toJson(jsonBody), JSON);
