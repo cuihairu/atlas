@@ -518,3 +518,39 @@ def test_async_lifecycle_and_heartbeat() -> None:
         assert len(beats) >= 2 and beats[-1]["players"] == 8
 
     asyncio.run(run())
+
+
+# ── Default headers (docs/api.md 请求追踪) ──
+
+
+def test_default_headers_sync() -> None:
+    s = FakeAtlas()
+    s.routes.append(route(
+        "GET", r"/v1/admin/stats", lambda q: (200, {"total_servers": 0})))
+    c = client_for(s, default_headers={"X-Request-ID": "py-req-1"})
+    try:
+        assert c.get_stats().total_servers == 0
+    finally:
+        c.close()
+        s.close()
+    req = body_of(s, "GET", r"/v1/admin/stats")
+    assert req["headers"].get("X-Request-ID") == "py-req-1"
+    assert req["headers"].get("Accept") == "application/json"
+
+
+def test_default_headers_async() -> None:
+    s = FakeAtlas()
+    s.routes.append(route(
+        "GET", r"/v1/admin/stats", lambda q: (200, {"total_servers": 0})))
+
+    async def run() -> None:
+        async with AtlasAsyncClient(
+            s.url, admin_api_key="adm-key", base_backoff=0.001,
+            default_headers={"X-Request-ID": "py-async-1"},
+        ) as c:
+            assert (await c.get_stats()).total_servers == 0
+
+    asyncio.run(run())
+    s.close()
+    req = body_of(s, "GET", r"/v1/admin/stats")
+    assert req["headers"].get("X-Request-ID") == "py-async-1"

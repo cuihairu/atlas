@@ -46,9 +46,11 @@ class AtlasAsyncClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         base_backoff: float = 0.1,
+        default_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         self._t = _Config(
-            registry_token, admin_api_key, timeout, max_retries, base_backoff
+            registry_token, admin_api_key, timeout, max_retries, base_backoff,
+            default_headers,
         )
         # httpx merges absolute paths onto the base host.
         self._http = httpx.AsyncClient(base_url=base_url, timeout=timeout, headers=self._t.headers)

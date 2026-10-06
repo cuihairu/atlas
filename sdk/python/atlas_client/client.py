@@ -62,12 +62,17 @@ class _Config:
         timeout: float,
         max_retries: int,
         base_backoff: float,
+        default_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         self.registry_token = registry_token or ""
         self.admin_api_key = admin_api_key or ""
         self.max_retries = max_retries
         self.base_backoff = base_backoff
         self.headers = {"Accept": "application/json"}
+        if default_headers:
+            # Static headers sent on every call (docs/api.md 请求追踪) —
+            # e.g. a process-level X-Request-ID correlation id.
+            self.headers.update(default_headers)
 
     @staticmethod
     def is_transient_status(status: int) -> bool:
@@ -117,9 +122,11 @@ class AtlasClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         base_backoff: float = 0.1,
+        default_headers: Optional[Dict[str, str]] = None,
     ) -> None:
         self._t = _Config(
-            registry_token, admin_api_key, timeout, max_retries, base_backoff
+            registry_token, admin_api_key, timeout, max_retries, base_backoff,
+            default_headers,
         )
         # httpx merges absolute paths onto the base host.
         self._http = httpx.Client(base_url=base_url, timeout=timeout, headers=self._t.headers)
