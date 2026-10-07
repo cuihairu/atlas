@@ -303,7 +303,7 @@ public sealed class AtlasClient : IDisposable, IAsyncDisposable
             catch (Exception ex) when (IsNetworkError(ex, ct))
             {
                 if (attempt >= attempts - 1)
-                    throw new AtlasError(0, "NETWORK_ERROR", ex.Message);
+                    throw new AtlasError(0, "NETWORK", ex.Message);
             }
 
             await Task.Delay(BackoffDelay(attempt), ct).ConfigureAwait(false);

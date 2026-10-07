@@ -170,7 +170,7 @@ public sealed class AtlasClientTests
             () => client.GetServerAsync("game-1"));
 
         Assert.Equal(0, ex.Status); // 0 = network-layer failure
-        Assert.Equal("NETWORK_ERROR", ex.Code);
+        Assert.Equal("NETWORK", ex.Code); // parity: JS/Python/Java/C++ use the same code
     }
 
     // ── Directory + reply normalization ─────────────────────────

@@ -101,7 +101,7 @@ public sealed class AutoHeartbeat : IDisposable, IAsyncDisposable
         catch (Exception ex)
         {
             onError?.Invoke(ex as AtlasError ??
-                new AtlasError(0, "NETWORK_ERROR", ex.Message));
+                new AtlasError(0, "NETWORK", ex.Message));
         }
         finally
         {
