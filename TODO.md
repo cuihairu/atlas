@@ -11,7 +11,9 @@
 > 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；
 > 续跑三增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口、
 > Go SDK DefaultHeaders 关联头；关联头随即铺齐五语言 SDK（见
-> 「可观测性续跑（2026-10-07）」段）；剩余 OpenTelemetry span 树挂起待拍板。
+> 「可观测性续跑（2026-10-07）」段）；心跳关停排空 C#/Java/JS 补齐（见
+> 「巡检修复 · 心跳关停排空（2026-10-07）」段）；剩余 OpenTelemetry
+> span 树挂起待拍板。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -154,6 +156,25 @@
       钉关联 id 到达 FakeAtlas 并与既有头共存；六处 README 快速上手补行，
       五页 sdk-*.md 选项示例补齐（JS/Java/C# 含选项表行），api.md
       「请求追踪」句改为五 SDK 全量口径；VitePress 构建过
+
+---
+
+## 巡检修复 · 心跳关停排空（2026-10-07）✅
+
+> 自立项：心跳循环的 `stop` 语义巡检——Go/Python/C++ 的停止会**排空在途
+> 心跳**（等待 run 循环退出），而 Java/JS/C# 只停调度/定时器不等在途请求，
+> 关停后仍有 straggler 心跳落地，会把刚 `Unregister` 的服务器复活。
+> 三站补齐至同一语义（10s 上界），六 SDK 停止行为对齐。
+
+- [x] C# `AutoHeartbeat.Stop`：`_idle` MRES + `_inflight` 计数、锁内复查
+      `_stopped` 拒迟到回调、Stop 等计数归零——commit 4398506
+- [x] Java `AutoHeartbeat.stop`：`inflight` 计数 + 锁内复查 `stopped`、
+      stop 等计数归零（可重复调用）——commit 61c87d5
+- [x] JS `AutoHeartbeat.stop` 改 `async`：追踪当前 beat promise 并 await
+      其落地（清超时定时器），示例改 `await loop.stop()`——commit eb95b57
+- 复核（无需改）：Go `HeartbeatLoop.Stop` 等 `<-done`、Python sync
+      `stop()` join 线程 / async `stop()` await task、C++ `Stop()` join
+      `thread_`——均已排空在途 beat
 
 ---
 
