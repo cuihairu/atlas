@@ -28,7 +28,7 @@ interface FakeRequest {
   body: unknown;
 }
 
-type Handler = (req: FakeRequest) => Reply;
+type Handler = (req: FakeRequest) => Reply | Promise<Reply>;
 
 class FakeAtlas {
   url = "";
@@ -74,7 +74,7 @@ class FakeAtlas {
     this.requests.push(record);
     for (const [method, pattern, handler] of this.routes) {
       if (method !== record.method || !pattern.test(record.path)) continue;
-      const [status, payload] = handler(record);
+      const [status, payload] = await handler(record);
       const data = JSON.stringify(payload);
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(data);
@@ -520,6 +520,46 @@ test("auto heartbeat", async () => {
 
     assert.ok(beats.length >= 2, `expected ≥2 heartbeats, got ${beats.length}`);
     assert.deepEqual(beats[beats.length - 1], { players: 42, load: 0.5 });
+  } finally {
+    c.close();
+    s.close();
+  }
+});
+
+test("stop drains in-flight beat", async () => {
+  const s = await FakeAtlas.start();
+  const beats: unknown[] = [];
+  let signalEntered!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    signalEntered = resolve;
+  });
+  s.routes.push([
+    "POST",
+    /\/v1\/registry\/servers\/game-1\/heartbeat$/,
+    async (req) => {
+      beats.push(req.body);
+      signalEntered();
+      await sleep(300); // hold the beat in flight
+      return [200, { server_id: "game-1", status: "online" }];
+    },
+  ]);
+  const c = clientFor(s);
+  try {
+    const loop = c.startHeartbeat("game-1", { intervalMs: 1000, players: 1 });
+    await entered; // first beat is now mid-request
+
+    let stopped = false;
+    const stopP = loop.stop().then(() => {
+      stopped = true;
+    });
+    await sleep(100);
+    assert.equal(stopped, false, "stop() must wait for the in-flight beat");
+
+    await stopP;
+    const seen = beats.length;
+    await sleep(150); // > remaining beat time: a straggler would land here
+    assert.equal(beats.length, seen, "no beat may land after stop() resolved");
+    assert.ok(seen >= 1);
   } finally {
     c.close();
     s.close();

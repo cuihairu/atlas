@@ -39,7 +39,7 @@ const wr = await client.createCharacter({
   characterId: 1001, name: "Hero", level: 1,
 });
 
-loop.stop();                                // 优雅下线
+await loop.stop();                          // 优雅下线（排空在途心跳）
 await client.unregister("game-1001");
 client.close();
 ```
@@ -111,8 +111,8 @@ client.close();
 | `startHeartbeat(serverId, opts?)` | 立即首发一跳，之后每 `intervalMs`（默认 10000）续报 |
 | `loop.set(players, load)` | 游戏线程更新下一跳载荷（线程安全语义由 JS 单线程模型保证） |
 | `loop.onError` | 每次失败回调 `AtlasError`；循环不停 |
-| `loop.stop()` | 幂等停止 |
-| `client.close()` | 空操作（fetch 自管连接池）；**不会**停心跳循环，先 `loop.stop()` |
+| `await loop.stop()` | 幂等停止；等待在途心跳落地（最长 10s）后返回，避免下线后迟到心跳复活服务器 |
+| `client.close()` | 空操作（fetch 自管连接池）；**不会**停心跳循环，先 `await loop.stop()` |
 
 ## 场景：玩家登录选服
 
@@ -140,7 +140,7 @@ sequenceDiagram
 // 1. 停止接新玩家（SDK 侧通知 Atlas；服务器自己同时关入口）
 await client.setDrain("game-1001");
 // 2. 等存量玩家自然离开（或到达超时）
-loop.stop();
+await loop.stop();
 // 3. 注销
 await client.unregister("game-1001");
 ```

@@ -414,6 +414,7 @@ export class AutoHeartbeat {
   private payload: HeartbeatRequest;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
+  private inflight: Promise<void> = Promise.resolve();
 
   constructor(client: AtlasClient, serverId: string, opts: HeartbeatOptions = {}) {
     this.client = client;
@@ -428,23 +429,45 @@ export class AutoHeartbeat {
     this.payload = { players, load };
   }
 
-  stop(): void {
+  /** Stop the loop, then wait (bounded at 10s) for any in-flight beat to
+   * land, so no heartbeat arrives after the returned promise resolves —
+   * graceful-shutdown parity with the Go/C++/Python/Java/C# SDKs (their
+   * stop joins the run loop). Idempotent. */
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
+    // A beat may already be mid-request; awaiting keeps a straggler from
+    // resurrecting the server after unregister.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, 10_000);
+    });
+    try {
+      await Promise.race([this.inflight.catch(() => undefined), timeout]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private async loop(intervalMs: number): Promise<void> {
-    await this.beat();
+    await this.runBeat();
     while (!this.stopped) {
       await new Promise<void>((resolve) => {
         this.timer = setTimeout(resolve, intervalMs);
       });
       if (this.stopped) return;
-      await this.beat();
+      await this.runBeat();
     }
+  }
+
+  /** Track the current beat so stop() can await it. */
+  private runBeat(): Promise<void> {
+    const beat = this.beat();
+    this.inflight = beat;
+    return beat;
   }
 
   private async beat(): Promise<void> {

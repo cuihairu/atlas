@@ -7,7 +7,7 @@ SDK 同一 API 面：
 - 基于 `fetch`，零运行时依赖，Node.js 18+ 与现代浏览器通用
 - 五组 API 全量方法（注册心跳 / 发现 / 角色目录 / 推荐接入 / 管理）
 - 瞬时失败重试（网络错误 + 超时 + 5xx，全抖动指数退避；4xx 不重试）
-- 自动心跳：`startHeartbeat()` 立即首发、按间隔续报，`set()` 更新负载
+- 自动心跳：`startHeartbeat()` 立即首发、按间隔续报，`set()` 更新负载，`await stop()` 排空在途心跳后再注销
 - Registry 独立端口拆分（`registryBaseUrl`）
 - 双格式产物：ESM + CJS（`exports` 自动选择），含 TypeScript 类型
 
@@ -53,7 +53,7 @@ const wr = await client.createCharacter({
 });
 
 // 3. 优雅下线
-loop.stop();
+await loop.stop(); // 排空在途心跳后再注销
 await client.unregister("game-1001");
 client.close();
 ```
