@@ -9,9 +9,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -353,6 +356,40 @@ class AtlasClientTest {
 
         assertTrue(beats.size() >= 2, "expected ≥2 heartbeats, got " + beats.size());
         assertEquals("{\"players\":42,\"load\":0.5}", beats.get(beats.size() - 1));
+    }
+
+    @Test
+    void stopDrainsInFlightBeat() throws Exception {
+        start();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<String> beats = new CopyOnWriteArrayList<>();
+        s.routes.add(FakeAtlas.route("POST", "/v1/registry/servers/game-1/heartbeat", r -> {
+            beats.add(r.body());
+            entered.countDown();
+            try {
+                release.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return FakeAtlas.reply(200, "{\"server_id\":\"game-1\",\"status\":\"online\"}");
+        }));
+
+        AutoHeartbeat loop = c.startHeartbeat("game-1", 500, new HeartbeatRequest(1, 0));
+        assertTrue(entered.await(2, TimeUnit.SECONDS), "first beat should reach the server");
+
+        Thread stopper = new Thread(loop::stop);
+        stopper.start();
+        Thread.sleep(150);
+        assertTrue(stopper.isAlive(), "stop() must wait for the in-flight beat");
+
+        release.countDown();
+        stopper.join(3000);
+        assertFalse(stopper.isAlive(), "stop() should return once the beat lands");
+
+        int seen = beats.size();
+        Thread.sleep(300); // > interval: a straggler would land in this window
+        assertEquals(seen, beats.size(), "no beat may land after stop() returned");
     }
 
     @Test

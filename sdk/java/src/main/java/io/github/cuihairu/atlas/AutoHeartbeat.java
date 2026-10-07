@@ -20,7 +20,9 @@ public class AutoHeartbeat {
     private final AtomicReference<HeartbeatRequest> payload;
     private volatile Consumer<AtlasError> onError;
     private final ScheduledExecutorService executor;
+    private final Object lock = new Object();
     private volatile boolean stopped;
+    private int inflight;
 
     AutoHeartbeat(AtlasClient client, String serverId, long intervalMs,
                   HeartbeatRequest initial, Consumer<AtlasError> onError) {
@@ -48,15 +50,46 @@ public class AutoHeartbeat {
         this.onError = onError;
     }
 
-    /** Stop the loop; idempotent. */
+    /** Stop the loop, then wait (bounded at 10s) for any in-flight beat
+     * to land, so no heartbeat arrives after {@code stop()} returns —
+     * graceful-shutdown parity with the Go/Python/C++ SDKs (their stop
+     * joins the run loop) and the C# SDK. Idempotent. */
     public void stop() {
-        stopped = true;
+        synchronized (lock) {
+            if (stopped) {
+                return;
+            }
+            stopped = true;
+        }
         executor.shutdownNow();
+        // A beat may already be mid-request; waiting keeps a straggler
+        // from resurrecting the server after unregister.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        synchronized (lock) {
+            while (inflight > 0) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    break;
+                }
+                try {
+                    lock.wait(Math.max(1, remaining / 1_000_000));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
     }
 
     private void beat() {
-        if (stopped) {
-            return;
+        synchronized (lock) {
+            // stop() may have run between the fixed-rate task firing and
+            // this callback starting — bail so no straggler beat lands
+            // after stop() returned.
+            if (stopped) {
+                return;
+            }
+            inflight++;
         }
         try {
             client.heartbeat(serverId, payload.get());
@@ -64,6 +97,12 @@ public class AutoHeartbeat {
             Consumer<AtlasError> handler = onError;
             if (handler != null) {
                 handler.accept(e);
+            }
+        } finally {
+            synchronized (lock) {
+                if (--inflight == 0) {
+                    lock.notifyAll();
+                }
             }
         }
     }
