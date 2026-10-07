@@ -3,17 +3,15 @@
 </p>
 
 <h1 align="center">Atlas</h1>
-
-<p align="center">
-  <strong>Atlas — Game Infrastructure Directory / Control Plane for Online Games</strong><br/>
-  <em>Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施 —— 服务器注册、发现、角色目录、接入推荐、生命周期与运维协调。</em>
-</p>
-
 <p align="center">
   <a href="https://github.com/cuihairu/atlas/releases"><img src="https://img.shields.io/github/v/release/cuihairu/atlas" alt="Release" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
   <a href="https://cuihairu.github.io/atlas/"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a>
   <a href="https://codecov.io/gh/cuihairu/atlas"><img src="https://codecov.io/gh/cuihairu/atlas/graph/badge.svg" alt="Codecov" /></a>
+</p>
+<p align="center">
+  <strong>Atlas — Game Infrastructure Directory / Control Plane for Online Games</strong><br/>
+  <em>Atlas：面向在线游戏的服务器注册、发现与角色目录基础设施 —— 服务器注册、发现、角色目录、接入推荐、生命周期与运维协调。</em>
 </p>
 
 <p align="center">
