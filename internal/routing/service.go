@@ -11,6 +11,7 @@ import (
 
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
 // Recommendation reasons (API contract).
@@ -97,6 +98,8 @@ func (s *Service) withClock(now func() time.Time) *Service {
 // Among candidates: existing character beats all, then lowest load, then
 // highest remaining capacity, then stable server ID for determinism.
 func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, string, error) {
+	ctx, span := atlastracing.Start(ctx, "routing.recommend")
+	defer span.End()
 	if req.Status == "" {
 		req.Status = model.StatusOnline
 	}
@@ -193,6 +196,8 @@ type ServerVerdict struct {
 // list cap) so the rejected servers carry their rejection reason instead
 // of silently disappearing.
 func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error) {
+	ctx, span := atlastracing.Start(ctx, "routing.diagnose")
+	defer span.End()
 	if req.Status == "" {
 		req.Status = model.StatusOnline
 	}

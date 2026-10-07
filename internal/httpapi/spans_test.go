@@ -1,46 +1,17 @@
 package httpapi
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/cuihairu/atlas/internal/tracing/tracingtest"
 )
-
-// spanRecorder swaps the global no-op tracer for an SDK provider backed by
-// an in-memory recorder — the same provider shape tracing.Setup builds,
-// minus the exporter — and restores the no-op on cleanup. Install it
-// BEFORE building middleware: Spans() captures the tracer at construction.
-func spanRecorder(t *testing.T) *tracetest.SpanRecorder {
-	t.Helper()
-	rec := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(trace.NewNoopTracerProvider())
-		_ = tp.Shutdown(context.Background())
-	})
-	return rec
-}
-
-// spanAttr finds the recorded attribute under key.
-func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
-	for _, kv := range s.Attributes() {
-		if string(kv.Key) == key {
-			return kv.Value, true
-		}
-	}
-	return attribute.Value{}, false
-}
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -51,7 +22,9 @@ func discardLogger() *slog.Logger {
 // ServeMux pattern once routing completes, with the semantic-convention
 // attributes and the atlas request id attached.
 func TestSpansRenameToRoutePattern(t *testing.T) {
-	rec := spanRecorder(t)
+	// Install BEFORE building middleware: Spans() captures its tracer at
+	// construction.
+	rec := tracingtest.Install(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/arena/servers/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +58,7 @@ func TestSpansRenameToRoutePattern(t *testing.T) {
 		"atlas.request_id":          "span-test-1",
 		"http.response.status_code": "",
 	} {
-		v, ok := spanAttr(s, key)
+		v, ok := rec.Attr(s, key)
 		if !ok {
 			t.Fatalf("span missing attribute %s", key)
 		}
@@ -111,7 +84,7 @@ func TestSpansRenameToRoutePattern(t *testing.T) {
 // trace backends can flag them; 4xx stay Unset (client-caused, per the
 // semconv rule the middleware follows).
 func TestSpansMarkServerErrors(t *testing.T) {
-	rec := spanRecorder(t)
+	rec := tracingtest.Install(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/arena/servers", func(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +106,7 @@ func TestSpansMarkServerErrors(t *testing.T) {
 	if s.Status().Description != "Internal Server Error" {
 		t.Fatalf("span status description = %q", s.Status().Description)
 	}
-	if v, _ := spanAttr(s, "http.response.status_code"); v.AsInt64() != 500 {
+	if v, _ := rec.Attr(s, "http.response.status_code"); v.AsInt64() != 500 {
 		t.Fatalf("http.response.status_code = %d, want 500", v.AsInt64())
 	}
 }
@@ -141,7 +114,7 @@ func TestSpansMarkServerErrors(t *testing.T) {
 // TestSpansSkipQuietPaths: the timer-probed endpoints stay out of trace
 // streams, same filter as the access log.
 func TestSpansSkipQuietPaths(t *testing.T) {
-	rec := spanRecorder(t)
+	rec := tracingtest.Install(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {})
@@ -161,7 +134,7 @@ func TestSpansSkipQuietPaths(t *testing.T) {
 // method-name placeholder and carries no http.route, so backends still
 // group the 404 noise by method instead of raw path cardinality.
 func TestSpansUnmatchedRoute(t *testing.T) {
-	rec := spanRecorder(t)
+	rec := tracingtest.Install(t)
 
 	mux := http.NewServeMux()
 	h := Tracing(discardLogger())(Spans()(mux))
@@ -177,10 +150,10 @@ func TestSpansUnmatchedRoute(t *testing.T) {
 	if s.Name() != http.MethodGet {
 		t.Fatalf("span name = %q, want placeholder %q", s.Name(), http.MethodGet)
 	}
-	if _, ok := spanAttr(s, "http.route"); ok {
+	if _, ok := rec.Attr(s, "http.route"); ok {
 		t.Fatal("unmatched request has an http.route attribute")
 	}
-	if v, _ := spanAttr(s, "http.response.status_code"); v.AsInt64() != http.StatusNotFound {
+	if v, _ := rec.Attr(s, "http.response.status_code"); v.AsInt64() != http.StatusNotFound {
 		t.Fatalf("http.response.status_code = %d, want 404", v.AsInt64())
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
 // Service provides read-only server discovery.
@@ -38,6 +39,8 @@ func (s *Service) WithMetrics(m *metrics.Metrics) *Service {
 // If filter.Status is explicitly set, that exact status is used.
 func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*model.Server, error) {
 	s.metrics.CountDiscovery(f)
+	ctx, span := atlastracing.Start(ctx, "discovery.list_servers")
+	defer span.End()
 
 	servers, err := s.servers.ListServers(ctx, f)
 	if err != nil {
@@ -86,6 +89,8 @@ func (s *Service) ListServers(ctx context.Context, f store.ServerFilter) ([]*mod
 
 // GetServer returns a single server by ID with runtime data merged in.
 func (s *Service) GetServer(ctx context.Context, id string) (*model.Server, error) {
+	ctx, span := atlastracing.Start(ctx, "discovery.get_server")
+	defer span.End()
 	srv, err := s.servers.GetServer(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get server: %w", err)

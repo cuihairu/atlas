@@ -7,11 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -19,39 +15,17 @@ import (
 	"google.golang.org/grpc/status"
 
 	atlashttpapi "github.com/cuihairu/atlas/internal/httpapi"
+	"github.com/cuihairu/atlas/internal/tracing/tracingtest"
 )
-
-// spanRecorder swaps the global no-op tracer for an SDK provider backed by
-// an in-memory recorder, restoring the no-op on cleanup. Install it before
-// chaining UnarySpans: the interceptor captures its tracer at construction.
-func spanRecorder(t *testing.T) *tracetest.SpanRecorder {
-	t.Helper()
-	rec := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec))
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(trace.NewNoopTracerProvider())
-		_ = tp.Shutdown(context.Background())
-	})
-	return rec
-}
-
-// spanAttr finds the recorded attribute under key.
-func spanAttr(s sdktrace.ReadOnlySpan, key string) (attribute.Value, bool) {
-	for _, kv := range s.Attributes() {
-		if string(kv.Key) == key {
-			return kv.Value, true
-		}
-	}
-	return attribute.Value{}, false
-}
 
 // TestUnarySpansRecordsRPCSpan chains UnaryTrace + UnarySpans the way
 // main.go does: the span carries the rpc.* semantic conventions, the
 // request id assigned by the trace interceptor, and the OK status code on
 // a passing handler.
 func TestUnarySpansRecordsRPCSpan(t *testing.T) {
-	rec := spanRecorder(t)
+	// Install BEFORE chaining UnarySpans: the interceptor captures its
+	// tracer at construction.
+	rec := tracingtest.Install(t)
 
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
@@ -91,11 +65,11 @@ func TestUnarySpansRecordsRPCSpan(t *testing.T) {
 		"rpc.method":       "GetStats",
 		"atlas.request_id": "rpc-span-1",
 	} {
-		if v, ok := spanAttr(s, key); !ok || v.AsString() != want {
+		if v, ok := rec.Attr(s, key); !ok || v.AsString() != want {
 			t.Fatalf("attribute %s = (%v, %v), want %q", key, v, ok, want)
 		}
 	}
-	if v, ok := spanAttr(s, "rpc.grpc.status_code"); !ok || v.AsInt64() != int64(codes.OK) {
+	if v, ok := rec.Attr(s, "rpc.grpc.status_code"); !ok || v.AsInt64() != int64(codes.OK) {
 		t.Fatalf("rpc.grpc.status_code = (%v, %v), want %d", v, ok, codes.OK)
 	}
 	if got := s.Status().Code; got != otelcodes.Unset {
@@ -111,7 +85,7 @@ func TestUnarySpansRecordsRPCSpan(t *testing.T) {
 // TestUnarySpansMarksErrors: a failing handler flips the span to
 // codes.Error and records the gRPC status code.
 func TestUnarySpansMarksErrors(t *testing.T) {
-	rec := spanRecorder(t)
+	rec := tracingtest.Install(t)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	info := &grpc.UnaryServerInfo{FullMethod: "/directory.DirectoryService/GetCharacter"}
@@ -138,7 +112,7 @@ func TestUnarySpansMarksErrors(t *testing.T) {
 	if !bytes.Contains([]byte(s.Status().Description), []byte("nope")) {
 		t.Fatalf("span status description = %q, want the error text", s.Status().Description)
 	}
-	if v, ok := spanAttr(s, "rpc.grpc.status_code"); !ok || v.AsInt64() != int64(codes.NotFound) {
+	if v, ok := rec.Attr(s, "rpc.grpc.status_code"); !ok || v.AsInt64() != int64(codes.NotFound) {
 		t.Fatalf("rpc.grpc.status_code = (%v, %v), want %d", v, ok, codes.NotFound)
 	}
 }

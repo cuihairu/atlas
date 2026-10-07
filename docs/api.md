@@ -678,6 +678,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 X-Request-ID 是跨跳关联 id，不是 span 树。需要链路视图时，设 `ATLAS_OTLP_ENDPOINT`（如 `http://localhost:4318`）开启 OpenTelemetry 追踪导出，协议为 OTLP/HTTP——Jaeger、Tempo 或任意讲 OTLP 的 collector 都能接收（协议是承诺，后端不锁定）。不设则全局 no-op tracer provider，span 不记录、导出管线零开销（与 gRPC TLS 未配置即明文同一默认哲学）。endpoint 带 `https://` 前缀走 TLS；带路径（反代后的 collector）自动拼接标准 `/v1/traces`。
 
 - **span 形态**：三个 HTTP 监听口与 gRPC 口每请求一个 server root span。REST 按路由模式命名（`GET /v1/discovery/servers/{id}`——低基数、聚合友好，带实体 id 的原始路径在 `url.path` 属性里）；gRPC 按全方法名命名（`/admin.AdminService/GetStats`）。属性沿用 OTel semconv（`http.*` / `rpc.*`）并附 `atlas.request_id`——与 X-Request-ID 是同一个 id，日志与链路可互查。
+- **服务层 child span**：注册 / 发现 / 路由 / 角色目录四个服务在同一请求 context 下继续开 `internal` 子 span（`registry.register` / `registry.heartbeat` / `registry.unregister`、`discovery.list_servers` / `discovery.get_server`、`routing.recommend` / `routing.diagnose`、`directory.create` / `directory.update` / `directory.delete` / `directory.get` 等），自动挂在传输 root 之下成树，无需任何额外配置；错误置态由传输 root 承担，子 span 记录嵌套与耗时。
 - **错误语义**：HTTP ≥500 或 gRPC 非 OK 时 span 置 `Error`；4xx 保持 Unset（客户端所致，与 semconv 建议同口径）。
 - **采样**：`ATLAS_TRACING_SAMPLE_RATIO`（默认 `1.0`），`ParentBased(TraceIDRatioBased)`——上游 traceparent 已带采样决定时以其为准，比率只管新根；(0,1] 之外的值回退 `1.0`。
 - **静默路径**：`/healthz`、`/readyz`、`/metrics` 与访问日志同口径，不开 span。

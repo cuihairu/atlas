@@ -11,6 +11,7 @@ import (
 	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
 // Service manages the character index (projection).
@@ -35,6 +36,8 @@ func (s *Service) WithMetrics(m *metrics.Metrics) *Service {
 func (s *Service) CreateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, name string, level int, classID int) (*model.Character, error) {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveDirectoryWrite("create", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "directory.create")
+	defer span.End()
 	if accountID <= 0 {
 		return nil, fmt.Errorf("%w: account_id must be > 0", model.ErrInvalid)
 	}
@@ -66,6 +69,8 @@ func (s *Service) CreateCharacter(ctx context.Context, accountID int64, serverID
 func (s *Service) UpdateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, patch store.CharacterPatch) (*model.Character, error) {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveDirectoryWrite("update", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "directory.update")
+	defer span.End()
 	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, characterID, patch); err != nil {
 		return nil, fmt.Errorf("update character: %w", err)
 	}
@@ -76,6 +81,8 @@ func (s *Service) UpdateCharacter(ctx context.Context, accountID int64, serverID
 func (s *Service) DeleteCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) error {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveDirectoryWrite("delete", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "directory.delete")
+	defer span.End()
 	if err := s.characters.DeleteCharacter(ctx, accountID, serverID, characterID); err != nil {
 		return fmt.Errorf("delete character: %w", err)
 	}
@@ -84,6 +91,8 @@ func (s *Service) DeleteCharacter(ctx context.Context, accountID int64, serverID
 
 // GetCharacter returns a character by composite key.
 func (s *Service) GetCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) (*model.Character, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.get")
+	defer span.End()
 	ch, err := s.characters.GetCharacter(ctx, accountID, serverID, characterID)
 	if err != nil {
 		return nil, fmt.Errorf("get character: %w", err)
@@ -93,6 +102,8 @@ func (s *Service) GetCharacter(ctx context.Context, accountID int64, serverID st
 
 // GetCharacterByCharacterID returns a character by its global character ID.
 func (s *Service) GetCharacterByCharacterID(ctx context.Context, characterID int64) (*model.Character, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.get_by_character_id")
+	defer span.End()
 	ch, err := s.characters.GetCharacterByCharacterID(ctx, characterID)
 	if err != nil {
 		return nil, fmt.Errorf("get character by id: %w", err)
@@ -102,6 +113,8 @@ func (s *Service) GetCharacterByCharacterID(ctx context.Context, characterID int
 
 // ListByAccount returns all characters belonging to an account.
 func (s *Service) ListByAccount(ctx context.Context, accountID int64) ([]*model.Character, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.list_by_account")
+	defer span.End()
 	chars, err := s.characters.ListCharactersByAccount(ctx, accountID)
 	if err != nil {
 		return nil, fmt.Errorf("list by account: %w", err)
@@ -112,6 +125,8 @@ func (s *Service) ListByAccount(ctx context.Context, accountID int64) ([]*model.
 // ListByServer returns characters on a given server with cursor pagination.
 // Returns the characters and the cursor for the next page.
 func (s *Service) ListByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, string, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.list_by_server")
+	defer span.End()
 	chars, err := s.characters.ListCharactersByServer(ctx, serverID, limit, cursor)
 	if err != nil {
 		return nil, "", fmt.Errorf("list by server: %w", err)

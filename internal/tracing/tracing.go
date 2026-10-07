@@ -116,3 +116,13 @@ func Setup(ctx context.Context, opts Options) (func(context.Context) error, erro
 // Tracer is the single tracer name every Atlas span uses, so receivers
 // see one instrumentation scope.
 func Tracer() trace.Tracer { return otel.Tracer("github.com/cuihairu/atlas") }
+
+// Start opens a service-layer child span (SpanKindInternal) under the
+// current global tracer — the request context from either transport root
+// span parents it automatically, and no wiring is needed in main: the
+// global resolves per call, so services constructed after Setup pick up
+// the real pipeline. With tracing disabled the global tracer is the no-op
+// and this collapses to a near-free context pass-through.
+func Start(ctx context.Context, name string) (context.Context, trace.Span) {
+	return Tracer().Start(ctx, name, trace.WithSpanKind(trace.SpanKindInternal))
+}

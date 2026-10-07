@@ -12,6 +12,7 @@ import (
 	"github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
 // RegisterRequest is the DTO for server registration. It mirrors model.Server
@@ -133,6 +134,8 @@ func (s *Service) CheckRegistration(ctx context.Context, serverID string) (Regis
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Server, error) {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveRegistryWrite("register", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "registry.register")
+	defer span.End()
 
 	startedAt := time.Now()
 	if req.StartedAt != nil {
@@ -197,6 +200,8 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heartbeat) (model.ServerStatus, error) {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveRegistryWrite("heartbeat", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "registry.heartbeat")
+	defer span.End()
 
 	if err := hb.Validate(); err != nil {
 		return "", err
@@ -252,6 +257,8 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 func (s *Service) Unregister(ctx context.Context, serverID string) error {
 	t0 := time.Now()
 	defer func() { s.metrics.ObserveRegistryWrite("unregister", time.Since(t0)) }()
+	ctx, span := atlastracing.Start(ctx, "registry.unregister")
+	defer span.End()
 
 	// Verify existence.
 	if _, err := s.servers.GetServer(ctx, serverID); err != nil {
