@@ -12,8 +12,9 @@
 > 续跑三增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口、
 > Go SDK DefaultHeaders 关联头；关联头随即铺齐五语言 SDK（见
 > 「可观测性续跑（2026-10-07）」段）；心跳关停排空 C#/Java/JS 补齐（见
-> 「巡检修复 · 心跳关停排空（2026-10-07）」段）；剩余 OpenTelemetry
-> span 树挂起待拍板。
+> 「巡检修复 · 心跳关停排空（2026-10-07）」段）；OTel span 树已按仓内
+> 决策记录自行拍板并落地（见「OpenTelemetry span 树（2026-10-08）」段），
+> 可观测性深化五期全部收官。
 >
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
@@ -128,8 +129,8 @@
 ## 可观测性续跑（2026-10-07）✅
 
 > 停电恢复续跑令两增量：roadmap「可观测性深化」残留的 gRPC 口缺口收尾，
-> 双传输对齐主题收官。剩余 OpenTelemetry span 树挂起待拍板（新依赖 +
-> 导出后端选型，非自查可做项）。
+> 双传输对齐主题收官。span 树当时挂起（新依赖 + 导出后端选型），次日
+> 按仓内决策记录拍板落地，见「OpenTelemetry span 树（2026-10-08）」段。
 
 - [x] `atlas_admin_requests_total` 接入 gRPC Admin RPC：`UnaryMetrics`
       拦截器挂最外层（与 REST RequestCounter 包住限流/鉴权同序，被拒
@@ -433,3 +434,31 @@
 
 - [x] config-center §2.1 跨服 ID 两态规范（配置态 Atlas 托管 / 运行时实例 ID 只规范格式不生成不存储）
 - [x] §2.2 七类玩法类型枚举 + 类型表进 Spec 第五段（Normalize / Validate / 契约夹具 / dashboard 卡片）
+### OpenTelemetry span 树（2026-10-08）✅
+
+> 点火续做令：挂起项按本仓决策记录（roadmap 版本序与 TODO 立档注）自行
+> 拍板，两个定档项不动。拍板结论：**官方 OpenTelemetry Go SDK（otel
+> v1.47.0）+ OTLP/HTTP 协议导出**——协议是承诺、后端不锁定（Jaeger /
+> Tempo / 厂商 collector 皆可收）；指标不跟进，仍走 Prometheus，不引第二
+> 套 metrics 后端；采样 `ParentBased(TraceIDRatioBased)`，上游 traceparent
+> 采样决定优先；`ATLAS_OTLP_ENDPOINT` 未配置 = 全局 no-op provider，与
+> gRPC TLS 未配置即明文同一默认哲学。技术性开关（无需外部需求输入），
+> 故可自查拍板；grpc 锁定 v1.86.0-dev 不动，otel 取 @latest 规避降级。
+
+- [x] 增量一·追踪地基：`internal/tracing` 组装 OTLP/HTTP 导出管线
+      （endpoint 解析 / https 走 TLS / 带路径拼接 /v1/traces / 采样越界
+      回退 1.0 / 停机 flush 10s），`httpapi.Spans` 与 `grpc.UnarySpans`
+      每请求开 server root span——REST 按 ServeMux 路由模式低基数命名
+      （`WithContext` 浅拷贝上读回填的 Pattern），gRPC 按全方法名，属性
+      semconv http.*/rpc.* + `atlas.request_id`，HTTP ≥500 / gRPC 非 OK
+      置 Error，/healthz /readyz /metrics 静默；cmd/atlas 三监听口 +
+      gRPC 拦截链接线；测试端到端（httptest 收 /v1/traces）+ 中间件四态
+      + 拦截器链式（commit 0fe965d）
+- [x] 增量二·服务层成树：`atlastracing.Start(ctx, name)` 在请求 context
+      下继续开 SpanKindInternal 子 span——registry 三写 / discovery 两读
+      / routing 推荐+诊断 / directory 七方法共 14 个，自动挂传输 root
+      之下成树；全局 tracer 调用时解析，main.go 零改动；测试助手沉
+      `internal/tracing/tracingtest.Install`（storetest 先例）收敛
+      httpapi/grpc 测试副本，新增四服务父子关系断言（commit f5359e2）
+- [x] 文档同步：api.md「分布式追踪」新节 + architecture.md 交叉引用 +
+      roadmap 可观测性行五期收官（0fe965d / f5359e2 / 本笔）
