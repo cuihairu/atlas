@@ -111,7 +111,7 @@ public sealed class AtlasClientTests
     {
         using var fake = new FakeAtlas();
         fake.On(_ => true, _ => new FakeAtlas.Reply(404,
-            """{"code":"SERVER_NOT_FOUND","message":"no such server"}"""));
+            """{"error":{"code":"SERVER_NOT_FOUND","message":"no such server"}}"""));
 
         using var client = Client(fake.BaseUrl, maxRetries: 3);
         var ex = await Assert.ThrowsAsync<AtlasError>(
@@ -120,6 +120,22 @@ public sealed class AtlasClientTests
         Assert.Equal(404, ex.Status);
         Assert.Equal("SERVER_NOT_FOUND", ex.Code);
         Assert.Equal(1, fake.RequestCount); // 4xx never retries
+    }
+
+    [Fact]
+    public async Task HttpError_WithoutJsonBody_MapsToHttpStatus()
+    {
+        using var fake = new FakeAtlas();
+        fake.On(r => r is { Method: "GET", Path: "/v1/admin/stats" },
+            _ => new FakeAtlas.Reply(500, "boom"));
+
+        using var client = Client(fake.BaseUrl, maxRetries: 0);
+        var ex = await Assert.ThrowsAsync<AtlasError>(
+            () => client.StatsAsync());
+
+        Assert.Equal(500, ex.Status);
+        Assert.Equal("HTTP_500", ex.Code); // parity: JS/Java/Python/C++ same fallback
+        Assert.Equal("boom", ex.Message);
     }
 
     // ── Retry policy ────────────────────────────────────────────

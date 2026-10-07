@@ -105,12 +105,12 @@ internal sealed class FakeAtlas : IDisposable
             int force = TakeFail();
             if (force != 0)
             {
-                reply = new Reply(force, """{"code":"UNAVAILABLE","message":"forced"}""");
+                reply = new Reply(force, """{"error":{"code":"UNAVAILABLE","message":"forced"}}""");
             }
             else
             {
                 reply = _routes.FirstOrDefault(r => r.Match(req))?.Reply(req)
-                    ?? new Reply(404, """{"code":"NOT_FOUND","message":"no route"}""");
+                    ?? new Reply(404, """{"error":{"code":"NOT_FOUND","message":"no route"}}""");
             }
 
             var body = Encoding.UTF8.GetBytes(reply.Json);

@@ -338,20 +338,28 @@ public sealed class AtlasClient : IDisposable, IAsyncDisposable
 
     private static AtlasError ParseError(int status, string body)
     {
-        string code = "", message = "";
         try
         {
             using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("error", out var err) &&
+                err.ValueKind == JsonValueKind.Object)
             {
-                if (doc.RootElement.TryGetProperty("code", out var c))
-                    code = c.GetString() ?? "";
-                if (doc.RootElement.TryGetProperty("message", out var m))
-                    message = m.GetString() ?? "";
+                string code = "", message = "";
+                if (err.TryGetProperty("code", out var c)) code = c.GetString() ?? "";
+                if (err.TryGetProperty("message", out var m)) message = m.GetString() ?? "";
+                return new AtlasError(status, code, message);
             }
         }
-        catch (JsonException) { /* non-JSON error body: keep defaults */ }
-        return new AtlasError(status, code, message);
+        catch (JsonException)
+        {
+            // non-JSON error body: fall through to the generic mapping
+        }
+        // Atlas nests the error envelope under "error"; anything else (flat
+        // JSON, plain text) maps to HTTP_<status> with the raw text — parity
+        // with the Go/JS/Java/Python/C++ SDKs.
+        string text = body ?? "";
+        return new AtlasError(status, "HTTP_" + status, text[..Math.Min(text.Length, 200)]);
     }
 
     // ── Reply normalization helpers ─────────────────────────────
