@@ -429,7 +429,10 @@ public sealed class AtlasClientTests
 
         Assert.True(countAfterStop >= 2, $"expected ≥2 beats, got {countAfterStop}");
         Assert.Equal(countAfterStop, fake.RequestCount); // stopped means stopped
-        Assert.Contains("\"players\":99", fake.Requests.Last().Body);
+        // Beats run concurrently on the threadpool, so arrival order
+        // need not match dispatch order — assert the update reached
+        // the server, not that it was the final request.
+        Assert.Contains(fake.Requests, r => r.Body.Contains("\"players\":99"));
     }
 
     [Fact]

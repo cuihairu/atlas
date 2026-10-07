@@ -14,6 +14,8 @@ public sealed class AutoHeartbeat : IDisposable, IAsyncDisposable
     private HeartbeatRequest _payload;
     private Action<AtlasError>? _onError;
     private int _stopped;
+    private int _inflight;
+    private readonly ManualResetEventSlim _idle = new(initialState: true);
 
     internal AutoHeartbeat(AtlasClient client, string serverId,
         TimeSpan interval, HeartbeatRequest payload, Action<AtlasError>? onError = null)
@@ -46,12 +48,20 @@ public sealed class AutoHeartbeat : IDisposable, IAsyncDisposable
         }
     }
 
-    /// <summary>Stops the loop. Idempotent.</summary>
+    /// <summary>Stops the loop, then waits (bounded at 10s) for any
+    /// in-flight beat to land, so no heartbeat arrives after Stop
+    /// returns — graceful-shutdown parity with the Go SDK
+    /// (<c>HeartbeatLoop.Stop</c> waits for its run loop to exit).
+    /// Idempotent.</summary>
     public void Stop()
     {
         if (Interlocked.Exchange(ref _stopped, 1) == 1) return;
         _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _timer.Dispose();
+        // A timer callback may already be mid-beat; waiting keeps a
+        // straggler from resurrecting the server after unregister.
+        _idle.Wait(TimeSpan.FromSeconds(10));
+        _idle.Dispose();
     }
 
     public void Dispose() => Stop();
@@ -68,8 +78,14 @@ public sealed class AutoHeartbeat : IDisposable, IAsyncDisposable
         Action<AtlasError>? onError;
         lock (_lock)
         {
+            // Stop() may have run between the timer firing and this
+            // callback taking the lock — bail so no straggler beat
+            // lands after Stop returned.
+            if (_stopped == 1) return;
             payload = _payload;
             onError = _onError;
+            _idle.Reset(); // busy while at least this beat is in flight
+            _inflight++;
         }
         // BeatAsync swallows every failure into the handler, so dropping
         // the Task is safe (it never faults).
@@ -86,6 +102,13 @@ public sealed class AutoHeartbeat : IDisposable, IAsyncDisposable
         {
             onError?.Invoke(ex as AtlasError ??
                 new AtlasError(0, "NETWORK_ERROR", ex.Message));
+        }
+        finally
+        {
+            lock (_lock)
+            {
+                if (--_inflight == 0) _idle.Set();
+            }
         }
     }
 }
