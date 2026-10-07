@@ -243,6 +243,19 @@ type Config struct {
 	// leaving both empty selects the "default" profile when present.
 	// Env: ATLAS_SERVERS_PROFILE, default "".
 	ServersProfile string
+
+	// OTLPEndpoint enables OpenTelemetry trace export to an OTLP/HTTP
+	// receiver (docs/api.md §请求追踪): "http://host:4318" for plaintext,
+	// "https://…" for TLS. Unset keeps the no-op tracer provider — spans
+	// are non-recording and export costs nothing (roadmap 可观测性深化).
+	// Env: ATLAS_OTLP_ENDPOINT, default "".
+	OTLPEndpoint string
+
+	// TraceSampleRatio is the parent-based TraceIDRatio sampling rate for
+	// root spans when OTLPEndpoint is configured; child spans follow their
+	// parent. Values outside (0,1] fall back to 1.0.
+	// Env: ATLAS_TRACING_SAMPLE_RATIO, default 1.0.
+	TraceSampleRatio float64
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -283,6 +296,8 @@ func Load() Config {
 		AuditEnabled:        os.Getenv("ATLAS_AUDIT_ENABLED") != "0",
 		RateLimits:          os.Getenv("ATLAS_RATE_LIMITS"),
 		RateLimitDefault:    os.Getenv("ATLAS_RATE_LIMIT_DEFAULT"),
+		OTLPEndpoint:        os.Getenv("ATLAS_OTLP_ENDPOINT"),
+		TraceSampleRatio:    1.0,
 	}
 
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
@@ -313,6 +328,11 @@ func Load() Config {
 	if v := os.Getenv("ATLAS_ALERT_OFFLINE_RATIO"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
 			cfg.AlertOfflineRatio = f
+		}
+	}
+	if v := os.Getenv("ATLAS_TRACING_SAMPLE_RATIO"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
+			cfg.TraceSampleRatio = f
 		}
 	}
 	if v := os.Getenv("ATLAS_CHAR_SHARDS"); v != "" {

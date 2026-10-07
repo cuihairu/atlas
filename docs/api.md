@@ -673,6 +673,17 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 - 请求完成时输出一条访问日志（REST `msg=http request`，gRPC `msg=grpc request`）：`request_id`、`method`、`path`/`code`、`status`、`duration_ms`。`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头、不记日志。
 - 网关（APISIX/nginx）透传同一 header、五个官方 SDK 均有固定关联头注入口（Go `Options.DefaultHeaders`、C++ `Options.default_headers`、Python `default_headers=`、JS `defaultHeaders`、Java `setDefaultHeaders`、C# `DefaultHeaders`——REST 头 / gRPC metadata 同语义；gRPC 侧也可对单个调用在 ctx 上附加 metadata），即可把请求在 REST 与 gRPC 多跳日志里串起来。被限流/鉴权拒绝的请求同样有 id（追踪中间件/拦截器在最外层）。
 
+### 分布式追踪（OpenTelemetry OTLP）
+
+X-Request-ID 是跨跳关联 id，不是 span 树。需要链路视图时，设 `ATLAS_OTLP_ENDPOINT`（如 `http://localhost:4318`）开启 OpenTelemetry 追踪导出，协议为 OTLP/HTTP——Jaeger、Tempo 或任意讲 OTLP 的 collector 都能接收（协议是承诺，后端不锁定）。不设则全局 no-op tracer provider，span 不记录、导出管线零开销（与 gRPC TLS 未配置即明文同一默认哲学）。endpoint 带 `https://` 前缀走 TLS；带路径（反代后的 collector）自动拼接标准 `/v1/traces`。
+
+- **span 形态**：三个 HTTP 监听口与 gRPC 口每请求一个 server root span。REST 按路由模式命名（`GET /v1/discovery/servers/{id}`——低基数、聚合友好，带实体 id 的原始路径在 `url.path` 属性里）；gRPC 按全方法名命名（`/admin.AdminService/GetStats`）。属性沿用 OTel semconv（`http.*` / `rpc.*`）并附 `atlas.request_id`——与 X-Request-ID 是同一个 id，日志与链路可互查。
+- **错误语义**：HTTP ≥500 或 gRPC 非 OK 时 span 置 `Error`；4xx 保持 Unset（客户端所致，与 semconv 建议同口径）。
+- **采样**：`ATLAS_TRACING_SAMPLE_RATIO`（默认 `1.0`），`ParentBased(TraceIDRatioBased)`——上游 traceparent 已带采样决定时以其为准，比率只管新根；(0,1] 之外的值回退 `1.0`。
+- **静默路径**：`/healthz`、`/readyz`、`/metrics` 与访问日志同口径，不开 span。
+- **指标不动**：metrics 仍走 Prometheus（`GET /metrics`），追踪走 OTLP——不引入第二套 metrics 后端。
+- 停机时 flush 导出队列（10s 上限），尾部 span 不丢。
+
 ---
 
 ## gRPC API

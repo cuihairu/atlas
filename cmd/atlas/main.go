@@ -43,6 +43,7 @@ import (
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/serversconfig"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
@@ -66,6 +67,19 @@ func main() {
 	}))
 
 	cfg := config.Load()
+
+	// OpenTelemetry trace export (roadmap 可观测性深化): disabled unless
+	// ATLAS_OTLP_ENDPOINT is set — no-op provider, non-recording spans,
+	// zero cost. Flushed on the shutdown path below so trailing spans land.
+	shutdownTracing, err := atlastracing.Setup(context.Background(), atlastracing.Options{
+		Endpoint:    cfg.OTLPEndpoint,
+		SampleRatio: cfg.TraceSampleRatio,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Error("invalid tracing config", "error", err)
+		os.Exit(1)
+	}
 
 	logger.Info("starting Atlas",
 		"version", version.String(),
@@ -466,7 +480,7 @@ func main() {
 	// CORS outermost: preflight clears before anything else, and only for
 	// origins ATLAS_CORS_ORIGINS explicitly allows (empty config = no CORS
 	// headers at all).
-	publicHandler := httpapi.CORSMiddleware(cfg.CORSAllowedOrigins)(httpapi.Tracing(logger)(publicMux))
+	publicHandler := httpapi.CORSMiddleware(cfg.CORSAllowedOrigins)(httpapi.Tracing(logger)(httpapi.Spans()(publicMux)))
 	publicSrv := &http.Server{
 		Addr:         cfg.HTTPAddr,
 		Handler:      publicHandler,
@@ -497,7 +511,7 @@ func main() {
 	}
 	// Tracing outermost: register/heartbeat calls rejected by auth or the
 	// rate limiter are traced too.
-	regHandler = httpapi.Tracing(logger)(regHandler)
+	regHandler = httpapi.Tracing(logger)(httpapi.Spans()(regHandler))
 	regSrv := &http.Server{
 		Addr:         cfg.RegistryAddr,
 		Handler:      regHandler,
@@ -538,7 +552,7 @@ func main() {
 		adminHandler = limiter.Middleware(adminHandler)
 	}
 	adminHandler = metrics.RequestCounter(prom.AdminRequests)(adminHandler)
-	adminHandler = httpapi.Tracing(logger)(adminHandler)
+	adminHandler = httpapi.Tracing(logger)(httpapi.Spans()(adminHandler))
 	// CORS outermost (outside auth): preflight OPTIONS carries no admin
 	// key, and the dashboard dev server needs it answered before the
 	// browser will send the real request.
@@ -561,7 +575,7 @@ func main() {
 	// limiter → auth → audit, so rejected calls count), rate limit
 	// outside auth (cheap per-IP rejection before any key check), audit
 	// inside auth — Admin RPCs land in the same ring as REST operations.
-	grpcInterceptors := []grpc.UnaryServerInterceptor{atlasgrpc.UnaryTrace(logger), atlasgrpc.UnaryMetrics(prom)}
+	grpcInterceptors := []grpc.UnaryServerInterceptor{atlasgrpc.UnaryTrace(logger), atlasgrpc.UnarySpans(), atlasgrpc.UnaryMetrics(prom)}
 	if limiter != nil {
 		grpcInterceptors = append(grpcInterceptors, atlasgrpc.UnaryRateLimit(limiter))
 	}
@@ -694,6 +708,13 @@ func main() {
 	// Close stores.
 	if pingCloser != nil {
 		pingCloser()
+	}
+
+	// Flush trailing spans before exit (no-op when tracing is disabled).
+	if shutdownTracing != nil {
+		if err := shutdownTracing(context.Background()); err != nil {
+			logger.Warn("trace export shutdown", "error", err)
+		}
 	}
 
 	logger.Info("Atlas stopped")
