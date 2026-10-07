@@ -178,6 +178,22 @@
 
 ---
 
+## 巡检修复 · C# 错误面对齐（2026-10-07）✅
+
+> 巡检查实 C# 是五 REST 语言 SDK 中唯一错误面失偏的语言，两处对齐到
+> Python/JS/Java/C++ 同口径：网络层错误码与 HTTP 错误信封。
+
+- [x] 网络层错误码 `NETWORK_ERROR` → `NETWORK`（status=0）：五语言统一词表，
+      跨 SDK 消费者共享 `err.code` 判断不 split——commit e5545f0
+- [x] 错误信封解析：ParseError 只读顶层 `code`/`message`，而服务端错误恒嵌套
+      于 `{"error":{code,message}}`（internal/httpapi errorBody），真库
+      404/429/5xx 在 C# 侧全落地空 code，测试夹具同错扁平造假（假绿）；
+      改嵌套解析 + 非信封/非 JSON 体回退 `HTTP_<status>`+原文截断，夹具
+      强制 503/默认 404 改真实信封，404 测试改嵌套体，新增无 JSON
+      体 500 → HTTP_500 测试——commit 4fd0f76
+
+---
+
 ## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
 
 ### 巡检派工（2026-10-05）✅
