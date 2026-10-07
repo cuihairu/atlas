@@ -82,12 +82,3 @@ Atlas 站在游戏服务器和玩家客户端中间，三类人各自从这里�
 | 合服 / 转服 / 迁服 | 角色索引原子迁移，先复制、后切换、再清理，失败可回滚 | [迁移](/migration) |
 | 网关与鉴权 | APISIX 两插件：玩家 token 校验 + 身份注入，按端点组限流 | [APISIX 接入插件](/apisix) |
 | 高可用 | Atlas 副本无状态化，PG / Redis 后端共享，HAProxy 心跳扇入 | [高可用](/ha) |
-
-<style>
-:root {
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #e98f36 100%);
-  --vp-home-hero-image-background-image: radial-gradient(circle at 50% 50%, rgba(217, 119, 6, 0.12) 0%, transparent 70%);
-  --vp-home-hero-image-filter: blur(44px);
-}
-</style>
