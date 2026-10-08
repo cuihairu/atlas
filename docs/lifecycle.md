@@ -121,15 +121,15 @@ stateDiagram-v2
 | --- | --- | --- |
 | — → `starting` | 游戏服务器 | `register` |
 | `starting` → `online` | 游戏服务器 / Atlas | 首次有效心跳 |
-| `online` → `draining` | 运维 | `POST /admin/servers/{id}/drain` |
-| `online` → `maintenance` | 运维 | `POST /admin/servers/{id}/maintenance` |
+| `online` → `draining` | 运维 | `POST /v1/admin/servers/{id}/drain` |
+| `online` → `maintenance` | 运维 | `POST /v1/admin/servers/{id}/maintenance` |
 | `online` → `suspect` | Atlas | 心跳超时阈值 1 |
 | `suspect` → `online` | Atlas | 收到心跳（恢复） |
 | `suspect` → `offline` | Atlas | 心跳超时阈值 2 |
 | `suspect` / `offline` → `starting` | 游戏服务器 | 重新 `register`（幂等；仅 `suspect` / `offline` 会被重置，`online` 与运维设置的状态不受重复注册影响） |
 | `draining` → `offline` | Atlas / 游戏服务器 | 存量清零或超时 |
-| `maintenance` → `online` | 运维 | `POST /admin/servers/{id}/enable` |
-| 任意 → `disabled` | 运维 | `POST /admin/servers/{id}/disable` |
+| `maintenance` → `online` | 运维 | `POST /v1/admin/servers/{id}/enable` |
+| 任意 → `disabled` | 运维 | `POST /v1/admin/servers/{id}/disable` |
 | 任意 → `offline` | 游戏服务器 | `unregister` |
 
 ---
@@ -161,7 +161,7 @@ flowchart TB
 | suspect 阈值 | 30s | 3× 心跳间隔（见 §4.2） |
 | offline 阈值 | 60s | 6× 心跳间隔 |
 
-阈值应可配置，不同部署环境（同机房 vs 跨地域）差异较大。从未上报过心跳的服务器（无 runtime 数据）以注册时刻起算年龄。
+阈值应可配置，不同部署环境（同机房 vs 跨地域）差异较大。从未上报过心跳的服务器（无 runtime 数据）：仅 `starting` 状态参与年龄判死——以 `CreatedAt` 起算，超过 offline 阈值**直接置 `offline`（不经过 suspect）**；其余状态不参与该巡检（`maintenance` / `disabled` 等由运维显式管理）。
 
 ### 4.1 健康警报（v0.1.15 交付）
 
@@ -217,8 +217,6 @@ webhook 载荷示例：
   "fired_at": "2026-10-01T12:00:00Z"
 }
 ```
-
-webhook 投递失败只记错误日志，不影响巡检循环。
 
 ### 4.2 心跳节奏指引（3:1 法则，v0.1.20）
 
