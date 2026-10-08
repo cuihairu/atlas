@@ -60,7 +60,7 @@ servers config applied file=./servers.json profile= declared=2 created=2 updated
 ```bash
 curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat \
   -H 'Content-Type: application/json' -d '{"players":42,"load":0.3}'
-# {"server_id":"game-1001","status":"online"}
+# {"server_id":"game-1001","status":"online","next_heartbeat_in":10}
 ```
 
 发现与推荐链路对配置声明的服务器完全无感——它们就是普通的在线服务器：
@@ -173,6 +173,7 @@ flowchart LR
 | `name` / `type` / `version` / `platform` | — | 同注册 API |
 | `realm_id` / `shard_id` | — | 隶属 Realm / Shard，须已通过 Admin API 创建 |
 | `capacity` | — | 容量，`>= 0` |
+| `metadata` | — | 任意键值对，随声明透传入库（引擎提示、集群/地域/语言标记等，与注册 API 的 `metadata` 同一语义） |
 
 状态（`starting`/`online`/`maintenance`/…）不可声明——需要预置维护 / 禁用等状态时，启动
 后用 Admin 生命周期接口设置。

@@ -300,7 +300,7 @@ Atlas 是标准 HTTP REST 服务，**任何能做反向代理的网关都可以�
 | **Caddy** | 插件 | 自动 HTTPS | 基础 | 适合小规模 |
 | **无网关** | Atlas 自身中间件 | — | — | 开发/测试，不推荐生产 |
 
-**Atlas 自身也可以做基础限流**——在 `internal/httpapi` 加一个令牌桶中间件就够了。但生产环境建议把限流放在网关层，原因是：
+**Atlas 自身已内建基础限流**——`internal/httpapi/ratelimit.go` 令牌桶中间件（路径前缀最长匹配规则 + 按客户端 IP 计桶），配 `ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT` 即启用（v0.1.17 落地）。但生产环境仍建议把限流放在网关层，原因是：
 - 网关限流在 Atlas 进程之外，Atlas 过载时网关还能挡
 - 网关可以对不同路由设不同限流策略（注册接口严格，查询接口宽松）
 - 网关限流不需要改 Atlas 代码

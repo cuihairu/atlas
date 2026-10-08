@@ -21,12 +21,13 @@ flowchart TB
 
 ## 当前状态:v0.1 系列全量交付
 
-**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布两个 release：
+**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布三个 release：
 
 | Release | 内容 |
 | --- | --- |
 | [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：核心模型跑通（Registry / Discovery / Directory / 健康监控 / REST API） |
 | [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | v0.1 系列收官：MVP 之上补齐全部工程化能力（69 个提交） |
+| [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | 跨服配置中心 + 服务器标记体系 + 声明式服务器配置 + 管理台扩展 + Docker/部署腿（50 个提交） |
 
 > 早期路线图曾把事件驱动、SDK、gRPC、高可用分别规划在 v0.2 ~ v1.0。实际开发中它们以 v0.1.x 内部里程碑的形式全部完成于 0.1 系列内——**原 v0.2 ~ v1.0 的每一项都已交付**，见下表。
 
@@ -40,7 +41,7 @@ flowchart TB
 | ✅ 生命周期状态机 | starting / online / draining / maintenance / suspect / offline / disabled，两段式掉线判定 | v0.1.0 起，v0.1.x 补全 |
 | ✅ Admin 生命周期操作 | maintenance / drain / enable / disable | v0.1.x |
 | ✅ 事件同步 | EventAdapter 抽象 + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
-| ✅ Prometheus 指标 | :8082 `/metrics` + Grafana 概览看板 | v0.1.3 |
+| ✅ Prometheus 指标 | :8082 `/metrics`（Grafana 为外接指引，见 topology.md——仓库内无看板实体） | v0.1.3 |
 | ✅ Routing 接入推荐 | `GET /v1/routing/recommended`，同账号角色粘滞 | v0.1.x |
 | ✅ gRPC 双传输 | 5 服务 22 RPC，:9090（核心面与 REST 同源，管理面扩展端点为 REST-only） | v0.1.5 |
 | ✅ 六语言 SDK | Go(双传输) / C++ / Python(同步异步) / JS/TS / Java / C#，自动心跳内置 | v0.1.6 ~ v0.1.11 |
@@ -52,7 +53,7 @@ flowchart TB
 | ✅ Dashboard 增强 | 实时服务器地图、玩家趋势、迁移进度、主题切换、中英 i18n | v0.1.18 |
 | ✅ 高可用 | Redis 哨兵/集群、PG 连接池调优、HAProxy 心跳扇入、主从复制指南 | v0.1.19 |
 | ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
-| ✅ 质量基建 | service/handler 覆盖率 >80% 门禁、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
+| ✅ 质量基建 | service/handler 覆盖率 >80% 目标（CI 报告 + Codecov 上报，未作失败门禁）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
 
 能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
 
@@ -153,6 +154,7 @@ atlas/
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
 │   ├── tlsutil/            mTLS 辅助
+│   ├── tracing/            请求追踪（X-Request-ID 贯通三监听口）
 │   ├── crossserver/        跨服配置中心（发布 / 订阅 / 回调 / 轮询）
 │   ├── fleet/              舰队实时索引（load-series / 匹配判定）
 │   ├── serversconfig/      服务器配置文件托管（config-owned 记录）

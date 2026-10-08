@@ -52,9 +52,10 @@ go run ./cmd/atlas
 # …level=INFO msg="public API listening"   addr=:8080
 # …level=INFO msg="registry API listening" addr=:8081 scheme=http
 # …level=INFO msg="admin API listening"    addr=:8082
+# …level=INFO msg="gRPC API listening"     addr=:9090
 ```
 
-看到三行 listening，Atlas 就在跑了（内存存储，零依赖）。接下来[快速上手](/api-quickstart)
+看到四行 listening，Atlas 就在跑了（内存存储，零依赖；gRPC 口可用 `ATLAS_GRPC_ADDR=""` 关掉）。接下来[快速上手](/api-quickstart)
 用约 5 分钟、全部真实命令走完**注册上线 → 玩家选服 → 角色目录 → 运维操作 → 优雅下线**的完整链路。
 
 ## 使用场景

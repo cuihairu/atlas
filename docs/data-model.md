@@ -1,6 +1,6 @@
 # 数据模型
 
-Atlas 采用 **PostgreSQL + Redis** 双存储，按**访问模式**分工：
+Atlas 的存储按**访问模式**分两层：注册表 / 角色目录等持久态由可插拔存储承载（`ATLAS_STORE`：`memory` 默认、零依赖开箱即用；`postgres` 面向生产；`mysql` 实现已备、主程序装配未接），**运行时状态**（心跳、玩家数、负载，TTL ≤ 120s）固定走 Redis。本章以生产形态（PostgreSQL + Redis）给表结构：
 
 | 存储 | 承载内容 | 访问模式 |
 | --- | --- | --- |
@@ -45,6 +45,7 @@ CREATE TABLE servers (
     endpoint_port INTEGER   NOT NULL,
     capacity    INTEGER     NOT NULL DEFAULT 0,
     metadata    JSONB       NOT NULL DEFAULT '{}',
+    source      TEXT        NOT NULL DEFAULT '',
     status      TEXT        NOT NULL DEFAULT 'starting',
     started_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -55,6 +56,8 @@ CREATE INDEX idx_servers_region_status ON servers (region, status);
 CREATE INDEX idx_servers_realm        ON servers (realm_id);
 CREATE INDEX idx_servers_shard        ON servers (shard_id);
 ```
+
+`source` 标记档案归属（migrations/0004）：`''` = API 注册（默认），`config` = 配置文件声明（`ATLAS_SERVERS_CONFIG`）——config 归属的记录注册 API 拒改其档案字段（`409 SERVER_MANAGED_BY_CONFIG`），心跳与生命周期操作照常。
 
 `status` 的取值域见 [lifecycle.md](lifecycle.md)：
 

@@ -244,6 +244,7 @@ atlas/
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
 │   ├── tlsutil/            mTLS 辅助
+│   ├── tracing/            请求追踪（X-Request-ID 贯通三监听口）
 │   ├── crossserver/        跨服配置中心（发布 / 订阅 / 回调 / 轮询）
 │   ├── fleet/              舰队实时索引（load-series / 匹配判定）
 │   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
@@ -355,12 +356,13 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 
 ## 路线图
 
-**v0.1 系列已全量交付**，对外发布两个 release：
+**v0.1 系列已全量交付**，对外发布三个 release：
 
 | Release | 内容 |
 | --- | --- |
 | [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：Registry / Discovery / Directory / 健康监控 / REST API |
 | [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | 系列收官：Routing、gRPC 双传输、六语言 SDK、消息总线适配器、Realm/Shard 管理、维护窗口与公告、安全加固（mTLS/RBAC/审计）、高可用、角色索引分片 |
+| [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | 跨服配置中心（三档接入热更新）、服务器标记体系、声明式服务器配置、管理台扩展、Docker 镜像与部署腿 |
 
 **明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据、匹配/排队/房间、实例与 Zone 分配、玩家 Session、背包/经济/排行榜等游戏业务数据（详见 [docs/roadmap.md](docs/roadmap.md)「明确不做」清单）。
 

@@ -32,8 +32,8 @@ flowchart TB
 | --- | --- | --- | --- |
 | 接入 | APISIX（或网关） | TLS 终结、玩家侧鉴权、限流、路由 `/v1/discovery/*` | 公网唯一入口；发现接口是只读的，可积极缓存 |
 | 接入 | HAProxy TCP 模式 | 游戏服务器心跳扇入到 Atlas registry 端口 | 纯四层透传，registry 自带 token / mTLS（v0.1.17） |
-| 服务 | Atlas public `:8080` | Discovery / Directory / Routing（只读） | 无状态，横向扩展 |
-| 服务 | Atlas registry `:8081` | 注册 / 心跳 / 注销（写） | 心跳 3:1:6 节奏（lifecycle.md §4.2） |
+| 服务 | Atlas public `:8080` | Discovery / Routing（只读）+ Directory（角色索引读**写**）+ 跨服配置拉取 | 无状态，横向扩展；Directory 写端点也挂此口 |
+| 服务 | Atlas registry `:8081` | 注册 / 心跳 / 注销（写）+ 跨服配置拉取 | 心跳 3:1:6 节奏（lifecycle.md §4.2）；配置拉取与 :8080 双口同挂 |
 | 服务 | Atlas admin `:8082` | 生命周期操作、统计、维护窗口、公告 | 内网/管理网；RBAC + 审计 + 限流 |
 | 服务 | Atlas gRPC `:9090` | 同 HTTP 的内部高性能通道 | 游戏服务器可选直连 |
 | 存储 | Redis | 运行时数据：心跳、玩家数、负载（TTL ≤ 120s） | 哨兵故障转移；Atlas 只做键值读写 |
