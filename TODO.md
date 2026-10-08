@@ -3,7 +3,8 @@
 > 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
 > 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
 >
-> 当前批次：待队列下一批。文档-实现对账 sweep（6b9466c）与巡检派工五增量
+> 当前批次：「v0.2 进行中」（2026-10-08 立档）——性能批五项推进中，见下章。
+> 文档-实现对账 sweep（6b9466c）与巡检派工五增量
 > （storetest 契约补全 c5de2bf、gRPC 鉴权 905bc9b、gRPC 审计 a127bef、
 > gRPC 限流 c07de18、gRPC TLS c7c9947）已完成（2026-10-05）——四层防护
 > 双传输对齐；中断期积压已全部推送（至 60f03e5，含幻影项销账与口径修正）；
@@ -19,6 +20,64 @@
 > 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
 >
 > 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
+
+---
+
+---
+
+## v0.2 进行中（2026-10-08 立档）
+
+> 性能批五项按拍板推进：每完成一项即勾并注明 commit 与验收数字；后续
+> 每个增量先勾账再 commit。
+
+- [x] **① 六类内存倒排索引** — internal/store/memory/indexes.go：servers 按
+      region/realm/shard/version/platform/status 六字段 + public tags 建倒排，
+      characters 按 byAccount/byServer/byAccountServer/byCharID 建倒排（角色
+      目录与服务器目录同级索引化）；ListServers 取最小候选集逐条验全过滤器
+      （等价交集），游标分页按 ID 排序语义不变；SQL 侧仅增量补 tags 过滤
+      （postgres `tags @>` / mysql `JSON_CONTAINS`，public-only，既有过滤不动）。
+      验收：storetest 契约 tags 过滤断言（public-only 匹配、AND 语义、未知
+      tag 空集非全扫、内部 tag 永不匹配）三库一致；bench 对照数字入档
+      （docs/审计-文档一致性.md 附录 A）。
+- [x] **② 指令化写队列** — internal/store/memory/queue.go：写路径封装指令
+      {kind, target, payload, base_version, idempotency_key}；按实体 FNV-1a
+      哈希入 4 控制道 + 2 热道（配置变更 > 心跳，同实体同道 FIFO 单写者）；
+      可合并性按指令类型声明（heartbeat / server-status / server-tags 覆盖写
+      留最新；拷回类与顺序敏感类不合并不丢）；合并窗随队列供给——非空续捞、
+      空即提交（无定时窗、无延迟地板），批量上限 256；队列满退化内联同步写。
+      验收：合并不丢（enqueued = applied + merged + 在途）、同实体不乱序、
+      幂等重放一致、被合并调用方必拿提交回执（回归测试钉住）、ReplayInto /
+      DryRun 可重放、race 绿。
+- [x] **③ 原子性拍板 + 版本水位** — 采用 data+index 同锁同临界区（快照 +
+      atomic.Pointer 整表发布评估后否决：每写全表拷贝 O(N) 写放大）；索引
+      增量维护 O(1)/条禁全量重建；每批提交递增 monotonic 水位 = 可见性契约
+      （读侧 RLock 下看到的水位即已提交状态）。RCU 评估与分工、拍板理由落
+      docs/审计-文档一致性.md 附录 A，成章后迁 performance.md（项⑤）。
+      验收：契约与 race 绿；水位随批递增由队列测试断言。
+- [ ] **④ dash 队列可观测** — QueueStats → Prometheus（深度/入队速率/合并率/
+      flush 批量与时延/背压退化计数/watermark，与既有 metrics 包同姿势）+
+      GET /v1/admin/indexqueue/status + 管理台「存储队列」卡（压力灯阈值
+      变色 + 版本号 + 最近 flush 记录）。验收：curl 实证 admin 端点、dash
+      截图、契约测试。
+- [x] **⑤ performance.md 性能设计章补齐 + bench 对照收编** — 新增 §8「v0.2
+      索引与写路径设计」：六类倒排索引 / 指令化写队列 / 原子性拍板（同锁
+      同临界区，否决方案如实记录）/ 版本水位 / bench 前后对照（同机交错
+      实测）/ 队列观测（数据面已落，Prometheus + admin 端点 + dash 卡如实标
+      「计划中」不超前宣称）；每条主张带 file:line 自检。bench 双落点：
+      performance.md §8.5 + 审计文档附录 A。验收达标：文档与已实现代码
+      逐条对得上。
+
+### 候补（roadmap 开放候选转档，按前置条件触发）
+
+- **API 稳定化与 v1.0** — 触发条件：API 面在生产环境验证充分。冻结
+  REST/gRPC 契约后发 v1.0（三态字段重命名同窗口执行，见 roadmap 🔒 项）。
+- **Routing 策略扩展余项（权重 / 灰度白名单）** — 触发条件：真实运营需求
+  反馈；仍只做推荐元数据，不越调度边界。
+- **公告与窗口批量编排** — 触发条件：多服务器运营场景验证提出需求。
+- **Kubernetes 部署样例** — 触发条件：有部署需求提出（Helm chart /
+  Operator 维持「明确不做」）。
+- **Migration Controller 独立模块拆分** — 触发条件：多舰队独立迁移集群 /
+  独立扩缩容需求（roadmap 🔒 已定档项，触发即执行）。
 
 ---
 

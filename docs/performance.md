@@ -94,3 +94,130 @@ startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然�
 除部署级两行（PG 连接池自愈、Atlas 副本宕机）外，矩阵已全部变成
 `go test` 可复现的故障用例——从此"正确性不靠人品"。完整基准方法见
 [性能基准](/benchmarks)。
+
+## 8. v0.2 索引与写路径设计（2026-10-08 落地）
+
+> 本章对齐已落码实现，每条主张给到 file:line；前后对照数字来自同机交错实测
+> （§8.5）。SQL store（postgres/mysql）不引入队列——指令化写路径是 memory
+> store 的实现选择，三库以 storetest 契约钉住同一行为（`internal/store/storetest`）。
+
+### 8.1 六类倒排索引（读路径）
+
+**服务器目录**按六个字段 + public tags 建倒排（`internal/store/memory/indexes.go:50`）：
+`region / realm / shard / version / platform / status` 各是 `map[值]→ID集合`，tags 只收
+`Public:true` 的 code（投影 `projectServer`，indexes.go:32）——内部标记永不参与玩家侧
+过滤，与发现接口的 `model.PublicTags` 口径一致。
+
+**角色目录**与服务器目录同级索引化（indexes.go:213）：`byAccount / byServer /
+byAccountServer / byCharID` 四张倒排。复合键 `accountID:serverID:characterID`
+终生不变，所以**更新不触索引**、只有插入/删除维护 O(1)（indexes.go:229 注释）；
+全局角色 ID 点查从全扫变 O(1)（indexes.go:242）。
+
+**索引选择与游标**（`ListServers`，memory.go:143）：有索引过滤时取**最小候选桶**
+逐条验全过滤器——选一个维度做驱动、其余字段复核，等价于全交集而免去集合运算
+（candidates，indexes.go:118）；无任何索引过滤则直接扫表（memory.go:160，先物化
+全量 key 切片是纯开销）。未知 tag / 无匹配值返回**空非 nil 桶：空结果，不是全扫**
+（契约断言 storetest/contract.go:486）。候选按 ID 升序排序后二分定位游标
+（memory.go:160-174）——分页语义与改前逐字一致，契约回归锁住。
+
+| 操作 | 改前 | 改后 |
+| --- | --- | --- |
+| 过滤列表 | O(N) 全表逐条验 | O(|最小桶|) 候选 + O(C log C) 排序（分页语义要求） |
+| 角色按账号/按服列表 | O(N) 全扫 | O(|桶|) |
+| 全局角色 ID 点查 | O(N) 全扫 | O(1) |
+
+**SQL 侧只增量补 tags 过滤**（既有 SQL 过滤一字未动）：postgres `tags @> $n::jsonb`
+（postgres.go:179）、mysql `JSON_CONTAINS(tags, ?)`，谓词都限定 `"public":true`——
+三库同一 AND 语义由 storetest 契约对齐（contract.go:461-490：public 匹配、AND、
+内部 tag 永不匹配、未知 tag 空集）。
+
+### 8.2 指令化写队列
+
+所有热写先封装为**指令信封** `{kind, target, payload, base_version, idempotency_key}`
+（`instruction`，queue.go:130），公开方法签名与同步语义不变——调用方阻塞到**本条**
+提交（各写方法都是 `return s.submit(ctx, ins).err`，memory.go:128 等），read-after-write
+依旧精确。
+
+- **分道**：4 控制道 + 2 热道，按实体 FNV-1a 哈希（queue.go:231, 282-284）——同实体
+  恒落同道，FIFO 单写者，竞态在结构上不存在。配置变更（控制道）不排队在心跳
+  （热道）后面，热道积压拖不垮控制面（`hot()`，queue.go:111）。
+- **合并规则挂在类型上**（`mergeable()`，queue.go:119）：只有覆盖写语义的
+  heartbeat / server-status / server-tags 可合并——同批同实体留最新、多余的被
+  「 supersede」；带调用方拷回的（register / 角色 upsert）与顺序敏感的（删除、
+  角色 patch）永不合并、不丢不重。**被合并的信封也拿批次提交回执**（applyBatchN
+  的 superseded 通知，queue.go:350 起）——对 last-writer-wins 语义，"你的写已随
+  更新者落地"，调用方不感知合并；回归测试钉住并发合并不吞回执（queue_test.go:281）。
+- **合并窗随供给走**：道内非空续捞、捞空即提交（`drainAvailable`，queue.go:317），
+  批量上限 256。没有定时窗——空闲单条立即提交（无延迟地板），风暴下天然攒满
+  上限批。合并窗=供给窗口：同实体高频写在批内去抖，索引增量随批一次维护。
+- **背压**：道深 4096 满→该条**内联同步写**（submit 的 default 分支，queue.go:254）
+  ——调用方自己当自己的单写者，写绝不失败也绝不无限排队。
+- **幂等与回放**：幂等键 LRU 1024 防重试重放（queue.go:470-487）；已应用指令落
+  1024 深拷贝 capture 环——`ReplayInto` 在沙箱重建写历史、`DryRun` 预检不动线上
+  （queue.go:206, 221）。合并语义测试：合并不丢（enqueued = applied + merged +
+  在途）、同实体不乱序、幂等重放一致（queue_test.go:25, 122, 230）。
+
+### 8.3 原子性：data + index 同临界区（拍板）
+
+**实际采用：同一把锁同一个临界区**。每批提交在 `mu + charMu` 内一次完成数据变更
+与索引维护（applyBatchN，queue.go:340-395）——索引与数据永不互相领先，读侧持
+对应读锁看到的必是一致的 (data, index) 对。三锁域与锁序：mu（servers+serverIndex）
+→ charMu（characters+charIndex）→ rtMu（runtimes），无反向获取路径
+（memory.go:10-14, 47-48）。
+
+**否决方案（如实记录）**：整体快照 + `atomic.Pointer` 发布。每条写都要拷贝整表
+（O(N) 写放大，2000 台舰队心跳风暴下不可接受），而读侧在 RWMutex 读锁 + 拷贝
+出库下已经无写阻塞（§3）；收益只剩"读侧免锁"，代价不成比例。索引维护是增量的
+O(1)/条（indexes.go:74, 92——变更前快照旧投影、只摘/挂变化的键，空桶即回收），
+**禁全量重建**。RCU 同理评估否决；心跳批合并已把高频写的临界区摊薄（风暴下
+256 条一次临界区）。
+
+### 8.4 版本水位
+
+每应用一条指令递增 monotonic 水位（`s.watermark.Add(1)`，queue.go:428）。可见性
+语义：**读侧在锁内看到的水位即已提交状态**；调用方的写返回 = 本条已应用（等回执
+语义，§8.2）；被合并的写返回 = 其后继已应用（状态 ≥ 自己的写）。base_version 在
+入队时盖章；现有指令类型都是按实体覆盖交换的，水位不符即按重算消化——未来
+compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:62-67）。当前
+水位经 `QueueStats.Watermark` 暴露（store.go:318-323）。
+
+### 8.5 前后对照（同机交错实测）
+
+数据集：2000 台服务器（4 region）+ 200 账号 × 20 服 = 4000 行目录。方法：HEAD
+worktree 对照 + 正反序各 2+2 轮取中位、几何均值对消轮次偏差；µs 级行按 ±40% 噪音
+看待（同码对照 GetServer 双向残差 ~1.4x）。完整表与复现步骤见
+[审计文档附录 A](./审计-文档一致性.md)。
+
+**读路径（收益）**：
+
+| 基准 | 改前 | 改后 | 无偏加速 |
+| --- | ---: | ---: | ---: |
+| ListServers 无过滤 | 4.64 ms | 1.57 ms | 2.40x |
+| ListServers region | 1.54 ms | 0.51 ms | 2.36x |
+| ListServers status | 5.36 ms | 1.18 ms | 3.35x |
+| 伸缩 N=20000（region） | 13.94 ms | 1.63 ms | **7.03x** |
+| ListCharactersByAccount | 218 µs | 16.6 µs | **14.6x** |
+| GetCharacterByCharacterID | 76.5 µs | 0.27 µs | **282x** |
+| `?tags=` 未知 tag | 全扫（ms 级） | 0.3 µs | 空桶短路 |
+
+**写路径（如实成本）**：无竞争单写 0.2 µs → 3–9 µs（入队+等回执的信道握手）；14 核
+风暴 0.4 µs/op（≈2.5M ops/s）→ 9.3 µs/op（≈107k ops/s）——逐条回执的 goroutine
+唤醒成本主导，换来批合并（风暴批内合并到 ≤1/5）、同实体严格 FIFO、幂等防重与
+可回放。生产语境：真实心跳路径在内存队列之外还有 PG 双写 + Redis HSET（ms 级），
+µs 级增量不可见；107k ops/s 对 10k 舰队 × 0.1Hz ≈ 1k ops/s 仍约两个数量级余量。
+
+复现：`go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2`
+（改前需 `git worktree add` 到本批之前的 commit，拷入同一 bench 文件）。
+
+### 8.6 dash 队列观测（数据面已落，出口接线计划中）
+
+**已落**：队列快照 `QueueStats`（store.go:318）——深度（DepthControl/DepthHot）、
+入队/合并/应用计数（Enqueued/Merged/Applied）、幂等命中、背压退化次数
+（BackpressureSync）、水位（Watermark）、最近 16 次 flush 记录、按类型应用分布——
+由 `store.QueueStatusProvider` 接口（store.go:358）统一供出，队列测试消费验证
+（queue_test.go 各断言）。
+
+**计划中（下一增量，TODO「④ dash 队列可观测」）**：Prometheus `atlas_store_queue_*`
+指标族（与既有 `internal/metrics` 包同姿势）、`GET /v1/admin/indexqueue/status`、
+管理台「存储队列」卡（压力灯阈值变色 + 版本号 + 最近 flush）。指标语义以本节与
+`QueueStats` 字段注释为准，接线时对齐，不在此超前宣称。
