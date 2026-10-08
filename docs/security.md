@@ -30,8 +30,8 @@ Admin API 按 API Key 授予三种角色，角色在中间件内解析并写入�
 | 角色 | 权限 |
 | --- | --- |
 | `admin` | 全部 Admin 端点（默认） |
-| `operator` | 读全部 + 生命周期变更（maintenance/drain/enable/disable、迁移、realm/shard 创建） |
-| `viewer` | 仅读（GET/HEAD），任何变更返回 `403 ROLE_NOT_ALLOWED` |
+| `operator` | 与 `admin` 等权：角色会被解析并写入请求上下文，但当前实现除 `viewer` 外没有差异化的端点强制（细分权限是预留位，规划中） |
+| `viewer` | 仅读（GET/HEAD），任何变更返回 `403 ROLE_NOT_ALLOWED`——这是唯一被强制区分的角色 |
 
 ```bash
 ATLAS_ADMIN_API_KEYS=key-read,key-write,key-full

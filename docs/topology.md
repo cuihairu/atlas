@@ -23,7 +23,7 @@ flowchart TB
     CLUSTER -->|"运行时/心跳"| REDIS
     CLUSTER -->|"注册表/角色索引"| PG
 
-    PROM["Prometheus"] --> MET["Atlas :8080/metrics"] --> GRAF["Grafana"]
+    PROM["Prometheus"] --> MET["Atlas admin :8082 /metrics"] --> GRAF["Grafana"]
 ```
 
 ## 1. 分层职责
@@ -52,7 +52,7 @@ flowchart TB
 | 内部服务 → Atlas | 9090 | gRPC | 内网 |
 | Atlas → Redis | 6379 / 26379 | RESP | `requirepass`，哨兵拓扑（ha.md §3） |
 | Atlas → PostgreSQL | 5432 | TCP | scram-sha-256，池调优（ha.md §5） |
-| Prometheus → Atlas | 8080/metrics | HTTP | 内网 |
+| Prometheus → Atlas | 8082/metrics | HTTP | 内网（admin 口；配置了 `ATLAS_ADMIN_API_KEYS` 时同受钥鉴权） |
 
 ## 3. 部署形态
 

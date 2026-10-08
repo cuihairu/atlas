@@ -168,10 +168,10 @@ realm
 shard
 version
 platform
-language
 status
-game_mode
 ```
+
+> 分页另支持 `limit` / `cursor` 参数。其余查询参数会被静默忽略——tags 过滤目前是存储层契约能力，本端点尚未暴露对应查询参数。
 
 **Example**
 

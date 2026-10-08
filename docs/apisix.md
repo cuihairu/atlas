@@ -4,8 +4,9 @@
 玩家客户端统一走网关域名访问 :8080 的 Discovery / Directory / Routing。此时两件事在
 网关做最省事、Atlas 与游戏服务器都不用改一行：
 
-- **玩家鉴权**：客户端的 token 在网关校验，通过后注入身份头 `X-Atlas-Player-ID`
-  再转发——Atlas 只消费身份，不关心 token 怎么发；
+- **玩家鉴权**：客户端的 token 在网关校验，通过后才转发到 Atlas（可选同时剥离
+  token 头、向下游注入身份头 `X-Atlas-Player-ID`）——token 怎么发、怎么验，
+  Atlas 一概不感知；
 - **差异化限流**：按端点组给配额（读多的 discovery 放宽、写多的 directory 收紧、
   registry 每分钟 50 次防刷），一条路由覆盖整个 `/v1` 面。
 
@@ -20,7 +21,7 @@ sequenceDiagram
     alt token 有效
         G->>G: 注入 X-Atlas-Player-ID: 1001<br/>剥离玩家 token（strip_token）
         G->>A: 转发请求 + 身份头
-        A-->>G: 200（按身份头取 account，不校验 token）
+        A-->>G: 200（账号来自路径参数，Atlas 不读身份头）
         G-->>C: 200
     else token 无效 / 缺失
         G-->>C: 401（请求不落到 Atlas）
@@ -37,17 +38,19 @@ Atlas 官方提供两个 APISIX 网关插件（源码与单元测试在
 | `atlas-ratelimit.lua` | 按 Atlas 端点组（discovery / directory / routing / registry）差异化限流，单路由覆盖整个 `/v1` 面 |
 
 插件与 Atlas 的边界与 [架构设计](/architecture) 一致：认证、限流属于通用网关能力，
-由 APISIX 承担；Atlas 只消费注入后的身份头，不重复校验 token。
+由 APISIX 承担；Atlas 不重复校验 token，当前也不读取注入的身份头（见下方信任规则第 2 条）。
 
 **身份头信任规则（安全基线）：**
 
 1. **网关覆盖，不信任客户端透传。** 无论客户端是否自带 `X-Atlas-Player-ID` /
    `X-Player-Token`，网关必须先**剥离再注入**（`atlas-auth` 的实现即如此：
    token 校验通过后重写身份头，客户端携带的同名头永远被覆盖）。基于可信
-   网关重新标记（stamp）而不是"如果为空才注入"——伪造头在 Atlas 眼里不存在。
-2. **Atlas 把身份头当 untrusted 元数据。** 公网端点（:8080）消费 `X-Atlas-Player-ID`
-   仅用于 Routing 的角色粘滞与 Directory 的账号维度展示，**不据此做权限决策**；
-   管理面（:8082 API Key + RBAC）与注册面（:8081 Service Token，支持
+   网关重新标记（stamp）而不是"如果为空才注入"——下游看到的身份头只出自网关。
+2. **Atlas 当前不读取身份头。** `X-Atlas-Player-ID` 是网关注入给下游的预留元数据；
+   Atlas 的账号维度一律来自请求显式参数（路径如 `/v1/directory/accounts/{id}/characters`、
+   创建角色 body 的 `account_id`），身份头不构成 Atlas 的鉴权输入，伪造与否都不改变
+   Atlas 行为——它的消费方是网关后面的其他上游服务（或 Atlas 未来版本）。管理面
+   （:8082 API Key + RBAC）与注册面（:8081 Service Token，支持
    [mTLS](/security)）各自独立鉴权，与玩家身份头无关——即便网关被穿透，
    伪造的玩家身份头也碰不到内部端口。
 3. **内部服务调用建议 mTLS / 签名身份**（registry 已支持 mTLS，见

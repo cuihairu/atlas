@@ -75,14 +75,14 @@ curl -X DELETE localhost:8082/v1/admin/servers/game-1001/tags/no_register
 
 ## 4. 合服 / 转服 {#scenario-migration}
 
-**场景**：两台服人少了要合服。迁移编排「先复制、后切换、再清理」，角色索引在事务内原子切换，可回滚。
+**场景**：两台服人少了要合服。按「先复制、后切换、再清理」蓝图由运维编排执行，Atlas 记录迁移并提供失败回滚。
 
 ![迁移管理 — 创建迁移、状态流转、失败回滚](/screenshots/migrations.png)
 
 **操作路径**
 
 - 管理台：`Migrations`——填源/目标服务器创建迁移，页面实时刷新状态，失败可一键回滚。
-- 接口：`POST /v1/admin/migrations`（body 指定 `source_server_id` / `target_server_id`），`POST /v1/admin/migrations/{id}/rollback`。
+- 接口：`POST /v1/admin/migrations`（body 指定 `source_servers` 数组 / `target_server`），`POST /v1/admin/migrations/{id}/rollback`。
 - 详见[合服 / 转服 / 迁服](/migration)。
 
 ## 5. 开服与维护公告 {#scenario-ops}
@@ -92,13 +92,13 @@ curl -X DELETE localhost:8082/v1/admin/servers/game-1001/tags/no_register
 **操作路径**
 
 ```bash
-# 计划维护窗口（到点自动进维护/恢复）
-curl -X POST localhost:8082/v1/admin/maintenance-windows -H 'Content-Type: application/json' \
-     -d '{"server_id":"game-1001","start_at":"2026-10-03T02:00:00+08:00","end_at":"2026-10-03T04:00:00+08:00"}'
+# 计划维护窗口（到点自动进维护/恢复；announce 默认 true 会自动挂出覆盖窗口的公告）
+curl -X POST localhost:8082/v1/admin/servers/game-1001/maintenance-window -H 'Content-Type: application/json' \
+     -d '{"start_at":"2026-10-03T02:00:00+08:00","end_at":"2026-10-03T04:00:00+08:00"}'
 
-# 全服公告
+# 全服公告（starts_at/ends_at 必填，end 必须晚于 start）
 curl -X POST localhost:8082/v1/admin/announcements -H 'Content-Type: application/json' \
-     -d '{"title":"今晚例行维护","body":"02:00-04:00","level":"info"}'
+     -d '{"title":"今晚例行维护","body":"02:00-04:00","level":"info","starts_at":"2026-10-03T01:30:00+08:00","ends_at":"2026-10-03T04:30:00+08:00"}'
 ```
 
 服务器侧的紧急维护/排水/禁用在 `Servers` 页每行操作按钮里（进维护、排水、禁用、启用）——[场景 2](#scenario-tags) 截图里的操作列。详见[公告与计划维护](/operations)。
@@ -147,4 +147,4 @@ curl -X PUT localhost:8082/v1/admin/crossserver/config \
 
 ---
 
-以上界面来自 [dashboard/](https://github.com/cuihairu/atlas/tree/main/dashboard)（React + antd）。本地跑起来：`docker compose up -d` 起 Atlas 三件套，`cd dashboard && npm run dev` 起管理台（dev 代理自动分流公网/管理口）。
+以上界面来自 [dashboard/](https://github.com/cuihairu/atlas/tree/main/dashboard)（React + antd）。本地跑起来：`docker compose up -d` 起 Atlas 全栈（atlas、postgres、redis，外加一次性的 schema 迁移任务，共四个 service），`cd dashboard && npm run dev` 起管理台（dev 代理自动分流公网/管理口）。

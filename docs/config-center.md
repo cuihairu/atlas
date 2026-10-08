@@ -404,7 +404,7 @@ curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: applica
 
 ## 9. 部署与运维要点
 
-- **总线选择**：`ATLAS_EVENT_ADAPTER=redis`（默认，生产推荐）、`kafka`、`nats`、`rabbitmq`、`http`（进程内、单副本/开发）。配置中心信号走 `TopicConfig` (`atlas.config`)。
+- **总线选择**：`ATLAS_EVENT_ADAPTER=http`（默认，进程内、单副本/开发）、`redis`（复用既有 Redis，多副本/生产推荐）、`kafka`、`nats`、`rabbitmq`。五种适配器均已实现，切换只改这一个环境变量。配置中心信号走 `TopicConfig` (`atlas.config`)。
 - **公网拉取地址**：`ATLAS_PUBLIC_URL=http://atlas.example:8080`（或 LB 地址）。回调通知里会把 `crossserver_url` 回传，服务器无需硬编码第二个常量。
 - **回调重试策略**：`WithCallbackPolicy(timeout, attempts, baseBackoff)`，默认 3 次、200ms、5s 上限。
 - **并行度**：`parallel=8`（可调），防止大舰队回调风暴。

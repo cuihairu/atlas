@@ -37,16 +37,23 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    S1["1. 运维创建 migration 记录<br/>status = pending"]
+    S1["1. 运维创建 migration 记录<br/>POST /v1/admin/migrations → status = pending"]
     S2["2. 目标服务器 2001 进入 starting<br/>加载合并后的角色数据"]
     S3["3. 源服务器 1001 / 1002 进入 draining"]
     S4["4. 存量玩家自然离开或到达超时"]
     S5["5. 源服务器角色数据导出 → 导入目标"]
-    S6["6. 更新 character_index 的 server_id<br/>status = migrating"]
-    S7["7. 校验角色数量一致<br/>status = verifying"]
-    S8["8. 源服务器 offline，目标 online<br/>status = completed"]
+    S6["6. 目录索引批量变更 server_id<br/>（按 §7 蓝图由调用方执行）"]
+    S7["7. 校验角色数量一致<br/>（调用目录接口比对，见下）"]
+    S8["8. 源服务器 offline，目标 online"]
     S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
 ```
+
+> **v0.1 现状**：步骤 1 是 Atlas API（只创建记录，`status = pending`）；步骤 2-5、8
+> 是运维与游戏服务器的动作，Atlas 不参与编排，也**不自动推进迁移状态**——
+> `migrating` / `verifying` / `completed` 目前没有 API 可达路径（记录会停在
+> `pending`，可用的唯一状态推进是 `rollback`）。步骤 6 的索引变更当前没有原子
+> 端点（见 §3 现状）；步骤 7 的校验由你调用目录接口完成比对。自动编排是 §7 的
+> 设计蓝图，尚未实现。
 
 ### 校验
 
@@ -78,12 +85,16 @@ flowchart TB
 
 与合服的区别：转服是**单角色粒度**，合服是**服务器粒度**。但对 Atlas 而言都是 `character_index` 中 `server_id` 字段的变更。
 
+> **v0.1 现状**：目录 API 暂无原子变更 `server_id` 的端点——`PATCH
+> /v1/directory/characters/{id}` 只接受 `name` / `level` / `class_id` / `avatar`
+> （`server_id` 是行定位符，不是可改字段）。当前的落地路径是**建新删旧**两步：
+
 ```mermaid
 flowchart LR
-    T1["1. 游戏服务器完成角色数据转移"] --> T2["2. 调用 PATCH /v1/directory/characters/{id}<br/>{ &quot;server_id&quot;: &quot;2001&quot; }"] --> T3["3. Atlas 事务性更新索引"]
+    T1["1. 游戏服务器完成角色数据转移"] --> T2["2. 目标侧 POST /v1/directory/characters<br/>{account_id, server_id: 2001, character_id, ...}"] --> T3["3. 源侧 DELETE /v1/directory/characters/{id}<br/>删除旧索引行"]
 ```
 
-Atlas 需要保证的是**索引更新的原子性**，不是数据转移本身——数据转移由游戏服务器负责。
+两步**不是事务**：目标建行受注册门禁约束（目标处于维护中/禁止注册会被拒），建删之间同一 `character_id` 可能短暂在两侧并存。原子切换端点是规划项；数据转移本身始终由游戏服务器负责，Atlas 保证的是目录与运行时状态的一致视图。
 
 ---
 
@@ -192,7 +203,7 @@ COMMIT;
   "id": "mig-2026-001",
   "source_servers": ["game-1001", "game-1002"],
   "target_server": "game-2001",
-  "status": "verifying",
+  "status": "pending",
   "started_at": "2026-10-01T02:00:00Z",
   "completed_at": null
 }
@@ -208,14 +219,14 @@ COMMIT;
 
 ## 7. 幂等与重放
 
-迁移过程中途失败是常态（网络抖动、目标服务器崩溃、磁盘满）。Atlas 的迁移必须满足：
+迁移过程中途失败是常态（网络抖动、目标服务器崩溃、磁盘满）。Atlas 对迁移能力的设计要求与 v0.1 现状：
 
-| 要求 | 实现 |
-| --- | --- |
-| **幂等** | 以 `character_id` 为粒度，重复迁移同一角色不产生副作用 |
-| **可重放** | 记录迁移进度游标，失败后从中断点继续 |
-| **可回滚** | 保留源服务器的角色索引直到校验通过 |
-| **可校验** | 提供迁移前后角色集合比对接口 |
+| 要求 | 设计 | v0.1 现状 |
+| --- | --- | --- |
+| **幂等** | 以 `character_id` 为粒度，重复迁移同一角色不产生副作用 | 目录写端点幂等 upsert：重复创建同一 `(account_id, server_id, character_id)` 视为更新 |
+| **可重放** | 记录迁移进度游标，失败后从中断点继续 | 未实现——migration 记录无 `progress` 字段 |
+| **可回滚** | 保留源服务器的角色索引直到校验通过 | `POST /v1/admin/migrations/{id}/rollback` 仅把记录标记为 `rolled_back`（唯一可达的状态推进），不执行数据动作 |
+| **可校验** | 提供迁移前后角色集合比对接口 | 用目录接口自行比对（§2 第 7 步） |
 
 核心设计：**先复制，后切换，再清理**，而不是原地移动。
 
@@ -228,7 +239,9 @@ flowchart LR
     P1 --> P2 --> P3 --> P4
 ```
 
-任何一步失败，源数据都还在，可以重来。
+这是**设计蓝图**：v0.1 的 Atlas 只提供迁移记录（创建 / 查询 / 回滚）与目录写端点，
+编排不会自动发生——每一步都需要调用方（运维脚本或游戏服务器）显式执行。
+「任何一步失败，源数据都还在，可以重来」正是把编排交给手动控头的理由。
 
 ---
 
