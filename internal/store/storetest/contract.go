@@ -458,6 +458,35 @@ func servers(t *testing.T, ctx context.Context, s Core) {
 		t.Errorf("region+shard list = %+v, want only srv-a", got)
 	}
 
+	// Tag filter: public codes only, AND across multiple codes. Parity is
+	// load-bearing here — the memory store matches via its tag index while
+	// the SQL stores use JSON containment, and both must restrict to
+	// public:true so internal tags never match a listing filter.
+	if err := s.UpdateServerTags(ctx, srv2.ID, []model.ServerTag{
+		{Code: "hot", Public: true},
+		{Code: "ops_note", Public: false},
+	}); err != nil {
+		t.Fatalf("tag srv-b: %v", err)
+	}
+	if err := s.UpdateServerTags(ctx, srv3.ID, []model.ServerTag{
+		{Code: "hot", Public: true},
+		{Code: "new", Public: true},
+	}); err != nil {
+		t.Fatalf("tag srv-c: %v", err)
+	}
+	if got := listRegion(store.ServerFilter{Tags: []string{"hot"}}); len(got) != 2 {
+		t.Errorf("region+tag(hot) list = %d servers, want 2", len(got))
+	}
+	if got := listRegion(store.ServerFilter{Tags: []string{"hot", "new"}}); len(got) != 1 || got[0].ID != srv3.ID {
+		t.Errorf("region+tags(hot,new) list = %+v, want only srv-c (AND semantics)", got)
+	}
+	if got := listRegion(store.ServerFilter{Tags: []string{"ops_note"}}); len(got) != 0 {
+		t.Errorf("internal tag matched %d servers, want 0 (filters see public tags only)", len(got))
+	}
+	if got := listRegion(store.ServerFilter{Tags: []string{"no_such_tag"}}); len(got) != 0 {
+		t.Errorf("unknown tag matched %d servers, want 0 (not a full scan)", len(got))
+	}
+
 	// Cursor pagination: pages are ascending by ID, disjoint, complete.
 	var collected []string
 	cursor := ""

@@ -171,6 +171,15 @@ FROM servers WHERE 1=1`
 		args = append(args, string(f.Status))
 		n++
 	}
+	// 玩法直查 tag filter: jsonb containment — each requested code must exist
+	// as a PUBLIC tag (Public=true) on the server. One containment condition
+	// per code, so multiple tags AND together; the memory store implements
+	// the same semantics over its tags index (storetest pins parity).
+	for _, code := range f.Tags {
+		q += fmt.Sprintf(" AND tags @> $%d::jsonb", n)
+		args = append(args, fmt.Sprintf(`[{"code":%q,"public":true}]`, code))
+		n++
+	}
 	if f.Cursor != "" {
 		q += fmt.Sprintf(" AND id > $%d", n)
 		args = append(args, f.Cursor)

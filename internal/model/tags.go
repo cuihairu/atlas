@@ -86,6 +86,13 @@ var PresetTags = map[string]ServerTag{
 // tagCodeRe is the accepted shape of a tag code.
 var tagCodeRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
+// ValidTagCode reports whether code is a well-formed tag code (the same
+// shape Validate enforces on stored tags). Transport layers reuse it so a
+// malformed ?tags= value is rejected with the same rule the store applies.
+func ValidTagCode(code string) bool {
+	return tagCodeRe.MatchString(code)
+}
+
 // IsPresetTag reports whether code is one of the built-in tag codes.
 func IsPresetTag(code string) bool {
 	_, ok := PresetTags[code]

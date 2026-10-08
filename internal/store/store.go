@@ -26,8 +26,14 @@ type ServerFilter struct {
 	Version  string
 	Platform string
 	Status   model.ServerStatus
-	Limit    int
-	Cursor   string
+	// Tags narrows to servers carrying ALL of the listed public tag codes.
+	// Internal tags (Public=false) never match — the player-facing 玩法直查
+	// filter operates on the public badge surface only, mirroring
+	// model.PublicTags. Every store implements the same AND semantics so
+	// the storetest contract pins one behavior across memory/PG/MySQL.
+	Tags   []string
+	Limit  int
+	Cursor string
 }
 
 // CharacterPatch contains optional fields for updating a character index entry.
@@ -288,4 +294,67 @@ type Store interface {
 // IsNotFound reports whether err is or wraps ErrNotFound.
 func IsNotFound(err error) bool {
 	return errors.Is(err, ErrNotFound)
+}
+
+// FlushRecord describes one committed write batch of the instruction queue
+// (docs/performance.md §性能设计 — 指令化调度): how many instructions the
+// batch contained, how many were coalesced away by same-entity merge rules,
+// and how long the single critical section took.
+type FlushRecord struct {
+	At       time.Time     `json:"at"`
+	Size     int           `json:"size"`
+	Merged   int           `json:"merged"`
+	Duration time.Duration `json:"duration_ns"`
+}
+
+// QueueStats is a point-in-time snapshot of the memory store's instruction
+// write path. The SQL stores have no instruction queue: they never implement
+// QueueStatsProvider, and admin surfaces must treat that as
+// INDEX_QUEUE_DISABLED rather than an empty snapshot.
+//
+// The snapshot doubles as the Prometheus exposition source
+// (internal/metrics queue collector) and the GET /v1/admin/indexqueue/status
+// body — one struct, two readers, no drift.
+type QueueStats struct {
+	Enabled bool `json:"enabled"`
+	// Watermark is the sequence number of the last applied instruction.
+	// Monotonic; a caller's write is durable-and-visible exactly when the
+	// watermark has passed its instruction's sequence.
+	Watermark    uint64 `json:"watermark"`
+	LanesControl int    `json:"lanes_control"`
+	LanesHot     int    `json:"lanes_hot"`
+
+	// DepthControl / DepthHot are the instructions currently pending across
+	// each class's lanes — the queue pressure signal the dashboard card
+	// thresholds on.
+	DepthControl int `json:"depth_control"`
+	DepthHot     int `json:"depth_hot"`
+
+	Enqueued         uint64 `json:"enqueued"`
+	Merged           uint64 `json:"merged"`
+	Applied          uint64 `json:"applied"`
+	IdempotentHits   uint64 `json:"idempotent_hits"`
+	BackpressureSync uint64 `json:"backpressure_sync"`
+
+	LaneCap  int `json:"lane_cap"`
+	BatchCap int `json:"batch_cap"`
+
+	LastFlush         time.Time     `json:"last_flush"`
+	LastFlushBatch    int           `json:"last_flush_batch"`
+	LastFlushDuration time.Duration `json:"last_flush_duration_ns"`
+	RecentFlushes     []FlushRecord `json:"recent_flushes"`
+
+	// AppliedByKind counts applied instructions per kind since process
+	// start — the coarse shape of the write workload at a glance.
+	AppliedByKind map[string]uint64 `json:"applied_by_kind"`
+	// CaptureLen is the number of instructions in the replay capture ring
+	// (排障回放用, bounded).
+	CaptureLen int `json:"capture_len"`
+}
+
+// QueueStatusProvider is implemented by stores with an instruction write
+// path (currently only the memory store). HTTP surfaces and metrics use the
+// interface so neither imports a concrete store.
+type QueueStatusProvider interface {
+	QueueStats() QueueStats
 }

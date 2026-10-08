@@ -57,6 +57,29 @@ func TestValidateServerTags(t *testing.T) {
 	}
 }
 
+func TestValidTagCode(t *testing.T) {
+	valid := []string{"hot", "new", "no_register", "ops-note", "a", "0", "zone_eu-1"}
+	for _, code := range valid {
+		if !ValidTagCode(code) {
+			t.Errorf("ValidTagCode(%q) = false, want true", code)
+		}
+	}
+	invalid := []string{"", "-x", "_x", "HOT", "höt", "a b", "x.y", withLen(33)}
+	for _, code := range invalid {
+		if ValidTagCode(code) {
+			t.Errorf("ValidTagCode(%q) = true, want false", code)
+		}
+	}
+}
+
+func withLen(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = 'a'
+	}
+	return string(b)
+}
+
 func TestTagHelpers(t *testing.T) {
 	tags := []ServerTag{
 		{Code: TagHot, Label: "火热", Tier: TierHot, Public: true},
