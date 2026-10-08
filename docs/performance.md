@@ -97,9 +97,10 @@ startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然�
 
 ## 8. v0.2 索引与写路径设计（2026-10-08 落地）
 
-> 本章对齐已落码实现，每条主张给到 file:line；前后对照数字来自同机交错实测
-> （§8.5）。SQL store（postgres/mysql）不引入队列——指令化写路径是 memory
-> store 的实现选择，三库以 storetest 契约钉住同一行为（`internal/store/storetest`）。
+> 本章对齐已落码实现，每条主张给到 file:line；前后对照数字来自同 bench 内复刻
+> 实测（§8.5，改前路径在 bench 内复刻、无需切旧提交）。SQL store（postgres/mysql）
+> 不引入队列——指令化写路径是 memory store 的实现选择，三库以 storetest 契约
+> 钉住同一行为（`internal/store/storetest`）。
 
 ### 8.1 六类倒排索引（读路径）
 
@@ -181,33 +182,63 @@ O(1)/条（indexes.go:74, 92——变更前快照旧投影、只摘/挂变化的
 compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:62-67）。当前
 水位经 `QueueStats.Watermark` 暴露（store.go:318-323）。
 
-### 8.5 前后对照（同机交错实测）
+### 8.5 前后对照（同 bench 内复刻实测）
 
-数据集：2000 台服务器（4 region）+ 200 账号 × 20 服 = 4000 行目录。方法：HEAD
-worktree 对照 + 正反序各 2+2 轮取中位、几何均值对消轮次偏差；µs 级行按 ±40% 噪音
-看待（同码对照 GetServer 双向残差 ~1.4x）。完整表与复现步骤见
-[审计文档附录 A](./审计-文档一致性.md)。
+**方法**：改前路径在 bench 内复刻，不切旧提交（`internal/store/memory/bench_compare_test.go`）——
+`listServersFullScan` 是旧 `ListServers` 的核心循环（全表逐条验过滤器含 tags、排序、分页），
+`benchDirectHeartbeat` 是旧写路径的临界区（构造快照、锁内赋值）。两侧**同数据集、同机、同一次
+运行**。等价门：每个 规模×过滤 组合在计时前断言复刻路径与索引路径返回的 ID 序列完全一致
+（bench 内 `benchAssertSameList`，漂移即 fail）——表内两列永远是同一个查询。计 5 轮取
+**最小值**（min-of-5：长跑降频与调度噪声下，最小值是最接近无干扰真值的估计；中位数会随
+热累积漂移——实测 index/status 的 b.N 逐轮 5108→2635→1310 递减）。
 
-**读路径（收益）**：
+**环境**：Intel Core i9-10880H @ 2.30GHz（14 逻辑核）、Go 1.27.1、linux/amd64。
 
-| 基准 | 改前 | 改后 | 无偏加速 |
-| --- | ---: | ---: | ---: |
-| ListServers 无过滤 | 4.64 ms | 1.57 ms | 2.40x |
-| ListServers region | 1.54 ms | 0.51 ms | 2.36x |
-| ListServers status | 5.36 ms | 1.18 ms | 3.35x |
-| 伸缩 N=20000（region） | 13.94 ms | 1.63 ms | **7.03x** |
-| ListCharactersByAccount | 218 µs | 16.6 µs | **14.6x** |
-| GetCharacterByCharacterID | 76.5 µs | 0.27 µs | **282x** |
-| `?tags=` 未知 tag | 全扫（ms 级） | 0.3 µs | 空桶短路 |
+复现命令：
 
-**写路径（如实成本）**：无竞争单写 0.2 µs → 3–9 µs（入队+等回执的信道握手）；14 核
-风暴 0.4 µs/op（≈2.5M ops/s）→ 9.3 µs/op（≈107k ops/s）——逐条回执的 goroutine
-唤醒成本主导，换来批合并（风暴批内合并到 ≤1/5）、同实体严格 FIFO、幂等防重与
-可回放。生产语境：真实心跳路径在内存队列之外还有 PG 双写 + Redis HSET（ms 级），
-µs 级增量不可见；107k ops/s 对 10k 舰队 × 0.1Hz ≈ 1k ops/s 仍约两个数量级余量。
+```bash
+go test ./internal/store/memory/ -run '^$' \
+  -bench 'BenchmarkReadCompare|BenchmarkWriteCompare' -benchmem -count 5
+```
 
-复现：`go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2`
-（改前需 `git worktree add` 到本批之前的 commit，拷入同一 bench 文件）。
+**读路径**（数据集：N 台服务器，维度均布——region 4 桶、version 3 桶、platform 4 桶、
+status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
+
+| 过滤（命中率） | 全扫 N=1k | 索引 N=1k | 全扫 N=10k | 索引 N=10k | 10k 加速 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 无过滤 | 287 µs | 291 µs | 2.89 ms | 2.87 ms | 1.00x（同路） |
+| region（25%） | 177 µs | 124 µs | 1.55 ms | 0.58 ms | **2.66x** |
+| version（33%） | 200 µs | 141 µs | 1.78 ms | 0.85 ms | **2.10x** |
+| platform（25%） | 174 µs | 137 µs | 1.93 ms | 0.68 ms | **2.85x** |
+| status（80%） | 268 µs | 222 µs | 3.49 ms | 2.08 ms | 1.68x |
+| tags hot（25%） | 173 µs | 122 µs | 1.43 ms | 0.64 ms | **2.22x** |
+| tags 未知（0%） | 43 µs | 130 ns | 665 µs | 127 ns | **~5,200x** |
+
+分配同型收敛：region N=10k 每操作 169 KB → 109 KB（-35%）、allocs 217 → 207；
+维度越少命中省得越多。三行如实注解：**无过滤两列同路**（candidates 返回 nil 走同一
+扫表，作基线 sanity）；**status 收益最小**——最小桶仍占全表 80%，索引省的是另外
+20% 的行访问与排序规模；**未知 tag 是指数级短路**——空非 nil 桶在排序前直接返回
+（§8.1 契约），全扫侧则是完整一轮表遍历。
+
+**写路径**（ns/op，min-of-5；队列侧 = 公开 API 逐条等回执）：
+
+| 形态 | 直锁（改前复刻） | 指令队列（现行） |
+| --- | ---: | ---: |
+| 单条无竞争 | 129 ns，0 B/op | 2,839 ns，1.4 KB/op，5 allocs |
+| 风暴 50 服 × 14 核 | 352 ns（锁竞争拖慢 2.7x） | 2,561 ns（攒批吸收，几乎不恶化） |
+| 风暴同目标 | — | 2,218 ns，**合并率 55%**（applied 45%） |
+
+解读（口径同前批，数字为本法实测）：逐条回执的信道握手是队列的单条成本
+（129 ns → 2.8 µs，~22x）——换来同实体严格 FIFO、幂等防重与可回放（§8.2）。
+风暴下直锁路径被锁竞争拖慢 2.7x，队列几乎不吃竞争：同道指令攒批、一次临界区
+提交一批。同目标风暴（合并案例）55% 的写在批内被 superseded——被合并信封照拿
+批次回执，调用方无感，等效临界区进入次数近乎减半。生产语境不变：真实心跳路径
+在内存队列之外还有 PG 双写 + Redis HSET（ms 级），µs 级差异不可见；~390k ops/s
+（风暴单服）对 10k 舰队 × 0.1Hz ≈ 1k ops/s 仍约两个数量级余量。
+
+历史交叉验证：worktree 切旧提交法（同 bench 文件跑改前/改后两棵树）的同型数字
+见[审计文档附录 A](./审计-文档一致性.md)（N=2000 数据集：region 2.36x、角色按账号
+14.6x、角色 ID 点查 282x），与本表量级一致——两法互为独立复现。
 
 ### 8.6 dash 队列观测（已落地：快照 → Prometheus / admin 端点 / 管理台卡）
 
