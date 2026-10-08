@@ -99,6 +99,37 @@ func TestAdminGetCrossServerConfigBaseline(t *testing.T) {
 		t.Fatalf("published admin GET version = %d, want 1", cfg.Version)
 	}
 
+	// Index queue status: memory store returns queue stats, SQL stores return 503.
+	resp, err = http.Get(ts.URL + "/v1/admin/indexqueue/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("indexqueue/status on memory store = %d, want 200", resp.StatusCode)
+	}
+	var qs struct {
+		Enabled      bool   `json:"enabled"`
+		Watermark    uint64 `json:"watermark"`
+		DepthControl int    `json:"depth_control"`
+		DepthHot     int    `json:"depth_hot"`
+		Enqueued     uint64 `json:"enqueued"`
+		Applied      uint64 `json:"applied"`
+		Backpressure uint64 `json:"backpressure_sync"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&qs); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !qs.Enabled {
+		t.Fatalf("queue stats invalid: enabled=%v", qs.Enabled)
+	}
+	// Watermark starts at 0 and increments per applied instruction; a fresh
+	// store has 0. The handler itself triggers no writes, so Enqueued/Applied
+	// are 0. Depth and backpressure should be 0 on an idle server.
+	if qs.DepthControl != 0 || qs.DepthHot != 0 || qs.Backpressure != 0 {
+		t.Fatalf("unexpected non-zero idle state: depth_control=%d depth_hot=%d backpressure=%d", qs.DepthControl, qs.DepthHot, qs.Backpressure)
+	}
+
 	// Service not wired: 503, discoverable by the dashboard.
 	logger := newQuietLogger(t)
 	unwired := New(nil, nil, nil, admin.New(mem), nil, nil, mem, nil, logger)
@@ -106,6 +137,54 @@ func TestAdminGetCrossServerConfigBaseline(t *testing.T) {
 	unwired.handleAdminGetCrossServerConfig(rec, httptest.NewRequest(http.MethodGet, "/v1/admin/crossserver/config", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("unwired admin GET = %d, want 503", rec.Code)
+	}
+}
+
+// noQueueStore hides memory.Store's QueueStats method by embedding the
+// store.Store interface — the shape a SQL store presents: no instruction
+// queue, no QueueStatusProvider.
+type noQueueStore struct {
+	store.Store
+}
+
+// disabledSnapshotStore implements QueueStatusProvider but reports the
+// empty Enabled=false snapshot — the shape a forwarding composite presents
+// over a SQL backend.
+type disabledSnapshotStore struct {
+	store.Store
+}
+
+func (s *disabledSnapshotStore) QueueStats() store.QueueStats { return store.QueueStats{} }
+
+// TestAdminIndexQueueStatusDisabled pins the disabled-store contract: a
+// store without an instruction queue answers 503 INDEX_QUEUE_DISABLED (the
+// sentinel the dashboard keys its 未启用 state on), never an empty snapshot.
+func TestAdminIndexQueueStatusDisabled(t *testing.T) {
+	mem := memory.New()
+	h := &Handler{store: &noQueueStore{Store: mem}, logger: newQuietLogger(t)}
+	rec := httptest.NewRecorder()
+	h.handleAdminIndexQueueStatus(rec, httptest.NewRequest(http.MethodGet, "/v1/admin/indexqueue/status", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled indexqueue status = %d, want 503", rec.Code)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != "INDEX_QUEUE_DISABLED" {
+		t.Fatalf("error code = %q, want INDEX_QUEUE_DISABLED", body.Error.Code)
+	}
+
+	// Same sentinel through a forwarding composite over a SQL backend.
+	h2 := &Handler{store: &disabledSnapshotStore{Store: mem}, logger: newQuietLogger(t)}
+	rec2 := httptest.NewRecorder()
+	h2.handleAdminIndexQueueStatus(rec2, httptest.NewRequest(http.MethodGet, "/v1/admin/indexqueue/status", nil))
+	if rec2.Code != http.StatusServiceUnavailable {
+		t.Fatalf("disabled-snapshot indexqueue status = %d, want 503", rec2.Code)
 	}
 }
 

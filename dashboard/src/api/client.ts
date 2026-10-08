@@ -21,6 +21,7 @@ import type {
   LoadSeriesResponse,
   BusSeriesResponse,
   SeriesWindow,
+  IndexQueueStatus,
 } from '../types';
 
 // Same-origin by default: the vite dev/preview proxy splits the API by path
@@ -337,4 +338,10 @@ export function updateCrossServerConfig(spec: CrossServerSpec): Promise<CrossSer
     method: 'PUT',
     body: JSON.stringify(spec),
   }, ADMIN_BASE);
+}
+
+// ── 指令队列状态（/v1/admin/indexqueue/status）──────────────────────────
+
+export function getIndexQueueStatus(): Promise<IndexQueueStatus> {
+  return request('/v1/admin/indexqueue/status', undefined, ADMIN_BASE);
 }

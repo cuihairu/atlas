@@ -43,7 +43,6 @@ import (
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
 	"github.com/cuihairu/atlas/internal/serversconfig"
-	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
 	pgStore "github.com/cuihairu/atlas/internal/store/postgres"
@@ -51,6 +50,7 @@ import (
 	"github.com/cuihairu/atlas/internal/store/sharded"
 	"github.com/cuihairu/atlas/internal/telemetry"
 	"github.com/cuihairu/atlas/internal/tlsutil"
+	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 	"github.com/cuihairu/atlas/internal/version"
 )
 
@@ -871,6 +871,17 @@ func (c *compositeStore) Ping(ctx context.Context) error {
 		return pinger.Ping(ctx)
 	}
 	return nil
+}
+
+// QueueStats forwards the instruction write-path snapshot so the admin
+// status endpoint and the metrics collector see through this composite to
+// the memory store underneath. The forwarded snapshot reports Enabled=false
+// for SQL stores, which those surfaces read as INDEX_QUEUE_DISABLED.
+func (c *compositeStore) QueueStats() store.QueueStats {
+	if qp, ok := c.ServerStore.(store.QueueStatusProvider); ok {
+		return qp.QueueStats()
+	}
+	return store.QueueStats{}
 }
 
 func (c *compositeStore) Close() error {

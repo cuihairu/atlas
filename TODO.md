@@ -38,7 +38,7 @@
       （postgres `tags @>` / mysql `JSON_CONTAINS`，public-only，既有过滤不动）。
       验收：storetest 契约 tags 过滤断言（public-only 匹配、AND 语义、未知
       tag 空集非全扫、内部 tag 永不匹配）三库一致；bench 对照数字入档
-      （docs/审计-文档一致性.md 附录 A）。
+      （docs/审计-文档一致性.md 附录 A）。commit d53a150。
 - [x] **② 指令化写队列** — internal/store/memory/queue.go：写路径封装指令
       {kind, target, payload, base_version, idempotency_key}；按实体 FNV-1a
       哈希入 4 控制道 + 2 热道（配置变更 > 心跳，同实体同道 FIFO 单写者）；
@@ -47,25 +47,35 @@
       空即提交（无定时窗、无延迟地板），批量上限 256；队列满退化内联同步写。
       验收：合并不丢（enqueued = applied + merged + 在途）、同实体不乱序、
       幂等重放一致、被合并调用方必拿提交回执（回归测试钉住）、ReplayInto /
-      DryRun 可重放、race 绿。
+      DryRun 可重放、race 绿。commit d53a150。
 - [x] **③ 原子性拍板 + 版本水位** — 采用 data+index 同锁同临界区（快照 +
       atomic.Pointer 整表发布评估后否决：每写全表拷贝 O(N) 写放大）；索引
       增量维护 O(1)/条禁全量重建；每批提交递增 monotonic 水位 = 可见性契约
       （读侧 RLock 下看到的水位即已提交状态）。RCU 评估与分工、拍板理由落
       docs/审计-文档一致性.md 附录 A，成章后迁 performance.md（项⑤）。
-      验收：契约与 race 绿；水位随批递增由队列测试断言。
-- [ ] **④ dash 队列可观测** — QueueStats → Prometheus（深度/入队速率/合并率/
+      验收：契约与 race 绿；水位随批递增由队列测试断言。commit d53a150。
+- [x] **④ dash 队列可观测** — QueueStats → Prometheus（深度/入队速率/合并率/
       flush 批量与时延/背压退化计数/watermark，与既有 metrics 包同姿势）+
       GET /v1/admin/indexqueue/status + 管理台「存储队列」卡（压力灯阈值
-      变色 + 版本号 + 最近 flush 记录）。验收：curl 实证 admin 端点、dash
-      截图、契约测试。
+      变色 + 版本号 + 最近 flush 记录）。落地：`atlas_store_queue_*` 指标族
+      14 序列（internal/metrics/queue.go，抓取时读快照零写路径开销，SQL 后端
+      Enabled=false 不出序列）；admin 端点返回快照原文，SQL/非 provider 一律
+      503 INDEX_QUEUE_DISABLED 不发空 200；fleet 装饰器与 main composite 透传
+      QueueStats（装饰层不藏快照——curl 实证抓到并修掉的真实断点）；
+      QueueStatusCard 压力灯（深度 ≥500/≥2000、背压 ≥10/≥100 三级变色）+
+      水位 + 合并率 + recent_flushes 表，挂载 Overview。验收实证：真服务
+      curl 200（watermark=enqueued=applied=4，recent_flushes 真实记录，临界区
+      ~7-17µs）与 /metrics 14 序列同水位；dash 整页截图卡完整渲染（水位 6、
+      7 条 flush 记录、按类型标签，数据与端点一致）；契约测试 metrics 抓取
+      序列 + admin 200/503 双路径（provider 缺失 / Enabled=false 快照）+
+      queue_test 既有断言。
 - [x] **⑤ performance.md 性能设计章补齐 + bench 对照收编** — 新增 §8「v0.2
       索引与写路径设计」：六类倒排索引 / 指令化写队列 / 原子性拍板（同锁
       同临界区，否决方案如实记录）/ 版本水位 / bench 前后对照（同机交错
       实测）/ 队列观测（数据面已落，Prometheus + admin 端点 + dash 卡如实标
       「计划中」不超前宣称）；每条主张带 file:line 自检。bench 双落点：
       performance.md §8.5 + 审计文档附录 A。验收达标：文档与已实现代码
-      逐条对得上。
+      逐条对得上。commit ba79d6f。
 
 ### 候补（roadmap 开放候选转档，按前置条件触发）
 

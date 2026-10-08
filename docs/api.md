@@ -486,6 +486,21 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 429 计数（按端点规则 / 按客户端 IP）。配置本身走环境变量
 （`ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT`）+ 重启生效。
 
+### GET /v1/admin/indexqueue/status
+
+存储队列只读状态（管理台「存储队列」卡）。返回 memory store 指令写路径的
+`QueueStats` 快照：`enabled` 恒 true、`watermark`（版本水位，单调递增的已应用
+序列号）、`depth_control` / `depth_hot`（各道类在途深度）、`lane_cap` /
+`batch_cap`、累计计数（`enqueued` / `applied` / `merged` / `idempotent_hits` /
+`backpressure_sync`）、最近一次提交（`last_flush*`）与最近 16 条 flush 记录
+（`recent_flushes[]`，含批大小/合并数/临界区耗时）、按类型应用分布
+（`applied_by_kind`）、回放环长度（`capture_len`）。
+
+SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
+`INDEX_QUEUE_DISABLED`，**不是**空快照——管理台据此显示「未启用」。同一快照
+也是 `/metrics` 上 `atlas_store_queue_*` 指标族的唯一数据源（抓取时取数，
+无写路径开销）。
+
 ### GET /v1/admin/load-series
 
 负载时间序列（概览页图表）。**Query**：`?window=`（`5m|10m|30m|1h|10h`）、

@@ -316,3 +316,36 @@ export interface CrossServerSaveResponse {
   config: CrossServerConfig;
   notify: CrossServerNotifyResult;
 }
+
+// ── 指令队列状态（/v1/admin/indexqueue/status）────────────────────────
+// 仅内存存储实现 store.QueueStatusProvider；SQL 存储返回 503。
+// 字段对应 Go internal/store/store.go 的 QueueStats 结构体。
+
+export interface FlushRecord {
+  at: string;
+  size: number;
+  merged: number;
+  duration_ns: number;
+}
+
+export interface IndexQueueStatus {
+  enabled: boolean;
+  watermark: number;
+  lanes_control: number;
+  lanes_hot: number;
+  depth_control: number;
+  depth_hot: number;
+  enqueued: number;
+  merged: number;
+  applied: number;
+  idempotent_hits: number;
+  backpressure_sync: number;
+  lane_cap: number;
+  batch_cap: number;
+  last_flush: string;
+  last_flush_batch: number;
+  last_flush_duration_ns: number;
+  recent_flushes: FlushRecord[];
+  applied_by_kind: Record<string, number>;
+  capture_len: number;
+}

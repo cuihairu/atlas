@@ -69,6 +69,16 @@ type trackedServers struct {
 	idx *Index
 }
 
+// QueueStats forwards the instruction write-path snapshot (memory store) so
+// the decorator never hides it from the admin status endpoint and the
+// metrics collector — both read through the wrapped store.
+func (t *trackedServers) QueueStats() store.QueueStats {
+	if qp, ok := t.ServerStore.(store.QueueStatusProvider); ok {
+		return qp.QueueStats()
+	}
+	return store.QueueStats{}
+}
+
 func (t *trackedServers) RegisterServer(ctx context.Context, srv *model.Server) error {
 	if err := t.ServerStore.RegisterServer(ctx, srv); err != nil {
 		return err

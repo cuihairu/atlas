@@ -90,6 +90,10 @@ func New(s store.Store) *Metrics {
 		m.RegistryWrites,
 		newStoreCollector(s),
 	)
+	// Queue collector: only for stores implementing QueueStatusProvider (memory store).
+	if qsp, ok := s.(store.QueueStatusProvider); ok {
+		reg.MustRegister(newQueueCollector(qsp))
+	}
 	return m
 }
 

@@ -13,6 +13,7 @@ import ServerMap from '../components/ServerMap';
 import PlayerTrend from '../components/PlayerTrend';
 import LoadTimeView from '../components/LoadTimeView';
 import BusPanel from '../components/BusPanel';
+import QueueStatusCard from '../components/QueueStatusCard';
 import { getStats, listServers } from '../api/client';
 import { useLang, t } from '../i18n';
 import type { AdminStats, Server } from '../types';
@@ -85,6 +86,11 @@ export default function Overview() {
       {/* 消息总线积压（item 13）：深度曲线 + 生产/消费速率。 */}
       <div style={{ marginTop: 24 }}>
         <BusPanel />
+      </div>
+
+      {/* 存储队列（TODO v0.2 ④）：压力灯 + 水位 + 最近 flush；SQL 存储显示未启用。 */}
+      <div style={{ marginTop: 24 }}>
+        <QueueStatusCard />
       </div>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>

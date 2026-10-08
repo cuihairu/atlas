@@ -209,15 +209,34 @@ worktree 对照 + 正反序各 2+2 轮取中位、几何均值对消轮次偏差
 复现：`go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2`
 （改前需 `git worktree add` 到本批之前的 commit，拷入同一 bench 文件）。
 
-### 8.6 dash 队列观测（数据面已落，出口接线计划中）
+### 8.6 dash 队列观测（已落地：快照 → Prometheus / admin 端点 / 管理台卡）
 
-**已落**：队列快照 `QueueStats`（store.go:318）——深度（DepthControl/DepthHot）、
+**数据面**：队列快照 `QueueStats`（store.go:318）——深度（DepthControl/DepthHot）、
 入队/合并/应用计数（Enqueued/Merged/Applied）、幂等命中、背压退化次数
 （BackpressureSync）、水位（Watermark）、最近 16 次 flush 记录、按类型应用分布——
 由 `store.QueueStatusProvider` 接口（store.go:358）统一供出，队列测试消费验证
-（queue_test.go 各断言）。
+（queue_test.go 各断言）。**一个快照，三个读者**（store.go 头注的 no-drift 契约）：
 
-**计划中（下一增量，TODO「④ dash 队列可观测」）**：Prometheus `atlas_store_queue_*`
-指标族（与既有 `internal/metrics` 包同姿势）、`GET /v1/admin/indexqueue/status`、
-管理台「存储队列」卡（压力灯阈值变色 + 版本号 + 最近 flush）。指标语义以本节与
-`QueueStats` 字段注释为准，接线时对齐，不在此超前宣称。
+1. **Prometheus `atlas_store_queue_*` 指标族**（`internal/metrics/queue.go`，注册
+   于 metrics.go:95）：抓取时读快照——与 `storeCollector` 同姿势，零写路径开销。
+   `depth_control` / `depth_hot`（gauge）、`watermark`、`enqueued_total` /
+   `applied_total` / `merged_total` / `idempotent_hits_total` /
+   `backpressure_total`（counter）、`applied_by_kind_total{kind}`、
+   `flush_batch_size` / `flush_duration_seconds`（最近一批 gauge）与
+   `capture_entries`。入队/合并速率按 PromQL 由 `*_total` 差分，不另设第二
+   计数器。SQL 后端经转发快照报 `Enabled=false` 时整族不出序列——有指标即有队列。
+2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:211 路由、:1794
+   handler）：返回同一快照原文。装饰层不藏快照——fleet 装饰器与 main 的
+   composite 都透传 `QueueStats`（fleet/track.go:75、main.go:880）；SQL 库的
+   空快照（`Enabled=false`）与非 provider 一律 `503 INDEX_QUEUE_DISABLED`，
+   不发空 200。curl 实证：memory 后端 200（watermark=enqueued=applied=4，
+   recent_flushes 真实记录，临界区 ~7-17µs）；`/metrics` 上 14 条序列同水位。
+3. **管理台「存储队列」卡**（dashboard `QueueStatusCard.tsx`，挂载于
+   Overview.tsx:93）：压力灯阈值变色（深度 ≥500 黄 / ≥2000 红，背压退化
+   ≥10 黄 / ≥100 红——severityColor，QueueStatusCard.tsx:16）、版本号（水位）、
+   合并率、六计数、最近 flush 三元组与 `recent_flushes` 表、按类型应用标签；
+   10s 轮询（:8），503 时显示「未启用」（SQL 后端语义化降级，非报错）。
+
+指标语义以本节与 `QueueStats` 字段注释为准；契约测试钉住三面：metrics 抓取
+序列（metrics/queue_test.go）、admin 端点 200/503 双路径
+（httpapi/coverage_test.go）、队列侧字段由 queue_test.go 既有断言覆盖。

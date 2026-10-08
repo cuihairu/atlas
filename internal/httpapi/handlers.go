@@ -205,6 +205,10 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	// single versioned config document.
 	mux.HandleFunc("GET /v1/admin/crossserver/config", h.handleAdminGetCrossServerConfig)
 	mux.HandleFunc("PUT /v1/admin/crossserver/config", h.handleAdminUpdateCrossServerConfig)
+	// Instruction queue status (TODO v0.2 ④ dash 队列可观测): memory store
+	// exposes queue pressure / watermark / flush stats; SQL stores return
+	// 503 INDEX_QUEUE_DISABLED.
+	mux.HandleFunc("GET /v1/admin/indexqueue/status", h.handleAdminIndexQueueStatus)
 	if h.audit != nil {
 		mux.HandleFunc("GET /v1/admin/audit", h.handleAdminAudit)
 	}
@@ -1781,4 +1785,22 @@ func (h *Handler) handleAdminUpdateCrossServerConfig(w http.ResponseWriter, r *h
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// handleAdminIndexQueueStatus returns the instruction queue snapshot.
+// Only the memory store runs an instruction queue: stores without the
+// provider — and composites whose snapshot reports Enabled=false (SQL
+// backends) — answer 503 INDEX_QUEUE_DISABLED, never an empty snapshot.
+func (h *Handler) handleAdminIndexQueueStatus(w http.ResponseWriter, r *http.Request) {
+	qsp, ok := h.store.(store.QueueStatusProvider)
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "INDEX_QUEUE_DISABLED", "instruction queue is not available (non-memory store)")
+		return
+	}
+	stats := qsp.QueueStats()
+	if !stats.Enabled {
+		writeError(w, http.StatusServiceUnavailable, "INDEX_QUEUE_DISABLED", "instruction queue is not available (non-memory store)")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
