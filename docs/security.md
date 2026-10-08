@@ -1,6 +1,6 @@
 # 安全
 
-v0.1.17 起 Atlas 内建四层防护：Registry mTLS、Admin RBAC、操作审计与限流。所有能力均为**可选启用**，默认行为与既往版本一致。
+v0.1.17 起 Atlas 内建四层防护：Registry mTLS、Admin RBAC、操作审计与限流。mTLS / RBAC / 限流为**可选启用**（未配置即对应防护关闭）；审计默认**开启**（`ATLAS_AUDIT_ENABLED=0` 关闭）。
 
 ## 1. TLS / mTLS（Registry :8081 与 gRPC :9090）
 
@@ -46,7 +46,7 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 
 开启后（默认开启，`ATLAS_AUDIT_ENABLED=0` 关闭），每一条 Admin 请求都会被记录：
 
-- **actor**：`role:key指纹`（key 的 SHA-256 前 12 位十六进制，不可逆推原 key）；
+- **actor**：两段式 `role:key指纹`（key 的 SHA-256 前 12 位十六进制，不可逆推原 key）；mTLS 场景为三段式 `role:key指纹:证书指纹`（`auth.go` `Actor.String()`），未配置 Key 的开发模式为 `role:anonymous`；
 - **timestamp**：RFC3339 纳秒时间；
 - **method / path / query / status**；
 - **diff**：变更类方法（POST/PUT/PATCH/DELETE）的请求体（上限 4KB，非法 JSON 包装为字符串存储）。
@@ -68,7 +68,7 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 }
 ```
 
-审计位于认证**之内**（拿到解析后的 actor）、限流**之外**；审计环不落盘，持久化交给日志采集管道（结构化日志行）。
+审计位于认证**之内**（拿到解析后的 actor）、限流**之内**——链路为 limiter → 认证（审计中间件在其内）→ 业务，被限流拒绝的请求到不了认证、也就不进审计环；审计环不落盘，持久化交给日志采集管道（结构化日志行）。
 
 **双传输**：gRPC（:9090）的 AdminService RPC 记入同一个环——`path` 为全方法名（如 `/atlas.v1.AdminService/Disable`），读 RPC 记 `GET`（无 diff）、写 RPC 记 `POST`（diff 为 protojson 请求，同受 4KB 上限），gRPC status code 按 google.rpc 惯例映射为等价 HTTP 状态入环；actor 同为 `role:key指纹`（校验由 gRPC 认证拦截器完成，未配置 Key 的开发模式显示 `:anonymous`）。Registry / Discovery / Directory / Routing 的 RPC 不进审计环（与 REST 只审计 `/v1/admin/*` 一致）。
 

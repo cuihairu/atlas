@@ -30,6 +30,7 @@ atlas::Options o;
 o.base_url = "http://atlas:8080";          // 公网 + Admin 域
 o.registry_base_url = "http://atlas:8081"; // Registry 独立端口（可选）
 o.registry_token = "...";                  // Registry 域 Bearer
+o.admin_api_key = "...";                   // Admin 域 Bearer（ATLAS_ADMIN_API_KEYS 之一）
 o.default_headers = {{"X-Request-ID", "..."}}; // 每次调用都带的静态头（可选，关联 id 见 api.md「请求追踪」）
 atlas::Client c{o};
 

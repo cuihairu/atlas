@@ -16,7 +16,7 @@ import atlas "github.com/cuihairu/atlas/sdk/go/atlas"
 cli, err := atlas.New(atlas.Options{
     Addr:      "localhost:8080",             // REST 基地址；gRPC 用 ATLAS_GRPC_ADDR
     Transport: atlas.TransportREST,          // 默认 rest；可选 grpc
-    RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKEN"), // Registry 域 Bearer
+    RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKENS"), // Registry 域 Bearer（服务端 env 为 ATLAS_REGISTRY_TOKENS，值取其一）
     AdminAPIKey:   adminKey,                          // Admin 域 Bearer——值须为服务端 ATLAS_ADMIN_API_KEYS 之一（env 名部署自定）
     DefaultHeaders: map[string]string{                // 每次调用都带的静态头（REST）/ metadata（gRPC）
         "X-Request-ID": instanceID,                   // 例：进程实例级关联 id，见 api.md「请求追踪」
@@ -66,7 +66,7 @@ REST 错误码区分 `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND`；gRPC 统一为
 
 ## API 一览
 
-五组方法与 REST 端点一一对应（详见 [API 参考](/api)）：
+六组方法与 REST 端点一一对应（详见 [API 参考](/api)）：
 
 ```go
 // Registry
@@ -89,6 +89,10 @@ cli.Recommend(ctx, accountID, region, version, platform)
 cli.SetMaintenance(ctx, id) / cli.SetDrain / cli.Enable / cli.Disable
 cli.Stats(ctx) / cli.SearchCharacters(ctx, filter)
 cli.CreateMigration(ctx, req) / cli.GetMigration / cli.ListMigrations / cli.RollbackMigration
+
+// 跨服配置中心（REST-only 面的拉取与 watcher，见 config-center.md）
+cli.FetchCrossServerConfig(ctx)                  // 拉取当前快照（ETag 协商）
+atlas.NewConfigWatcher(cli, opts)                // 轮询 + 退避 watcher（OnApply 回调）
 ```
 
 ## 可运行示例

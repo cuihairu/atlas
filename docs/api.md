@@ -51,9 +51,12 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
 ```json
 {
   "server_id": "game-1001",
-  "status": "starting"
+  "status": "starting",
+  "crossserver_config": { "version": 9, "hash": "3768c1708e690107" }
 }
 ```
+
+> `crossserver_config` 携带当前跨服配置版本，便于启动即知要拉取什么（版本 0 = 尚未发布过任何配置）；跨服配置中心见 [config-center.md](config-center.md)。
 
 Atlas 保存的字段：
 
@@ -206,7 +209,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 **分页**：`?limit=50&cursor=...`，游标基于 `server_id`。服务端单页上限 200，更大的 `limit` 按 200 返回；需要完整集合的调用方以游标翻页。
 
-**默认行为**：不带 `status` 参数时，默认过滤掉 `offline` 与 `disabled` 状态的服务器，客户端不应看到已死的服务器。
+**默认行为**：不带 `status` 参数时，只返回「可见」状态的服务器——`online` / `maintenance` / `suspect`（`ServerStatus.Visible()`）；`starting` / `draining` / `offline` / `disabled` 一律不出现在发现列表。maintenance 与 suspect 保留可见是刻意的：客户端不会看到服务器"凭空消失"，而是带着徽标继续展示。
 
 ---
 
@@ -222,8 +225,8 @@ GET /v1/discovery/servers?region=cn-east&status=online
   "name": "一区·青龙",
   "type": "game",
   "region": "cn-east",
-  "realm": "realm-01",
-  "shard": "shard-1001",
+  "realm_id": "realm-01",
+  "shard_id": "shard-1001",
   "version": "1.8.2",
   "platform": "android",
   "endpoint": {
@@ -330,7 +333,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
 ```json
 {
   "account_id": 10001,
-  "server_id": 1001,
+  "server_id": "1001",
   "character_id": 823712,
   "name": "剑无尘",
   "level": 1,
@@ -515,6 +518,31 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 （`published` / `consumed` / `in_flight`）；`adapter` 标明事件适配器类型。
 
 
+### POST /v1/admin/migrations
+
+创建迁移记录（合服 / 转服 / 迁服共用，语义见 [migration.md](migration.md)）。
+
+```json
+{
+  "source_servers": ["game-1001", "game-1002"],
+  "target_server": "game-2001"
+}
+```
+
+**Response** `201 Created`：迁移记录（`id` 形如 `mig-<unixnano>`，`status` 起于 `pending`）。
+
+> **v0.1 现状**：此端点只创建记录，不启动编排、不推进状态（`migrating` / `verifying` / `completed` 无可达路径）；源服务器不存在返回 `404 SERVER_NOT_FOUND`。唯一可达的状态推进是下面的 rollback。
+
+### GET /v1/admin/migrations
+
+迁移记录列表（新→旧）。**Query**：`?limit=`（默认 50）。单条查询 `GET /v1/admin/migrations/{id}`，记录不存在返回 **404** `MIGRATION_NOT_FOUND`。
+
+### POST /v1/admin/migrations/{id}/rollback
+
+把迁移记录标记为 `rolled_back`（仅状态迁移，不执行数据动作；`pending` / `migrating` / `failed` 可回滚）。**400** `INVALID_ARGUMENT` 状态不可回滚（如已 completed），**404** `MIGRATION_NOT_FOUND` 记录不存在。
+
+**Response** `200 OK`：`{"id": "…", "status": "rolled_back"}`
+
 ### POST /v1/admin/realms
 
 创建大区（Realm）。ID 冲突返回 `409 REALM_EXISTS`，缺少 `id` / `name` 返回 `400`。
@@ -583,11 +611,12 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
   "server_id": "game-1001",
   "start_at": "2026-10-02T02:00:00Z",
   "end_at": "2026-10-02T04:00:00Z",
-  "previous_status": "",
   "announcement_id": "ann-1759376400000000000",
   "created_at": "2026-10-01T12:00:00Z"
 }
 ```
+
+> `previous_status` 由健康监控应用窗口时才写入（`omitempty`，未应用前响应不含该字段）；应用后为空表示服务器原本已在维护，无处可返。
 
 错误：`404 SERVER_NOT_FOUND`（服务器不存在）、`400 INVALID_ARGUMENT`（`end_at` 不晚于 `start_at`）。
 
@@ -718,7 +747,7 @@ package atlas.v1;
 service RegistryService {    // 对应 /v1/registry/*
   rpc Register(RegisterRequest) returns (RegisterResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
-  rpc Unregister(UnregisterRequest) returns (OkResponse);
+  rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
 }
 
 service DiscoveryService {   // 对应 /v1/discovery/*
@@ -761,7 +790,7 @@ service AdminService {       // 对应 /v1/admin/*
 | 401 `MISSING_API_KEY` / `INVALID_API_KEY` / `MISSING_TOKEN` / `INVALID_TOKEN` | `Unauthenticated` | Admin / Registry 域缺凭证或凭证无效 |
 | 403 `IP_NOT_ALLOWED` / `ROLE_NOT_ALLOWED` | `PermissionDenied` | 客户端 IP 不在白名单；viewer 试图写 Admin RPC |
 | 404 `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND` | `NotFound` | 服务器 / 角色 / 迁移不存在 |
-| 409 `ALREADY_REGISTERED` | `AlreadyExists` | 注册冲突 |
+| 409 `ALREADY_REGISTERED` | — | **保留码，当前不会发出**：注册为幂等 upsert，重复注册即更新（见[错误响应](#错误响应)表）；未来若引入强校验再映射 |
 | 409 `SERVER_MANAGED_BY_CONFIG` | `AlreadyExists` | 注册对象由服务器配置文件托管（见 [server-config.md](server-config.md)） |
 | 429 `RATE_LIMITED` | `ResourceExhausted` | 触发共享令牌桶（规则按 gRPC 全方法名前缀匹配，见 [security.md](security.md)） |
 | 500 / 503 | `Internal` | 存储层错误 |

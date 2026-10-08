@@ -179,5 +179,5 @@ ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 npm s
 | 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为 undefined） |
 | 三端口 | `baseUrl` 覆盖公网/Admin；`registryBaseUrl` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
 | 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |
-| 命名 | 传输层 snake_case，SDK 层 camelCase（`parseServer` 等转换函数亦可独立使用） |
+| 命名 | 传输层 snake_case，SDK 层 camelCase（解析在客户端方法内部完成，无独立导出的转换函数） |
 | 时间字段 | `lastSeenAt` / `createdAt` / `updatedAt` / `lastLoginAt` 解析为 `Date`（缺失为 `undefined`） |

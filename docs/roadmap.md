@@ -21,13 +21,14 @@ flowchart TB
 
 ## 当前状态:v0.1 系列全量交付
 
-**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布三个 release：
+**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布四个 release：
 
 | Release | 内容 |
 | --- | --- |
 | [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：核心模型跑通（Registry / Discovery / Directory / 健康监控 / REST API） |
 | [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | v0.1 系列收官：MVP 之上补齐全部工程化能力（69 个提交） |
 | [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | 跨服配置中心 + 服务器标记体系 + 声明式服务器配置 + 管理台扩展 + Docker/部署腿（50 个提交） |
+| [v0.1.3](https://github.com/cuihairu/atlas/releases/tag/v0.1.3) | v0.2 前奏：OTel 链路追踪 + 六 SDK 巩固 + memory 倒排索引/写队列 + dash 存储队列可观测 |
 
 > 早期路线图曾把事件驱动、SDK、gRPC、高可用分别规划在 v0.2 ~ v1.0。实际开发中它们以 v0.1.x 内部里程碑的形式全部完成于 0.1 系列内——**原 v0.2 ~ v1.0 的每一项都已交付**，见下表。
 
