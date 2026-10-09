@@ -186,9 +186,12 @@ compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:62-
 
 **方法**：改前路径在 bench 内复刻，不切旧提交（`internal/store/memory/bench_compare_test.go`）——
 `listServersFullScan` 是旧 `ListServers` 的核心循环（全表逐条验过滤器含 tags、排序、分页），
-`benchDirectHeartbeat` 是旧写路径的临界区（构造快照、锁内赋值）。两侧**同数据集、同机、同一次
-运行**。等价门：每个 规模×过滤 组合在计时前断言复刻路径与索引路径返回的 ID 序列完全一致
-（bench 内 `benchAssertSameList`，漂移即 fail）——表内两列永远是同一个查询。计 5 轮取
+`benchDirectHeartbeat` 是旧写路径的临界区（构造快照、锁内赋值）；角色目录同法复刻——
+`getCharacterByCharIDFullScan` / `listCharactersByAccountFullScan` /
+`listCharactersByServerFullScan` 是索引化前的全表扫描（按全局 ID 点查、按账号、按服务器）。
+两侧**同数据集、同机、同一次运行**。等价门：每个 规模×过滤 组合在计时前断言复刻路径与索引
+路径返回的 ID 序列完全一致（bench 内 `benchAssertSameList` / `benchAssertSameChars`，漂移即
+fail）——表内两列永远是同一个查询。计 5 轮取
 **最小值**（min-of-5：长跑降频与调度噪声下，最小值是最接近无干扰真值的估计；中位数会随
 热累积漂移——实测 index/status 的 b.N 逐轮 5108→2635→1310 递减）。
 
@@ -198,7 +201,8 @@ compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:62-
 
 ```bash
 go test ./internal/store/memory/ -run '^$' \
-  -bench 'BenchmarkReadCompare|BenchmarkWriteCompare' -benchmem -count 5
+  -bench 'BenchmarkReadCompare|BenchmarkCharacterReadCompare|BenchmarkWriteCompare' \
+  -benchmem -count 5
 ```
 
 **读路径**（数据集：N 台服务器，维度均布——region 4 桶、version 3 桶、platform 4 桶、
@@ -220,6 +224,19 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 20% 的行访问与排序规模；**未知 tag 是指数级短路**——空非 nil 桶在排序前直接返回
 （§8.1 契约），全扫侧则是完整一轮表遍历。
 
+**角色目录**（数据集：N 条角色索引 = N/10 个账号 × 10 角色、50 台服务器均布；
+按服桶受 200 上限约束与全扫侧同语义；单位 ns/op）：
+
+| 读路径（10k 桶大小） | 全扫 N=1k | 索引 N=1k | 全扫 N=10k | 索引 N=10k | 10k 加速 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 全局角色 ID 点查（1 行） | 71 µs | 1.6 µs | 3.05 ms | 5.3 µs | **~579x** |
+| 按账号列角色（10 行） | 253 µs | 49 µs | 5.50 ms | 30 µs | **~185x** |
+| 按服务器列角色（200 行） | 413 µs | 81 µs | 10.3 ms | 0.88 ms | **11.6x** |
+
+分配侧两侧**逐位相同**（点查 144 B/1 allocs、按账号 1.7 KB/17、按服 33 KB/211）——
+拷贝出库是两条路径共同的分配底盘，索引省下的全是扫描时间，不是分配。加速比随表
+线性拉大：点查 1k 时 46x、10k 时 ~579x；桶越大摊薄越狠（按服桶 200 行，11.6x）。
+
 **写路径**（ns/op，min-of-5；队列侧 = 公开 API 逐条等回执）：
 
 | 形态 | 直锁（改前复刻） | 指令队列（现行） |
@@ -238,7 +255,8 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 
 历史交叉验证：worktree 切旧提交法（同 bench 文件跑改前/改后两棵树）的同型数字
 见[审计文档附录 A](./审计-文档一致性.md)（N=2000 数据集：region 2.36x、角色按账号
-14.6x、角色 ID 点查 282x），与本表量级一致——两法互为独立复现。
+14.6x、角色 ID 点查 282x），与本表量级一致——按账号 14.6x 落在本表 1k 档 5.1x 与
+10k 档 185x 之间，两法互为独立复现。
 
 ### 8.6 dash 队列观测（已落地：快照 → Prometheus / admin 端点 / 管理台卡）
 
