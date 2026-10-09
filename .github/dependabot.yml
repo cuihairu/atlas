@@ -24,3 +24,9 @@ updates:
     groups:
       docs-dev:
         dependency-type: development
+    ignore:
+      # vitepress-plugin-mermaid@2.0.17 只 peer mermaid 10||11；
+      # mermaid ^12 会让 npm ci ERESOLVE（docs.yml 挂，见 87a29c9 之后的
+      # Deploy Docs 失败）。插件支持 12 后移除此条。
+      - dependency-name: mermaid
+        versions: [">=12"]
