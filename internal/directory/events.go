@@ -6,6 +6,7 @@ package directory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -120,7 +121,10 @@ func (s *Service) applyUpdated(ctx context.Context, e *event.Event) (*model.Char
 }
 
 // applyDeleted removes an index row by composite key, resolving it from
-// character_id when the event omits account/server.
+// character_id when the event omits account/server. A row that is already
+// gone is a successful no-op: at-least-once transports re-deliver deletes,
+// and an ErrNotFound here would feed the event back into the adapter retry
+// loop for a row nothing can bring back.
 func (s *Service) applyDeleted(ctx context.Context, e *event.Event) error {
 	if e.CharacterID <= 0 {
 		return fmt.Errorf("%w: character_id must be > 0", model.ErrInvalid)
@@ -130,12 +134,18 @@ func (s *Service) applyDeleted(ctx context.Context, e *event.Event) error {
 	if accountID <= 0 || serverID == "" {
 		existing, err := s.characters.GetCharacterByCharacterID(ctx, e.CharacterID)
 		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil
+			}
 			return fmt.Errorf("delete character: %w", err)
 		}
 		accountID, serverID = existing.AccountID, existing.ServerID
 	}
 
 	if err := s.characters.DeleteCharacter(ctx, accountID, serverID, e.CharacterID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
 		return fmt.Errorf("delete character: %w", err)
 	}
 	return nil

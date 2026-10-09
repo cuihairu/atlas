@@ -121,6 +121,39 @@ func TestApplyEventDeletedAndLogin(t *testing.T) {
 	}
 }
 
+// TestApplyEventDeletedTwice pins delete idempotency: at-least-once
+// transports re-deliver deletes, and a row that is already gone must be a
+// successful no-op — an error here would feed the event back into the
+// adapter retry loop (hot requeue on rabbitmq) with no way to ever succeed.
+func TestApplyEventDeletedTwice(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	create := &event.Event{
+		Type: event.EventCharacterCreated, AccountID: 1, ServerID: "s1",
+		CharacterID: 9, Name: "c", Level: intPtr(1),
+	}
+	if _, err := svc.ApplyEvent(ctx, create); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	del := &event.Event{Type: event.EventCharacterDeleted, CharacterID: 9}
+	if _, err := svc.ApplyEvent(ctx, del); err != nil {
+		t.Fatalf("first delete: %v", err)
+	}
+	// Re-delivery with the key resolved from the event itself...
+	if _, err := svc.ApplyEvent(ctx, del); err != nil {
+		t.Fatalf("redelivered delete: %v", err)
+	}
+	// ...and a re-delivery that still has to resolve account/server.
+	if _, err := svc.ApplyEvent(ctx, del); err != nil {
+		t.Fatalf("redelivered delete (resolve): %v", err)
+	}
+	// A delete for a character that never existed is equally a no-op.
+	never := &event.Event{Type: event.EventCharacterDeleted, CharacterID: 424242}
+	if _, err := svc.ApplyEvent(ctx, never); err != nil {
+		t.Fatalf("delete of unknown character: %v", err)
+	}
+}
+
 func TestApplyEventMoved(t *testing.T) {
 	svc, _ := newTestService()
 	ctx := context.Background()
