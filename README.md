@@ -35,7 +35,7 @@
 
 ## What Atlas Is
 
-Atlas is the **Game Infrastructure Directory** of a game backend, built around three questions:
+Atlas is the **Game Infrastructure Directory** of a game backend, built around four questions:
 
 | Module | Question it answers | Description |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ Common configuration lives in `.env` plus compose environment variables: to chan
 
 ## API Quick Reference
 
-Atlas v0.1.1 exposes 45 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
+Atlas exposes 45 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
 
 ### Registry (server registration)
 

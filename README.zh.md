@@ -35,7 +35,7 @@
 
 ## 定位
 
-Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕三个问题构建：
+Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕四个问题构建：
 
 | 模块 | 回答的问题 | 说明 |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 ## API Quick Reference
 
-Atlas v0.1.1 暴露 45 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
+Atlas 当前暴露 45 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
