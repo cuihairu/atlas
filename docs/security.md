@@ -40,7 +40,7 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 
 - 未出现在 `ATLAS_ADMIN_ROLES` 的 Key 默认 `admin`（向后兼容只配 `ATLAS_ADMIN_API_KEYS` 的部署）。
 - 冒号缺失的条目按 admin 处理；未知角色名导致启动失败。
-- **gRPC 同规**：AdminService 的 10 个 RPC（:9090）走同一套 Key + 角色，viewer 仅可调 4 个读 RPC（GetStats / GetMigration / ListMigrations / SearchCharacters），写 RPC 返回 gRPC `PermissionDenied ROLE_NOT_ALLOWED`。RegistryService 的 3 个 RPC 同样受 `ATLAS_REGISTRY_TOKENS` + IP 白名单保护。两条传输共用同一批环境变量。
+- **gRPC 同规**：AdminService 的 10 个 RPC（:9090）走同一套 Key + 角色，viewer 仅可调 4 个读 RPC（GetStats / GetMigration / ListMigrations / SearchCharacters），写 RPC 返回 gRPC `PermissionDenied ROLE_NOT_ALLOWED`。RegistryService 的 3 个 RPC 同样受 `ATLAS_REGISTRY_TOKENS` + IP 白名单保护。两条传输共用同一批环境变量。**viewer 读范围两传输不对称**：REST 按 HTTP 方法判定（任意 GET/HEAD 放行），gRPC 按方法名白名单判定（gRPC 无统一「读」语义）——同一 viewer key 在 REST 能读到 gRPC 拿不到的管理数据（如 `GET /v1/admin/servers`），收窄口子时两传输要一起收。
 
 ## 3. 操作审计
 
