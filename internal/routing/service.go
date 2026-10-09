@@ -133,7 +133,7 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 	}
 
 	// Merge runtime player counts and load so scoring sees live data.
-	if err := s.mergeRuntimes(ctx, candidates); err != nil {
+	if _, err := s.mergeRuntimes(ctx, candidates); err != nil {
 		return nil, "", err
 	}
 
@@ -180,6 +180,12 @@ type ServerVerdict struct {
 	MatchedFallback bool `json:"matched_fallback"`
 	// Owned: the account already has a character here (tiebreak #1).
 	Owned bool `json:"owned"`
+	// LiveRuntime: a runtime snapshot existed for this server when the
+	// decision was made. False means the row is ranked on its
+	// registration-time archive players/load (the Redis key was absent —
+	// never heartbeated, or expired) and will sort as least-load until
+	// the next heartbeat or sweep flips its status.
+	LiveRuntime bool `json:"live_runtime"`
 	// MaintenanceWindow is the window disqualifying this server right now
 	// (active, or starting within the pre-maintenance lead); nil when none.
 	MaintenanceWindow *model.MaintenanceWindow `json:"maintenance_window,omitempty"`
@@ -243,7 +249,8 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 
 	// Runtime merge for every server (the merge Recommend applies to its
 	// candidates): eligibility must be judged on live players/load too.
-	if err := s.mergeRuntimes(ctx, all); err != nil {
+	liveRuntime, err := s.mergeRuntimes(ctx, all)
+	if err != nil {
 		return nil, err
 	}
 
@@ -282,6 +289,7 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 			MatchedStrict:     matchStrict(srv),
 			MatchedFallback:   matchFallback(srv),
 			Owned:             owned[srv.ID],
+			LiveRuntime:       liveRuntime[srv.ID],
 			MaintenanceWindow: blocked[srv.ID],
 			Eligible:          srv.Status.AcceptsTraffic() && !srv.OverCapacity() && blocked[srv.ID] == nil,
 		}
@@ -359,13 +367,15 @@ func (s *Service) listMatching(ctx context.Context, req Request) ([]*model.Serve
 // batched read (the same GetRuntimes call Discovery's list path uses —
 // one Redis pipeline exec instead of N single-key round trips). Missing
 // keys are simply skipped: no snapshot means the server has not
-// heartbeated, and its archive values stand. The error propagates —
-// this is a decision surface, not a display: ranking candidates on
-// unknown load risks steering players into a full or dying server,
-// the same fail-closed rule the maintenance blocklist follows.
-func (s *Service) mergeRuntimes(ctx context.Context, servers []*model.Server) error {
+// heartbeated, and its archive values stand — the returned map records
+// which servers actually had a snapshot, so the decision surfaces that
+// explain themselves (Diagnose) can flag archive-ranked rows. The error
+// propagates — this is a decision surface, not a display: ranking
+// candidates on unknown load risks steering players into a full or dying
+// server, the same fail-closed rule the maintenance blocklist follows.
+func (s *Service) mergeRuntimes(ctx context.Context, servers []*model.Server) (map[string]bool, error) {
 	if len(servers) == 0 {
-		return nil
+		return nil, nil
 	}
 	ids := make([]string, len(servers))
 	for i, srv := range servers {
@@ -373,15 +383,17 @@ func (s *Service) mergeRuntimes(ctx context.Context, servers []*model.Server) er
 	}
 	rtMap, err := s.runtime.GetRuntimes(ctx, ids)
 	if err != nil {
-		return fmt.Errorf("read runtimes: %w", err)
+		return nil, fmt.Errorf("read runtimes: %w", err)
 	}
+	live := make(map[string]bool, len(rtMap))
 	for _, srv := range servers {
 		if rt, ok := rtMap[srv.ID]; ok {
 			srv.Players = rt.Players
 			srv.Load = rt.Load
+			live[srv.ID] = true
 		}
 	}
-	return nil
+	return live, nil
 }
 
 // maintenanceBlocklist returns, per server, the maintenance window that
