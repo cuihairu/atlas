@@ -470,6 +470,34 @@ func main() {
 		handler.WithRateLimiter(limiter) // read-only rules view on /v1/admin/rate-limits
 	}
 
+	// Security posture warnings: every line below is a deliberate default
+	// (docs/security.md), but silent defaults are how a dev posture leaks
+	// into production — say each one out loud at startup so an operator
+	// sees the posture before the first request does.
+	if len(adminKeys) == 0 && len(adminIPs) == 0 {
+		logger.Warn("admin API is open: ATLAS_ADMIN_API_KEYS / ATLAS_ADMIN_IP_WHITELIST both unset (development only)")
+	}
+	if len(adminKeys) > 0 {
+		unmapped := 0
+		for k := range adminKeys {
+			if _, ok := adminRoles[k]; !ok {
+				unmapped++
+			}
+		}
+		if unmapped > 0 {
+			logger.Warn("admin keys without an explicit ATLAS_ADMIN_ROLES entry default to admin", "keys", unmapped)
+		}
+	}
+	if len(regTokens) == 0 && len(regIPs) == 0 {
+		logger.Warn("registry API is open: ATLAS_REGISTRY_TOKENS / ATLAS_REGISTRY_IP_WHITELIST both unset (development only)")
+	}
+	if !cfg.AuditEnabled {
+		logger.Warn("admin audit log disabled via ATLAS_AUDIT_ENABLED=0")
+	}
+	if limiter == nil {
+		logger.Warn("rate limiting disabled: set ATLAS_RATE_LIMITS / ATLAS_RATE_LIMIT_DEFAULT to enable")
+	}
+
 	// ── Public API (Discovery + Directory) ─────────────────
 	publicMux := http.NewServeMux()
 	handler.RegisterPublicRoutes(publicMux)
