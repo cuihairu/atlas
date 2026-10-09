@@ -109,7 +109,7 @@ func (c *fakeChannel) stats() (published int, acked int, nacked int) {
 func newTestAdapter(t *testing.T) (*Adapter, *fakeChannel) {
 	t.Helper()
 	ch := newFakeChannel()
-	a := New(ch, Options{Consumer: "test-consumer"})
+	a := New(ch, Options{Consumer: "test-consumer", RequeueBackoff: time.Millisecond})
 	t.Cleanup(func() { _ = a.Close() })
 	return a, ch
 }

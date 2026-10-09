@@ -27,6 +27,10 @@ import (
 const (
 	// DefaultURL is used when Options.URL is empty.
 	DefaultURL = "amqp://localhost:5672/"
+	// requeueBackoff pauses the consumer before Nack(requeue) so a
+	// persistently failing handler retries at a sane rate instead of a
+	// hot spin (rabbitmq gives no delivery counter to cap retries with).
+	requeueBackoff = 5 * time.Second
 	// DefaultExchange is the durable topic exchange all events route through.
 	DefaultExchange = "atlas"
 	// defaultQos is the consumer prefetch count.
@@ -58,6 +62,11 @@ type Options struct {
 	Consumer string
 	// Qos is the prefetch count (default 16).
 	Qos int
+	// RequeueBackoff pauses the consumer before Nack(requeue) after a
+	// handler failure (default 5s; rabbitmq exposes no delivery counter
+	// to cap retries, so the pause is what keeps a failing event from
+	// hot-spinning the loop).
+	RequeueBackoff time.Duration
 	// Logger receives consume failures (default slog.Default()).
 	Logger *slog.Logger
 }
@@ -68,6 +77,7 @@ type Adapter struct {
 	exchange string
 	consumer string
 	qos      int
+	backoff  time.Duration
 	logger   *slog.Logger
 	owns     bool
 
@@ -109,6 +119,7 @@ func New(ch Channel, opts Options) *Adapter {
 		exchange: opts.Exchange,
 		consumer: opts.Consumer,
 		qos:      opts.Qos,
+		backoff:  opts.RequeueBackoff,
 		logger:   opts.Logger,
 	}
 	if a.exchange == "" {
@@ -120,6 +131,9 @@ func New(ch Channel, opts Options) *Adapter {
 	}
 	if a.qos <= 0 {
 		a.qos = defaultQos
+	}
+	if a.backoff <= 0 {
+		a.backoff = requeueBackoff
 	}
 	if a.logger == nil {
 		a.logger = slog.Default()
@@ -233,6 +247,13 @@ func (a *Adapter) handle(ctx context.Context, h event.Handler, msg amqp.Delivery
 		a.logger.Error("event: handler failed, requeueing",
 			"exchange", a.exchange, "message_id", msg.MessageId,
 			"type", string(e.Type), "error", err)
+		// Back off before the requeue: rabbitmq has no delivery counter to
+		// cap retries against, and Nack(requeue) on the same connection
+		// hands the message straight back — without a pause a persistently
+		// failing event is a hot spin burning CPU and log volume. The
+		// sleep happens on the consumer goroutine, so it also throttles
+		// subsequent deliveries; at-least-once is preserved.
+		time.Sleep(a.backoff)
 		_ = a.ch.Nack(msg.DeliveryTag, false, true)
 		return
 	}
