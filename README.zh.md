@@ -366,6 +366,7 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 | [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | 系列收官：Routing、gRPC 双传输、六语言 SDK、消息总线适配器、Realm/Shard 管理、维护窗口与公告、安全加固（mTLS/RBAC/审计）、高可用、角色索引分片 |
 | [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | 跨服配置中心（三档接入热更新）、服务器标记体系、声明式服务器配置、管理台扩展、Docker 镜像与部署腿 |
 | [v0.1.3](https://github.com/cuihairu/atlas/releases/tag/v0.1.3) | v0.2 前奏：OpenTelemetry 链路追踪（root+child span 树）、六语言 SDK 巩固（错误信封/心跳排空/关联头）、memory 存储六类倒排索引 + 指令化写队列（tags 过滤三库契约）、dash 存储队列可观测（指标族 + admin 端点 + 管理台卡） |
+| [v0.1.4](https://github.com/cuihairu/atlas/releases/tag/v0.1.4) | 源码二轮走查：角色删除事件幂等化、RabbitMQ 重投退避、routing 诊断 live_runtime、不安全默认启动告警、角色读路径 bench 证据、README 双语化（20 个提交） |
 
 **明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据、匹配/排队/房间、实例与 Zone 分配、玩家 Session、背包/经济/排行榜等游戏业务数据（详见 [docs/roadmap.md](docs/roadmap.md)「明确不做」清单）。
 
