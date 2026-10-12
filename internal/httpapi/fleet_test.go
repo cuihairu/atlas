@@ -34,6 +34,7 @@ type fleetFixture struct {
 	limiter *RateLimiter
 	events  event.EventAdapter
 	dirSvc  *directory.Service
+	handler *Handler
 }
 
 // setupFleetServer wires the full BUGS ③ path: the store is wrapped by the
@@ -96,6 +97,10 @@ func setupFleetFixtureOn(t *testing.T, mem *memory.Store) *fleetFixture {
 		players := 0
 		for _, srv := range idx.ListAll() {
 			players += srv.Players
+			// Per-server scopes, same series names main.go's probe emits —
+			// the heatmap and server drill-down read these.
+			out["load.server."+srv.ID+".players"] = float64(srv.Players)
+			out["load.server."+srv.ID+".load"] = srv.Load
 		}
 		out["load.fleet.players"] = float64(players)
 		out["load.fleet.load"] = 0
@@ -131,6 +136,7 @@ func setupFleetFixtureOn(t *testing.T, mem *memory.Store) *fleetFixture {
 		limiter: limiter,
 		events:  events,
 		dirSvc:  dirSvc,
+		handler: handler,
 	}
 }
 

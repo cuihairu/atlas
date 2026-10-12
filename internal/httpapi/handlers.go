@@ -181,6 +181,8 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	// 负载时间视图 (概览) 与 消息总线 panels: lightweight ring-buffer series.
 	mux.HandleFunc("GET /v1/admin/load-series", h.handleAdminLoadSeries)
 	mux.HandleFunc("GET /v1/admin/bus-series", h.handleAdminBusSeries)
+	// 服务器热力图: per-server load grid, one row per live server.
+	mux.HandleFunc("GET /v1/admin/load-heatmap", h.handleAdminLoadHeatmap)
 	mux.HandleFunc("POST /v1/admin/migrations", h.handleAdminCreateMigration)
 	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
 	mux.HandleFunc("GET /v1/admin/migrations/{id}", h.handleAdminGetMigration)
@@ -936,6 +938,42 @@ func (h *Handler) handleAdminLoadSeries(w http.ResponseWriter, r *http.Request) 
 		"scope":  scope,
 		"window": r.URL.Query().Get("window"),
 		"points": points,
+	})
+}
+
+// handleAdminLoadHeatmap serves the 服务器热力图: one grid row per live
+// server — the current record (same fleet index snapshot the admin lists
+// read) joined with its bucketed load history from the same rings the
+// 负载时间视图 samples. window=1h (default) → 12 buckets of 5m, 24h →
+// 24 buckets of 1h. Buckets carry a sample count so the client can render
+// "no data" (sampler restart, server registered mid-window) as its own
+// state instead of mistaking it for zero load.
+func (h *Handler) handleAdminLoadHeatmap(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("window")
+	window, bucketCount, ok := telemetry.ParseHeatmapWindow(raw)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "window must be one of 1h/24h")
+		return
+	}
+	if raw == "" {
+		raw = "1h"
+	}
+
+	var servers []*model.Server
+	if h.fleet != nil {
+		servers = h.fleet.ListAll()
+	}
+	var series func(string, time.Duration) []telemetry.Point
+	if h.telemetry != nil {
+		series = h.telemetry.Series
+	}
+	rows := telemetry.BuildServerHeatmap(servers, series, window, bucketCount, time.Now())
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"window":       raw,
+		"bucket":       telemetry.BucketSpanLabel(window / time.Duration(bucketCount)),
+		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"servers":      rows,
 	})
 }
 

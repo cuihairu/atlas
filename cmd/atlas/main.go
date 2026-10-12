@@ -293,10 +293,11 @@ func main() {
 	evtCounting := event.WrapCounting(evtAdapter)
 	evtAdapter = evtCounting
 
-	// Lightweight series sampler (概览负载时间视图 / 消息总线曲线): 15s
-	// samples, ≥10h retention, in-memory rings — no TSDB by decree. Probes:
+	// Lightweight series sampler (概览负载时间视图 / 消息总线曲线 / 服务器
+	// 热力图): 15s samples, ≥24h retention (the 24h heatmap window needs it;
+	// rings stay in-memory, ~150KB per series — no TSDB by decree). Probes:
 	// fleet load per server/region/fleet, bus counters per topic.
-	sampler := telemetry.NewSampler(15*time.Second, 10*time.Hour+5*time.Minute)
+	sampler := telemetry.NewSampler(15*time.Second, 24*time.Hour+15*time.Minute)
 	sampler.Probe(func() map[string]float64 {
 		out := map[string]float64{}
 		// Fleet / region / per-server load scopes from the same index every
@@ -645,7 +646,10 @@ func main() {
 		grpcSrvOpts = append(grpcSrvOpts, grpc.ChainUnaryInterceptor(grpcInterceptors...))
 	}
 	grpcSrv := grpc.NewServer(grpcSrvOpts...)
-	atlasgrpc.New(regSvc, discSvc, dirSvc, rtSvc, admSvc, evtAdapter).RegisterServices(grpcSrv)
+	atlasgrpc.New(regSvc, discSvc, dirSvc, rtSvc, admSvc, evtAdapter).
+		WithFleetIndex(fleetIdx).
+		WithTelemetry(sampler).
+		RegisterServices(grpcSrv)
 
 	// Graceful shutdown on SIGINT/SIGTERM.
 	sigCh := make(chan os.Signal, 1)

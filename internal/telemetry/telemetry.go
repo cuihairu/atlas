@@ -1,7 +1,8 @@
 // Package telemetry keeps the lightweight in-memory time series behind the
-// admin charts (概览负载时间视图 / 消息总线积压, TODO 观测深化): fixed-rate
-// ring buffers sampled from live gauges — explicitly NOT a TSDB. Restart
-// clears the series; the decree allows an in-memory ring with ≥10h retention.
+// admin charts (概览负载时间视图 / 消息总线积压 / 服务器热力图, TODO 观测
+// 深化): fixed-rate ring buffers sampled from live gauges — explicitly NOT
+// a TSDB. Restart clears the series; the decree allows an in-memory ring
+// with ≥10h retention (main runs 24h+ so the 24h heatmap window fits).
 package telemetry
 
 import (

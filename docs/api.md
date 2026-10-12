@@ -509,7 +509,18 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 负载时间序列（概览页图表）。**Query**：`?window=`（`5m|10m|30m|1h|10h`）、
 `?server_id=`、`?region=`（scope 优先级 server > region > fleet）。返回
 `points[]`（`t` / `players` / `load`），来自后端内存环形采样（15s 采样、
-≥10h 保留；重启清零，无 TSDB）。
+≥24h 保留；重启清零，无 TSDB）。
+
+### GET /v1/admin/load-heatmap
+
+服务器热力图（dashboard 热力图页）：每台存活服务器一行，行内是窗口内的
+分桶负载均值。**Query**：`?window=`（`1h` → 12×5m 桶，默认；`24h` →
+24×1h 桶）。返回 `window` / `bucket`（桶跨度）/ `generated_at` /
+`servers[]`（`server_id` / `name` / `region` / `type` / `status` /
+`players` / `capacity` / `load` 为实时快照，`buckets[]` 为 `t` / `load` /
+`players` / `samples` 分桶均值）。`samples == 0` 的桶表示该时段无采样
+（重启、中途注册等），消费端须渲染为独立的「无数据」态，不能当作零负载。
+未接入采样器的嵌入方返回空 `buckets`，不返回 null。
 
 ### GET /v1/admin/bus-series
 
