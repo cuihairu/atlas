@@ -1,13 +1,17 @@
 package nats
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 
 	"github.com/cuihairu/atlas/internal/event"
 )
@@ -214,5 +218,89 @@ func TestOpenConnectFailureAndAccessors(t *testing.T) {
 	}
 	if err := a.Ack(context.Background(), &event.Event{}); err != nil {
 		t.Errorf("Ack (no-op) = %v", err)
+	}
+}
+
+// syncBuffer captures log output for assertions.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestPublishAfterConnClosed(t *testing.T) {
+	// A JetStream publish over a dead connection must fail with a wrapped
+	// nats error, not silently drop the event.
+	a := openAdapter(t)
+	if err := a.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	err := a.Publish(context.Background(), &event.Event{
+		Type: event.EventCharacterCreated, AccountID: 1, CharacterID: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "event: nats publish") {
+		t.Errorf("publish on closed conn = %v, want nats publish error", err)
+	}
+}
+
+func TestSubscribeUnknownStreamFails(t *testing.T) {
+	// Binding a durable consumer to a stream that does not exist must fail
+	// Subscribe up front — a misconfigured stream name cannot start a loop
+	// that will never receive anything.
+	srv := startServer(t)
+	conn, err := nats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer conn.Close()
+	js, err := conn.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+
+	a := New(conn, js, Options{Stream: "NOPE", Durable: "atlas-test", Fetch: 10 * time.Millisecond})
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err == nil || !strings.Contains(err.Error(), "event: nats pull subscribe") {
+		t.Errorf("subscribe to unknown stream = %v, want pull subscribe error", err)
+	}
+}
+
+func TestFetchErrorLoggedAndLoopEnds(t *testing.T) {
+	// A fetch failure that is neither a timeout nor a shutdown (here: the
+	// connection dying under the subscription) is logged; the loop exits on
+	// the next context check instead of spinning.
+	var buf syncBuffer
+	a := openAdapter(t)
+	a.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	a.fetch = 10 * time.Millisecond
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	a.conn.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(buf.String(), "event: fetch failed") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(buf.String(), "event: fetch failed") {
+		t.Fatalf("fetch failure never logged, buffer = %q", buf.String())
+	}
+	if err := a.Close(); err != nil {
+		t.Errorf("close: %v", err)
 	}
 }
