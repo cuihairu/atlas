@@ -85,6 +85,7 @@ func authDomain(fullMethod string) string {
 // mutate" expressed per method.
 var adminReadMethods = map[string]bool{
 	"GetStats":         true,
+	"GetLoadHeatmap":   true,
 	"GetMigration":     true,
 	"ListMigrations":   true,
 	"SearchCharacters": true,

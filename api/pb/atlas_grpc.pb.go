@@ -741,6 +741,7 @@ const (
 	AdminService_Enable_FullMethodName            = "/atlas.v1.AdminService/Enable"
 	AdminService_Disable_FullMethodName           = "/atlas.v1.AdminService/Disable"
 	AdminService_GetStats_FullMethodName          = "/atlas.v1.AdminService/GetStats"
+	AdminService_GetLoadHeatmap_FullMethodName    = "/atlas.v1.AdminService/GetLoadHeatmap"
 	AdminService_SearchCharacters_FullMethodName  = "/atlas.v1.AdminService/SearchCharacters"
 	AdminService_CreateMigration_FullMethodName   = "/atlas.v1.AdminService/CreateMigration"
 	AdminService_GetMigration_FullMethodName      = "/atlas.v1.AdminService/GetMigration"
@@ -757,6 +758,7 @@ type AdminServiceClient interface {
 	Enable(ctx context.Context, in *ServerIdRequest, opts ...grpc.CallOption) (*OkResponse, error)
 	Disable(ctx context.Context, in *ServerIdRequest, opts ...grpc.CallOption) (*OkResponse, error)
 	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*GetStatsResponse, error)
+	GetLoadHeatmap(ctx context.Context, in *LoadHeatmapRequest, opts ...grpc.CallOption) (*LoadHeatmapResponse, error)
 	SearchCharacters(ctx context.Context, in *SearchCharactersRequest, opts ...grpc.CallOption) (*SearchCharactersResponse, error)
 	CreateMigration(ctx context.Context, in *CreateMigrationRequest, opts ...grpc.CallOption) (*CreateMigrationResponse, error)
 	GetMigration(ctx context.Context, in *GetMigrationRequest, opts ...grpc.CallOption) (*GetMigrationResponse, error)
@@ -822,6 +824,16 @@ func (c *adminServiceClient) GetStats(ctx context.Context, in *GetStatsRequest, 
 	return out, nil
 }
 
+func (c *adminServiceClient) GetLoadHeatmap(ctx context.Context, in *LoadHeatmapRequest, opts ...grpc.CallOption) (*LoadHeatmapResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LoadHeatmapResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetLoadHeatmap_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) SearchCharacters(ctx context.Context, in *SearchCharactersRequest, opts ...grpc.CallOption) (*SearchCharactersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SearchCharactersResponse)
@@ -881,6 +893,7 @@ type AdminServiceServer interface {
 	Enable(context.Context, *ServerIdRequest) (*OkResponse, error)
 	Disable(context.Context, *ServerIdRequest) (*OkResponse, error)
 	GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error)
+	GetLoadHeatmap(context.Context, *LoadHeatmapRequest) (*LoadHeatmapResponse, error)
 	SearchCharacters(context.Context, *SearchCharactersRequest) (*SearchCharactersResponse, error)
 	CreateMigration(context.Context, *CreateMigrationRequest) (*CreateMigrationResponse, error)
 	GetMigration(context.Context, *GetMigrationRequest) (*GetMigrationResponse, error)
@@ -910,6 +923,9 @@ func (UnimplementedAdminServiceServer) Disable(context.Context, *ServerIdRequest
 }
 func (UnimplementedAdminServiceServer) GetStats(context.Context, *GetStatsRequest) (*GetStatsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
+}
+func (UnimplementedAdminServiceServer) GetLoadHeatmap(context.Context, *LoadHeatmapRequest) (*LoadHeatmapResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLoadHeatmap not implemented")
 }
 func (UnimplementedAdminServiceServer) SearchCharacters(context.Context, *SearchCharactersRequest) (*SearchCharactersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SearchCharacters not implemented")
@@ -1037,6 +1053,24 @@ func _AdminService_GetStats_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetLoadHeatmap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoadHeatmapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetLoadHeatmap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetLoadHeatmap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetLoadHeatmap(ctx, req.(*LoadHeatmapRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_SearchCharacters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SearchCharactersRequest)
 	if err := dec(in); err != nil {
@@ -1153,6 +1187,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStats",
 			Handler:    _AdminService_GetStats_Handler,
+		},
+		{
+			MethodName: "GetLoadHeatmap",
+			Handler:    _AdminService_GetLoadHeatmap_Handler,
 		},
 		{
 			MethodName: "SearchCharacters",

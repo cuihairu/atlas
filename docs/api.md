@@ -785,6 +785,7 @@ service AdminService {       // 对应 /v1/admin/*
   rpc Enable(ServerIdRequest) returns (OkResponse);
   rpc Disable(ServerIdRequest) returns (OkResponse);
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc GetLoadHeatmap(LoadHeatmapRequest) returns (LoadHeatmapResponse);
   rpc SearchCharacters(SearchCharactersRequest) returns (SearchCharactersResponse);
   rpc CreateMigration(CreateMigrationRequest) returns (CreateMigrationResponse);
   rpc GetMigration(GetMigrationRequest) returns (GetMigrationResponse);
@@ -823,7 +824,7 @@ service AdminService {       // 对应 /v1/admin/*
 | 公网 | `ATLAS_HTTP_ADDR` | `:8080` | Discovery / Directory / Routing 推荐 + `GET /healthz` |
 | 注册 | `ATLAS_REGISTRY_ADDR` | `:8081` | Registry 注册 / 心跳 / 注销 + 跨服配置拉取 + `GET /healthz` |
 | 管理 | `ATLAS_ADMIN_ADDR` | `:8082` | Admin API + `GET /readyz` + `GET /metrics`（Prometheus） |
-| gRPC | `ATLAS_GRPC_ADDR` | `:9090` | 五服务 22 RPC；设为空字符串关闭 |
+| gRPC | `ATLAS_GRPC_ADDR` | `:9090` | 五服务 23 RPC；设为空字符串关闭 |
 
 生产部署通常经反代把 :8080/:8081/:8082 合一（见 [sdk-go.md](sdk-go.md) 双传输表）。探针按口区分：公网与注册口是 `GET /healthz`，管理口是 `GET /readyz`。
 
@@ -857,7 +858,7 @@ Atlas 将 API 划分为三个安全域，各自独立配置：
 
 Admin RBAC：`ATLAS_ADMIN_ROLES` 以 `key:role` 逗号列表授权（`admin`/`operator`/`viewer`），viewer 只能读（GET/HEAD），operator 可执行日常运维写入，未列出的 key 默认 `admin`——向后兼容只配 `ATLAS_ADMIN_API_KEYS` 的部署。校验顺序：IP 白名单（403 `IP_NOT_ALLOWED`）→ API Key（401 `MISSING_API_KEY`/`INVALID_API_KEY`）→ 角色（403 `ROLE_NOT_ALLOWED`）。另：`GET /v1/crossserver/config` 双口挂载——注册口 :8081（游戏服拉取，主路径）与公网口 :8080（无注册网关场景），见 [config-center.md](config-center.md)。
 
-**gRPC 传输（:9090）的认证**：与 REST 同一套安全域、同一批环境变量。RegistryService 三个 RPC 受 `ATLAS_REGISTRY_TOKENS` + 注册 IP 白名单保护（凭证同 REST——`authorization: Bearer` 或 `x-atlas-token` metadata），AdminService 十个 RPC 受 `ATLAS_ADMIN_API_KEYS` + `ATLAS_ADMIN_ROLES` + 管理 IP 白名单保护（viewer 只能调四个读 RPC：GetStats / GetMigration / ListMigrations / SearchCharacters），Discovery / Directory / Routing 属 Public 域保持开放。未配置对应域时与 REST 一致完全开放（开发模式）。错误以 gRPC status 表达：`Unauthenticated`（缺/坏凭证）、`PermissionDenied`（IP 或角色不符），消息沿用 REST 的 `MISSING_API_KEY` / `INVALID_TOKEN` 等错误码词表。操作审计同样双传输：AdminService RPC 记入与 REST 同一个审计环（`path` 为全方法名如 `/atlas.v1.AdminService/Disable`，读记 `GET` / 写记 `POST` 并带 protojson 请求 diff，gRPC code 映射为等价 HTTP 状态），认证失败的调用不进环——与 REST 审计「在认证之内」同一语义。Go SDK 两条传输都在调用时自动附带所属域的凭证（见 [sdk-go.md](sdk-go.md)），无需调用方手工塞 metadata。
+**gRPC 传输（:9090）的认证**：与 REST 同一套安全域、同一批环境变量。RegistryService 三个 RPC 受 `ATLAS_REGISTRY_TOKENS` + 注册 IP 白名单保护（凭证同 REST——`authorization: Bearer` 或 `x-atlas-token` metadata），AdminService 十一个 RPC 受 `ATLAS_ADMIN_API_KEYS` + `ATLAS_ADMIN_ROLES` + 管理 IP 白名单保护（viewer 只能调五个读 RPC：GetStats / GetLoadHeatmap / GetMigration / ListMigrations / SearchCharacters），Discovery / Directory / Routing 属 Public 域保持开放。未配置对应域时与 REST 一致完全开放（开发模式）。错误以 gRPC status 表达：`Unauthenticated`（缺/坏凭证）、`PermissionDenied`（IP 或角色不符），消息沿用 REST 的 `MISSING_API_KEY` / `INVALID_TOKEN` 等错误码词表。操作审计同样双传输：AdminService RPC 记入与 REST 同一个审计环（`path` 为全方法名如 `/atlas.v1.AdminService/Disable`，读记 `GET` / 写记 `POST` 并带 protojson 请求 diff，gRPC code 映射为等价 HTTP 状态），认证失败的调用不进环——与 REST 审计「在认证之内」同一语义。Go SDK 两条传输都在调用时自动附带所属域的凭证（见 [sdk-go.md](sdk-go.md)），无需调用方手工塞 metadata。
 
 **为什么 Public 端点不在 Atlas 内做认证？**
 

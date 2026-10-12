@@ -2031,6 +2031,301 @@ func (x *GetStatsResponse) GetTotalCharacters() int32 {
 	return 0
 }
 
+type LoadHeatmapRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// window selects the heatmap span: "1h" (12 × 5m buckets, default) or
+	// "24h" (24 × 1h buckets). Any other value is INVALID_ARGUMENT — same
+	// tiers as GET /v1/admin/load-heatmap?window=.
+	Window        string `protobuf:"bytes,1,opt,name=window,proto3" json:"window,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadHeatmapRequest) Reset() {
+	*x = LoadHeatmapRequest{}
+	mi := &file_api_proto_atlas_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadHeatmapRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadHeatmapRequest) ProtoMessage() {}
+
+func (x *LoadHeatmapRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_atlas_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadHeatmapRequest.ProtoReflect.Descriptor instead.
+func (*LoadHeatmapRequest) Descriptor() ([]byte, []int) {
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *LoadHeatmapRequest) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+type LoadHeatmapBucket struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// t is the bucket start (RFC 3339). samples == 0 means no data in the
+	// bucket (restart, mid-window registration) — render as its own "no
+	// data" state, never as a zero-load color.
+	T             string  `protobuf:"bytes,1,opt,name=t,proto3" json:"t,omitempty"`
+	Load          float64 `protobuf:"fixed64,2,opt,name=load,proto3" json:"load,omitempty"`
+	Players       float64 `protobuf:"fixed64,3,opt,name=players,proto3" json:"players,omitempty"`
+	Samples       int32   `protobuf:"varint,4,opt,name=samples,proto3" json:"samples,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadHeatmapBucket) Reset() {
+	*x = LoadHeatmapBucket{}
+	mi := &file_api_proto_atlas_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadHeatmapBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadHeatmapBucket) ProtoMessage() {}
+
+func (x *LoadHeatmapBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_atlas_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadHeatmapBucket.ProtoReflect.Descriptor instead.
+func (*LoadHeatmapBucket) Descriptor() ([]byte, []int) {
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *LoadHeatmapBucket) GetT() string {
+	if x != nil {
+		return x.T
+	}
+	return ""
+}
+
+func (x *LoadHeatmapBucket) GetLoad() float64 {
+	if x != nil {
+		return x.Load
+	}
+	return 0
+}
+
+func (x *LoadHeatmapBucket) GetPlayers() float64 {
+	if x != nil {
+		return x.Players
+	}
+	return 0
+}
+
+func (x *LoadHeatmapBucket) GetSamples() int32 {
+	if x != nil {
+		return x.Samples
+	}
+	return 0
+}
+
+type LoadHeatmapServer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServerId      string                 `protobuf:"bytes,1,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Region        string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	Type          string                 `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	Players       int32                  `protobuf:"varint,6,opt,name=players,proto3" json:"players,omitempty"`
+	Capacity      int32                  `protobuf:"varint,7,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	Load          float64                `protobuf:"fixed64,8,opt,name=load,proto3" json:"load,omitempty"`
+	Buckets       []*LoadHeatmapBucket   `protobuf:"bytes,9,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadHeatmapServer) Reset() {
+	*x = LoadHeatmapServer{}
+	mi := &file_api_proto_atlas_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadHeatmapServer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadHeatmapServer) ProtoMessage() {}
+
+func (x *LoadHeatmapServer) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_atlas_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadHeatmapServer.ProtoReflect.Descriptor instead.
+func (*LoadHeatmapServer) Descriptor() ([]byte, []int) {
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *LoadHeatmapServer) GetServerId() string {
+	if x != nil {
+		return x.ServerId
+	}
+	return ""
+}
+
+func (x *LoadHeatmapServer) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LoadHeatmapServer) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *LoadHeatmapServer) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *LoadHeatmapServer) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *LoadHeatmapServer) GetPlayers() int32 {
+	if x != nil {
+		return x.Players
+	}
+	return 0
+}
+
+func (x *LoadHeatmapServer) GetCapacity() int32 {
+	if x != nil {
+		return x.Capacity
+	}
+	return 0
+}
+
+func (x *LoadHeatmapServer) GetLoad() float64 {
+	if x != nil {
+		return x.Load
+	}
+	return 0
+}
+
+func (x *LoadHeatmapServer) GetBuckets() []*LoadHeatmapBucket {
+	if x != nil {
+		return x.Buckets
+	}
+	return nil
+}
+
+type LoadHeatmapResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Window string                 `protobuf:"bytes,1,opt,name=window,proto3" json:"window,omitempty"`
+	// bucket is the span label ("5m" / "1h").
+	Bucket        string               `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	GeneratedAt   string               `protobuf:"bytes,3,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
+	Servers       []*LoadHeatmapServer `protobuf:"bytes,4,rep,name=servers,proto3" json:"servers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoadHeatmapResponse) Reset() {
+	*x = LoadHeatmapResponse{}
+	mi := &file_api_proto_atlas_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoadHeatmapResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoadHeatmapResponse) ProtoMessage() {}
+
+func (x *LoadHeatmapResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_proto_atlas_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoadHeatmapResponse.ProtoReflect.Descriptor instead.
+func (*LoadHeatmapResponse) Descriptor() ([]byte, []int) {
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *LoadHeatmapResponse) GetWindow() string {
+	if x != nil {
+		return x.Window
+	}
+	return ""
+}
+
+func (x *LoadHeatmapResponse) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *LoadHeatmapResponse) GetGeneratedAt() string {
+	if x != nil {
+		return x.GeneratedAt
+	}
+	return ""
+}
+
+func (x *LoadHeatmapResponse) GetServers() []*LoadHeatmapServer {
+	if x != nil {
+		return x.Servers
+	}
+	return nil
+}
+
 type SearchCharactersRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -2056,7 +2351,7 @@ type SearchCharactersRequest struct {
 
 func (x *SearchCharactersRequest) Reset() {
 	*x = SearchCharactersRequest{}
-	mi := &file_api_proto_atlas_proto_msgTypes[31]
+	mi := &file_api_proto_atlas_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2068,7 +2363,7 @@ func (x *SearchCharactersRequest) String() string {
 func (*SearchCharactersRequest) ProtoMessage() {}
 
 func (x *SearchCharactersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[31]
+	mi := &file_api_proto_atlas_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2081,7 +2376,7 @@ func (x *SearchCharactersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchCharactersRequest.ProtoReflect.Descriptor instead.
 func (*SearchCharactersRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{31}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SearchCharactersRequest) GetName() string {
@@ -2165,7 +2460,7 @@ type SearchCharactersResponse struct {
 
 func (x *SearchCharactersResponse) Reset() {
 	*x = SearchCharactersResponse{}
-	mi := &file_api_proto_atlas_proto_msgTypes[32]
+	mi := &file_api_proto_atlas_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2177,7 +2472,7 @@ func (x *SearchCharactersResponse) String() string {
 func (*SearchCharactersResponse) ProtoMessage() {}
 
 func (x *SearchCharactersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[32]
+	mi := &file_api_proto_atlas_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2190,7 +2485,7 @@ func (x *SearchCharactersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchCharactersResponse.ProtoReflect.Descriptor instead.
 func (*SearchCharactersResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{32}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SearchCharactersResponse) GetCharacters() []*Character {
@@ -2221,7 +2516,7 @@ type Migration struct {
 
 func (x *Migration) Reset() {
 	*x = Migration{}
-	mi := &file_api_proto_atlas_proto_msgTypes[33]
+	mi := &file_api_proto_atlas_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2233,7 +2528,7 @@ func (x *Migration) String() string {
 func (*Migration) ProtoMessage() {}
 
 func (x *Migration) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[33]
+	mi := &file_api_proto_atlas_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2246,7 +2541,7 @@ func (x *Migration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Migration.ProtoReflect.Descriptor instead.
 func (*Migration) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{33}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *Migration) GetId() string {
@@ -2301,7 +2596,7 @@ type CreateMigrationRequest struct {
 
 func (x *CreateMigrationRequest) Reset() {
 	*x = CreateMigrationRequest{}
-	mi := &file_api_proto_atlas_proto_msgTypes[34]
+	mi := &file_api_proto_atlas_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2313,7 +2608,7 @@ func (x *CreateMigrationRequest) String() string {
 func (*CreateMigrationRequest) ProtoMessage() {}
 
 func (x *CreateMigrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[34]
+	mi := &file_api_proto_atlas_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2326,7 +2621,7 @@ func (x *CreateMigrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateMigrationRequest.ProtoReflect.Descriptor instead.
 func (*CreateMigrationRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{34}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *CreateMigrationRequest) GetSourceServers() []string {
@@ -2352,7 +2647,7 @@ type CreateMigrationResponse struct {
 
 func (x *CreateMigrationResponse) Reset() {
 	*x = CreateMigrationResponse{}
-	mi := &file_api_proto_atlas_proto_msgTypes[35]
+	mi := &file_api_proto_atlas_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2364,7 +2659,7 @@ func (x *CreateMigrationResponse) String() string {
 func (*CreateMigrationResponse) ProtoMessage() {}
 
 func (x *CreateMigrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[35]
+	mi := &file_api_proto_atlas_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2377,7 +2672,7 @@ func (x *CreateMigrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateMigrationResponse.ProtoReflect.Descriptor instead.
 func (*CreateMigrationResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{35}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *CreateMigrationResponse) GetMigration() *Migration {
@@ -2396,7 +2691,7 @@ type GetMigrationRequest struct {
 
 func (x *GetMigrationRequest) Reset() {
 	*x = GetMigrationRequest{}
-	mi := &file_api_proto_atlas_proto_msgTypes[36]
+	mi := &file_api_proto_atlas_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2408,7 +2703,7 @@ func (x *GetMigrationRequest) String() string {
 func (*GetMigrationRequest) ProtoMessage() {}
 
 func (x *GetMigrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[36]
+	mi := &file_api_proto_atlas_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2421,7 +2716,7 @@ func (x *GetMigrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMigrationRequest.ProtoReflect.Descriptor instead.
 func (*GetMigrationRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{36}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetMigrationRequest) GetMigrationId() string {
@@ -2440,7 +2735,7 @@ type GetMigrationResponse struct {
 
 func (x *GetMigrationResponse) Reset() {
 	*x = GetMigrationResponse{}
-	mi := &file_api_proto_atlas_proto_msgTypes[37]
+	mi := &file_api_proto_atlas_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2452,7 +2747,7 @@ func (x *GetMigrationResponse) String() string {
 func (*GetMigrationResponse) ProtoMessage() {}
 
 func (x *GetMigrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[37]
+	mi := &file_api_proto_atlas_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2465,7 +2760,7 @@ func (x *GetMigrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMigrationResponse.ProtoReflect.Descriptor instead.
 func (*GetMigrationResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{37}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetMigrationResponse) GetMigration() *Migration {
@@ -2484,7 +2779,7 @@ type ListMigrationsRequest struct {
 
 func (x *ListMigrationsRequest) Reset() {
 	*x = ListMigrationsRequest{}
-	mi := &file_api_proto_atlas_proto_msgTypes[38]
+	mi := &file_api_proto_atlas_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2496,7 +2791,7 @@ func (x *ListMigrationsRequest) String() string {
 func (*ListMigrationsRequest) ProtoMessage() {}
 
 func (x *ListMigrationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[38]
+	mi := &file_api_proto_atlas_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2509,7 +2804,7 @@ func (x *ListMigrationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMigrationsRequest.ProtoReflect.Descriptor instead.
 func (*ListMigrationsRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{38}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ListMigrationsRequest) GetLimit() int32 {
@@ -2528,7 +2823,7 @@ type ListMigrationsResponse struct {
 
 func (x *ListMigrationsResponse) Reset() {
 	*x = ListMigrationsResponse{}
-	mi := &file_api_proto_atlas_proto_msgTypes[39]
+	mi := &file_api_proto_atlas_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2540,7 +2835,7 @@ func (x *ListMigrationsResponse) String() string {
 func (*ListMigrationsResponse) ProtoMessage() {}
 
 func (x *ListMigrationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[39]
+	mi := &file_api_proto_atlas_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2553,7 +2848,7 @@ func (x *ListMigrationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListMigrationsResponse.ProtoReflect.Descriptor instead.
 func (*ListMigrationsResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{39}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ListMigrationsResponse) GetMigrations() []*Migration {
@@ -2572,7 +2867,7 @@ type RollbackMigrationRequest struct {
 
 func (x *RollbackMigrationRequest) Reset() {
 	*x = RollbackMigrationRequest{}
-	mi := &file_api_proto_atlas_proto_msgTypes[40]
+	mi := &file_api_proto_atlas_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2584,7 +2879,7 @@ func (x *RollbackMigrationRequest) String() string {
 func (*RollbackMigrationRequest) ProtoMessage() {}
 
 func (x *RollbackMigrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[40]
+	mi := &file_api_proto_atlas_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2597,7 +2892,7 @@ func (x *RollbackMigrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackMigrationRequest.ProtoReflect.Descriptor instead.
 func (*RollbackMigrationRequest) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{40}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *RollbackMigrationRequest) GetMigrationId() string {
@@ -2616,7 +2911,7 @@ type RollbackMigrationResponse struct {
 
 func (x *RollbackMigrationResponse) Reset() {
 	*x = RollbackMigrationResponse{}
-	mi := &file_api_proto_atlas_proto_msgTypes[41]
+	mi := &file_api_proto_atlas_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2628,7 +2923,7 @@ func (x *RollbackMigrationResponse) String() string {
 func (*RollbackMigrationResponse) ProtoMessage() {}
 
 func (x *RollbackMigrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_proto_atlas_proto_msgTypes[41]
+	mi := &file_api_proto_atlas_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2641,7 +2936,7 @@ func (x *RollbackMigrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackMigrationResponse.ProtoReflect.Descriptor instead.
 func (*RollbackMigrationResponse) Descriptor() ([]byte, []int) {
-	return file_api_proto_atlas_proto_rawDescGZIP(), []int{41}
+	return file_api_proto_atlas_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *RollbackMigrationResponse) GetMigration() *Migration {
@@ -2843,7 +3138,29 @@ const file_api_proto_atlas_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1aC\n" +
 	"\x15ServersByVersionEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"\xf2\x02\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\",\n" +
+	"\x12LoadHeatmapRequest\x12\x16\n" +
+	"\x06window\x18\x01 \x01(\tR\x06window\"i\n" +
+	"\x11LoadHeatmapBucket\x12\f\n" +
+	"\x01t\x18\x01 \x01(\tR\x01t\x12\x12\n" +
+	"\x04load\x18\x02 \x01(\x01R\x04load\x12\x18\n" +
+	"\aplayers\x18\x03 \x01(\x01R\aplayers\x12\x18\n" +
+	"\asamples\x18\x04 \x01(\x05R\asamples\"\x89\x02\n" +
+	"\x11LoadHeatmapServer\x12\x1b\n" +
+	"\tserver_id\x18\x01 \x01(\tR\bserverId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\x12\x12\n" +
+	"\x04type\x18\x04 \x01(\tR\x04type\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status\x12\x18\n" +
+	"\aplayers\x18\x06 \x01(\x05R\aplayers\x12\x1a\n" +
+	"\bcapacity\x18\a \x01(\x05R\bcapacity\x12\x12\n" +
+	"\x04load\x18\b \x01(\x01R\x04load\x125\n" +
+	"\abuckets\x18\t \x03(\v2\x1b.atlas.v1.LoadHeatmapBucketR\abuckets\"\x9f\x01\n" +
+	"\x13LoadHeatmapResponse\x12\x16\n" +
+	"\x06window\x18\x01 \x01(\tR\x06window\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12!\n" +
+	"\fgenerated_at\x18\x03 \x01(\tR\vgeneratedAt\x125\n" +
+	"\aservers\x18\x04 \x03(\v2\x1b.atlas.v1.LoadHeatmapServerR\aservers\"\xf2\x02\n" +
 	"\x17SearchCharactersRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tserver_id\x18\x02 \x01(\tR\bserverId\x12\"\n" +
@@ -2911,13 +3228,14 @@ const file_api_proto_atlas_proto_rawDesc = "" +
 	"\x0fUpdateCharacter\x12 .atlas.v1.UpdateCharacterRequest\x1a!.atlas.v1.UpdateCharacterResponse\x12V\n" +
 	"\x0fDeleteCharacter\x12 .atlas.v1.DeleteCharacterRequest\x1a!.atlas.v1.DeleteCharacterResponse2V\n" +
 	"\x0eRoutingService\x12D\n" +
-	"\tRecommend\x12\x1a.atlas.v1.RecommendRequest\x1a\x1b.atlas.v1.RecommendResponse2\xfd\x05\n" +
+	"\tRecommend\x12\x1a.atlas.v1.RecommendRequest\x1a\x1b.atlas.v1.RecommendResponse2\xcc\x06\n" +
 	"\fAdminService\x12A\n" +
 	"\x0eSetMaintenance\x12\x19.atlas.v1.ServerIdRequest\x1a\x14.atlas.v1.OkResponse\x12;\n" +
 	"\bSetDrain\x12\x19.atlas.v1.ServerIdRequest\x1a\x14.atlas.v1.OkResponse\x129\n" +
 	"\x06Enable\x12\x19.atlas.v1.ServerIdRequest\x1a\x14.atlas.v1.OkResponse\x12:\n" +
 	"\aDisable\x12\x19.atlas.v1.ServerIdRequest\x1a\x14.atlas.v1.OkResponse\x12A\n" +
-	"\bGetStats\x12\x19.atlas.v1.GetStatsRequest\x1a\x1a.atlas.v1.GetStatsResponse\x12Y\n" +
+	"\bGetStats\x12\x19.atlas.v1.GetStatsRequest\x1a\x1a.atlas.v1.GetStatsResponse\x12M\n" +
+	"\x0eGetLoadHeatmap\x12\x1c.atlas.v1.LoadHeatmapRequest\x1a\x1d.atlas.v1.LoadHeatmapResponse\x12Y\n" +
 	"\x10SearchCharacters\x12!.atlas.v1.SearchCharactersRequest\x1a\".atlas.v1.SearchCharactersResponse\x12V\n" +
 	"\x0fCreateMigration\x12 .atlas.v1.CreateMigrationRequest\x1a!.atlas.v1.CreateMigrationResponse\x12M\n" +
 	"\fGetMigration\x12\x1d.atlas.v1.GetMigrationRequest\x1a\x1e.atlas.v1.GetMigrationResponse\x12S\n" +
@@ -2936,7 +3254,7 @@ func file_api_proto_atlas_proto_rawDescGZIP() []byte {
 	return file_api_proto_atlas_proto_rawDescData
 }
 
-var file_api_proto_atlas_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
+var file_api_proto_atlas_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_api_proto_atlas_proto_goTypes = []any{
 	(*Endpoint)(nil),                        // 0: atlas.v1.Endpoint
 	(*Server)(nil),                          // 1: atlas.v1.Server
@@ -2969,100 +3287,108 @@ var file_api_proto_atlas_proto_goTypes = []any{
 	(*OkResponse)(nil),                      // 28: atlas.v1.OkResponse
 	(*GetStatsRequest)(nil),                 // 29: atlas.v1.GetStatsRequest
 	(*GetStatsResponse)(nil),                // 30: atlas.v1.GetStatsResponse
-	(*SearchCharactersRequest)(nil),         // 31: atlas.v1.SearchCharactersRequest
-	(*SearchCharactersResponse)(nil),        // 32: atlas.v1.SearchCharactersResponse
-	(*Migration)(nil),                       // 33: atlas.v1.Migration
-	(*CreateMigrationRequest)(nil),          // 34: atlas.v1.CreateMigrationRequest
-	(*CreateMigrationResponse)(nil),         // 35: atlas.v1.CreateMigrationResponse
-	(*GetMigrationRequest)(nil),             // 36: atlas.v1.GetMigrationRequest
-	(*GetMigrationResponse)(nil),            // 37: atlas.v1.GetMigrationResponse
-	(*ListMigrationsRequest)(nil),           // 38: atlas.v1.ListMigrationsRequest
-	(*ListMigrationsResponse)(nil),          // 39: atlas.v1.ListMigrationsResponse
-	(*RollbackMigrationRequest)(nil),        // 40: atlas.v1.RollbackMigrationRequest
-	(*RollbackMigrationResponse)(nil),       // 41: atlas.v1.RollbackMigrationResponse
-	nil,                                     // 42: atlas.v1.Server.MetadataEntry
-	nil,                                     // 43: atlas.v1.Character.MetadataEntry
-	nil,                                     // 44: atlas.v1.RegisterRequest.MetadataEntry
-	nil,                                     // 45: atlas.v1.CreateCharacterRequest.MetadataEntry
-	nil,                                     // 46: atlas.v1.UpdateCharacterRequest.MetadataEntry
-	nil,                                     // 47: atlas.v1.GetStatsResponse.ServersByStatusEntry
-	nil,                                     // 48: atlas.v1.GetStatsResponse.ServersByRegionEntry
-	nil,                                     // 49: atlas.v1.GetStatsResponse.ServersByVersionEntry
+	(*LoadHeatmapRequest)(nil),              // 31: atlas.v1.LoadHeatmapRequest
+	(*LoadHeatmapBucket)(nil),               // 32: atlas.v1.LoadHeatmapBucket
+	(*LoadHeatmapServer)(nil),               // 33: atlas.v1.LoadHeatmapServer
+	(*LoadHeatmapResponse)(nil),             // 34: atlas.v1.LoadHeatmapResponse
+	(*SearchCharactersRequest)(nil),         // 35: atlas.v1.SearchCharactersRequest
+	(*SearchCharactersResponse)(nil),        // 36: atlas.v1.SearchCharactersResponse
+	(*Migration)(nil),                       // 37: atlas.v1.Migration
+	(*CreateMigrationRequest)(nil),          // 38: atlas.v1.CreateMigrationRequest
+	(*CreateMigrationResponse)(nil),         // 39: atlas.v1.CreateMigrationResponse
+	(*GetMigrationRequest)(nil),             // 40: atlas.v1.GetMigrationRequest
+	(*GetMigrationResponse)(nil),            // 41: atlas.v1.GetMigrationResponse
+	(*ListMigrationsRequest)(nil),           // 42: atlas.v1.ListMigrationsRequest
+	(*ListMigrationsResponse)(nil),          // 43: atlas.v1.ListMigrationsResponse
+	(*RollbackMigrationRequest)(nil),        // 44: atlas.v1.RollbackMigrationRequest
+	(*RollbackMigrationResponse)(nil),       // 45: atlas.v1.RollbackMigrationResponse
+	nil,                                     // 46: atlas.v1.Server.MetadataEntry
+	nil,                                     // 47: atlas.v1.Character.MetadataEntry
+	nil,                                     // 48: atlas.v1.RegisterRequest.MetadataEntry
+	nil,                                     // 49: atlas.v1.CreateCharacterRequest.MetadataEntry
+	nil,                                     // 50: atlas.v1.UpdateCharacterRequest.MetadataEntry
+	nil,                                     // 51: atlas.v1.GetStatsResponse.ServersByStatusEntry
+	nil,                                     // 52: atlas.v1.GetStatsResponse.ServersByRegionEntry
+	nil,                                     // 53: atlas.v1.GetStatsResponse.ServersByVersionEntry
 }
 var file_api_proto_atlas_proto_depIdxs = []int32{
 	0,  // 0: atlas.v1.Server.endpoint:type_name -> atlas.v1.Endpoint
-	42, // 1: atlas.v1.Server.metadata:type_name -> atlas.v1.Server.MetadataEntry
-	43, // 2: atlas.v1.Character.metadata:type_name -> atlas.v1.Character.MetadataEntry
+	46, // 1: atlas.v1.Server.metadata:type_name -> atlas.v1.Server.MetadataEntry
+	47, // 2: atlas.v1.Character.metadata:type_name -> atlas.v1.Character.MetadataEntry
 	0,  // 3: atlas.v1.RegisterRequest.endpoint:type_name -> atlas.v1.Endpoint
-	44, // 4: atlas.v1.RegisterRequest.metadata:type_name -> atlas.v1.RegisterRequest.MetadataEntry
+	48, // 4: atlas.v1.RegisterRequest.metadata:type_name -> atlas.v1.RegisterRequest.MetadataEntry
 	1,  // 5: atlas.v1.RegisterResponse.server:type_name -> atlas.v1.Server
 	1,  // 6: atlas.v1.ListServersResponse.servers:type_name -> atlas.v1.Server
 	1,  // 7: atlas.v1.GetServerResponse.server:type_name -> atlas.v1.Server
-	45, // 8: atlas.v1.CreateCharacterRequest.metadata:type_name -> atlas.v1.CreateCharacterRequest.MetadataEntry
+	49, // 8: atlas.v1.CreateCharacterRequest.metadata:type_name -> atlas.v1.CreateCharacterRequest.MetadataEntry
 	2,  // 9: atlas.v1.CreateCharacterResponse.character:type_name -> atlas.v1.Character
 	2,  // 10: atlas.v1.GetCharacterResponse.character:type_name -> atlas.v1.Character
 	2,  // 11: atlas.v1.ListCharactersByAccountResponse.characters:type_name -> atlas.v1.Character
 	2,  // 12: atlas.v1.ListCharactersByServerResponse.characters:type_name -> atlas.v1.Character
-	46, // 13: atlas.v1.UpdateCharacterRequest.metadata:type_name -> atlas.v1.UpdateCharacterRequest.MetadataEntry
+	50, // 13: atlas.v1.UpdateCharacterRequest.metadata:type_name -> atlas.v1.UpdateCharacterRequest.MetadataEntry
 	2,  // 14: atlas.v1.UpdateCharacterResponse.character:type_name -> atlas.v1.Character
 	1,  // 15: atlas.v1.RecommendResponse.server:type_name -> atlas.v1.Server
-	47, // 16: atlas.v1.GetStatsResponse.servers_by_status:type_name -> atlas.v1.GetStatsResponse.ServersByStatusEntry
-	48, // 17: atlas.v1.GetStatsResponse.servers_by_region:type_name -> atlas.v1.GetStatsResponse.ServersByRegionEntry
-	49, // 18: atlas.v1.GetStatsResponse.servers_by_version:type_name -> atlas.v1.GetStatsResponse.ServersByVersionEntry
-	2,  // 19: atlas.v1.SearchCharactersResponse.characters:type_name -> atlas.v1.Character
-	33, // 20: atlas.v1.CreateMigrationResponse.migration:type_name -> atlas.v1.Migration
-	33, // 21: atlas.v1.GetMigrationResponse.migration:type_name -> atlas.v1.Migration
-	33, // 22: atlas.v1.ListMigrationsResponse.migrations:type_name -> atlas.v1.Migration
-	33, // 23: atlas.v1.RollbackMigrationResponse.migration:type_name -> atlas.v1.Migration
-	3,  // 24: atlas.v1.RegistryService.Register:input_type -> atlas.v1.RegisterRequest
-	5,  // 25: atlas.v1.RegistryService.Heartbeat:input_type -> atlas.v1.HeartbeatRequest
-	7,  // 26: atlas.v1.RegistryService.Unregister:input_type -> atlas.v1.UnregisterRequest
-	9,  // 27: atlas.v1.DiscoveryService.ListServers:input_type -> atlas.v1.ListServersRequest
-	11, // 28: atlas.v1.DiscoveryService.GetServer:input_type -> atlas.v1.GetServerRequest
-	13, // 29: atlas.v1.DirectoryService.CreateCharacter:input_type -> atlas.v1.CreateCharacterRequest
-	15, // 30: atlas.v1.DirectoryService.GetCharacter:input_type -> atlas.v1.GetCharacterRequest
-	17, // 31: atlas.v1.DirectoryService.ListCharactersByAccount:input_type -> atlas.v1.ListCharactersByAccountRequest
-	19, // 32: atlas.v1.DirectoryService.ListCharactersByServer:input_type -> atlas.v1.ListCharactersByServerRequest
-	21, // 33: atlas.v1.DirectoryService.UpdateCharacter:input_type -> atlas.v1.UpdateCharacterRequest
-	23, // 34: atlas.v1.DirectoryService.DeleteCharacter:input_type -> atlas.v1.DeleteCharacterRequest
-	25, // 35: atlas.v1.RoutingService.Recommend:input_type -> atlas.v1.RecommendRequest
-	27, // 36: atlas.v1.AdminService.SetMaintenance:input_type -> atlas.v1.ServerIdRequest
-	27, // 37: atlas.v1.AdminService.SetDrain:input_type -> atlas.v1.ServerIdRequest
-	27, // 38: atlas.v1.AdminService.Enable:input_type -> atlas.v1.ServerIdRequest
-	27, // 39: atlas.v1.AdminService.Disable:input_type -> atlas.v1.ServerIdRequest
-	29, // 40: atlas.v1.AdminService.GetStats:input_type -> atlas.v1.GetStatsRequest
-	31, // 41: atlas.v1.AdminService.SearchCharacters:input_type -> atlas.v1.SearchCharactersRequest
-	34, // 42: atlas.v1.AdminService.CreateMigration:input_type -> atlas.v1.CreateMigrationRequest
-	36, // 43: atlas.v1.AdminService.GetMigration:input_type -> atlas.v1.GetMigrationRequest
-	38, // 44: atlas.v1.AdminService.ListMigrations:input_type -> atlas.v1.ListMigrationsRequest
-	40, // 45: atlas.v1.AdminService.RollbackMigration:input_type -> atlas.v1.RollbackMigrationRequest
-	4,  // 46: atlas.v1.RegistryService.Register:output_type -> atlas.v1.RegisterResponse
-	6,  // 47: atlas.v1.RegistryService.Heartbeat:output_type -> atlas.v1.HeartbeatResponse
-	8,  // 48: atlas.v1.RegistryService.Unregister:output_type -> atlas.v1.UnregisterResponse
-	10, // 49: atlas.v1.DiscoveryService.ListServers:output_type -> atlas.v1.ListServersResponse
-	12, // 50: atlas.v1.DiscoveryService.GetServer:output_type -> atlas.v1.GetServerResponse
-	14, // 51: atlas.v1.DirectoryService.CreateCharacter:output_type -> atlas.v1.CreateCharacterResponse
-	16, // 52: atlas.v1.DirectoryService.GetCharacter:output_type -> atlas.v1.GetCharacterResponse
-	18, // 53: atlas.v1.DirectoryService.ListCharactersByAccount:output_type -> atlas.v1.ListCharactersByAccountResponse
-	20, // 54: atlas.v1.DirectoryService.ListCharactersByServer:output_type -> atlas.v1.ListCharactersByServerResponse
-	22, // 55: atlas.v1.DirectoryService.UpdateCharacter:output_type -> atlas.v1.UpdateCharacterResponse
-	24, // 56: atlas.v1.DirectoryService.DeleteCharacter:output_type -> atlas.v1.DeleteCharacterResponse
-	26, // 57: atlas.v1.RoutingService.Recommend:output_type -> atlas.v1.RecommendResponse
-	28, // 58: atlas.v1.AdminService.SetMaintenance:output_type -> atlas.v1.OkResponse
-	28, // 59: atlas.v1.AdminService.SetDrain:output_type -> atlas.v1.OkResponse
-	28, // 60: atlas.v1.AdminService.Enable:output_type -> atlas.v1.OkResponse
-	28, // 61: atlas.v1.AdminService.Disable:output_type -> atlas.v1.OkResponse
-	30, // 62: atlas.v1.AdminService.GetStats:output_type -> atlas.v1.GetStatsResponse
-	32, // 63: atlas.v1.AdminService.SearchCharacters:output_type -> atlas.v1.SearchCharactersResponse
-	35, // 64: atlas.v1.AdminService.CreateMigration:output_type -> atlas.v1.CreateMigrationResponse
-	37, // 65: atlas.v1.AdminService.GetMigration:output_type -> atlas.v1.GetMigrationResponse
-	39, // 66: atlas.v1.AdminService.ListMigrations:output_type -> atlas.v1.ListMigrationsResponse
-	41, // 67: atlas.v1.AdminService.RollbackMigration:output_type -> atlas.v1.RollbackMigrationResponse
-	46, // [46:68] is the sub-list for method output_type
-	24, // [24:46] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	51, // 16: atlas.v1.GetStatsResponse.servers_by_status:type_name -> atlas.v1.GetStatsResponse.ServersByStatusEntry
+	52, // 17: atlas.v1.GetStatsResponse.servers_by_region:type_name -> atlas.v1.GetStatsResponse.ServersByRegionEntry
+	53, // 18: atlas.v1.GetStatsResponse.servers_by_version:type_name -> atlas.v1.GetStatsResponse.ServersByVersionEntry
+	32, // 19: atlas.v1.LoadHeatmapServer.buckets:type_name -> atlas.v1.LoadHeatmapBucket
+	33, // 20: atlas.v1.LoadHeatmapResponse.servers:type_name -> atlas.v1.LoadHeatmapServer
+	2,  // 21: atlas.v1.SearchCharactersResponse.characters:type_name -> atlas.v1.Character
+	37, // 22: atlas.v1.CreateMigrationResponse.migration:type_name -> atlas.v1.Migration
+	37, // 23: atlas.v1.GetMigrationResponse.migration:type_name -> atlas.v1.Migration
+	37, // 24: atlas.v1.ListMigrationsResponse.migrations:type_name -> atlas.v1.Migration
+	37, // 25: atlas.v1.RollbackMigrationResponse.migration:type_name -> atlas.v1.Migration
+	3,  // 26: atlas.v1.RegistryService.Register:input_type -> atlas.v1.RegisterRequest
+	5,  // 27: atlas.v1.RegistryService.Heartbeat:input_type -> atlas.v1.HeartbeatRequest
+	7,  // 28: atlas.v1.RegistryService.Unregister:input_type -> atlas.v1.UnregisterRequest
+	9,  // 29: atlas.v1.DiscoveryService.ListServers:input_type -> atlas.v1.ListServersRequest
+	11, // 30: atlas.v1.DiscoveryService.GetServer:input_type -> atlas.v1.GetServerRequest
+	13, // 31: atlas.v1.DirectoryService.CreateCharacter:input_type -> atlas.v1.CreateCharacterRequest
+	15, // 32: atlas.v1.DirectoryService.GetCharacter:input_type -> atlas.v1.GetCharacterRequest
+	17, // 33: atlas.v1.DirectoryService.ListCharactersByAccount:input_type -> atlas.v1.ListCharactersByAccountRequest
+	19, // 34: atlas.v1.DirectoryService.ListCharactersByServer:input_type -> atlas.v1.ListCharactersByServerRequest
+	21, // 35: atlas.v1.DirectoryService.UpdateCharacter:input_type -> atlas.v1.UpdateCharacterRequest
+	23, // 36: atlas.v1.DirectoryService.DeleteCharacter:input_type -> atlas.v1.DeleteCharacterRequest
+	25, // 37: atlas.v1.RoutingService.Recommend:input_type -> atlas.v1.RecommendRequest
+	27, // 38: atlas.v1.AdminService.SetMaintenance:input_type -> atlas.v1.ServerIdRequest
+	27, // 39: atlas.v1.AdminService.SetDrain:input_type -> atlas.v1.ServerIdRequest
+	27, // 40: atlas.v1.AdminService.Enable:input_type -> atlas.v1.ServerIdRequest
+	27, // 41: atlas.v1.AdminService.Disable:input_type -> atlas.v1.ServerIdRequest
+	29, // 42: atlas.v1.AdminService.GetStats:input_type -> atlas.v1.GetStatsRequest
+	31, // 43: atlas.v1.AdminService.GetLoadHeatmap:input_type -> atlas.v1.LoadHeatmapRequest
+	35, // 44: atlas.v1.AdminService.SearchCharacters:input_type -> atlas.v1.SearchCharactersRequest
+	38, // 45: atlas.v1.AdminService.CreateMigration:input_type -> atlas.v1.CreateMigrationRequest
+	40, // 46: atlas.v1.AdminService.GetMigration:input_type -> atlas.v1.GetMigrationRequest
+	42, // 47: atlas.v1.AdminService.ListMigrations:input_type -> atlas.v1.ListMigrationsRequest
+	44, // 48: atlas.v1.AdminService.RollbackMigration:input_type -> atlas.v1.RollbackMigrationRequest
+	4,  // 49: atlas.v1.RegistryService.Register:output_type -> atlas.v1.RegisterResponse
+	6,  // 50: atlas.v1.RegistryService.Heartbeat:output_type -> atlas.v1.HeartbeatResponse
+	8,  // 51: atlas.v1.RegistryService.Unregister:output_type -> atlas.v1.UnregisterResponse
+	10, // 52: atlas.v1.DiscoveryService.ListServers:output_type -> atlas.v1.ListServersResponse
+	12, // 53: atlas.v1.DiscoveryService.GetServer:output_type -> atlas.v1.GetServerResponse
+	14, // 54: atlas.v1.DirectoryService.CreateCharacter:output_type -> atlas.v1.CreateCharacterResponse
+	16, // 55: atlas.v1.DirectoryService.GetCharacter:output_type -> atlas.v1.GetCharacterResponse
+	18, // 56: atlas.v1.DirectoryService.ListCharactersByAccount:output_type -> atlas.v1.ListCharactersByAccountResponse
+	20, // 57: atlas.v1.DirectoryService.ListCharactersByServer:output_type -> atlas.v1.ListCharactersByServerResponse
+	22, // 58: atlas.v1.DirectoryService.UpdateCharacter:output_type -> atlas.v1.UpdateCharacterResponse
+	24, // 59: atlas.v1.DirectoryService.DeleteCharacter:output_type -> atlas.v1.DeleteCharacterResponse
+	26, // 60: atlas.v1.RoutingService.Recommend:output_type -> atlas.v1.RecommendResponse
+	28, // 61: atlas.v1.AdminService.SetMaintenance:output_type -> atlas.v1.OkResponse
+	28, // 62: atlas.v1.AdminService.SetDrain:output_type -> atlas.v1.OkResponse
+	28, // 63: atlas.v1.AdminService.Enable:output_type -> atlas.v1.OkResponse
+	28, // 64: atlas.v1.AdminService.Disable:output_type -> atlas.v1.OkResponse
+	30, // 65: atlas.v1.AdminService.GetStats:output_type -> atlas.v1.GetStatsResponse
+	34, // 66: atlas.v1.AdminService.GetLoadHeatmap:output_type -> atlas.v1.LoadHeatmapResponse
+	36, // 67: atlas.v1.AdminService.SearchCharacters:output_type -> atlas.v1.SearchCharactersResponse
+	39, // 68: atlas.v1.AdminService.CreateMigration:output_type -> atlas.v1.CreateMigrationResponse
+	41, // 69: atlas.v1.AdminService.GetMigration:output_type -> atlas.v1.GetMigrationResponse
+	43, // 70: atlas.v1.AdminService.ListMigrations:output_type -> atlas.v1.ListMigrationsResponse
+	45, // 71: atlas.v1.AdminService.RollbackMigration:output_type -> atlas.v1.RollbackMigrationResponse
+	49, // [49:72] is the sub-list for method output_type
+	26, // [26:49] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_api_proto_atlas_proto_init() }
@@ -3071,14 +3397,14 @@ func file_api_proto_atlas_proto_init() {
 		return
 	}
 	file_api_proto_atlas_proto_msgTypes[21].OneofWrappers = []any{}
-	file_api_proto_atlas_proto_msgTypes[31].OneofWrappers = []any{}
+	file_api_proto_atlas_proto_msgTypes[35].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_atlas_proto_rawDesc), len(file_api_proto_atlas_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   50,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

@@ -255,6 +255,43 @@ message GetStatsResponse {
   int32 total_characters = 7;
 }
 
+message LoadHeatmapRequest {
+  // window selects the heatmap span: "1h" (12 × 5m buckets, default) or
+  // "24h" (24 × 1h buckets). Any other value is INVALID_ARGUMENT — same
+  // tiers as GET /v1/admin/load-heatmap?window=.
+  string window = 1;
+}
+
+message LoadHeatmapBucket {
+  // t is the bucket start (RFC 3339). samples == 0 means no data in the
+  // bucket (restart, mid-window registration) — render as its own "no
+  // data" state, never as a zero-load color.
+  string t = 1;
+  double load = 2;
+  double players = 3;
+  int32 samples = 4;
+}
+
+message LoadHeatmapServer {
+  string server_id = 1;
+  string name = 2;
+  string region = 3;
+  string type = 4;
+  string status = 5;
+  int32 players = 6;
+  int32 capacity = 7;
+  double load = 8;
+  repeated LoadHeatmapBucket buckets = 9;
+}
+
+message LoadHeatmapResponse {
+  string window = 1;
+  // bucket is the span label ("5m" / "1h").
+  string bucket = 2;
+  string generated_at = 3;
+  repeated LoadHeatmapServer servers = 4;
+}
+
 message SearchCharactersRequest {
   string name = 1;
   string server_id = 2;
@@ -326,6 +363,7 @@ service AdminService {
   rpc Enable(ServerIdRequest) returns (OkResponse);
   rpc Disable(ServerIdRequest) returns (OkResponse);
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  rpc GetLoadHeatmap(LoadHeatmapRequest) returns (LoadHeatmapResponse);
   rpc SearchCharacters(SearchCharactersRequest) returns (SearchCharactersResponse);
   rpc CreateMigration(CreateMigrationRequest) returns (CreateMigrationResponse);
   rpc GetMigration(GetMigrationRequest) returns (GetMigrationResponse);

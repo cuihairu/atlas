@@ -2,10 +2,16 @@ package grpc
 
 import (
 	"context"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/cuihairu/atlas/api/pb"
 	"github.com/cuihairu/atlas/internal/admin"
+	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
+	"github.com/cuihairu/atlas/internal/telemetry"
 )
 
 // SetMaintenance mirrors POST /v1/admin/servers/{id}/maintenance.
@@ -63,6 +69,61 @@ func (s *Server) GetStats(ctx context.Context, _ *pb.GetStatsRequest) (*pb.GetSt
 	}
 	for k, v := range stats.ServersByVersion {
 		out.ServersByVersion[k] = int32(v)
+	}
+	return out, nil
+}
+
+// GetLoadHeatmap mirrors GET /v1/admin/load-heatmap (服务器热力图): one row
+// per live server, bucketed load averages over the window. The fleet index
+// and sampler are optional attachments — without them rows come back with
+// empty buckets, never an error.
+func (s *Server) GetLoadHeatmap(ctx context.Context, req *pb.LoadHeatmapRequest) (*pb.LoadHeatmapResponse, error) {
+	window, bucketCount, ok := telemetry.ParseHeatmapWindow(req.GetWindow())
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "window must be one of 1h/24h")
+	}
+	windowLabel := req.GetWindow()
+	if windowLabel == "" {
+		windowLabel = "1h"
+	}
+
+	var servers []*model.Server
+	if s.fleetIdx != nil {
+		servers = s.fleetIdx.ListAll()
+	}
+	var series func(string, time.Duration) []telemetry.Point
+	if s.sampler != nil {
+		series = s.sampler.Series
+	}
+	rows := telemetry.BuildServerHeatmap(servers, series, window, bucketCount, time.Now())
+
+	out := &pb.LoadHeatmapResponse{
+		Window:      windowLabel,
+		Bucket:      telemetry.BucketSpanLabel(window / time.Duration(bucketCount)),
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Servers:     make([]*pb.LoadHeatmapServer, 0, len(rows)),
+	}
+	for _, r := range rows {
+		row := &pb.LoadHeatmapServer{
+			ServerId: r.ServerID,
+			Name:     r.Name,
+			Region:   r.Region,
+			Type:     r.Type,
+			Status:   r.Status,
+			Players:  int32(r.Players),
+			Capacity: int32(r.Capacity),
+			Load:     r.Load,
+			Buckets:  make([]*pb.LoadHeatmapBucket, 0, len(r.Buckets)),
+		}
+		for _, b := range r.Buckets {
+			row.Buckets = append(row.Buckets, &pb.LoadHeatmapBucket{
+				T:       b.T.UTC().Format(time.RFC3339),
+				Load:    b.Load,
+				Players: b.Players,
+				Samples: int32(b.Samples),
+			})
+		}
+		out.Servers = append(out.Servers, row)
 	}
 	return out, nil
 }

@@ -291,7 +291,7 @@ Atlas
 - **[六语言 SDK](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#，自动心跳内置
 - **[APISIX 插件](docs/apisix.md)** — 玩家 token 鉴权注入 + 端点组限流
 - **[健康告警](docs/lifecycle.md)** — suspect / offline 占比阈值告警 + webhook 通知
-- **[gRPC](docs/api.md#grpc-api)** — 五服务 22 RPC 双传输（核心面与 REST 同源，管理面扩展端点为 REST-only）
+- **[gRPC](docs/api.md#grpc-api)** — 五服务 23 RPC 双传输（核心面与 REST 同源）
 
 ---
 

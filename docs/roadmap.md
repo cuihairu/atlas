@@ -45,7 +45,7 @@ flowchart TB
 | ✅ 事件同步 | EventAdapter 抽象 + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
 | ✅ Prometheus 指标 | :8082 `/metrics`（Grafana 为外接指引，见 topology.md——仓库内无看板实体） | v0.1.3 |
 | ✅ Routing 接入推荐 | `GET /v1/routing/recommended`，同账号角色粘滞 | v0.1.x |
-| ✅ gRPC 双传输 | 5 服务 22 RPC，:9090（核心面与 REST 同源，管理面扩展端点为 REST-only） | v0.1.5 |
+| ✅ gRPC 双传输 | 5 服务 23 RPC，:9090（核心面与 REST 同源） | v0.1.5 |
 | ✅ 六语言 SDK | Go(双传输) / C++ / Python(同步异步) / JS/TS / Java / C#，自动心跳内置 | v0.1.6 ~ v0.1.11 |
 | ✅ APISIX 插件 | atlas-auth 玩家 token 鉴权注入 + atlas-ratelimit 端点组限流 | v0.1.13 |
 | ✅ Realm / Shard 管理 | Admin CRUD + 三存储实现 + 索引迁移 | v0.1.14 |

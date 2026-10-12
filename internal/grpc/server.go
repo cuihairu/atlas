@@ -16,9 +16,11 @@ import (
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
 	"github.com/cuihairu/atlas/internal/event"
+	"github.com/cuihairu/atlas/internal/fleet"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
 	"github.com/cuihairu/atlas/internal/routing"
+	"github.com/cuihairu/atlas/internal/telemetry"
 )
 
 // Server implements all Atlas gRPC services.
@@ -35,6 +37,8 @@ type Server struct {
 	routing   *routing.Service
 	admin     *admin.Service
 	events    event.EventAdapter
+	fleetIdx  *fleet.Index
+	sampler   *telemetry.Sampler
 }
 
 // New creates a gRPC server backed by the shared service layer.
@@ -47,6 +51,22 @@ func New(reg *registry.Service, disc *discovery.Service, dir *directory.Service,
 		admin:     adm,
 		events:    events,
 	}
+}
+
+// WithFleetIndex attaches the fleet index for the observability RPCs that
+// read live server records (currently GetLoadHeatmap). Optional: embedders
+// without it get an empty grid, mirroring the REST handler's fallback.
+func (s *Server) WithFleetIndex(idx *fleet.Index) *Server {
+	s.fleetIdx = idx
+	return s
+}
+
+// WithTelemetry attaches the series sampler for the observability RPCs
+// (currently GetLoadHeatmap). Optional: without it rows still return, with
+// empty buckets.
+func (s *Server) WithTelemetry(tm *telemetry.Sampler) *Server {
+	s.sampler = tm
+	return s
 }
 
 // RegisterServices mounts every service on a google.golang.org/grpc

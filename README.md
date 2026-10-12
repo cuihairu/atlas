@@ -291,7 +291,7 @@ Atlas
 - **[Six-language SDKs](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#, automatic heartbeats built in
 - **[APISIX plugins](docs/apisix.md)** — player-token auth injection + endpoint-group rate limiting
 - **[Health alerts](docs/lifecycle.md)** — suspect / offline ratio-threshold alerts + webhook notification
-- **[gRPC](docs/api.md#grpc-api)** — five services, 22 RPCs, dual transport (the core surface shares its source with REST; admin extension endpoints are REST-only)
+- **[gRPC](docs/api.md#grpc-api)** — five services, 23 RPCs, dual transport (the core surface shares its source with REST)
 
 ---
 
