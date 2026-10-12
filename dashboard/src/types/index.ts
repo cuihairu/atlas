@@ -179,6 +179,39 @@ export interface LoadSeriesResponse {
   points: LoadSeriesPoint[];
 }
 
+// ── 服务器热力图（/v1/admin/load-heatmap · GetLoadHeatmap）──
+
+export type HeatmapWindow = '1h' | '24h';
+
+// One time bucket of a server's load history. samples === 0 means no data
+// in that span (restart, mid-window registration) — rendered as its own
+// "no data" state, never as a zero-load color.
+export interface HeatBucket {
+  t: string;
+  load: number;
+  players: number;
+  samples: number;
+}
+
+export interface ServerHeatmap {
+  server_id: string;
+  name: string;
+  region: string;
+  type: string;
+  status: string;
+  players: number;
+  capacity: number;
+  load: number;
+  buckets: HeatBucket[];
+}
+
+export interface LoadHeatmapResponse {
+  window: string;
+  bucket: string;
+  generated_at: string;
+  servers: ServerHeatmap[];
+}
+
 export interface BusTopicSeries {
   topic: string;
   published: number;

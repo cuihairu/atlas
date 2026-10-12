@@ -11,6 +11,7 @@ import {
   MoonOutlined,
   GlobalOutlined,
   LogoutOutlined,
+  FireOutlined,
   MedicineBoxOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
@@ -35,6 +36,7 @@ export default function AppLayout() {
   const MENU_ITEMS = [
     { key: '/', icon: <DashboardOutlined />, label: t('overview') },
     { key: '/servers', icon: <CloudServerOutlined />, label: t('servers') },
+    { key: '/heatmap', icon: <FireOutlined />, label: t('menuHeatmap') },
     { key: '/characters', icon: <UserOutlined />, label: t('characterSearch') },
     { key: '/migrations', icon: <SwapOutlined />, label: t('migrations') },
     { key: '/operations', icon: <NotificationOutlined />, label: t('operations') },

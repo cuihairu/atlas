@@ -19,6 +19,8 @@ import type {
   RoutingDiagnosis,
   RateLimitStats,
   LoadSeriesResponse,
+  LoadHeatmapResponse,
+  HeatmapWindow,
   BusSeriesResponse,
   SeriesWindow,
   IndexQueueStatus,
@@ -196,6 +198,11 @@ export function getLoadSeries(params: {
   region?: string;
 }): Promise<LoadSeriesResponse> {
   return request(`/v1/admin/load-series${qs(params)}`, undefined, ADMIN_BASE);
+}
+
+// 服务器热力图：每台存活服务器一行的分桶负载均值（近 1h/24h）。
+export function getLoadHeatmap(params: { window?: HeatmapWindow }): Promise<LoadHeatmapResponse> {
+  return request(`/v1/admin/load-heatmap${qs(params)}`, undefined, ADMIN_BASE);
 }
 
 // 消息总线曲线：每主题积压深度 + 生产/消费速率。

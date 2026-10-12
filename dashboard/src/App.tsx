@@ -5,6 +5,7 @@ import AppLayout from './components/Layout';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
 import Servers from './pages/Servers';
+import Heatmap from './pages/Heatmap';
 import ServerDetail from './pages/ServerDetail';
 import Characters from './pages/Characters';
 import Migrations from './pages/Migrations';
@@ -60,6 +61,7 @@ export default function App() {
                 <Route path="/" element={<Overview />} />
                 <Route path="/servers" element={<Servers />} />
                 <Route path="/servers/:id" element={<ServerDetail />} />
+                <Route path="/heatmap" element={<Heatmap />} />
                 <Route path="/characters" element={<Characters />} />
                 <Route path="/migrations" element={<Migrations />} />
                 <Route path="/operations" element={<Operations />} />
