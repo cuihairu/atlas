@@ -1,9 +1,11 @@
 package rabbitmq
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +32,15 @@ type fakeChannel struct {
 	nacked      []uint64
 	nackRequeue bool
 	closed      bool
+
+	// injectable failures for the declare/bind/qos/consume/publish/ack
+	// error paths
+	errQueueDeclare error
+	errBind         error
+	errQos          error
+	errConsume      error
+	errPublish      error
+	errAck          error
 }
 
 func newFakeChannel() *fakeChannel {
@@ -47,6 +58,9 @@ func (c *fakeChannel) QueueDeclare(name string, _, _, _, _ bool, _ amqp.Table) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.declared = append(c.declared, "queue:"+name)
+	if c.errQueueDeclare != nil {
+		return amqp.Queue{}, c.errQueueDeclare
+	}
 	return amqp.Queue{Name: name}, nil
 }
 
@@ -55,6 +69,9 @@ func (c *fakeChannel) QueueBind(queue, key, _ string, _ bool, _ amqp.Table) erro
 	defer c.mu.Unlock()
 	c.boundKey = key
 	c.declared = append(c.declared, "bind:"+queue)
+	if c.errBind != nil {
+		return c.errBind
+	}
 	return nil
 }
 
@@ -62,12 +79,18 @@ func (c *fakeChannel) Qos(count, _ int, _ bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.qos = count
+	if c.errQos != nil {
+		return c.errQos
+	}
 	return nil
 }
 
 func (c *fakeChannel) PublishWithContext(_ context.Context, _, key string, _, _ bool, msg amqp.Publishing) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.errPublish != nil {
+		return c.errPublish
+	}
 	c.published = append(c.published, msg)
 	c.publishID = msg.MessageId
 	_ = key
@@ -75,12 +98,18 @@ func (c *fakeChannel) PublishWithContext(_ context.Context, _, key string, _, _ 
 }
 
 func (c *fakeChannel) Consume(queue string, _ string, _, _, _, _ bool, _ amqp.Table) (<-chan amqp.Delivery, error) {
+	if c.errConsume != nil {
+		return nil, c.errConsume
+	}
 	return c.deliveries, nil
 }
 
 func (c *fakeChannel) Ack(tag uint64, _ bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.errAck != nil {
+		return c.errAck
+	}
 	c.acked = append(c.acked, tag)
 	return nil
 }
@@ -310,5 +339,110 @@ func TestOpenDialFailureAndAccessors(t *testing.T) {
 	}
 	if err := a.Ack(context.Background(), &event.Event{}); err != nil {
 		t.Errorf("Ack (no-op) = %v", err)
+	}
+}
+
+// syncBuffer captures log output for assertions.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestSubscribeSetupFailures(t *testing.T) {
+	// Each topology step (declare queue → bind → qos → consume) fails
+	// Subscribe with a step-specific error before any loop starts.
+	boom := errors.New("broker refused")
+	cases := []struct {
+		name string
+		arm  func(*fakeChannel)
+		want string
+	}{
+		{"queue declare", func(c *fakeChannel) { c.errQueueDeclare = boom }, "event: amqp declare queue"},
+		{"queue bind", func(c *fakeChannel) { c.errBind = boom }, "event: amqp bind queue"},
+		{"qos", func(c *fakeChannel) { c.errQos = boom }, "event: amqp qos"},
+		{"consume", func(c *fakeChannel) { c.errConsume = boom }, "event: amqp consume"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := newFakeChannel()
+			tc.arm(ch)
+			a := New(ch, Options{Consumer: "test-consumer", RequeueBackoff: time.Millisecond})
+			t.Cleanup(func() { _ = a.Close() })
+			err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+				return nil
+			})
+			if !errors.Is(err, boom) || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %s failure", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestPublishChannelError(t *testing.T) {
+	boom := errors.New("connection dropped")
+	ch := newFakeChannel()
+	ch.errPublish = boom
+	a := New(ch, Options{Consumer: "test-consumer", RequeueBackoff: time.Millisecond})
+	t.Cleanup(func() { _ = a.Close() })
+	err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterCreated, CharacterID: 1})
+	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "event: amqp publish") {
+		t.Errorf("err = %v, want amqp publish failure", err)
+	}
+}
+
+func TestClosedDeliveriesEndsConsumeLoop(t *testing.T) {
+	// The broker closing the delivery channel (connection loss, shutdown)
+	// must end the loop without wedging Close.
+	a, ch := newTestAdapter(t)
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	close(ch.deliveries)
+	done := make(chan struct{})
+	go func() { _ = a.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close blocked after deliveries channel closed")
+	}
+}
+
+func TestAckFailureLogged(t *testing.T) {
+	// An ack that cannot reach the broker is logged, not swallowed: the
+	// message will be redelivered, and operators need to see why.
+	var buf syncBuffer
+	ch := newFakeChannel()
+	a := New(ch, Options{Consumer: "test-consumer", RequeueBackoff: time.Millisecond,
+		Logger: slog.New(slog.NewTextHandler(&buf, nil))})
+	t.Cleanup(func() { _ = a.Close() })
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	ch.errAck = errors.New("socket closed")
+	ch.deliveries <- amqp.Delivery{MessageId: "m-1", Body: []byte(`{"type":"character.created","character_id":5}`)}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for !strings.Contains(buf.String(), "event: ack failed") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(buf.String(), "event: ack failed") {
+		t.Fatalf("ack failure never logged, buffer = %q", buf.String())
 	}
 }
