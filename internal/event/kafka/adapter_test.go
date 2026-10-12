@@ -1,9 +1,12 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -49,11 +52,12 @@ func (w *fakeWriter) count() int {
 
 // fakeReader pops from an internal queue, mirroring a group member's fetch.
 type fakeReader struct {
-	mu       sync.Mutex
-	queue    []kafka.Message
-	commits  []kafka.Message
-	fetchErr error
-	notify   chan struct{}
+	mu         sync.Mutex
+	queue      []kafka.Message
+	commits    []kafka.Message
+	fetchErr   error
+	failCommit error
+	notify     chan struct{}
 }
 
 func (r *fakeReader) push(m kafka.Message) {
@@ -93,6 +97,9 @@ func (r *fakeReader) FetchMessage(ctx context.Context) (kafka.Message, error) {
 func (r *fakeReader) CommitMessages(_ context.Context, msgs ...kafka.Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.failCommit != nil {
+		return r.failCommit
+	}
 	r.commits = append(r.commits, msgs...)
 	return nil
 }
@@ -271,5 +278,135 @@ func TestOpenWithoutBrokerAndAccessors(t *testing.T) {
 	d := New(nil, nil, Options{})
 	if d.group != DefaultGroup || d.block != defaultBlock || d.logger == nil {
 		t.Errorf("defaults = group %q block %v logger %v", d.group, d.block, d.logger)
+	}
+}
+
+// capLogger returns a logger writing text records to buf, letting tests
+// assert on what the consume loop logged.
+func capLogger(buf *syncBuffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelError}))
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestOptionsOverrideDefaults(t *testing.T) {
+	// Every zero-value override must land on the adapter: group, block and
+	// logger are read from Options by New, not at call time.
+	var buf syncBuffer
+	custom := capLogger(&buf)
+	a := New(nil, nil, Options{
+		Group:  "atlas-prod",
+		Block:  42 * time.Second,
+		Logger: custom,
+	})
+	if a.group != "atlas-prod" {
+		t.Errorf("group = %q, want atlas-prod", a.group)
+	}
+	if a.block != 42*time.Second {
+		t.Errorf("block = %v, want 42s", a.block)
+	}
+	if a.logger != custom {
+		t.Error("custom logger not kept")
+	}
+}
+
+func TestFetchErrorLoggedThenLoopSurvives(t *testing.T) {
+	// A transient fetch error must be logged (group attached) and the loop
+	// must keep polling until the context dies — failing fetches never kill
+	// consumption in a healthy group.
+	var buf syncBuffer
+	r := &fakeReader{notify: make(chan struct{}, 1)}
+	a := New(&fakeWriter{}, r, Options{Block: 10 * time.Millisecond, Logger: capLogger(&buf)})
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	r.mu.Lock()
+	r.fetchErr = errors.New("broker down")
+	r.mu.Unlock()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(buf.String(), "event: fetch failed") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(buf.String(), "event: fetch failed") {
+		t.Fatalf("fetch error never logged, buffer = %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "atlas") {
+		t.Errorf("log missing group label: %q", buf.String())
+	}
+	// Recovering fetches resume delivery once the error clears.
+	r.mu.Lock()
+	r.fetchErr = nil
+	r.mu.Unlock()
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterLogin, CharacterID: 7})
+	r.push(kafka.Message{Topic: event.TopicCharacters, Value: payload})
+
+	deadline = time.Now().Add(2 * time.Second)
+	for r.commitCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if r.commitCount() != 1 {
+		t.Fatalf("loop did not recover after fetch error cleared, commits = %d", r.commitCount())
+	}
+	if err := a.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+}
+
+func TestCommitErrorLogged(t *testing.T) {
+	// A commit failure (e.g. rebalance between fetch and commit) is logged,
+	// not fatal: the offset will be redelivered after rebalance.
+	var buf syncBuffer
+	r := &fakeReader{failCommit: errors.New("rebalance in progress")}
+	a := New(&fakeWriter{}, r, Options{Block: 10 * time.Millisecond, Logger: capLogger(&buf)})
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterLogin, CharacterID: 7})
+	r.push(kafka.Message{Topic: event.TopicCharacters, Value: payload})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(buf.String(), "event: commit failed") && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !strings.Contains(buf.String(), "event: commit failed") {
+		t.Fatalf("commit error never logged, buffer = %q", buf.String())
+	}
+	if err := a.Close(); err != nil {
+		t.Errorf("close: %v", err)
+	}
+}
+
+func TestPublishWriterError(t *testing.T) {
+	boom := errors.New("kafka write failed")
+	a, w, _ := newTestAdapter(t)
+	w.fail = boom
+	err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterCreated, AccountID: 1, CharacterID: 1})
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, want wrapped writer error", err)
+	}
+	if w.count() != 0 {
+		t.Errorf("writer got %d messages after failure, want 0", w.count())
 	}
 }
