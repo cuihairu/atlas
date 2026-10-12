@@ -2,6 +2,7 @@ package sharded
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -319,4 +320,198 @@ func TestNew_RejectsBadConstruction(t *testing.T) {
 		}
 	}()
 	New(nil, store.HashShardStrategy{})
+}
+
+// hookShard injects failures or scripted results into one shard operation
+// while delegating the rest to a memory store — fan-out error propagation
+// and Reshard failure paths are unreachable through healthy shards.
+type hookShard struct {
+	store.CharacterStore
+	getByID func(context.Context, int64) (*model.Character, error)
+	list    func(context.Context, string, int, string) ([]*model.Character, error)
+	search  func(context.Context, store.CharacterSearchFilter) ([]*model.Character, string, error)
+	upsert  func(context.Context, *model.Character) error
+}
+
+func (h *hookShard) GetCharacterByCharacterID(ctx context.Context, id int64) (*model.Character, error) {
+	if h.getByID != nil {
+		return h.getByID(ctx, id)
+	}
+	return h.CharacterStore.GetCharacterByCharacterID(ctx, id)
+}
+
+func (h *hookShard) ListCharactersByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, error) {
+	if h.list != nil {
+		return h.list(ctx, serverID, limit, cursor)
+	}
+	return h.CharacterStore.ListCharactersByServer(ctx, serverID, limit, cursor)
+}
+
+func (h *hookShard) SearchCharacters(ctx context.Context, f store.CharacterSearchFilter) ([]*model.Character, string, error) {
+	if h.search != nil {
+		return h.search(ctx, f)
+	}
+	return h.CharacterStore.SearchCharacters(ctx, f)
+}
+
+func (h *hookShard) UpsertCharacter(ctx context.Context, ch *model.Character) error {
+	if h.upsert != nil {
+		return h.upsert(ctx, ch)
+	}
+	return h.CharacterStore.UpsertCharacter(ctx, ch)
+}
+
+func TestNew_RejectsNilShardInSlice(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic on nil shard")
+		}
+	}()
+	New([]store.CharacterStore{memory.New(), nil}, store.HashShardStrategy{})
+}
+
+func TestSharded_FanOutErrorPropagation(t *testing.T) {
+	// A broken shard must fail the whole fan-out: silently skipping it
+	// would present a partial index as authoritative.
+	boom := errors.New("shard offline")
+	inner := memory.New()
+	s := New([]store.CharacterStore{inner, &hookShard{
+		CharacterStore: inner,
+		getByID: func(context.Context, int64) (*model.Character, error) {
+			return nil, boom
+		},
+	}}, store.HashShardStrategy{})
+
+	if _, err := s.GetCharacterByCharacterID(context.Background(), 1); !errors.Is(err, boom) {
+		t.Errorf("GetCharacterByCharacterID: err = %v, want shard error", err)
+	}
+
+	listBoom := New([]store.CharacterStore{inner, &hookShard{
+		CharacterStore: inner,
+		list: func(context.Context, string, int, string) ([]*model.Character, error) {
+			return nil, boom
+		},
+	}}, store.HashShardStrategy{})
+	if _, err := listBoom.ListCharactersByServer(context.Background(), "srv-1", 10, ""); !errors.Is(err, boom) {
+		t.Errorf("ListCharactersByServer: err = %v, want shard error", err)
+	}
+
+	searchBoom := New([]store.CharacterStore{inner, &hookShard{
+		CharacterStore: inner,
+		search: func(context.Context, store.CharacterSearchFilter) ([]*model.Character, string, error) {
+			return nil, "", boom
+		},
+	}}, store.HashShardStrategy{})
+	if _, _, err := searchBoom.SearchCharacters(context.Background(), store.CharacterSearchFilter{}); !errors.Is(err, boom) {
+		t.Errorf("SearchCharacters: err = %v, want shard error", err)
+	}
+}
+
+func TestReshard_DefaultBatchSize(t *testing.T) {
+	// batchSize <= 0 falls back to 500: the copy still completes.
+	ctx := context.Background()
+	src := memory.New()
+	for i := int64(1); i <= 5; i++ {
+		putCharacter(t, ctx, src, i, "srv-1", i, "c", int(i))
+	}
+	dst := newSharded(t, 2)
+	n, err := Reshard(ctx, src, dst, 0)
+	if err != nil || n != 5 {
+		t.Fatalf("Reshard with default batch: %d, %v", n, err)
+	}
+}
+
+func TestReshard_SourceReadError(t *testing.T) {
+	boom := errors.New("src read failed")
+	src := &hookShard{CharacterStore: memory.New(), search: func(context.Context, store.CharacterSearchFilter) ([]*model.Character, string, error) {
+		return nil, "", boom
+	}}
+	n, err := Reshard(context.Background(), src, newSharded(t, 2), 10)
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, want source error", err)
+	}
+	if n != 0 {
+		t.Errorf("copied = %d, want 0", n)
+	}
+}
+
+func TestReshard_DestinationWriteError(t *testing.T) {
+	ctx := context.Background()
+	src := memory.New()
+	for i := int64(1); i <= 3; i++ {
+		putCharacter(t, ctx, src, i, "srv-1", i, "c", int(i))
+	}
+
+	var seen int64
+	boom := errors.New("dst write failed")
+	dst := &hookShard{CharacterStore: memory.New(), upsert: func(_ context.Context, ch *model.Character) error {
+		seen = ch.CharacterID
+		return boom
+	}}
+	n, err := Reshard(ctx, src, dst, 2)
+	if !errors.Is(err, boom) {
+		t.Errorf("err = %v, want destination error", err)
+	}
+	if n != 0 || seen != 1 {
+		t.Errorf("copied = %d, last write = %d, want 0 and character 1", n, seen)
+	}
+}
+
+func TestReshard_StuckCursorTerminates(t *testing.T) {
+	// A store that echoes a non-empty cursor forever must not hang the
+	// drain: the second identical cursor ends the copy.
+	src := &hookShard{CharacterStore: memory.New(), search: func(_ context.Context, f store.CharacterSearchFilter) ([]*model.Character, string, error) {
+		return []*model.Character{{AccountID: 1, ServerID: "srv-1", CharacterID: 7}}, "same", nil
+	}}
+	n, err := Reshard(context.Background(), src, newSharded(t, 1), 10)
+	if err != nil {
+		t.Fatalf("Reshard: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("copied = %d, want 2 (one page before the stuck cursor ends it)", n)
+	}
+}
+
+func TestSharded_LimitClamps(t *testing.T) {
+	// Fan-out reads clamp the caller-supplied page size to the documented
+	// 50-default / 200-ceiling before it reaches the shards.
+	ctx := context.Background()
+	for i := int64(1); i <= 3; i++ {
+		putCharacter(t, ctx, newSharded(t, 1), i, "srv-1", i, "c", int(i))
+	}
+	s := New([]store.CharacterStore{memory.New()}, nil) // nil strategy → hash default
+	if got := s.ShardFor(1); got == nil {
+		t.Fatal("nil strategy must default to hash sharding")
+	}
+
+	// Feed the shards a hook that records the limit actually requested.
+	var gotList, gotSearch int
+	hooked := New([]store.CharacterStore{&hookShard{
+		CharacterStore: memory.New(),
+		list: func(_ context.Context, _ string, limit int, _ string) ([]*model.Character, error) {
+			gotList = limit
+			return nil, nil
+		},
+		search: func(_ context.Context, f store.CharacterSearchFilter) ([]*model.Character, string, error) {
+			gotSearch = f.Limit
+			return nil, "", nil
+		},
+	}}, store.HashShardStrategy{})
+
+	_, _ = hooked.ListCharactersByServer(ctx, "srv-1", 0, "")
+	if gotList != 50 {
+		t.Errorf("limit 0 → shard limit %d, want 50", gotList)
+	}
+	_, _ = hooked.ListCharactersByServer(ctx, "srv-1", 9999, "")
+	if gotList != 200 {
+		t.Errorf("limit 9999 → shard limit %d, want 200", gotList)
+	}
+	_, _, _ = hooked.SearchCharacters(ctx, store.CharacterSearchFilter{Limit: -1})
+	if gotSearch != 50 {
+		t.Errorf("search limit -1 → shard limit %d, want 50", gotSearch)
+	}
+	_, _, _ = hooked.SearchCharacters(ctx, store.CharacterSearchFilter{Limit: 9999})
+	if gotSearch != 200 {
+		t.Errorf("search limit 9999 → shard limit %d, want 200", gotSearch)
+	}
 }
