@@ -173,8 +173,14 @@ func (a *Adapter) consume(ctx context.Context, topic string, h event.Handler) {
 					a.handle(ctx, topic, h, msg)
 				}
 			}
-		case errors.Is(err, redis.Nil) || errors.Is(err, context.Canceled):
-			// Block timeout or shutdown — just re-check ctx.
+		case errors.Is(err, redis.Nil):
+			// Block timeout on a quiet stream: sweep stale entries anyway,
+			// or a topic that stops receiving fresh events would never
+			// reclaim (or dead-letter) its pending list.
+			a.claimStale(ctx, topic, h)
+			continue
+		case errors.Is(err, context.Canceled):
+			// Shutdown — just re-check ctx.
 			time.Sleep(10 * time.Millisecond)
 			continue
 		case ctx.Err() != nil:
