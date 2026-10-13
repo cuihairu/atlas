@@ -168,8 +168,8 @@ wins):
 |---|---|---|
 | `ATLAS_PG_POOL_MAX_CONNS` | max(4, NumCPU) per replica | Σ MaxConns across replicas × 2 < `max_connections` (100 default). 2 replicas × 32 is a good ceiling for a 4-core primary. |
 | `ATLAS_PG_POOL_MIN_CONNS` | 0 | Set to your steady heartbeat concurrency (e.g. 4–8) to avoid connect storms. Must stay ≤ MaxConns (clamped at startup). |
-| `ATLAS_PG_POOL_MAX_CONN_LIFETIME` | 0 (never) | 30m — recycles connections through LBs/proxies and after primary promotion. |
-| `ATLAS_PG_POOL_MAX_CONN_IDLE_TIME` | 0 (never) | 5m — trims the pool after traffic spikes. |
+| `ATLAS_PG_POOL_MAX_CONN_LIFETIME` | unset → pgxpool default 1h | 30m — recycles connections through LBs/proxies and after primary promotion. |
+| `ATLAS_PG_POOL_MAX_CONN_IDLE_TIME` | unset → pgxpool default 30m | 5m — trims the pool after traffic spikes. |
 | `ATLAS_PG_POOL_HEALTH_CHECK_PERIOD` | 1m | 15s — detects a promoted/dead primary faster. |
 
 **Redis** (`ATLAS_REDIS_POOL_SIZE`): heartbeats are 2–3 pipelined ops per

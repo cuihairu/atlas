@@ -76,6 +76,9 @@ metadata    # 注册元数据（可选，键值对）：平台不解释内容，
             # 管理台列表与 /v1/admin/servers 的 metadata_key=value 过滤
             # （如 cluster=cluster-ea、channel=tap）。与配置化声明
             # （server-config.md）的 metadata 字段同一语义。
+notify_mode / notify_callback_url
+            # 跨服配置变更通知声明（subscribe / callback / poll，详见
+            # config-center.md）：随注册存储，配置中心据此推送
 ```
 
 **幂等性**：重复注册同一 `server_id` 视为更新（幂等 upsert，可变字段被覆盖），
@@ -320,7 +323,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 查询某服务器上的角色索引，主要用于运维与合服校验。
 
-**Query**：`?account_id=`、`?limit=`、`?cursor=`
+**Query**：`?limit=`、`?cursor=`
 
 ---
 
@@ -345,6 +348,8 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 **幂等性**：以 `(account_id, server_id, character_id)` 为唯一键，重复写入视为更新。
 
+**响应码**：本节三个写端点（POST / PATCH / DELETE）的事件适配器为同步时返回 `201 Created` / `200 OK` / `200 OK`；异步（Kafka / NATS / RabbitMQ 等）时一律 `202 Accepted`，体为 `{"status":"queued"}`。
+
 ---
 
 ### PATCH /v1/directory/characters/{character_id}
@@ -354,7 +359,8 @@ GET /v1/discovery/servers?region=cn-east&status=online
 ```json
 {
   "level": 183,
-  "name": "剑无尘·改"
+  "name": "剑无尘·改",
+  "metadata": {"class": "warrior", "guild": "长风"}
 }
 ```
 
@@ -464,6 +470,8 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 `?shard=`、`?version=`、`?platform=`、`?tag=`、`?metadata_key=` +
 `?metadata_value=`（键值对）、`?limit=`、`?cursor=`。过滤器可自由组合，
 游标分页与公网列表同契约（下一页取 ID 严格大于 cursor）。
+`limit` 上限 200，超限返回 `400 INVALID_ARGUMENT`（公网发现口超限按 200
+返回，口径不同）。
 
 ### GET /v1/admin/characters/search
 
@@ -476,7 +484,8 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 
 玩家视角排查（管理台「排查/诊断」页后端）。**Query** 同
 `/v1/routing/recommended`（`?account_id=`、`?region=`、`?version=`、
-`?platform=`）。返回**同一条推荐管线摊开的中间结果**：匹配阶段
+`?platform=`），另支持 `?status=`（`online` / `suspect` / `offline`，缺省按
+`online` 处理）。返回**同一条推荐管线摊开的中间结果**：匹配阶段
 （strict/fallback）、逐台判定（排序位、严格/回退命中、是否已有角色、
 可入选、维护窗口 `maintenance_window`——活动/Lead 内窗口原样附在判定上、
 拒绝原因 `status=…` / `maintenance_window=active|upcoming`）、冠军与归因；
@@ -487,17 +496,18 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 
 网关限流只读视图：解析后的生效规则（路径前缀最长匹配）+ 默认规则 +
 429 计数（按端点规则 / 按客户端 IP）。配置本身走环境变量
-（`ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT`）+ 重启生效。
+（`ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT`）+ 重启生效；只配
+`ATLAS_RATE_LIMITS` 未配 `_DEFAULT` 时，兜底规则为 100 rps / 200 burst。
 
 ### GET /v1/admin/indexqueue/status
 
 存储队列只读状态（管理台「存储队列」卡）。返回 memory store 指令写路径的
 `QueueStats` 快照：`enabled` 恒 true、`watermark`（版本水位，单调递增的已应用
-序列号）、`depth_control` / `depth_hot`（各道类在途深度）、`lane_cap` /
-`batch_cap`、累计计数（`enqueued` / `applied` / `merged` / `idempotent_hits` /
-`backpressure_sync`）、最近一次提交（`last_flush*`）与最近 16 条 flush 记录
-（`recent_flushes[]`，含批大小/合并数/临界区耗时）、按类型应用分布
-（`applied_by_kind`）、回放环长度（`capture_len`）。
+序列号）、`depth_control` / `depth_hot`（各道类在途深度）、`lanes_control` /
+`lanes_hot`（道类 lane 数）、`lane_cap` / `batch_cap`、累计计数（`enqueued` /
+`applied` / `merged` / `idempotent_hits` / `backpressure_sync`）、最近一次提交
+（`last_flush*`）与最近 16 条 flush 记录（`recent_flushes[]`，含批大小/合并数/
+临界区耗时）、按类型应用分布（`applied_by_kind`）、回放环长度（`capture_len`）。
 
 SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 `INDEX_QUEUE_DISABLED`，**不是**空快照——管理台据此显示「未启用」。同一快照
@@ -725,7 +735,7 @@ Prometheus 抓取端点（管理端口 :8082，受 Admin 认证保护）。暴�
 三个 HTTP 监听口（公网 / 注册 / 管理）与 gRPC 口（:9090）对每个请求做请求级追踪：
 
 - 入站带 `X-Request-ID`（gRPC 为 `x-request-id` metadata；合法字符 `[A-Za-z0-9._:-]`，≤64 字符）则沿用并回显到响应头（gRPC 回显到响应 metadata，被拒的 RPC 同样回显）；否则生成 128-bit 随机 hex id。
-- 请求完成时输出一条访问日志（REST `msg=http request`，gRPC `msg=grpc request`）：`request_id`、`method`、`path`/`code`、`status`、`duration_ms`。`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头、不记日志。
+- 请求完成时输出一条访问日志（REST `msg=http request`：`request_id`、`method`、`path`、`status`、`duration_ms`；gRPC `msg=grpc request`：`request_id`、`method`、`code`、`duration_ms`）。`/healthz`、`/readyz`、`/metrics` 定时探测路径只回显头、不记日志。
 - 网关（APISIX/nginx）透传同一 header、六个官方 SDK 均有固定关联头注入口（Go `Options.DefaultHeaders`、C++ `Options.default_headers`、Python `default_headers=`、JS `defaultHeaders`、Java `setDefaultHeaders`、C# `DefaultHeaders`——REST 头 / gRPC metadata 同语义；gRPC 侧也可对单个调用在 ctx 上附加 metadata），即可把请求在 REST 与 gRPC 多跳日志里串起来。被限流/鉴权拒绝的请求同样有 id（追踪中间件/拦截器在最外层）。
 
 ### 分布式追踪（OpenTelemetry OTLP）
@@ -744,7 +754,7 @@ X-Request-ID 是跨跳关联 id，不是 span 树。需要链路视图时，设 
 
 ## gRPC API
 
-REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Registry / Discovery / Directory / Routing 与 REST 端点一一对应；AdminService 覆盖 10 个核心运维操作（生命周期、统计、角色检索、迁移），而 realms / shards / tags / 维护窗口 / 公告 / 审计 / 跨服配置 / diagnose / 限流 / 序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
+REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Registry / Discovery / Directory / Routing 与 REST 端点一一对应；AdminService 覆盖 11 个 RPC（维护模式、开关、启停、统计、热力图、角色检索、迁移编排与回退），而 realms / shards / tags / 维护窗口 / 公告 / 审计 / 跨服配置 / diagnose / 限流 / 序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
 - **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。传输安全可选：`ATLAS_GRPC_TLS_CERT`/`_KEY`（可加 `_CLIENT_CA` 升 mTLS），未配置为明文。详见[认证](#认证)与 [security.md](security.md)。

@@ -57,7 +57,7 @@ await client.UnregisterAsync("game-1001");
 | `TimeoutMs` | `10000` | `HttpClient.Timeout`；`0` 关闭；超时按网络错误参与重试 |
 | `MaxRetries` | `3` | 瞬时失败（网络错误 / 5xx）重试次数；4xx 不重试 |
 | `BaseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |
-| `HttpInvoker` | 空 | 注入自管 `HttpMessageInvoker`（Polly / IHttpClientFactory 场景）；注入后 SDK 不负责其释放 |
+| `HttpInvoker` | 空 | 注入自管 `HttpClient`（Polly / IHttpClientFactory 场景）；注入后 SDK 不负责其释放 |
 
 ## API 全览
 

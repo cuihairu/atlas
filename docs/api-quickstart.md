@@ -12,9 +12,10 @@ go run ./cmd/atlas
 # …level=INFO msg="public API listening" addr=:8080
 # …level=INFO msg="registry API listening" addr=:8081 scheme=http
 # …level=INFO msg="admin API listening" addr=:8082
+# …level=INFO msg="gRPC API listening" addr=:9090
 ```
 
-看到三行 listening 就是结果——Atlas 已经在跑了，内存存储，无需 PostgreSQL / Redis。
+看到四行 listening 就是结果——Atlas 已经在跑了，内存存储，无需 PostgreSQL / Redis（默认同时起 gRPC 口；设 `ATLAS_GRPC_ADDR=""` 可关闭）。
 
 **方式 B：Docker Compose（PostgreSQL + Redis 持久化）**
 

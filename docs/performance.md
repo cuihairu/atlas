@@ -25,17 +25,17 @@ pipe.HSet(ctx, key, fields)      // status/players/load/last_seen
 pipe.Expire(ctx, key, runtimeTTL) // 120s —— 失联自动消失,无清理任务
 ```
 
-一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核 ~350 万 QPS（`BenchmarkHeartbeat` 287ns/op；64 台并发扇入 `BenchmarkHeartbeatParallel` 646ns/op ≈ 1.5M×核）——1 万 QPS 的真实负载用一个核的 0.3%。瓶颈从来不在心跳本身，而在 Redis 与网络。
+一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核约 20 万 QPS（`BenchmarkHeartbeat` ~5.1µs/op；64 台并发扇入 `BenchmarkHeartbeatParallel` ~4.4µs/op，攒批吸收竞争后基本持平）——1 万 QPS 的真实负载用一个核的 5%。成本主要来自 v0.2 指令队列的逐条回执（改前直锁路径 129ns，对照见 §8.5），换来同实体严格 FIFO、幂等防重与可回放。瓶颈从来不在心跳本身，而在 Redis 与网络。
 
 ### 发现 / 选服（读路径之王）
 
 玩家登录拉服务器列表。`internal/discovery` 读路径做三件事：过滤（region/realm/状态）、运行时合并（在线人数/负载）、对外标记过滤（`model.PublicTags`——内存里的切片过滤，零分配级别的开销）。列表是**准实时**数据，网关可安全做 1–5s 短 TTL 缓存；`region` + `limit` 把单响应控制在 100 台量级。
 
-服务层基准（memory store，不含网络）：100 台全量 34µs、1,000 台 419µs，管线化后服务层分配每千台仅 +5 allocs（~1,068 allocs/1,000 台，批量读的 ids 切片与结果 map 容器），内存代价可忽略。**Redis 读路径已管线化（P1，2026-10-04 落地）**：列表合并不再逐台 `GetRuntime`，`RuntimeStore.GetRuntimes` 批量读由 Redis **pipeline 一次 Exec** 完成——**N 次网络往返 → 1–2 次**（单节点 1 次；Cluster 模式按 slot 分批，每批 1 次），1,000 台的 Redis 后端估算从 ~300ms 降到 ~2ms 量级（[基准页](/benchmarks#_3-读数)有明细估算）。单点详情 `GetServer` 维持单次读，天然最少往返。**决策面同批收尾（2026-10-05）**：健康巡检 sweep 与 Routing 推荐/诊断的运行时合并也从逐台读换 `GetRuntimes` 批量——巡检整舰队每轮从 N 次往返降到 1–2 次。与列表展示的「降级容忍」不同，这三处失败一律传播（决策层不拿未知负载排序、不拿未知状态判死）。
+服务层基准（memory store，不含网络）：100 台全量 42µs、1,000 台 243µs，服务层分配近常数（fleet_1000 为 123 allocs/op，批量读的 ids 切片与结果 map 容器），内存代价可忽略。**Redis 读路径已管线化（P1，2026-10-04 落地）**：列表合并不再逐台 `GetRuntime`，`RuntimeStore.GetRuntimes` 批量读由 Redis **pipeline 一次 Exec** 完成——**N 次网络往返 → 1–2 次**（单节点 1 次；Cluster 模式按 slot 分批，每批 1 次），1,000 台的 Redis 后端估算从 ~300ms 降到 ~2ms 量级（[基准页](/benchmarks#_3-读数)有明细估算）。单点详情 `GetServer` 维持单次读，天然最少往返。**决策面同批收尾（2026-10-05）**：健康巡检 sweep 与 Routing 推荐/诊断的运行时合并也从逐台读换 `GetRuntimes` 批量——巡检整舰队每轮从 N 次往返降到 1–2 次。与列表展示的「降级容忍」不同，这三处失败一律传播（决策层不拿未知负载排序、不拿未知状态判死）。
 
 ### 注册（upsert 单语句）
 
-注册是幂等 upsert：PostgreSQL 一条 `INSERT … ON CONFLICT` / MySQL `ON DUPLICATE KEY UPDATE` 完成存在性判断 + 字段覆盖，**没有**先 SELECT 再 INSERT 的竞态窗口，也没有事务往返。比重心跳贵约 8 倍（校验 + upsert + 初始心跳），但只在启动/恢复时发生；1 万台舰队冷恢复 ≈ 2.3 万 QPS·核，单副本可吸收。标记（tags）列在 upsert 里被刻意省略——管理台独占维护，游戏服重注册永不覆盖。
+注册是幂等 upsert：PostgreSQL 一条 `INSERT … ON CONFLICT` / MySQL `ON DUPLICATE KEY UPDATE` 完成存在性判断 + 字段覆盖，**没有**先 SELECT 再 INSERT 的竞态窗口，也没有事务往返。比重心跳贵约 2.7 倍（校验 + upsert + 初始心跳），但只在启动/恢复时发生；1 万台舰队冷恢复 ≈ 7.5 万 QPS·核（`BenchmarkRegister` 单核吞吐），单副本可吸收。标记（tags）列在 upsert 里被刻意省略——管理台独占维护，游戏服重注册永不覆盖。
 
 ### 角色目录（分片索引）
 
@@ -60,15 +60,15 @@ pgx 连接池全部参数可用环境变量覆盖（`ATLAS_PG_POOL_MAX_CONNS / M
 
 | 基准 | 场景 | 单核 QPS |
 | --- | --- | ---: |
-| HeartbeatParallel | 64 台并发心跳扇入 | ~1.5M×核 |
-| GetServer | 单服详情（含运行时合并） | ~3.6M |
-| ListServers/fleet_1000 | 1,000 台全量列表（服务层） | ~2.4k |
+| HeartbeatParallel | 64 台并发心跳扇入 | ~228k×核 |
+| GetServer | 单服详情（含运行时合并） | ~762k |
+| ListServers/fleet_1000 | 1,000 台全量列表（服务层） | ~4.1k |
 
 回归警戒线（超出即查 diff）：心跳 > 1µs、注册 > 10µs、fleet_1000 列表 > 1ms——通常意味着引入了新锁或新分配。完整方法、边界与复现命令见[性能基准](/benchmarks)；多副本部署下的一致性与故障切换见[高可用](/ha)。
 
 ## 7. 正确性优先于 QPS
 
-吞下 1 万 QPS 心跳不难（单核基准 350 万 QPS，见[性能基准](/benchmarks)），难点在大批服务器同时
+吞下 1 万 QPS 心跳不难（单核基准约 20 万 QPS，见[性能基准](/benchmarks)），难点在大批服务器同时
 startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然：
 
 ```text
@@ -195,7 +195,8 @@ fail）——表内两列永远是同一个查询。计 5 轮取
 **最小值**（min-of-5：长跑降频与调度噪声下，最小值是最接近无干扰真值的估计；中位数会随
 热累积漂移——实测 index/status 的 b.N 逐轮 5108→2635→1310 递减）。
 
-**环境**：Intel Core i9-10880H @ 2.30GHz（14 逻辑核）、Go 1.27.1、linux/amd64。
+**环境**：Intel Core i9-10880H @ 2.30GHz（14 逻辑核）、Go 1.27.1（仓库现已钉 1.27.2，
+补丁级差异不影响本表）、linux/amd64。
 
 复现命令：
 
@@ -250,8 +251,8 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 风暴下直锁路径被锁竞争拖慢 2.7x，队列几乎不吃竞争：同道指令攒批、一次临界区
 提交一批。同目标风暴（合并案例）55% 的写在批内被 superseded——被合并信封照拿
 批次回执，调用方无感，等效临界区进入次数近乎减半。生产语境不变：真实心跳路径
-在内存队列之外还有 PG 双写 + Redis HSET（ms 级），µs 级差异不可见；~390k ops/s
-（风暴单服）对 10k 舰队 × 0.1Hz ≈ 1k ops/s 仍约两个数量级余量。
+在内存队列之外还有 PG 双写 + Redis HSET（ms 级），µs 级差异不可见；~230k ops/s
+（风暴单服，2026-10-13 复测）对 10k 舰队 × 0.1Hz ≈ 1k ops/s 仍约两个数量级余量。
 
 历史交叉验证：worktree 切旧提交法（同 bench 文件跑改前/改后两棵树）的同型数字
 见[审计文档附录 A](./审计-文档一致性.md)（N=2000 数据集：region 2.36x、角色按账号
@@ -274,9 +275,9 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
    `flush_batch_size` / `flush_duration_seconds`（最近一批 gauge）与
    `capture_entries`。入队/合并速率按 PromQL 由 `*_total` 差分，不另设第二
    计数器。SQL 后端经转发快照报 `Enabled=false` 时整族不出序列——有指标即有队列。
-2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:211 路由、:1794
+2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:213 路由、:1832
    handler）：返回同一快照原文。装饰层不藏快照——fleet 装饰器与 main 的
-   composite 都透传 `QueueStats`（fleet/track.go:75、main.go:880）；SQL 库的
+   composite 都透传 `QueueStats`（fleet/track.go:75、main.go:912）；SQL 库的
    空快照（`Enabled=false`）与非 provider 一律 `503 INDEX_QUEUE_DISABLED`，
    不发空 200。curl 实证：memory 后端 200（watermark=enqueued=applied=4，
    recent_flushes 真实记录，临界区 ~7-17µs）；`/metrics` 上 14 条序列同水位。

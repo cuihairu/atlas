@@ -86,7 +86,7 @@ flowchart TB
 与合服的区别：转服是**单角色粒度**，合服是**服务器粒度**。但对 Atlas 而言都是 `character_index` 中 `server_id` 字段的变更。
 
 > **v0.1 现状**：目录 API 暂无原子变更 `server_id` 的端点——`PATCH
-> /v1/directory/characters/{id}` 只接受 `name` / `level` / `class_id` / `avatar`
+> /v1/directory/characters/{id}` 只接受 `name` / `level` / `class_id` / `avatar` / `metadata`
 > （`server_id` 是行定位符，不是可改字段）。当前的落地路径是**建新删旧**两步：
 
 ```mermaid

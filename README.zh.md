@@ -16,7 +16,7 @@
 
 <p align="center">
   Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.<br/>
-  技术底座：Go 1.27，REST（net/http）与 gRPC 双传输，存储接 PostgreSQL（pgx/v5）/ MySQL（go-sql-driver）/ Redis（go-redis），指标用 Prometheus client，事件总线适配 Kafka / NATS / RabbitMQ 客户端——全部基于开源组件构建，仓库自身以 Apache-2.0 发布。
+  技术底座：Go 1.27，REST（net/http）与 gRPC 双传输，存储接 PostgreSQL（pgx/v5）/ Redis（go-redis）（MySQL 实现已备、主程序装配未接，运行时 `ATLAS_STORE` 目前仅 memory/postgres），指标用 Prometheus client，事件总线适配 Kafka / NATS / RabbitMQ 客户端——全部基于开源组件构建，仓库自身以 Apache-2.0 发布。
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -72,7 +72,7 @@ Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕四个问题�
 | **计划停机维护** | 运维手动踢人、群里发公告、祈祷没人在这时充值 | 维护窗口定时生效：`start_at` 自动进入维护、`end_at` 自动恢复，同时段自动挂 warning 公告，客户端登录即见 |
 | **紧急故障公告** | 没有统一通道，公告靠客户端热更 | Admin 一条 API 发布全局/服务器级公告（info / warning / critical），生效区间可控 |
 | **服务器掉线自愈** | 半死不活的服务器继续接玩家，投诉炸锅 | 心跳判活：30s 无心跳进 `suspect`、60s 进 `offline` 自动摘除；恢复心跳或重新注册自动回到线上 |
-| **合服 / 迁服** | 人肉搬库、改配置、全服停机 | Migration 编排 + 角色索引事件重放，`rollback` 一键回退 |
+| **合服 / 迁服** | 人肉搬库、改配置、全服停机 | 迁移记录（pending / migrating / completed / failed / rolled_back）+ 一键回退状态；角色搬迁由游戏服执行，Atlas 不重放事件 |
 | **多生态 / 大规模舰队** | 数百台服务器的注册表没有一个权威视图 | Registry 幂等注册 + 分片存储 + Prometheus 指标 + 占比告警，舰队状态一目了然 |
 
 ---
@@ -166,7 +166,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 ## API Quick Reference
 
-Atlas 当前暴露 45 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
+Atlas 当前暴露 47 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
@@ -215,7 +215,7 @@ Atlas 当前暴露 45 个业务端点（默认配置，含审计端点），分�
 | `POST/GET/DELETE` | `/v1/admin/servers/{id}/maintenance-window` · `/v1/admin/maintenance-windows…` | 计划维护窗口（到期自动进入维护并恢复） |
 | `POST/GET/DELETE` | `/v1/admin/announcements…` | 公告管理（info / warning / critical） |
 | `POST/GET` | `/v1/admin/realms` · `/v1/admin/shards` | 大区 / 分片管理 |
-| `POST/GET` | `/v1/admin/migrations` · `POST …/rollback` | 合服 / 迁移编排 |
+| `POST/GET` | `/v1/admin/migrations` · `POST …/rollback` | 迁移记录与回退 |
 | `GET` | `/v1/admin/stats` · `/v1/admin/audit` | 舰队统计与审计日志 |
 
 完整请求/响应示例见 [docs/api.md](docs/api.md)，快速上手见 [docs/api-quickstart.md](docs/api-quickstart.md)。
@@ -358,7 +358,7 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 
 ## 路线图
 
-**v0.1 系列已全量交付**，对外发布四个 release：
+**v0.1 系列已全量交付**，对外发布五个 release：
 
 | Release | 内容 |
 | --- | --- |

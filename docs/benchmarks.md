@@ -20,50 +20,52 @@ QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映�
 
 ## 2. 基线数字
 
-2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27。ns/op 与 QPS 列测于
-2026-10-03 空载；B/op 与 allocs/op 为 2026-10-05 复测钉值（分配数确定，不受机器
-负载影响，与基线期的差异来自管线化等后续代码变更）：
+2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27。ns/op、B/op、allocs/op
+与 QPS 列为 2026-10-13 复测钉值（min-of-5，空载；分配数确定，不受机器负载影响）。
+写路径数字含 v0.2 指令队列（2026-10-08 落地，见 [性能设计](/performance#8-2)）的
+逐条回执成本——改前直锁路径对照见性能设计 §8.5：
 
 | 基准 | 场景 | ns/op | B/op | allocs/op | 单核 QPS |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `BenchmarkRegister` | 新服务器注册（写路径 + 初始心跳） | 2,287 | 1,095 | 11 | ~437k |
-| `BenchmarkReRegister` | 幂等重注册（控制面重启恢复路径） | 622 | 712 | 6 | ~1.6M |
-| `BenchmarkHeartbeat` | 心跳热路径（每服务器每 10s 一次） | 287 | 320 | 1 | ~3.5M |
-| `BenchmarkHeartbeatParallel` | 64 台服务器并发心跳扇入 | 646 | 336 | 3 | ~1.5M×14 核 |
-| `BenchmarkGetServer` | 单服务器详情（含运行时合并） | 281 | 384 | 2 | ~3.6M |
-| `BenchmarkListServers/fleet_100` | 全量列表（100 台，含运行时合并） | 34.2µ | 43KB | 165 | ~29k |
-| `BenchmarkListServers/fleet_1000` | 全量列表（1,000 台） | 419µ | 339KB | 1,068 | ~2.4k |
-| `BenchmarkListServers/fleet_5000` | 全量列表（5,000 台） | 2.9m | 1.7MB | 5,073 | ~345 |
-| `BenchmarkListServersRegion` | region 过滤 + limit 100（1,000 台） | 443µ | 347KB | 1,118 | ~2.3k |
+| `BenchmarkRegister` | 新服务器注册（写路径 + 初始心跳） | 13,378 | 4,671 | 25 | ~75k |
+| `BenchmarkReRegister` | 幂等重注册（控制面重启恢复路径） | 11,038 | 5,001 | 28 | ~91k |
+| `BenchmarkHeartbeat` | 心跳热路径（每服务器每 10s 一次） | 5,055 | 1,992 | 11 | ~198k |
+| `BenchmarkHeartbeatParallel` | 64 台服务器并发心跳扇入 | 4,378 | 1,916 | 13 | ~228k×14 核 |
+| `BenchmarkGetServer` | 单服务器详情（含运行时合并） | 1,313 | 656 | 7 | ~762k |
+| `BenchmarkListServers/fleet_100` | 全量列表（100 台，含运行时合并） | 41.6µ | 30KB | 120 | ~24k |
+| `BenchmarkListServers/fleet_1000` | 全量列表（1,000 台） | 243µ | 60KB | 123 | ~4.1k |
+| `BenchmarkListServers/fleet_5000` | 全量列表（5,000 台） | 1.30m | 260KB | 127 | ~772 |
+| `BenchmarkListServersRegion` | region 过滤 + limit 100（1,000 台） | 569µ | 67KB | 216 | ~1.8k |
 
 ## 3. 读数
 
-- **心跳不是瓶颈**：单核 350 万 QPS 意味着 10 万台服务器 × 10s 心跳 = 1 万 QPS，
-  一个核的 0.3%；扇入并发下每 op 略涨（锁竞争），仍有两个数量级余量。容量规划
-  时先算心跳，**但真正的约束在 Redis 写入与网络**（见下）。
-- **注册比重心跳贵 8 倍**（校验 + upsert + 初始心跳），但注册只在启动/恢复时发生，
-  峰值 = 全舰队同时重注册。1 万台舰队冷恢复 ≈ 2.3 万 QPS·核，单副本即可吸收。
-- **列表是 O(fleet)**：时间与分配随舰队规模线性增长。生产用 Redis 的读路径
-  已**管线化（P1，2026-10-04 落地）**：`RuntimeStore.GetRuntimes` 批量读由
-  pipeline 一次 Exec 完成，列表不再逐台 `GetRuntime`——**网络往返从 N 次
+- **心跳不是瓶颈**：单核约 20 万 QPS 意味着 10 万台服务器 × 10s 心跳 = 1 万 QPS，
+  一个核的 5%；扇入并发下每 op 与单 goroutine 基本持平（指令队列攒批吸收竞争，
+  见性能设计 §8.5），仍有约 20 倍余量。容量规划时先算心跳，**但真正的约束
+  在 Redis 写入与网络**（见下）。
+- **注册比重心跳贵约 2.7 倍**（校验 + upsert + 初始心跳），但注册只在启动/恢复时
+  发生，峰值 = 全舰队同时重注册。1 万台舰队冷恢复 ≈ 7.5 万 QPS·核（`BenchmarkRegister`
+  单核吞吐），单副本即可吸收（10k 注册约 0.13s 消化完）。
+- **列表是 O(fleet)**：时间随舰队规模线性增长，分配则近常数（120→127 allocs）。
+  生产用 Redis 的读路径已**管线化（P1，2026-10-04 落地）**：`RuntimeStore.GetRuntimes`
+  批量读由 pipeline 一次 Exec 完成，列表不再逐台 `GetRuntime`——**网络往返从 N 次
   降到 1–2 次**（单节点 1 次；Cluster 按 slot 分批，每批 1 次）。管线化后的
   Redis 后端估算（0.3ms/RTT + 载荷传输，内网 1Gbps 量级）：
 
 | 舰队规模 | 服务层耗时 | Redis 后端估算（1 次往返 + 传输） |
 | --- | ---: | ---: |
-| 100 | 34µs | ~0.4ms（~20KB） |
-| 1,000 | 419µs | ~2ms（~200KB） |
-| 5,000 | 2.9ms | ~7ms（~1MB） |
+| 100 | 42µs | ~0.4ms（~20KB） |
+| 1,000 | 243µs | ~2ms（~200KB） |
+| 5,000 | 1.3ms | ~4ms（~1MB） |
 
-  服务层分配管线化后每千台仅 +5 allocs/op（fleet_1000 为 ~1,068，来自批量读的
-  ids 切片与结果 map 容器；回归判断以分配数为准，见 §4），管线化的收益全部在
-  网络往返上。
+  服务层分配近常数（fleet_1000 为 123 allocs/op，来自批量读的 ids 切片与结果 map
+  容器；回归判断以分配数为准，见 §4），管线化的收益全部在网络往返上。
 
   缓解手段（仍然有效）：网关对 `/v1/discovery/servers` 做短 TTL 缓存（列表是
   准实时数据，1–5s 缓存不改变语义）；`region` / `limit` 过滤把单次响应控制在
   100 台量级。
 
-- **回归警戒线**：Heartbeat > 1µs、Register > 10µs、fleet_1000 列表 > 1ms
+- **回归警戒线**：Heartbeat > 10µs、Register > 20µs、fleet_1000 列表 > 1ms
   （服务层数字）即应停下来查 diff，通常意味着多了锁或分配。
 
 ## 4. 方法与边界

@@ -148,7 +148,7 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
   记日志死信。
 - **kafka**：失败事件的 offset 不提交，下一次 fetch/rebalance 重新投递。
 - **nats**：失败消息不 Ack，超过 AckWait（默认 30s）由 durable consumer 重投。
-- **rabbitmq**：失败消息 `Nack(requeue=true)` 立即回队。
+- **rabbitmq**：失败消息先按 `requeueBackoff`（默认 5s）退避、再 `Nack(requeue=true)` 重投——无 delivery counter 可用来封顶重试，退避挡在消费者 goroutine 上，顺带节流后续投递。
 
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
@@ -282,7 +282,7 @@ flowchart LR
 
 ## 9. 监控
 
-事件同步当前**没有专属指标**；重投递与死信（redis 的 PEL 超限、kafka 的 offset 不提交）见各适配器的结构化日志。服务整体健康用 `/metrics`（:8082）上的真实指标观测：
+事件同步写路径有专属指标 `atlas_directory_write_duration_seconds{op}`：op 为投影事件名（如 `character.created` 经 `eventWriteOp` 归一为 `created`；service-API 写为 `create`/`update`/`delete`，见 internal/directory/events.go:27 与 internal/directory/directory.go:38）。重投递与死信（redis 的 PEL 超限、kafka 的 offset 不提交）仍见各适配器的结构化日志。服务整体健康用 `/metrics`（:8082）上的真实指标观测：
 
 | 指标 | 含义 |
 | --- | --- |
@@ -291,6 +291,7 @@ flowchart LR
 | `atlas_registry_heartbeat_lag_seconds` | 心跳年龄分布 |
 | `atlas_registry_servers_total{status}` | 各状态服务器数 |
 | `atlas_registry_write_duration_seconds{op}` | 注册/心跳/注销写路径延迟——心跳写变慢先于此显形，随后才是假 suspect/offline |
+| `atlas_directory_write_duration_seconds{op}` | 角色目录写路径延迟，op 为事件名（`created`/`updated`/`deleted`…）或 service-API 操作名——事件同步延迟与事件积压先于此显形 |
 | `atlas_discovery_requests_total{filter}` | 发现查询量 |
 | `atlas_admin_requests_total{endpoint,status}` | Admin 请求量（REST 路由 + gRPC Admin 全方法名，状态码同词表） |
 

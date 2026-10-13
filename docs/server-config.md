@@ -171,7 +171,7 @@ flowchart LR
 | `region` | ✅ | 区域 |
 | `endpoint.host` / `endpoint.port` | ✅ | 客户端接入地址（公网 / 网关后地址均可） |
 | `name` / `type` / `version` / `platform` | — | 同注册 API |
-| `realm_id` / `shard_id` | — | 隶属 Realm / Shard，须已通过 Admin API 创建 |
+| `realm_id` / `shard_id` | — | 隶属 Realm / Shard 的弱引用（不做外键校验，见 [realms-shards.md](realms-shards.md)）；不存在时照常入库 |
 | `capacity` | — | 容量，`>= 0` |
 | `metadata` | — | 任意键值对，随声明透传入库（引擎提示、集群/地域/语言标记等，与注册 API 的 `metadata` 同一语义） |
 

@@ -49,13 +49,18 @@ CREATE TABLE servers (
     status      TEXT        NOT NULL DEFAULT 'starting',
     started_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- migrations/0005
+    notify_mode         VARCHAR(16)  NOT NULL DEFAULT '',  -- migrations/0006
+    notify_callback_url VARCHAR(512) NOT NULL DEFAULT ''
 );
 
 CREATE INDEX idx_servers_region_status ON servers (region, status);
 CREATE INDEX idx_servers_realm        ON servers (realm_id);
 CREATE INDEX idx_servers_shard        ON servers (shard_id);
 ```
+
+`tags` 为运营标记（migrations/0005，JSONB 数组 `{code,label,tier,public}`，注册 upsert 不触碰该列）；`notify_mode` / `notify_callback_url` 为跨服配置变更通知声明（migrations/0006，取值 `subscribe` / `callback` / `poll`，详见 [config-center.md](config-center.md)）。
 
 `source` 标记档案归属（migrations/0004）：`''` = API 注册（默认），`config` = 配置文件声明（`ATLAS_SERVERS_CONFIG`）——config 归属的记录注册 API 拒改其档案字段（`409 SERVER_MANAGED_BY_CONFIG`），心跳与生命周期操作照常。
 
@@ -191,7 +196,7 @@ TTL 为 120 秒（`redisstore.runtimeTTL`），刻意大于判活阈值（suspec
 
 | 读路径 | 实现 |
 | --- | --- |
-| Discovery 列表 | PG `ListServers`（条件过滤 + 可见性过滤）→ 逐台合并 Redis `runtime` 的 `players / load / last_seen_at` |
+| Discovery 列表 | PG `ListServers`（条件过滤 + 可见性过滤）→ 批量读 Redis `runtime`（一次 `GetRuntimes` pipeline，见 internal/discovery/discovery.go:70）合并 `players / load / last_seen_at` |
 | Routing 推荐 | PG 候选集 → 合并运行时 → 打分排序：已有角色 > 最低负载 > 剩余容量最大 > 稳定 ID 兜底 |
 
 ### 心跳写路径
@@ -210,7 +215,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     T["健康监控 sweep<br/>默认每 10s"] --> L["从 PG 拉取全部服务器"]
-    L --> R["逐台读 runtime<br/>age = now - last_seen_at"]
+    L --> R["批量读 runtime（一次 GetRuntimes）<br/>age = now - last_seen_at"]
     R --> C{"心跳年龄判定"}
     C -->|"age > 60s"| OFF["online / starting / suspect → offline"]
     C -->|"age > 30s"| SUS["online / starting → suspect"]
@@ -238,7 +243,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     REQ["GET /v1/discovery/servers"] --> Q["PostgreSQL：ListServers<br/>条件过滤 + 可见性过滤"]
-    Q --> M["逐台合并 Redis runtime<br/>players / load / last_seen_at"]
+    Q --> M["批量合并 Redis runtime（一次 GetRuntimes）<br/>players / load / last_seen_at"]
     M --> RESP["返回"]
 ```
 
@@ -274,7 +279,7 @@ flowchart TD
 - **策略接口** `store.CharacterShardStrategy` + 默认实现 `HashShardStrategy`（`account_id` 的 FNV-1a hash 对分片数取模，纯函数、跨进程稳定）；
 - **分片组合** `store/sharded` 实现 `CharacterStore`：按 `account_id` 路由的读写一跳到达；无法路由的查询（全局 `character_id` 点查、按服列表、Admin 搜索）扇出全部分片后按游标序归并；
 - **迁移工具** `cmd/atlas-reshard`（或 `sharded.Reshard`）：游标分页读源、幂等 upsert 写目标，支持单库 → N 库、N 分片 → M 分片重切；
-- **启用方式** `ATLAS_CHAR_SHARDS`（默认 1）：单物理库时逻辑分片（验证路由路径），多库部署时按库拆分物理存储。
+- **启用方式** `ATLAS_CHAR_SHARDS`（默认 1）：单物理库时逻辑分片（验证路由路径）；多库物理拆分仅迁移工具（`cmd/atlas-reshard --to-dsn`）支持，主程序装配未接（同 MySQL 口径）。
 
 物理拆分（每分片独立 PG 实例）属于部署运维决策，接口与迁移工具已按 v2.0 目标预留，见 [roadmap.md](roadmap.md)。
 
@@ -320,6 +325,16 @@ CREATE TABLE announcements (
     ends_at    TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- migrations/0002 + 0003 的索引
+CREATE INDEX idx_realms_created          ON realms (created_at DESC);
+CREATE INDEX idx_realms_status           ON realms (status);
+CREATE INDEX idx_shards_created          ON shards (created_at DESC);
+CREATE INDEX idx_shards_status           ON shards (status);
+CREATE INDEX idx_maintenance_windows_server ON maintenance_windows (server_id);
+CREATE INDEX idx_maintenance_windows_start  ON maintenance_windows (start_at);
+CREATE INDEX idx_announcements_server     ON announcements (server_id);
+CREATE INDEX idx_announcements_window     ON announcements (starts_at, ends_at);
 ```
 
 要点：

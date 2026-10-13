@@ -15,12 +15,16 @@ import atlas "github.com/cuihairu/atlas/sdk/go/atlas"
 ```go
 cli, err := atlas.New(atlas.Options{
     Addr:      "localhost:8080",             // REST 基地址；gRPC 用 ATLAS_GRPC_ADDR
+    RegistryAddr: "localhost:8081",           // Registry 域单独指向（ATLAS_REGISTRY_ADDR；空 = Addr，反代合一时用）
     Transport: atlas.TransportREST,          // 默认 rest；可选 grpc
     RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKENS"), // Registry 域 Bearer（服务端 env 为 ATLAS_REGISTRY_TOKENS，值取其一）
     AdminAPIKey:   adminKey,                          // Admin 域 Bearer——值须为服务端 ATLAS_ADMIN_API_KEYS 之一（env 名部署自定）
     DefaultHeaders: map[string]string{                // 每次调用都带的静态头（REST）/ metadata（gRPC）
         "X-Request-ID": instanceID,                   // 例：进程实例级关联 id，见 api.md「请求追踪」
     },
+    HTTPClient:    myHTTPClient,             // 自定义 REST 传输（超时、连接池）；空 = 10s 超时默认客户端
+    GRPCTLS:       false,                    // gRPC 传输安全（服务端 ATLAS_GRPC_TLS_CERT/_KEY）；REST 不受影响
+    GRPCTLSCACert: "",                       // GRPCTLS 开启时的 PEM CA 束（私有 CA）；空 = 系统根
     MaxRetries:    3,                        // 瞬时失败重试（网络错误 + 5xx）
     BaseBackoff:   100 * time.Millisecond,   // 指数退避基数（全抖动）
 })
@@ -47,7 +51,7 @@ loop.OnError(func(err error) { log.Printf("heartbeat: %v", err) })
 loop.Set(playerCount, loadFactor)
 ```
 
-**节奏建议**：上报间隔与 Atlas 判死阈值保持 3:1——默认 `suspect_after=30s` / `offline_after=60s` 时，10s 一跳即可；只要循环在跑就不会被误判离线。
+**节奏建议**：判死阈值与上报间隔保持 3:1——默认 `suspect_after=30s` / `offline_after=60s` 时，10s 一跳即可；只要循环在跑就不会被误判离线。循环另暴露 `LastError()`（最近一次失败原因）与 `LastSent()`（上一次发出心跳的时间），可在游戏服监控里直接读。
 
 ## 双传输
 
@@ -91,8 +95,13 @@ cli.Stats(ctx) / cli.SearchCharacters(ctx, filter)
 cli.CreateMigration(ctx, req) / cli.GetMigration / cli.ListMigrations / cli.RollbackMigration
 
 // 跨服配置中心（REST-only 面的拉取与 watcher，见 config-center.md）
-cli.FetchCrossServerConfig(ctx)                  // 拉取当前快照（ETag 协商）
-atlas.NewConfigWatcher(cli, opts)                // 轮询 + 退避 watcher（OnApply 回调）
+snap, err := cli.FetchCrossServerConfig(ctx)     // 拉取当前快照（ETag 协商）
+watcher := atlas.NewConfigWatcher(cli, opts)     // 信号驱动 + 轮询兜底 watcher
+watcher.Run(ctx, 3)                             // 启动；返回即视为放弃
+watcher.Notify()                                // 请求立即重拉（配置变更信号）
+applied, err := watcher.Pull(ctx)               // 手动拉取一次
+current := watcher.Current()                     // 当前已应用快照
+applied, idempotent, skipped, failures := watcher.Stats()
 ```
 
 ## 可运行示例

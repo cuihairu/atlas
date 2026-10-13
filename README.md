@@ -16,7 +16,7 @@
 
 <p align="center">
   Atlas is a lightweight control plane for online games, providing game server registration, discovery, health tracking, and account-to-character directory services.<br/>
-  Technology foundation: Go 1.27, REST (net/http) plus gRPC dual transport, storage on PostgreSQL (pgx/v5) / MySQL (go-sql-driver) / Redis (go-redis), metrics through the Prometheus client, and event-bus adapters built on the Kafka / NATS / RabbitMQ clients — all built on open-source components; the repository itself is published under Apache-2.0.
+  Technology foundation: Go 1.27, REST (net/http) plus gRPC dual transport, storage on PostgreSQL (pgx/v5) / Redis (go-redis) (a contract-tested MySQL store exists; runtime `ATLAS_STORE` currently accepts memory/postgres), metrics through the Prometheus client, and event-bus adapters built on the Kafka / NATS / RabbitMQ clients — all built on open-source components; the repository itself is published under Apache-2.0.
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -72,7 +72,7 @@ Atlas is the **Game Infrastructure Directory** of a game backend, built around f
 | **Planned maintenance** | Ops kicks players by hand, posts a notice in a chat group, and hopes nobody is mid-purchase | Maintenance windows take effect on schedule: `start_at` enters maintenance automatically, `end_at` restores automatically, a warning announcement covers the same window, and clients see it at login |
 | **Emergency incident notices** | No unified channel; announcements depend on client hotfixes | One Admin API publishes global or per-server announcements (info / warning / critical) with a controlled effect window |
 | **Self-healing after server dropouts** | Half-dead servers keep accepting players; complaints pile up | Heartbeat liveness: 30 s without a heartbeat moves a server to `suspect`, 60 s moves it to `offline` and it is removed automatically; a returning heartbeat or re-registration brings it back online |
-| **Server merges / migrations** | Manual database moves, config edits, fleet-wide downtime | Migration orchestration + character-index event replay; `rollback` reverts in one call |
+| **Server merges / migrations** | Manual database moves, config edits, fleet-wide downtime | Migration records (pending / migrating / completed / failed / rolled_back) with one-call status rollback; character relocation is executed by the game server — Atlas does not replay events |
 | **Multi-ecosystem / large fleets** | Hundreds of servers with no authoritative registry view | Idempotent Registry registration + sharded storage + Prometheus metrics + ratio alerts — fleet state at a glance |
 
 ---
@@ -166,7 +166,7 @@ Common configuration lives in `.env` plus compose environment variables: to chan
 
 ## API Quick Reference
 
-Atlas exposes 45 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
+Atlas exposes 47 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
 
 ### Registry (server registration)
 
@@ -358,7 +358,7 @@ The only built-in channel with business-semantic filtering carries nothing beyon
 
 ## Roadmap
 
-**The v0.1 series is fully delivered** and published as four releases:
+**The v0.1 series is fully delivered** and published as five releases:
 
 | Release | Contents |
 | --- | --- |
