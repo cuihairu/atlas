@@ -2,6 +2,8 @@ module github.com/cuihairu/atlas
 
 go 1.27
 
+toolchain go1.27.2
+
 require (
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/go-sql-driver/mysql v1.10.1
