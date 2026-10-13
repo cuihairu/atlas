@@ -72,6 +72,7 @@ const (
 	opRegisterServer opKind = iota
 	opUpdateServerStatus
 	opUpdateServerTags
+	opUpdateServerWeight
 	opDeleteServer
 	opHeartbeat
 	opDeleteRuntime
@@ -89,6 +90,8 @@ func (k opKind) String() string {
 		return "update_server_status"
 	case opUpdateServerTags:
 		return "update_server_tags"
+	case opUpdateServerWeight:
+		return "update_server_weight"
 	case opDeleteServer:
 		return "delete_server"
 	case opHeartbeat:
@@ -118,7 +121,7 @@ func (k opKind) hot() bool { return k == opHeartbeat }
 // to its own caller.
 func (k opKind) mergeable() bool {
 	switch k {
-	case opHeartbeat, opUpdateServerStatus, opUpdateServerTags:
+	case opHeartbeat, opUpdateServerStatus, opUpdateServerTags, opUpdateServerWeight:
 		return true
 	}
 	return false
@@ -137,6 +140,8 @@ type instruction struct {
 	statusAt  time.Time
 	tags      []model.ServerTag
 	tagsAt    time.Time
+	weight    int
+	weightAt  time.Time
 	char      *model.Character
 	charPatch *store.CharacterPatch
 	charUpAt  time.Time
@@ -170,6 +175,8 @@ type captureEntry struct {
 	statusAt  time.Time
 	tags      []model.ServerTag
 	tagsAt    time.Time
+	weight    int
+	weightAt  time.Time
 	hb        model.Heartbeat
 	runtime   *model.Runtime
 	char      *model.Character
@@ -189,6 +196,8 @@ func (e captureEntry) instruction() *instruction {
 		statusAt: e.statusAt,
 		tags:     e.tags,
 		tagsAt:   e.tagsAt,
+		weight:   e.weight,
+		weightAt: e.weightAt,
 		char:     e.char,
 		charUpAt: e.charUpAt,
 	}
@@ -434,6 +443,8 @@ func (s *Store) applyOne(ins *instruction) instructionResult {
 		err = s.applyUpdateServerStatus(ins)
 	case opUpdateServerTags:
 		err = s.applyUpdateServerTags(ins)
+	case opUpdateServerWeight:
+		err = s.applyUpdateServerWeight(ins)
 	case opDeleteServer:
 		err = s.applyDeleteServer(ins.target)
 	case opHeartbeat:
@@ -495,6 +506,8 @@ func (s *Store) captureAppend(ins *instruction) {
 		status:   ins.status,
 		statusAt: ins.statusAt,
 		tagsAt:   ins.tagsAt,
+		weight:   ins.weight,
+		weightAt: ins.weightAt,
 		hb:       ins.hb,
 		charUpAt: ins.charUpAt,
 	}

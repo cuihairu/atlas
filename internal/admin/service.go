@@ -546,3 +546,23 @@ func (s *Service) RemoveServerTag(ctx context.Context, serverID, code string) er
 	}
 	return nil
 }
+
+// MinServerWeight / MaxServerWeight bound the operator routing weight
+// (model.Server.Weight). 0 clears back to neutral; 100 is neutral.
+const (
+	MinServerWeight = 1
+	MaxServerWeight = 1000
+)
+
+// SetServerWeight sets the operator routing weight used by the routing
+// service to rank candidates on effective load (load × 100 / weight).
+// 0 clears the weight (neutral); 1..1000 is the accepted range.
+func (s *Service) SetServerWeight(ctx context.Context, serverID string, weight int) error {
+	if weight < 0 || weight > MaxServerWeight {
+		return fmt.Errorf("%w: weight %d out of range (0 to clear, or %d..%d)", model.ErrInvalid, weight, MinServerWeight, MaxServerWeight)
+	}
+	if err := s.store.UpdateServerWeight(ctx, serverID, weight); err != nil {
+		return fmt.Errorf("set weight: %w", err)
+	}
+	return nil
+}

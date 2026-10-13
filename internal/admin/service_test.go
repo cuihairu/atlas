@@ -716,3 +716,42 @@ func TestServerTagErrors(t *testing.T) {
 		t.Fatalf("remove missing tag = %v", err)
 	}
 }
+
+func TestSetServerWeight(t *testing.T) {
+	svc, mem := setupService(t)
+	ctx := context.Background()
+	registerServer(t, mem, "game-1", model.StatusOnline)
+
+	if err := svc.SetServerWeight(ctx, "game-1", 200); err != nil {
+		t.Fatalf("set weight: %v", err)
+	}
+	srv, err := mem.GetServer(ctx, "game-1")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if srv.Weight != 200 {
+		t.Errorf("weight = %d, want 200", srv.Weight)
+	}
+
+	// 0 clears back to neutral.
+	if err := svc.SetServerWeight(ctx, "game-1", 0); err != nil {
+		t.Fatalf("clear weight: %v", err)
+	}
+	if srv, _ = mem.GetServer(ctx, "game-1"); srv.Weight != 0 {
+		t.Errorf("weight after clear = %d, want 0", srv.Weight)
+	}
+
+	// Out-of-range weights are rejected before touching the store.
+	for _, bad := range []int{-1, 1001} {
+		if err := svc.SetServerWeight(ctx, "game-1", bad); !errors.Is(err, model.ErrInvalid) {
+			t.Errorf("weight %d err = %v, want ErrInvalid", bad, err)
+		}
+	}
+	if srv, _ = mem.GetServer(ctx, "game-1"); srv.Weight != 0 {
+		t.Errorf("rejected weight leaked into the store: %d", srv.Weight)
+	}
+
+	if err := svc.SetServerWeight(ctx, "ghost", 100); !store.IsNotFound(err) {
+		t.Errorf("set on missing server = %v, want ErrNotFound", err)
+	}
+}

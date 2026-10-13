@@ -174,6 +174,12 @@ type Server struct {
 	// upsert never touches them. Discovery responses keep only tags with
 	// Public set; the admin API returns the full list.
 	Tags []ServerTag `json:"tags,omitempty"`
+	// Weight is the operator-set routing steering weight (1..1000; 100 =
+	// neutral, 0 = unset/neutral). Routing ranks candidates on effective
+	// load = load × 100 / weight, so >100 attracts more recommendations and
+	// <100 dampens (灰度放量 knob). Like tags this is admin-owned
+	// configuration: the register upsert never touches it.
+	Weight int `json:"weight,omitempty"`
 	// Source marks who owns the profile fields of this record. Empty and
 	// "api" mean API-registered (the default); "config" means the record is
 	// declared in the servers config file (ATLAS_SERVERS_CONFIG) — its

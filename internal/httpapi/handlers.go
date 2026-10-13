@@ -169,6 +169,7 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/admin/servers/{id}/drain", h.handleAdminDrain)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/enable", h.handleAdminEnable)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/disable", h.handleAdminDisable)
+	mux.HandleFunc("POST /v1/admin/servers/{id}/weight", h.handleAdminSetServerWeight)
 	mux.HandleFunc("GET /v1/admin/stats", h.handleAdminStats)
 	mux.HandleFunc("GET /v1/admin/servers", h.handleAdminListServers)
 	mux.HandleFunc("GET /v1/admin/characters/search", h.handleAdminSearchCharacters)
@@ -1386,6 +1387,36 @@ func (h *Handler) handleAdminListShards(w http.ResponseWriter, r *http.Request) 
 }
 
 // ── Server tags (标记体系) ──────────────────────────────────────
+
+// handleAdminSetServerWeight sets the operator routing weight (灰度放量
+// knob; 0 clears back to neutral). Weight is admin-owned configuration like
+// tags: register and heartbeat never touch it.
+func (h *Handler) handleAdminSetServerWeight(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Weight int `json:"weight"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+	if err := h.admin.SetServerWeight(r.Context(), id, req.Weight); err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"weight":    req.Weight,
+	})
+}
 
 func (h *Handler) handleAdminGetServerTags(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

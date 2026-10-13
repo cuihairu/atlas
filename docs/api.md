@@ -416,10 +416,19 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 
 ```text
 1. Player Character   account_id 已有角色的服务器优先
-2. Load               负载低者优先
-3. Capacity           负载相同时，剩余容量高者优先
+2. Effective Load     有效负载低者优先（load × 100 / weight，权重 100=中性）
+3. Capacity           有效负载相同时，剩余容量高者优先
 4. Server ID          确定性兜底
 ```
+
+**权重（灰度放量 knob）**：服务器记录上的 `weight`（运维经管理 API 设置，
+1..1000；0 = 未设置 = 中性）只影响第 2 步的比较：**有效负载 = 负载 ×
+100 / 权重**。权重 >100 的服务器看起来更空、在稳态下吸引约相应比例的流量
+（如 200 ≈ 两倍），<100 则被抑制——新服放量时把灰度服设低权重、逐步调高
+即是灰度放量；配合私有 tag（如 `canary`）圈定灰度组即为灰度白名单。权重
+只改变推荐排序（推荐元数据），不改变任何安全约束：状态过滤、维护窗口排
+除、已有角色优先全部照旧，诊断页逐台给出 `weight` 与 `effective_load`。
+管理入口见 [POST /v1/admin/servers/{id}/weight](#post-v1-admin-servers-id-weight)。
 
 `reason` 字段取值：`lowest_load` / `highest_capacity` / `has_character` / `fallback`（严格过滤无命中、放宽为仅按状态推荐时），用于排查推荐异常。
 
@@ -454,6 +463,19 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ### POST /v1/admin/servers/{id}/disable
 
 禁用服务器。客户端完全不可见。
+
+### POST /v1/admin/servers/{id}/weight
+
+设置服务器路由权重（灰度放量 knob）。**Body**：`{"weight": N}`（0 清除回
+中性，1..1000 有效值，越界 `400`）。权重只影响 `/v1/routing/recommended`
+排序中的有效负载比较（load × 100 / weight），语义见 [Routing](#get-v1-routing-recommended)。
+与 tags 同为 admin 专属配置：register / 心跳永不改写；未知服务器 `404`。
+
+**Response** `200 OK`
+
+```json
+{ "server_id": "game-1001", "weight": 200 }
+```
 
 状态机语义详见 [lifecycle.md](lifecycle.md)。
 

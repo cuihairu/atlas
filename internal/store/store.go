@@ -100,6 +100,11 @@ type ServerStore interface {
 	// ErrNotFound when the server does not exist.
 	UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error
 
+	// UpdateServerWeight sets the operator routing weight (0 = neutral).
+	// Admin-owned configuration like tags: the register upsert must not
+	// touch it. Returns ErrNotFound when the server does not exist.
+	UpdateServerWeight(ctx context.Context, id string, weight int) error
+
 	// DeleteServer removes a server record entirely.
 	DeleteServer(ctx context.Context, id string) error
 }

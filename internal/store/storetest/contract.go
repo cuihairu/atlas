@@ -75,6 +75,70 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 	t.Run("Announcements", func(t *testing.T) { announcements(t, ctx, s) })
 	t.Run("Stats", func(t *testing.T) { stats(t, ctx, s, rt) })
 	t.Run("CrossServerConfig", func(t *testing.T) { crossServerConfig(t, ctx, s) })
+	t.Run("Weight", func(t *testing.T) { weight(t, ctx, s) })
+}
+
+// weight covers the operator-set routing weight: set, read back, preserve
+// across re-register (the upsert must not touch it, same rule as tags),
+// clear back to neutral, and the not-found mapping.
+func weight(t *testing.T, ctx context.Context, s Core) {
+	realmID, shardID := createRealmShard(t, ctx, s, id("wgt"))
+	srv := &model.Server{
+		ID: id("wgt"), Name: "srv-w", Type: "game", Region: id("region"),
+		RealmID: &realmID, ShardID: &shardID,
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 1000,
+	}
+	if err := s.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	if err := s.UpdateServerWeight(ctx, srv.ID, 300); err != nil {
+		t.Fatalf("update weight: %v", err)
+	}
+	got, err := s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Weight != 300 {
+		t.Errorf("weight after set = %d, want 300", got.Weight)
+	}
+
+	// Re-register must not clobber the operator weight (admin-owned column).
+	if err := s.RegisterServer(ctx, &model.Server{
+		ID: srv.ID, Name: "srv-w2", Type: "game", Region: srv.Region,
+		RealmID: &realmID, ShardID: &shardID,
+		Version: "1.1.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 2000,
+	}); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	got, err = s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get after re-register: %v", err)
+	}
+	if got.Weight != 300 {
+		t.Errorf("weight after re-register = %d, want 300 (operator-owned, register must not touch)", got.Weight)
+	}
+
+	// 0 clears back to neutral.
+	if err := s.UpdateServerWeight(ctx, srv.ID, 0); err != nil {
+		t.Fatalf("clear weight: %v", err)
+	}
+	got, err = s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get after clear: %v", err)
+	}
+	if got.Weight != 0 {
+		t.Errorf("weight after clear = %d, want 0", got.Weight)
+	}
+
+	// Unknown server maps to ErrNotFound.
+	if err := s.UpdateServerWeight(ctx, id("ghost"), 100); !store.IsNotFound(err) {
+		t.Errorf("update weight on missing server = %v, want ErrNotFound", err)
+	}
 }
 
 // createRealmShard provisions the realm + shard pair that server

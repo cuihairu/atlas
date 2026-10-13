@@ -166,7 +166,7 @@ Common configuration lives in `.env` plus compose environment variables: to chan
 
 ## API Quick Reference
 
-Atlas exposes 48 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
+Atlas exposes 49 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
 
 ### Registry (server registration)
 
@@ -211,7 +211,7 @@ Atlas exposes 48 business endpoints (default configuration, audit endpoints incl
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/admin/servers/{id}/maintenance` · `drain` · `enable` · `disable` | Lifecycle operations |
+| `POST` | `/v1/admin/servers/{id}/maintenance` · `drain` · `enable` · `disable` · `weight` | Lifecycle operations + routing weight (canary rollout) |
 | `POST/GET/DELETE` | `/v1/admin/servers/{id}/maintenance-window` · `/v1/admin/maintenance-windows…` | Planned maintenance windows (auto-enter maintenance at `start_at`, auto-restore at `end_at`) |
 | `POST/GET/DELETE` | `/v1/admin/announcements…` | Announcement management (info / warning / critical) |
 | `POST/GET` | `/v1/admin/realms` · `/v1/admin/shards` | Realm / shard management |

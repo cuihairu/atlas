@@ -166,7 +166,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 ## API Quick Reference
 
-Atlas 当前暴露 48 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
+Atlas 当前暴露 49 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
@@ -211,7 +211,7 @@ Atlas 当前暴露 48 个业务端点（默认配置，含审计端点），分�
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `POST` | `/v1/admin/servers/{id}/maintenance` · `drain` · `enable` · `disable` | 生命周期操作 |
+| `POST` | `/v1/admin/servers/{id}/maintenance` · `drain` · `enable` · `disable` · `weight` | 生命周期操作 + 路由权重（灰度放量） |
 | `POST/GET/DELETE` | `/v1/admin/servers/{id}/maintenance-window` · `/v1/admin/maintenance-windows…` | 计划维护窗口（到期自动进入维护并恢复） |
 | `POST/GET/DELETE` | `/v1/admin/announcements…` | 公告管理（info / warning / critical） |
 | `POST/GET` | `/v1/admin/realms` · `/v1/admin/shards` | 大区 / 分片管理 |

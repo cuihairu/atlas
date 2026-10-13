@@ -226,6 +226,18 @@ func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.Se
 	return s.submit(ctx, ins).err
 }
 
+func (s *Store) UpdateServerWeight(ctx context.Context, id string, weight int) error {
+	ins := &instruction{
+		kind:        opUpdateServerWeight,
+		target:      id,
+		weight:      weight,
+		weightAt:    time.Now(),
+		baseVersion: s.watermark.Load(),
+		out:         make(chan instructionResult, 1),
+	}
+	return s.submit(ctx, ins).err
+}
+
 func (s *Store) DeleteServer(ctx context.Context, id string) error {
 	ins := &instruction{
 		kind:        opDeleteServer,
@@ -308,6 +320,19 @@ func (s *Store) applyUpdateServerTags(ins *instruction) error {
 	old := projectServer(srv)
 	srv.Tags = ins.tags
 	srv.UpdatedAt = ins.tagsAt
+	s.srvIdx.remove(ins.target, old)
+	s.srvIdx.add(ins.target, projectServer(srv))
+	return nil
+}
+
+func (s *Store) applyUpdateServerWeight(ins *instruction) error {
+	srv, ok := s.servers[ins.target]
+	if !ok {
+		return fmt.Errorf("server %s: %w", ins.target, store.ErrNotFound)
+	}
+	old := projectServer(srv)
+	srv.Weight = ins.weight
+	srv.UpdatedAt = ins.weightAt
 	s.srvIdx.remove(ins.target, old)
 	s.srvIdx.add(ins.target, projectServer(srv))
 	return nil

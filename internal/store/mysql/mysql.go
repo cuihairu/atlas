@@ -108,7 +108,7 @@ ON DUPLICATE KEY UPDATE
 func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error) {
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags, weight,
        notify_mode, notify_callback_url, metadata
 FROM servers WHERE id = ?
 `
@@ -129,7 +129,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 	}
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
-       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags,
+       endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags, weight,
        notify_mode, notify_callback_url, metadata
 FROM servers WHERE 1=1`
 	args := []any{}
@@ -223,6 +223,22 @@ func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.Se
 	n, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("update server tags %s: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
+	}
+	return nil
+}
+
+func (s *Store) UpdateServerWeight(ctx context.Context, id string, weight int) error {
+	const q = `UPDATE servers SET weight = ?, updated_at = ? WHERE id = ?`
+	res, err := s.db.ExecContext(ctx, q, weight, time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("update server weight %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update server weight %s: %w", id, err)
 	}
 	if n == 0 {
 		return fmt.Errorf("server %s: %w", id, store.ErrNotFound)
@@ -666,7 +682,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.RealmID, &srv.ShardID, &srv.Version, &srv.Platform,
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
-		&tagsRaw,
+		&tagsRaw, &srv.Weight,
 		&srv.NotifyMode, &srv.NotifyCallbackURL, &metaRaw,
 	)
 	if err != nil {

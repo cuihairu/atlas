@@ -189,6 +189,14 @@ type ServerVerdict struct {
 	// MaintenanceWindow is the window disqualifying this server right now
 	// (active, or starting within the pre-maintenance lead); nil when none.
 	MaintenanceWindow *model.MaintenanceWindow `json:"maintenance_window,omitempty"`
+	// Weight is the operator routing weight on the server (0 = unset =
+	// neutral). The ranking compares candidates on EffectiveLoad, so this
+	// pair explains a weight-biased win (e.g. a real 0.6 beating a real 0.4
+	// because weight 200 halves its effective load).
+	Weight int `json:"weight"`
+	// EffectiveLoad is the weight-adjusted load the ranking actually used
+	// (load × 100 / weight; equals Load when neutral).
+	EffectiveLoad float64 `json:"effective_load"`
 	// Eligible: the server would accept this login right now — status
 	// accepts traffic, headroom remains, and no maintenance window blocks.
 	Eligible bool `json:"eligible"`
@@ -291,6 +299,8 @@ func (s *Service) Diagnose(ctx context.Context, req Request) (*Diagnosis, error)
 			Owned:             owned[srv.ID],
 			LiveRuntime:       liveRuntime[srv.ID],
 			MaintenanceWindow: blocked[srv.ID],
+			Weight:            srv.Weight,
+			EffectiveLoad:     effectiveLoad(srv),
 			Eligible:          srv.Status.AcceptsTraffic() && !srv.OverCapacity() && blocked[srv.ID] == nil,
 		}
 		switch {
@@ -487,9 +497,9 @@ func sortCandidates(candidates []*model.Server, owned map[string]bool) {
 			return owned[a.ID]
 		}
 
-		// 2. Lower load wins.
-		if a.Load != b.Load {
-			return a.Load < b.Load
+		// 2. Lower effective load wins (weight-adjusted, see effectiveLoad).
+		if la, lb := effectiveLoad(a), effectiveLoad(b); la != lb {
+			return la < lb
 		}
 
 		// 3. More remaining capacity wins.
@@ -500,6 +510,23 @@ func sortCandidates(candidates []*model.Server, owned map[string]bool) {
 		// 4. Deterministic tiebreak.
 		return a.ID < b.ID
 	})
+}
+
+// NeutralServerWeight is the weight at which effective load equals real
+// load.
+const NeutralServerWeight = 100
+
+// effectiveLoad maps a server's real load through its operator weight:
+// load × 100 / weight. Weight 100 (and unset 0) are neutral; weight 200
+// halves the perceived load so the server attracts roughly twice as much
+// traffic in steady state (灰度放量 knob), weight 50 doubles it. The real
+// load stays the safety input everywhere else — only this ranking
+// comparison is weight-adjusted.
+func effectiveLoad(s *model.Server) float64 {
+	if s.Weight > 0 && s.Weight != NeutralServerWeight {
+		return s.Load * NeutralServerWeight / float64(s.Weight)
+	}
+	return s.Load
 }
 
 // remaining returns how many more players the server can take.
@@ -516,11 +543,11 @@ func (s *Service) reasonFor(candidates []*model.Server, winner *model.Server, ow
 		return ReasonFallback
 	}
 
-	// Was the win decided by load or by capacity headroom?
-	minLoad := winner.Load
+	// Was the win decided by (effective) load or by capacity headroom?
+	minLoad := effectiveLoad(winner)
 	tiedOnLoad := 0
 	for _, srv := range candidates {
-		if srv.Load == minLoad {
+		if effectiveLoad(srv) == minLoad {
 			tiedOnLoad++
 		}
 	}
@@ -532,7 +559,7 @@ func (s *Service) reasonFor(candidates []*model.Server, winner *model.Server, ow
 	bestRemaining := remaining(winner)
 	unique := true
 	for _, srv := range candidates {
-		if srv.Load != minLoad {
+		if effectiveLoad(srv) != minLoad {
 			continue
 		}
 		if srv.ID == winner.ID {
