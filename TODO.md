@@ -1,345 +1,99 @@
 # TODO
 
-> 每一项都是一个可独立提交的原子任务：完成后打勾并注明 commit，测试 / 门禁
-> 全绿才提交推送（fetch + rebase origin/main，禁 tag / release / force push）。
->
-> 当前批次：「v0.2 进行中」（2026-10-08 立档）——性能批五项推进中，见下章。
-> 文档-实现对账 sweep（6b9466c）与巡检派工五增量
-> （storetest 契约补全 c5de2bf、gRPC 鉴权 905bc9b、gRPC 审计 a127bef、
-> gRPC 限流 c07de18、gRPC TLS c7c9947）已完成（2026-10-05）——四层防护
-> 双传输对齐；中断期积压已全部推送（至 60f03e5，含幻影项销账与口径修正）；
-> 巡检点火三项（立档两项 / dead CORS / 决策面 N+1 收尾）全部清零；
-> 「其余 SDK gRPC TLS」查实为幻影项已销（五语言 SDK 均 REST-only）；
-> 续跑三增量（2026-10-07）：gRPC Admin 指标 aa52b80、请求级追踪贯通 gRPC 口、
-> Go SDK DefaultHeaders 关联头；关联头随即铺齐五语言 SDK（见
-> 「可观测性续跑（2026-10-07）」段）；心跳关停排空 C#/Java/JS 补齐（见
-> 「巡检修复 · 心跳关停排空（2026-10-07）」段）；OTel span 树已按仓内
-> 决策记录自行拍板并落地（见「OpenTelemetry span 树（2026-10-08）」段），
-> 可观测性深化五期全部收官。
->
-> 前批「覆盖率回补（巡检补令）」已完成，见「覆盖率回补（2026-10-04）」段。
->
-> 版本策略：0.1.x 逐个推进；v1.0 需先冻结 API 契约（候选，见 roadmap）。
+> 需求清单：完成项一行证据（commit + 测试数），未完成项一句话需求。
+> 全仓 490 tests / 39 packages 绿。提交前 fetch + rebase origin/main，门禁全绿，禁 tag / release / force push。
 
----
+## v0.2 进行中
 
----
+- [x] 六类内存倒排索引：servers 按 region/realm/shard/version/platform/status + public tags 建倒排，characters 按 byAccount/byServer/byAccountServer/byCharID 建倒排，ListServers 取最小候选集逐条验全过滤器，SQL 侧补 tags 过滤 — commit d53a150
+- [x] 指令化写队列：写路径封装指令结构，按实体 FNV-1a 哈希入 4 控制道 + 2 热道，可合并性按指令类型声明，合并窗随队列供给，批量上限 256，队列满退化内联同步写 — commit d53a150
+- [x] 原子性拍板 + 版本水位：data+index 同锁同临界区，每批提交递增 monotonic 水位作为可见性契约 — commit d53a150
+- [x] dash 队列可观测：atlas_store_queue_* 指标族 + GET /v1/admin/indexqueue/status + 管理台存储队列卡 — commit 46caf2d
+- [x] performance.md §8 性能设计章 + bench 对照收编 — commit ba79d6f
 
-## v0.2 进行中（2026-10-08 立档）
+### 候补
 
-> 性能批五项按拍板推进：每完成一项即勾并注明 commit 与验收数字；后续
-> 每个增量先勾账再 commit。
+- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0
+- [ ] Routing 策略扩展余项（权重 / 灰度白名单）：真实运营需求反馈后做
+- [ ] 公告与窗口批量编排：多服务器运营场景验证提出需求后做
+- [ ] Kubernetes 部署样例：有部署需求提出后做
+- [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发
 
-- [x] **① 六类内存倒排索引** — internal/store/memory/indexes.go：servers 按
-      region/realm/shard/version/platform/status 六字段 + public tags 建倒排，
-      characters 按 byAccount/byServer/byAccountServer/byCharID 建倒排（角色
-      目录与服务器目录同级索引化）；ListServers 取最小候选集逐条验全过滤器
-      （等价交集），游标分页按 ID 排序语义不变；SQL 侧仅增量补 tags 过滤
-      （postgres `tags @>` / mysql `JSON_CONTAINS`，public-only，既有过滤不动）。
-      验收：storetest 契约 tags 过滤断言（public-only 匹配、AND 语义、未知
-      tag 空集非全扫、内部 tag 永不匹配）三库一致；bench 对照数字入档
-      （docs/审计-文档一致性.md 附录 A）。commit d53a150。
-- [x] **② 指令化写队列** — internal/store/memory/queue.go：写路径封装指令
-      {kind, target, payload, base_version, idempotency_key}；按实体 FNV-1a
-      哈希入 4 控制道 + 2 热道（配置变更 > 心跳，同实体同道 FIFO 单写者）；
-      可合并性按指令类型声明（heartbeat / server-status / server-tags 覆盖写
-      留最新；拷回类与顺序敏感类不合并不丢）；合并窗随队列供给——非空续捞、
-      空即提交（无定时窗、无延迟地板），批量上限 256；队列满退化内联同步写。
-      验收：合并不丢（enqueued = applied + merged + 在途）、同实体不乱序、
-      幂等重放一致、被合并调用方必拿提交回执（回归测试钉住）、ReplayInto /
-      DryRun 可重放、race 绿。commit d53a150。
-- [x] **③ 原子性拍板 + 版本水位** — 采用 data+index 同锁同临界区（快照 +
-      atomic.Pointer 整表发布评估后否决：每写全表拷贝 O(N) 写放大）；索引
-      增量维护 O(1)/条禁全量重建；每批提交递增 monotonic 水位 = 可见性契约
-      （读侧 RLock 下看到的水位即已提交状态）。RCU 评估与分工、拍板理由落
-      docs/审计-文档一致性.md 附录 A，成章后迁 performance.md（项⑤）。
-      验收：契约与 race 绿；水位随批递增由队列测试断言。commit d53a150。
-- [x] **④ dash 队列可观测** — QueueStats → Prometheus（深度/入队速率/合并率/
-      flush 批量与时延/背压退化计数/watermark，与既有 metrics 包同姿势）+
-      GET /v1/admin/indexqueue/status + 管理台「存储队列」卡（压力灯阈值
-      变色 + 版本号 + 最近 flush 记录）。落地：`atlas_store_queue_*` 指标族
-      14 序列（internal/metrics/queue.go，抓取时读快照零写路径开销，SQL 后端
-      Enabled=false 不出序列）；admin 端点返回快照原文，SQL/非 provider 一律
-      503 INDEX_QUEUE_DISABLED 不发空 200；fleet 装饰器与 main composite 透传
-      QueueStats（装饰层不藏快照——curl 实证抓到并修掉的真实断点）；
-      QueueStatusCard 压力灯（深度 ≥500/≥2000、背压 ≥10/≥100 三级变色）+
-      水位 + 合并率 + recent_flushes 表，挂载 Overview。验收实证：真服务
-      curl 200（watermark=enqueued=applied=4，recent_flushes 真实记录，临界区
-      ~7-17µs）与 /metrics 14 序列同水位；dash 整页截图卡完整渲染（水位 6、
-      7 条 flush 记录、按类型标签，数据与端点一致）；契约测试 metrics 抓取
-      序列 + admin 200/503 双路径（provider 缺失 / Enabled=false 快照）+
-      queue_test 既有断言。
-- [x] **⑤ performance.md 性能设计章补齐 + bench 对照收编** — 新增 §8「v0.2
-      索引与写路径设计」：六类倒排索引 / 指令化写队列 / 原子性拍板（同锁
-      同临界区，否决方案如实记录）/ 版本水位 / bench 前后对照（同机交错
-      实测）/ 队列观测（数据面已落，Prometheus + admin 端点 + dash 卡如实标
-      「计划中」不超前宣称）；每条主张带 file:line 自检。bench 双落点：
-      performance.md §8.5 + 审计文档附录 A。验收达标：文档与已实现代码
-      逐条对得上。commit ba79d6f。
+## Discovery 读路径管线化
 
-### 候补（roadmap 开放候选转档，按前置条件触发）
+- [x] RuntimeStore 批量读 GetRuntimes：memory 单次锁内读全，Redis pipeline 一次 Exec — commit 9f99745
+- [x] discovery.ListServers 列表路径改批量合并，GetServer 详情路径维持单点读 — commit 8201f57
+- [x] storetest RunRuntime 批量语义契约 + discovery 批量读契约与后端故障降级测试 — commit 9f99745 / 8201f57
+- [x] benchmarks.md §3 往返估算改 1–2 次 RTT 口径，performance.md §2 更新 — commit 8201f57
 
-- **API 稳定化与 v1.0** — 触发条件：API 面在生产环境验证充分。冻结
-  REST/gRPC 契约后发 v1.0（三态字段重命名同窗口执行，见 roadmap 🔒 项）。
-- **Routing 策略扩展余项（权重 / 灰度白名单）** — 触发条件：真实运营需求
-  反馈；仍只做推荐元数据，不越调度边界。
-- **公告与窗口批量编排** — 触发条件：多服务器运营场景验证提出需求。
-- **Kubernetes 部署样例** — 触发条件：有部署需求提出（Helm chart /
-  Operator 维持「明确不做」）。
-- **Migration Controller 独立模块拆分** — 触发条件：多舰队独立迁移集群 /
-  独立扩缩容需求（roadmap 🔒 已定档项，触发即执行）。
+## 故障模式回归套件
 
----
+- [x] 游戏服网络分区：心跳停止后 suspect 到 offline 推进，客户端列表不抖动（既有 health/monitor_test.go 覆盖）
+- [x] 游戏服重启 / 心跳延迟：重注册幂等恢复（既有 storetest 重注册契约覆盖）
+- [x] 重复注册 / 重复迁移：upsert 幂等，迁移幂等可重放（既有 storetest + admin 用例覆盖）
+- [x] Redis 数据丢失 flushall：档案仍在 PG，心跳重填，无残留 stale 视图（新增 redisstore TestDataLossFlushAll_HeartbeatRefills）
+- [x] PG 短暂不可用：服务层故障传播（既有 discovery 后端降级测试覆盖）
+- [x] 迁移中途失败：先复制后切换再清理，任意一步失败可回滚 / 重放（既有 admin rollback 用例覆盖）
+- [x] 巡检任务跑绿并接进 CI（ci.yml 同包内自然纳入常跑）
 
-## 工程落地清单 · Discovery 读路径管线化（P1，打头）
+## 决策层读路径 N+1 收尾
 
-> 立档位置：docs/performance.md §2「已知边界」；目标把 Redis 往返从 N 次
-> （1,000 台 ≈ 300ms）降到常数 1–2 次，改动限定 `internal/store/redisstore`
-> 与 discovery 读路径。完成后同步刷新 benchmarks.md / performance.md 数字。
+- [x] health sweep / routing.Recommend / routing.Diagnose 三处改 GetRuntimes，缺席 key 语义保留，整体 err 传播 — commit eb1021c
+- [x] 契约测试：runtime 故障 fail closed 三钉 + starting 无心跳缺席语义钉子 — commit eb1021c
+- [x] 文档同步：performance.md §2 / roadmap 管线化行补记 — commit eb1021c
 
-- [x] 接口与实现：`RuntimeStore` 新增批量读 `GetRuntimes(ctx, ids)`；
-      memory 单次锁内读全（缺失即缺席）、Redis pipeline 一次 Exec
-      （单节点 1 RTT，Cluster 按 slot 分批）；`GetRuntime` 单点语义不变
-      （commit 9f99745）
-- [x] 调用方：`discovery.ListServers` 列表路径改批量合并；
-      `GetServer` 详情路径维持单点读（commit 8201f57）
-- [x] 契约测试：storetest `RunRuntime` 扩展批量语义
-      （部分缺失 → 缺失键缺席、其余值正确；空 id 列表无副作用）
-      + discovery 批量读契约与后端故障降级两条测试（commit 9f99745 / 8201f57）
-- [x] 基准与文档：复测确认服务层分配仅 +5 allocs/千台（批量读的 ids
-      切片与结果 map 容器，回归以分配数为准；文档精确化见 2026-10-05
-      对账 sweep）、benchmarks.md §3 往返估算表改为 1–2 次 RTT 口径 /
-      performance.md §2 更新 / roadmap 勾销（commit 见下一条）
+## Routing 维护前引导
 
-## 工程落地清单 · 故障模式回归套件（P1）
+- [x] routing.Service 感知维护窗口：活动中或 Lead 内开始的服务器从 strict/fallback 两阶段推荐中排除，全排除如实 404，窗口库故障 fail closed — commit e318936
+- [x] Diagnose 同步：逐台判定新增 maintenance_window 字段与拒绝原因 — commit e318936
+- [x] 契约测试：窗口排除五态 + fallback 排除 + nil 窗口库 + 故障传播 + 同服多窗口 + Diagnose 镜像 + handler JSON 面 — commit e318936
+- [x] 文档同步：api.md §Routing + lifecycle.md §5 + operations.md §3 + roadmap — commit e318936
 
-> 立档位置：docs/performance.md §7 演练矩阵——把「正确性不靠人品」的七个
-> 场景逐项变成 `go test` 可复现的故障用例，叠在现有健康巡检 / 契约套件上。
-> 仅 PG 连接池自愈与 Atlas 副本宕机两行保留为部署级演练（ha.md）不自动化。
+## Registry 写路径指标
 
-- [x] 游戏服网络分区：心跳停止 → suspect → offline 推进 + 客户端列表不抖动
-      ——既有 health/monitor_test.go 巡检演练 + discovery 可见性测试已覆盖，
-      矩阵表格指认落点
-- [x] 游戏服重启 / 心跳延迟：重注册幂等恢复；3:1:6 节奏容忍抖动
-      ——既有 storetest 重注册契约（suspect/offline 重置表）+ redisstore
-      miniredis 契约
-- [x] 重复注册 / 重复迁移：upsert 幂等；迁移幂等可重放
-      ——既有 storetest 幂等 upsert + admin 迁移编排 / rollback 用例
-- [x] Redis 数据丢失（flushall）：档案仍在 PG，心跳重填，无残留 stale 视图
-      ——新增 redisstore `TestDataLossFlushAll_HeartbeatRefills`（miniredis
-      FLUSHALL → 缺失即缺席 → 心跳重填，静默服务器不代劳）；顺带把
-      redisstore 契约测试从「真实 Redis 才跑」升级为 miniredis 兜底常跑
-- [x] PG 短暂不可用：服务层故障传播已有（discovery 后端降级测试 +
-      registry 错误路径）；连接池自愈保留部署演练（ha.md）
-- [x] 迁移中途失败：先复制后切换再清理，任意一步失败可回滚 / 重放
-      ——既有 admin rollback 三分支用例
-- [x] 巡检任务：跑绿并接进 CI（redisstore 契约此前默认 skip，本次起
-      ci.yml 同包内自然纳入常跑）
+- [x] atlas_registry_write_duration_seconds{op} 直方图 + WithMetrics 可选注入，服务层三写路径 defer 观测 — commit fef3567
+- [x] 测试：metrics 标签 / 桶 / nil 接收器 + registry 三写路径观测断言 — commit fef3567
+- [x] 文档同步：api.md / architecture.md / sync.md 指标表补行 + roadmap — commit fef3567
 
----
+## 可观测性续跑（2026-10-07）
 
-## 工程落地清单 · 决策层读路径 N+1 收尾（P1，正确性×性能）
+- [x] atlas_admin_requests_total 接入 gRPC Admin RPC：UnaryMetrics 拦截器挂最外层，endpoint=全方法名，status=httpStatusOf 映射 HTTP 码 — commit aa52b80
+- [x] X-Request-ID 贯通 gRPC 口：UnaryTrace 拦截器，metadata 沿用/生成/回显，grpc request 访问日志 — commit aa52b80
+- [x] Go SDK Options.DefaultHeaders 关联头：REST 头 / gRPC metadata 双传输同语义 — commit aa52b80
+- [x] 关联头通道铺齐五语言 SDK：Python a5eec20 / JS da0458f / Java 7b313cd / C# 866d382 / C++ 5ef329f — commit a5eec20 等
 
-> 立档位置：上批 ListServers 对齐批的现场发现——`health sweep` /
-> `routing.Recommend` / `routing.Diagnose` 仍在逐台 `GetRuntime`
-> （整舰队 N 次往返），而 Discovery 管线化批已交付 `GetRuntimes`
-> 批量读（Redis 单 pipeline、缺失缺席）。复用既有契约收尾。
-> 与 discovery 展示层「降级容忍」不同，这三处是**决策层**：
-> 推荐按 live 负载排序、巡检按 runtime 年龄判死——批量读失败
-> 一律 fail closed 传播（宁可不决策，不拿未知状态决策），
-> 与 maintenanceBlocklist 的 fail-closed 先例同哲学。
+## 巡检修复 · 心跳关停排空（2026-10-07）
 
-- [x] 三处调用点改 `GetRuntimes`：缺席 key = 从未心跳（sweep starting
-      超龄分支语义保留）；整体 err 传播（sweep 本轮不翻转任何状态、
-      Recommend/Diagnose 如实报错）（commit eb1021c）
-- [x] 契约测试：runtime 故障 fail closed 三钉（sweep 不误判 + 两决策
-      路径报错）+ starting 无心跳缺席语义钉子；既有 sweep 矩阵全绿
-- [x] 文档同步：performance.md §2 / roadmap 管线化行补记决策面收尾
-      （health 覆盖 83.9→87.2，race/vet 绿）
+- [x] C# AutoHeartbeat.Stop 排空在途心跳：_idle MRES + _inflight 计数，锁内复查 _stopped 拒迟到回调 — commit 4398506
+- [x] Java AutoHeartbeat.stop 排空在途心跳：inflight 计数 + 锁内复查 stopped，可重复调用 — commit 61c87d5
+- [x] JS AutoHeartbeat.stop 改 async：追踪当前 beat promise 并 await 其落地 — commit eb95b57
+- [x] 复核 Go / Python / C++ 均已排空在途 beat，无需改
 
-## 工程落地清单 · Routing 维护前引导（P1，正确性）
+## 巡检修复 · C# 错误面对齐（2026-10-07）
 
-> 立档位置：docs/roadmap.md「v0.2+ 候选方向」Routing 策略扩展行。
-> 维护窗口从创建到巡检翻转状态之间、以及窗口开始前的引导期，推荐流量
-> 完全无感知：玩家可能被推荐进正在 / 即将维护的服务器，落点即被踢。
-> 按「正确性优先于 QPS」择优——这是安全约束，不是偏好过滤。
+- [x] 网络层错误码 NETWORK_ERROR 改 NETWORK（五语言统一词表）— commit e5545f0
+- [x] 错误信封解析改嵌套读取 + 非信封回退 HTTP_<status>，夹具改真实信封 — commit 4fd0f76
 
-- [x] 接口与实现：`routing.Service` 感知维护窗口——活动中（覆盖 now）或
-      Lead 内开始的服务器从 strict/fallback 两阶段推荐中排除（缺省 Lead
-      5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）；全被排除如实 404
-      （宁可无服可推，不引向即将维护的服务器）；结束未清扫的窗口不挡；
-      窗口库故障 fail closed（commit e318936）
-- [x] Diagnose 同步：逐台判定新增 `maintenance_window` 字段与拒绝原因，
-      `Eligible` 计入窗口；推荐与诊断同一管线不漂移（commit e318936）
-- [x] 契约测试：窗口排除（active / upcoming / Lead 外 / 已结束）、fallback
-      也排除、nil 窗口库兼容、窗口库故障传播、同服多窗口取最紧迫、
-      Diagnose 镜像、handler 层 JSON 面（commit e318936）
-- [x] 文档同步：api.md §Routing 推荐前置过滤 + diagnose 字段、
-      lifecycle.md §5 / operations.md §3 窗口段、roadmap.md 行更新
-      （commit e318936）
+## 归档
 
-## 工程落地清单 · Registry 写路径指标（P2，可观测性）
+### 巡检派工（2026-10-05）
 
-> 立档位置：docs/roadmap.md「v0.2+ 候选方向」可观测性深化行「更多写路径
-> 指标」。注册 / 心跳 / 注销是全系统最热写路径：写延迟劣化会先于玩家可
-> 感知症状出现（心跳落盘变慢 → 假 suspect/offline 雪崩）——指标是把这类
-> 正确性隐患在生产显形的手段。复刻目录写路径指标（首期）范式。
+- [x] storetest 补 ListRealms 与 ListRuntimes 契约 — commit c5de2bf
+- [x] gRPC :9090 鉴权缺口：UnaryAuth 拦截器按三安全域校验 — commit 905bc9b
+- [x] gRPC Admin 操作审计缺口：UnaryAudit 拦截器，读记 GET / 写记 POST 带 protojson diff — commit a127bef
+- [x] gRPC 限流缺口：UnaryRateLimit 拦截器限 Registry/Admin 两域 — commit c07de18
+- [x] gRPC TLS/mTLS 缺口：ATLAS_GRPC_TLS_CERT/_KEY/_CLIENT_CA 复用 tlsutil — commit c7c9947
 
-- [x] 指标与埋点：`atlas_registry_write_duration_seconds{op}`（op =
-      register / heartbeat / unregister）直方图 + `WithMetrics` 可选注入，
-      服务层三写路径 defer 观测（commit fef3567）
-- [x] 测试：metrics 标签 / 桶 / nil 接收器 + registry 三写路径观测断言
-      （commit fef3567）
-- [x] 文档同步：api.md / architecture.md / sync.md 指标表补行，
-      roadmap.md 可观测性行更新（commit fef3567）
+### 文档-实现对账 sweep（2026-10-05）
 
----
+- [x] 端点数 / 错误码表 / roadmap commit / 链接 / Makefile / 覆盖数字全量对账，修正 5 处 — commit 6b9466c
 
-## 可观测性续跑（2026-10-07）✅
+### 条件触发定档（2026-10-04）
 
-> 停电恢复续跑令两增量：roadmap「可观测性深化」残留的 gRPC 口缺口收尾，
-> 双传输对齐主题收官。span 树当时挂起（新依赖 + 导出后端选型），次日
-> 按仓内决策记录拍板落地，见「OpenTelemetry span 树（2026-10-08）」段。
+- [x] 状态三态显式化概念定稿 + 代码三态批注落位 — commit 4a2ff75
+- [x] Migration Controller 独立模块概念边界定稿，拆分定档触发 — commit 4a2ff75
 
-- [x] `atlas_admin_requests_total` 接入 gRPC Admin RPC：`UnaryMetrics`
-      拦截器挂最外层（与 REST RequestCounter 包住限流/鉴权同序，被拒
-      调用照计），endpoint=全方法名、status=httpStatusOf 映射 HTTP 码，
-      非-admin 域不碰计数器（对齐 REST 计数面不加项）；文档四处同步
-      （commit aa52b80）
-- [x] X-Request-ID 贯通 gRPC 口：`UnaryTrace` 拦截器最外层（被拒 RPC
-      同样有 id），`x-request-id` metadata 沿用/生成（与 REST 同字符集
-      同 64 字符上限）/回显到响应 metadata（错误路径同样回显），上下文
-      经 `httpapi.WithRequestID` 与 REST 同键、handler 侧同一读取口；
-      `grpc request` 访问日志（request_id/method/code/duration_ms）；
-      实机四连验证（合法沿用/同 id 被限流仍带 id/非法替换/缺省生成）
-      ——commit 见本批归档提交
-- [x] Go SDK `Options.DefaultHeaders`：每次调用都带的静态头（REST）/
-      metadata（gRPC）双传输同语义——补齐调用方关联头注入通道（此前
-      gRPC 可经 ctx metadata 透传、REST 无任何注入口，文档一度空头）；
-      sdk-go.md 客户端示例与双传输表补「关联头」行；测试钉 REST
-      httptest 头回读 + gRPC 真服务 wire 级 metadata 捕获；实机验证
-      同一 id 双传输访问日志同现——commit 见本批归档提交
-- [x] 关联头通道铺齐五语言 SDK：Python `default_headers=` a5eec20、
-      JS `defaultHeaders` da0458f、Java `setDefaultHeaders` 7b313cd、
-      C# `DefaultHeaders` 866d382、C++ `Options.default_headers` 5ef329f
-      ——与 Go 同语义（Authorization 之后键原样生效），各自工具链测试
-      钉关联 id 到达 FakeAtlas 并与既有头共存；六处 README 快速上手补行，
-      五页 sdk-*.md 选项示例补齐（JS/Java/C# 含选项表行），api.md
-      「请求追踪」句改为五 SDK 全量口径；VitePress 构建过
-
----
-
-## 巡检修复 · 心跳关停排空（2026-10-07）✅
-
-> 自立项：心跳循环的 `stop` 语义巡检——Go/Python/C++ 的停止会**排空在途
-> 心跳**（等待 run 循环退出），而 Java/JS/C# 只停调度/定时器不等在途请求，
-> 关停后仍有 straggler 心跳落地，会把刚 `Unregister` 的服务器复活。
-> 三站补齐至同一语义（10s 上界），六 SDK 停止行为对齐。
-
-- [x] C# `AutoHeartbeat.Stop`：`_idle` MRES + `_inflight` 计数、锁内复查
-      `_stopped` 拒迟到回调、Stop 等计数归零——commit 4398506
-- [x] Java `AutoHeartbeat.stop`：`inflight` 计数 + 锁内复查 `stopped`、
-      stop 等计数归零（可重复调用）——commit 61c87d5
-- [x] JS `AutoHeartbeat.stop` 改 `async`：追踪当前 beat promise 并 await
-      其落地（清超时定时器），示例改 `await loop.stop()`——commit eb95b57
-- 复核（无需改）：Go `HeartbeatLoop.Stop` 等 `<-done`、Python sync
-      `stop()` join 线程 / async `stop()` await task、C++ `Stop()` join
-      `thread_`——均已排空在途 beat
-
----
-
-## 巡检修复 · C# 错误面对齐（2026-10-07）✅
-
-> 巡检查实 C# 是五 REST 语言 SDK 中唯一错误面失偏的语言，两处对齐到
-> Python/JS/Java/C++ 同口径：网络层错误码与 HTTP 错误信封。
-
-- [x] 网络层错误码 `NETWORK_ERROR` → `NETWORK`（status=0）：五语言统一词表，
-      跨 SDK 消费者共享 `err.code` 判断不 split——commit e5545f0
-- [x] 错误信封解析：ParseError 只读顶层 `code`/`message`，而服务端错误恒嵌套
-      于 `{"error":{code,message}}`（internal/httpapi errorBody），真库
-      404/429/5xx 在 C# 侧全落地空 code，测试夹具同错扁平造假（假绿）；
-      改嵌套解析 + 非信封/非 JSON 体回退 `HTTP_<status>`+原文截断，夹具
-      强制 503/默认 404 改真实信封，404 测试改嵌套体，新增无 JSON
-      体 500 → HTTP_500 测试——commit 4fd0f76
-
----
-
-## 归档（全部已完成，逐段压缩；细节与 commit 见 git log）
-
-### 巡检派工（2026-10-05）✅
-
-> 自立项五增量，功能优先：storetest 未钉契约补全 + gRPC 传输鉴权缺口 +
-> 同族审计收尾 + 同族限流收尾 + 同族 TLS 收官。门禁全仓绿 + race + vet；
-> 本地真库 pg+mysql 全跑通过、实机双模式 e2e 验证。
-
-- [x] storetest 最后两个未钉契约：ListRealms（created_at 降序断言按
-      非增写、规避 SQL µs 平局；limit>0 截断 / ≤0 无上限）与 ListRuntimes
-      （全量快照视图：在录必现 / 未心跳缺席 / 删除即出列 / 无键不误伤）
-      ——commit c5de2bf
-- [x] gRPC :9090 鉴权缺口（AdminService 10 个 RPC 此前零鉴权，REST 等价
-      操作需 Key+RBAC+白名单+审计）：UnaryAuth 拦截器按三安全域校验，
-      与 REST 共用同一批环境变量、未配置=开发开放；域前缀从 pb
-      ServiceDesc 派生——初版硬编码 /admin.AdminService/ 与 proto 包
-      atlas.v1 不符导致放行、单测同错假绿，实机 e2e 抓出后改为派生 +
-      bufconn 端到端测试钉真实全方法名——commit 905bc9b（含 api.md
-      认证表脚注截断修复、RBAC 行补全、security.md gRPC 同规与
-      「:9090 明文」如实标注）
-- [x] 同族收尾——gRPC Admin 操作审计缺口（鉴权补上后审计仍仅 REST）：
-      UnaryAudit 拦截器接在 auth 之后（审计在认证之内同 REST），读记
-      GET / 写记 POST 带 protojson diff（同 4KB 上限与 JSON 合法性规则），
-      gRPC code 映射等价 HTTP 状态，actor 经 httpapi.WithActor 从 auth
-      传递（role:sha256 前 12 位，与 REST 同词表）；AuditLog.Record 导出
-      为双传输单点落环+结构化日志；实机验证 gRPC 写经 GET /v1/admin/audit
-      可见、被拒不进环、公共域不记；api.md / security.md 撤销「审计仅
-      REST」旧表述——commit a127bef
-- [x] 同族第四层——gRPC 限流缺口（REST 有共享令牌桶、gRPC 零限流）：
-      UnaryRateLimit 拦截器限 Registry/Admin 两域（挂载域与 REST 一致，
-      公网口不设限），按全方法名前缀匹配规则、未命中落 default 桶，
-      拒绝返回 ResourceExhausted + RATE_LIMITED；链序镜像 REST（限流在
-      认证之外）；RateLimiter.Allow 导出，桶与拒统计双传输共享——实机
-      验证二次 GetStats 被拒且计入 GET /v1/admin/rate-limits 视图；
-      api.md 错误映射补 401/403/429 行（鉴权两行为 905bc9b 漏加）、
-      security.md §4/§1 补双传输与 TLS 范围——commit c07de18
-- [x] 同族收官——gRPC TLS/mTLS 缺口（security.md 四层之首仅覆盖
-      :8081）：新增 ATLAS_GRPC_TLS_CERT/_KEY/_CLIENT_CA 复用 tlsutil
-      （配 CA 即 mTLS，材料无效 fail fast，与 Registry 口独立，未配置
-      =明文历史行为）；Go SDK 新增 GRPCTLS/GRPCTLSCACert（grpcDialCreds
-      单测四路径）；实机四象限（明文vs TLS 拒 / TLS 通 / mTLS 无证书拒 /
-      mTLS 带证书通）——commit c7c9947。四层防护至此双传输对齐；
-      「其余五个 SDK 的 gRPC TLS」查实为幻影项——五语言 SDK 均为
-      REST-only（roadmap:46 与各 sdk-*.md 一致），无 gRPC 传输可谈 TLS，
-      顺带修正 security.md/api.md 两处因此误写的口径
-
-### 文档-实现对账 sweep（2026-10-05）✅
-
-> 自立项：README / performance / roadmap / benchmarks / api 逐条对账当前实现。
-> 门禁全仓绿 + race + vet；修正 5 处（commit 6b9466c）。
-
-- [x] 端点数 45（47 注册 − 探针）、gRPC 5 服务 22 RPC、错误码表全集合对、
-      roadmap 8 个 commit hash、链接全检、Makefile 目标、覆盖数字无具体 %
-      声明——均一致
-- [x] 命令示例实机验证：起服跑通注册→心跳→发现→目录投影→跨服查询→
-      推荐（粘滞 has_character / 兜底 lowest_load）与响应字段
-- [x] 修正：benchmarks.md §2 B/op+allocs 列刷新为复测钉值（ns/QPS 标注
-      2026-10-03 空载基线）；两处「分配数不变」→ +5 allocs（ids 切片与
-      结果 map）；performance.md 心跳 350 万 QPS 出处从并发扇入改为
-      `BenchmarkHeartbeat`；api.md RATE_LIMITED 出处钉内置令牌桶
-      （APISIX 为可选叠加）；grpc 钉值 v1.86.0 → v1.86.0-dev（对齐 go.mod）
-
-### 条件触发定档（2026-10-04）✅
-
-> 两项从「待命」转「定档」：概念与契约安全的代码前置全部就位，
-> 重命名 / 拆分本体**未做**，触发条件钉在 roadmap 对应行——触发即执行。
-
-- [x] 状态三态显式化——概念定稿（lifecycle §0 / architecture §4.4 /
-      data-model 存储批注），代码三态批注落位（`ServerStatus` 类型 +
-      `Server.Status` 字段，commit 4a2ff75）；字段 / 接口重命名定档
-      v1.0 API 冻结窗口执行
-- [x] Migration Controller 独立模块——概念边界定稿（migration §9），
-      代码分流核验通过（`internal/admin` 编排 / `internal/directory`
-      投影零交叉）；拆分定档「独立扩缩容真实需求」触发
-
-### v0.1 系列（0.1.0 ~ 0.1.20）✅
+### v0.1 系列（0.1.0 ~ 0.1.20）
 
 | 里程碑 | 内容 |
 | --- | --- |
@@ -360,7 +114,7 @@
 | v0.1.19 | 高可用（Redis 哨兵集群 / PG 主从 / HAProxy 扇入 / 连接池调优） |
 | v0.1.20 | 注册元数据（players / started_at）+ 计划维护窗口 + 公告系统 + topology 文档 |
 
-### 工程化 Ongoing ✅
+### 工程化 Ongoing
 
 - [x] Dependabot 周更 + auto-merge（Go / dashboard / docs 三门禁，patch 自动合并）
 - [x] 周期安全审计（govulncheck + npm audit；检出 GO-2026-6443 已升级修复）
@@ -368,166 +122,80 @@
 - [x] 覆盖率门禁（service/handler >80%，ci.yml 每包进 Actions Summary）
 - [x] 文档与实现同步双门禁（docs.yml + ci.yml）
 
-### 巡检修复（2026-10-02）✅
+### 巡检修复（2026-10-02）
 
-- [x] memory CreateMaintenanceWindow / CreateAnnouncement 不回填 CreatedAt → 三库对齐
-- [x] 心跳响应硬编码 `online` → REST/gRPC 回显生效状态（offline 如实上报，重注册恢复可用）
-- [x] 重注册状态语义三库分裂（postgres/mysql offline 无法复活、memory 覆盖运维态）→ 统一契约：仅 suspect/offline 重置 starting
-- [x] realm/shard 创建响应 created_at 零值 → 按窗口范式三库对齐，全量清点无第六处
-- [x] NATS 消费者测试断言竞态 → 等待 handler 调用 + 毒丸探活，`-count=3` 稳定
+- [x] memory CreateMaintenanceWindow / CreateAnnouncement 不回填 CreatedAt，三库对齐
+- [x] 心跳响应硬编码 online，改 REST/gRPC 回显生效状态
+- [x] 重注册状态语义三库分裂，统一契约：仅 suspect/offline 重置 starting
+- [x] realm/shard 创建响应 created_at 零值，按窗口范式三库对齐
+- [x] NATS 消费者测试断言竞态，改等待 handler 调用 + 毒丸探活，-count=3 稳定
 
-### 覆盖率回补 · 巡检补令（2026-10-04）✅
+### 覆盖率回补 · 巡检补令（2026-10-04）
 
-> CI 口径 total 70.4% → **87.0%**（10-03 基线 85.8%）；本地无 DB 口径
-> 70.4% → 71.3%（DB 契约测试由 CI service containers 承载，本地无 DSN 时
-> skip，故两个口径并存）。只补测试不改语义（commit f750263）：
+- [x] 点名短板全部补齐：crossserver Update / diffDomains / receivers / listServersAll / model Clone / httpapi sprintfTimeID / fleet Matches / track 四包装 — commit f750263
+- [x] 顺手快赢：envOr / Endpoint.String / MigrationStatus.Valid / redis 适配器身份 / pbMetadata PATCH 语义 / readyz 存储故障 / admin crossserver GET 基线 / RegistryRoutes 挂载面 — commit f750263
+- [x] 门禁：改动包 -race 绿、go vet 绿、service/handler 层全部 >80% — commit f750263
 
-- [x] 点名短板全部补齐（复测值）：crossserver Update 0%→100%、
-      diffDomains 57.9%→100%、receivers 78.3%→95.7%、listServersAll
-      75%→91.7%；model Clone 0%→100%；httpapi sprintfTimeID 0%→100%；
-      fleet Matches 76.2%→100%、track 四包装 75–80%→100%
-- [x] 顺手快赢：envOr、Endpoint.String、MigrationStatus.Valid、redis
-      适配器身份、pbMetadata PATCH 语义、readyz 存储故障、admin crossserver
-      GET 基线、RegistryRoutes 挂载面
-- [x] 门禁：改动包 `-race` 绿、`go vet ./...` 绿、service/handler 层
-      全部 >80%（httpapi 86.7 / crossserver 92.3 / admin 92.7 / fleet 94.6 /
-      registry 88.0 / routing 91.4）
-- 巡检新发现（如实记档）：① 三库 `ListServers` 均 cap 200 而调用方按
-  500/50 判页——**舰队 >200 台漏读**，已处置（commit 7e36e88，见
-  「巡检点火 · 立档问题处置」段）；② `model.CrossServerSpec.Clone()` 方法
-  与函数重复实现——已收敛为函数一处（commit f493154）
+### 巡检点火 · CORS 挂载（2026-10-05）
 
-### 巡检点火 · CORS 挂载（2026-10-05）✅
+- [x] CORSMiddleware 重写为显式白名单：ATLAS_CORS_ORIGINS 逗号分隔，空配置零 CORS 头不放开 — commit 7653798
+- [x] 挂载点：公网 :8080 与管理 :8082 均放最外层，注册口 :8081 不挂 — commit 7653798
+- [x] 测试矩阵重写：五态 × GET/preflight 双路径 — commit 7653798
+- [x] 文档同步：api.md CORS 段 + security.md 配置速查 — commit 7653798
 
-> 对账批唯一遗留（dead config）按配置钉法自主定夺：选「挂载」不选
-> 「删除」——dashboard 本地开发跨域是真实场景，删了读配置功能就没了。
-> commit 7653798（5 文件 +133/-28）：
+### 巡检点火 · 立档问题处置（2026-10-05）
 
-- [x] `CORSMiddleware(allowedOrigins)` 重写为显式白名单：来源只认
-      `ATLAS_CORS_ORIGINS`（逗号分隔），空配置**零 CORS 头不放开**；
-      匹配来源回显 origin + `Vary: Origin`（不发 blanket `*`）；
-      `*` 显式配置才全放开（开发用）；白名单外与无 Origin 请求原样透传，
-      preflight 不放行
-- [x] 挂载点：公网 :8080 与管理 :8082，均放最外层（preflight 在
-      Tracing/限流/鉴权之前短路——管理口 preflight 不带 Admin Key，
-      必须在鉴权外应答）；注册口 :8081 机器流量不挂（注释钉理由）
-- [x] 测试矩阵重写（未配置/白名单内/白名单外/无 Origin/`*` 五态，
-      GET 与 preflight 双路径）；httpapi 复测 87.0%，race 绿，vet 绿
-- [x] 文档同步：api.md「监听地址与探针」补 CORS 段、security.md
-      配置速查补 `ATLAS_CORS_ORIGINS` 行
+- [x] ListServers 上限对齐：store.ListServersMaxLimit=200 单一事实源，三库 + 四处调用方改用常量 — commit 7e36e88
+- [x] 回归 4 条 + 契约钉子：跨服寻址 250 台 / 舰队索引重建 250 台 / Diagnose 250 台 / listMatching 60 台 / sweep 60 台 — commit 7e36e88
+- [x] Clone 收敛：删除 CrossServerSpec.Clone() 方法，保留生产在用的 CloneCrossServerSpec — commit f493154
 
-### 巡检点火 · 立档问题处置（2026-10-05）✅
+### 文档清味 + 禁吹牛（2026-10-05）
 
-> 覆盖率批立档的两项真问题清零，顺藤摸出同根三处一并处置。
-> 受影响包复测：crossserver 91.6 / fleet 95.0 / routing 93.6 /
-> health 83.9 / httpapi 86.8 / serversconfig 96.9，全过 80% 门禁；
-> 全仓测试 + 改动包 `-race` + `go vet ./...` 绿。
+- [x] 假深度句式 4 处改直接陈述 — commit 0b5b54d
+- [x] 禁吹牛口径 3 处修正 — commit 0b5b54d
+- [x] 空洞程度词 2 处改机制事实 — commit 0b5b54d
 
-- [x] **ListServers 上限对齐**（commit 7e36e88）：`store.ListServersMaxLimit=200`
-      单一事实源（接口注释钉住 cap 200 + 默认页 50 两契约）；三库 ListServers
-      改用常量（字符/迁移 cap 不动）；`crossserver.listServersAll` pageSize
-      500→cap、`fleet.Reconcile` Limit 500→cap、`serversconfig` 200→常量；
-      `routing.Diagnose` 单页 200 → 游标分页。**同根新发现三处一并修**：
-      Recommend `listMatching`（空 Limit→默认 50 截断候选，>50 台舰队后段
-      永不被推荐）、health `sweep`（同 50 截断，后段永不 suspect/offline）、
-      admin fallback 单页 200 对齐常量（该端点本就 client 翻页）
-- [x] 回归 4 条 + 契约钉子：跨服寻址 250 台、舰队索引重建 250 台、
-      Diagnose 250 台全量判决、listMatching 60 台全候选、sweep 60 台全
-      suspect；storetest 补「默认页 = 50 行」钉子；api.md 分页节补
-      「单页上限 200」
-- [x] **Clone 收敛**（commit f493154）：删除无生产调用方的
-      `CrossServerSpec.Clone()` 方法（白名单字段式拷贝对未来新增字段
-      不安全），保留生产在用的 `CloneCrossServerSpec`（`out := spec`
-      整体拷贝再替换容器）；双向写穿断言并入既有契约测试
+### 全量对账 · 首轮（2026-10-04）
 
-### 文档清味 + 禁吹牛（2026-10-05）✅
+- [x] gRPC「与 REST 完全同源」过强表述精确化 — commit 5c31776
+- [x] README「28 个 REST 端点」计数失真修正为 45 个 — commit 5c31776
+- [x] api.md Admin 节补扩展端点索引 + 认证表 Public 域补 /v1/routing/* + 新增「监听地址与探针」小节 — commit 5c31776
+- [x] sdk-go.md 示例 ATLAS_ADMIN_API_KEY 名修正 + 双传输地址行补全 — commit 5c31776
+- [x] README / roadmap 目录树对齐实际 — commit 5c31776
 
-> 按《文档写作风格规范》+《产品文案用词规范》清 README 与 docs 全量，
-> 一次提交（commit 0b5b54d，7 文件 9 处），docs build（死链门禁）过。
-> 禁词表（自研 / 遥遥领先 / 首创 / 完美 / 极致 / 赋能 / 生态 / 闭环 /
-> 颠覆 / 行业第一）全仓 grep 零命中，README 已补技术底座来源行。
+### 巡检修复（2026-10-04）
 
-- [x] 假深度句式（不是…而是…）4 处：README 定位、index tagline、
-      security-audit 开篇、performance §7——改为直接陈述
-- [x] 禁吹牛口径 3 处：api-quickstart「从零到跑通」→「跑通」；
-      architecture 网关表「原生最强」无据比较级 →「原生支持」；
-      README 首屏补底座来源（Go 1.27 / net/http + gRPC / pgx / go-redis /
-      go-sql-driver / Prometheus / Kafka-NATS-RabbitMQ 客户端，Apache-2.0）
-- [x] 空洞程度词 2 处：data-model / architecture「可大幅降低 PG 压力」
-      → 机制事实「这份流量走 Redis，不进 PG」
-- 判断保留（非违规，如实记档）：✅/❌/🔒 为能力矩阵状态标记非装饰；
-      粗体冒号列表全为字段/配置项列举型（56 处）；「永不 / 永远」为
-      技术不变式陈述非产品承诺；破折号多为单个插入说明未构成滥用
+- [x] telemetry TestSamplerLockstepSeries 假钟数据竞争，改 atomic.Int64 计数 — commit 50ea126
 
-### 全量对账 · 首轮（2026-10-04）✅
-
-> 按「文档与实现对账」全局令做全量清点：env 双向 diff、42 条 HTTP 路由 vs
-> api.md、8 指标 vs 指标表、22 RPC vs proto/实现、目录树 vs 实际、SDK 示例
-> 变量。偏差逐条修（commit 5c31776）：
-
-- [x] gRPC「与 REST 完全同源 / 同一 API 面」过强表述 → 精确为「核心五服务
-      同源共用内部 service，管理面扩展端点 REST-only」（api.md / README /
-      roadmap 三处）
-- [x] README「28 个 REST 端点」计数失真 → 45 个业务端点、六组速查
-      （补跨服配置组；Admin 速查补 maintenance）
-- [x] api.md：Admin 节补扩展端点索引（tags / crossserver / audit → 专题
-      文档）；认证表 Public 域补 `/v1/routing/*` 与 crossserver 双口说明；
-      新增「监听地址与探针」小节（四个 ATLAS_*_ADDR 变量 +
-      healthz 公网/注册口、readyz 管理口按口区分）
-- [x] sdk-go.md：示例自造 `ATLAS_ADMIN_API_KEY` 名改为「值须为服务端
-      `ATLAS_ADMIN_API_KEYS` 之一」；双传输地址行补全三监听变量
-- [x] README / roadmap 目录树对齐实际：cmd 四工具（atlas / crossagent /
-      demoagents / reshard）、internal 补 crossserver / fleet /
-      serversconfig / telemetry、补 dashboard/
-- 无偏差核实：指标名双向一致；22 RPC = proto = 实现；`ATLAS_ALERT_*` /
-  `ATLAS_PG_POOL_*` 为通配写法或已载于 performance.md；PORT / IMAGE / TAG /
-  TUNNEL_PORT / MIGRATIONS_DIR / PG_PASSWORD 为 compose 部署层变量；
-  `ATLAS_TEST_*` / `ATLAS_TRANSPORT`（examples 自用）豁免
-- 遗留（如实记录）：`ATLAS_CORS_ORIGINS` 读取无消费、
-  `CORSMiddleware` 生产路径未挂载——已处置（commit 7653798，见
-  「巡检点火 · CORS 挂载（2026-10-05）」段）
-
-### 巡检修复（2026-10-04）✅
-
-- [x] telemetry `TestSamplerLockstepSeries` 假钟数据竞争——`tick++` 在采样
-      goroutine（sample 内）与测试 goroutine（Series 内）并发改写无同步，
-      race 下稳定失败、非 race 偶发：改 `atomic.Int64` 计数 + 深度断言
-      轮询等待（commit 50ea126）
-
-### 可观测性深化 · 首期（2026-10-03）✅
+### 可观测性深化 · 首期（2026-10-03）
 
 - [x] X-Request-ID 贯通三监听口（生成/沿用/回显/访问日志，健康路径免打扰）
-- [x] `atlas_directory_write_duration_seconds{op}` 目录写路径延迟指标
+- [x] atlas_directory_write_duration_seconds{op} 目录写路径延迟指标
 
-### 跨服 ID 体系与玩法类型表（2026-10-04）✅
+### 跨服 ID 体系与玩法类型表（2026-10-04）
 
-- [x] config-center §2.1 跨服 ID 两态规范（配置态 Atlas 托管 / 运行时实例 ID 只规范格式不生成不存储）
-- [x] §2.2 七类玩法类型枚举 + 类型表进 Spec 第五段（Normalize / Validate / 契约夹具 / dashboard 卡片）
-### OpenTelemetry span 树（2026-10-08）✅
+- [x] config-center §2.1 跨服 ID 两态规范
+- [x] §2.2 七类玩法类型枚举 + 类型表进 Spec 第五段
 
-> 点火续做令：挂起项按本仓决策记录（roadmap 版本序与 TODO 立档注）自行
-> 拍板，两个定档项不动。拍板结论：**官方 OpenTelemetry Go SDK（otel
-> v1.47.0）+ OTLP/HTTP 协议导出**——协议是承诺、后端不锁定（Jaeger /
-> Tempo / 厂商 collector 皆可收）；指标不跟进，仍走 Prometheus，不引第二
-> 套 metrics 后端；采样 `ParentBased(TraceIDRatioBased)`，上游 traceparent
-> 采样决定优先；`ATLAS_OTLP_ENDPOINT` 未配置 = 全局 no-op provider，与
-> gRPC TLS 未配置即明文同一默认哲学。技术性开关（无需外部需求输入），
-> 故可自查拍板；grpc 锁定 v1.86.0-dev 不动，otel 取 @latest 规避降级。
+### OpenTelemetry span 树（2026-10-08）
 
-- [x] 增量一·追踪地基：`internal/tracing` 组装 OTLP/HTTP 导出管线
-      （endpoint 解析 / https 走 TLS / 带路径拼接 /v1/traces / 采样越界
-      回退 1.0 / 停机 flush 10s），`httpapi.Spans` 与 `grpc.UnarySpans`
-      每请求开 server root span——REST 按 ServeMux 路由模式低基数命名
-      （`WithContext` 浅拷贝上读回填的 Pattern），gRPC 按全方法名，属性
-      semconv http.*/rpc.* + `atlas.request_id`，HTTP ≥500 / gRPC 非 OK
-      置 Error，/healthz /readyz /metrics 静默；cmd/atlas 三监听口 +
-      gRPC 拦截链接线；测试端到端（httptest 收 /v1/traces）+ 中间件四态
-      + 拦截器链式（commit 0fe965d）
-- [x] 增量二·服务层成树：`atlastracing.Start(ctx, name)` 在请求 context
-      下继续开 SpanKindInternal 子 span——registry 三写 / discovery 两读
-      / routing 推荐+诊断 / directory 七方法共 14 个，自动挂传输 root
-      之下成树；全局 tracer 调用时解析，main.go 零改动；测试助手沉
-      `internal/tracing/tracingtest.Install`（storetest 先例）收敛
-      httpapi/grpc 测试副本，新增四服务父子关系断言（commit f5359e2）
-- [x] 文档同步：api.md「分布式追踪」新节 + architecture.md 交叉引用 +
-      roadmap 可观测性行五期收官（0fe965d / f5359e2 / 本笔）
+- [x] 追踪地基：internal/tracing OTLP/HTTP 导出管线 + httpapi.Spans / grpc.UnarySpans 每请求开 root span — commit 0fe965d
+- [x] 服务层成树：atlastracing.Start 14 个服务方法子 span + tracingtest.Install 测试助手 — commit f5359e2
+- [x] 文档同步：api.md「分布式追踪」新节 + architecture.md 交叉引用 + roadmap 五期收官 — commit 0fe965d / f5359e2
+
+### 覆盖率回补（2026-10-07）
+
+- [x] 真基线口径重测 + 逐包行为测试补齐，total 88.2% 升到 89.4% — commit f40a7f4 / 5e653db / 6c48c30 / 3c59244 / c3fe8dc / b99e698 / f0e2866
+
+### 服务器热力图（2026-10-12）
+
+- [x] telemetry 热力图聚合：BuildServerHeatmap / BucketizePair / ParseHeatmapWindow / BucketSpanLabel — commit 3232f6c
+- [x] REST GET /v1/admin/load-heatmap + gRPC AdminService.GetLoadHeatmap — commit e1d176b
+- [x] dashboard /heatmap 页：Okabe-Ito 暖色阶 + 图例 + tooltip — commit a26f25e
+- [x] 留存 10h 升到 24h15m + 文档同步（api / security / roadmap / README）— commit c573846
+
+### 巡检修复（2026-10-13）
+
+- [x] go.mod toolchain 钉 1.27.2：清掉 11 条 Go 标准库漏洞告警（govulncheck 0）+ Dockerfile golang:1.27.2-alpine
+- [x] 文档-码一致性 41 条修复（合服表述、gRPC 访问日志字段、PG 池缺省、2026-10-03 基线数字全量复测替换等）— 详见 docs/审计-文档一致性.md 2026-10-13 轮
+- [x] redis 事件适配器 sweep 测试改确定性驱动（全量 -race 并行下消费循环被饿死 >30s 超时）
