@@ -23,9 +23,35 @@ type Service struct {
 	migration *migration.Service
 }
 
-// New creates a new admin service.
+// New creates a new admin service. It wires itself into the migration
+// service as the WindowCreator so migration creation auto-creates
+// maintenance windows on source servers (the linkage documented in
+// docs/migration.md §9).
 func New(s store.Store) *Service {
-	return &Service{store: s, migration: migration.New(s)}
+	svc := &Service{store: s}
+	svc.migration = migration.New(s, svc)
+	return svc
+}
+
+// CreateWindows implements migration.WindowCreator: it wraps the batch
+// maintenance-window API so the migration linkage reuses the same window
+// creation path (validation, announce linking, per-server failures).
+// Per-server failures are surfaced as an error (fail-closed) because the
+// migration sources are validated to exist before this runs — a failure
+// here means the store is broken, not that a server is missing.
+func (s *Service) CreateWindows(ctx context.Context, serverIDs []string, startAt, endAt time.Time) error {
+	result, err := s.BatchCreateMaintenanceWindows(ctx, BatchMaintenanceWindowRequest{
+		ServerIDs: serverIDs,
+		StartAt:   startAt,
+		EndAt:     endAt,
+	})
+	if err != nil {
+		return err
+	}
+	if len(result.Failed) > 0 {
+		return fmt.Errorf("failed to create windows for %d servers", len(result.Failed))
+	}
+	return nil
 }
 
 // SetMaintenance transitions a server into maintenance state.

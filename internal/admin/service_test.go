@@ -465,6 +465,81 @@ func TestRollbackMigration_NotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Migration-window linkage
+// ---------------------------------------------------------------------------
+
+func TestCreateWindows(t *testing.T) {
+	svc, mem := setupService(t)
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+
+	start := time.Now().Add(-time.Hour).Truncate(time.Second)
+	end := start.Add(24 * time.Hour)
+
+	err := svc.CreateWindows(context.Background(), []string{"game-1001"}, start, end)
+	if err != nil {
+		t.Fatalf("CreateWindows: %v", err)
+	}
+
+	// Verify the window exists.
+	windows, err := mem.ListMaintenanceWindows(context.Background(), "game-1001", 0)
+	if err != nil {
+		t.Fatalf("ListMaintenanceWindows: %v", err)
+	}
+	if len(windows) != 1 {
+		t.Fatalf("windows = %d, want 1", len(windows))
+	}
+	if !windows[0].StartAt.Equal(start) || !windows[0].EndAt.Equal(end) {
+		t.Errorf("window range = [%v, %v], want [%v, %v]", windows[0].StartAt, windows[0].EndAt, start, end)
+	}
+}
+
+func TestCreateWindows_FailClosed(t *testing.T) {
+	svc, _ := setupService(t)
+
+	// No servers registered: per-server failures must surface as an error.
+	err := svc.CreateWindows(context.Background(), []string{"ghost"}, time.Now(), time.Now().Add(time.Hour))
+	if err == nil {
+		t.Fatal("expected error for unknown server (fail-closed)")
+	}
+}
+
+func TestCreateMigration_AutoCreatesWindows(t *testing.T) {
+	svc, mem := setupService(t)
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	registerServer(t, mem, "game-1002", model.StatusOnline)
+	registerServer(t, mem, "game-2001", model.StatusOnline)
+
+	m, err := svc.CreateMigration(context.Background(), CreateMigrationRequest{
+		SourceServers: []string{"game-1001", "game-1002"},
+		TargetServer:  "game-2001",
+	})
+	if err != nil {
+		t.Fatalf("CreateMigration: %v", err)
+	}
+
+	// Verify windows were auto-created on both source servers.
+	for _, srcID := range []string{"game-1001", "game-1002"} {
+		windows, err := mem.ListMaintenanceWindows(context.Background(), srcID, 0)
+		if err != nil {
+			t.Fatalf("ListMaintenanceWindows(%s): %v", srcID, err)
+		}
+		if len(windows) != 1 {
+			t.Errorf("windows(%s) = %d, want 1", srcID, len(windows))
+			continue
+		}
+		if windows[0].ServerID != srcID {
+			t.Errorf("window server = %s, want %s", windows[0].ServerID, srcID)
+		}
+	}
+	// Target server should NOT get a window.
+	windows, _ := mem.ListMaintenanceWindows(context.Background(), "game-2001", 0)
+	if len(windows) != 0 {
+		t.Errorf("target windows = %d, want 0", len(windows))
+	}
+	_ = m
+}
+
+// ---------------------------------------------------------------------------
 // Realms & Shards (TODO v0.1.14)
 // ---------------------------------------------------------------------------
 

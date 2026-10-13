@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
@@ -126,6 +127,96 @@ func TestGetAndListMigrations(t *testing.T) {
 	}
 	if got, err := svc.ListMigrations(ctx, 0); err != nil || len(got) != 1 {
 		t.Errorf("limit 0 (no cap) = %d, err %v", len(got), err)
+	}
+}
+
+// mockWindowCreator records calls and can be configured to fail.
+type mockWindowCreator struct {
+	called    bool
+	serverIDs []string
+	startAt   time.Time
+	endAt     time.Time
+	err       error
+}
+
+func (m *mockWindowCreator) CreateWindows(ctx context.Context, serverIDs []string, startAt, endAt time.Time) error {
+	m.called = true
+	m.serverIDs = append([]string(nil), serverIDs...)
+	m.startAt = startAt
+	m.endAt = endAt
+	return m.err
+}
+
+func TestCreateMigration_WithWindows(t *testing.T) {
+	mem := memory.New()
+	ctx := context.Background()
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	registerServer(t, mem, "game-1002", model.StatusOnline)
+	registerServer(t, mem, "game-2001", model.StatusOnline)
+
+	wc := &mockWindowCreator{}
+	svc := New(mem, wc)
+
+	m, err := svc.CreateMigration(ctx, CreateMigrationRequest{
+		SourceServers: []string{"game-1001", "game-1002"},
+		TargetServer:  "game-2001",
+	})
+	if err != nil {
+		t.Fatalf("CreateMigration: %v", err)
+	}
+	if !wc.called {
+		t.Fatal("expected window creator to be called")
+	}
+	if len(wc.serverIDs) != 2 || wc.serverIDs[0] != "game-1001" || wc.serverIDs[1] != "game-1002" {
+		t.Errorf("window server IDs = %v, want [game-1001 game-1002]", wc.serverIDs)
+	}
+	if d := wc.endAt.Sub(wc.startAt); d != DefaultMigrationWindowDuration {
+		t.Errorf("window duration = %v, want %v", d, DefaultMigrationWindowDuration)
+	}
+	if m.Status != model.MigrationPending {
+		t.Errorf("migration status = %s, want pending", m.Status)
+	}
+}
+
+func TestCreateMigration_WindowsFailClosed(t *testing.T) {
+	mem := memory.New()
+	ctx := context.Background()
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	registerServer(t, mem, "game-2001", model.StatusOnline)
+
+	wc := &mockWindowCreator{err: errors.New("window store broken")}
+	svc := New(mem, wc)
+
+	_, err := svc.CreateMigration(ctx, CreateMigrationRequest{
+		SourceServers: []string{"game-1001"},
+		TargetServer:  "game-2001",
+	})
+	if err == nil {
+		t.Fatal("expected error when window creation fails")
+	}
+	// Fail-closed: no migration record is written.
+	if migs, _ := svc.ListMigrations(ctx, 100); len(migs) != 0 {
+		t.Errorf("migrations = %d, want 0 (fail-closed)", len(migs))
+	}
+}
+
+func TestCreateMigration_NoWindowsWithoutCreator(t *testing.T) {
+	mem := memory.New()
+	ctx := context.Background()
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	registerServer(t, mem, "game-2001", model.StatusOnline)
+
+	// No WindowCreator injected: behavior is unchanged (migration record only).
+	svc := New(mem)
+	m, err := svc.CreateMigration(ctx, CreateMigrationRequest{
+		SourceServers: []string{"game-1001"},
+		TargetServer:  "game-2001",
+	})
+	if err != nil {
+		t.Fatalf("CreateMigration: %v", err)
+	}
+	if m.Status != model.MigrationPending {
+		t.Errorf("migration status = %s, want pending", m.Status)
 	}
 }
 

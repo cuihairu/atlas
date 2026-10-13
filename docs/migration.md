@@ -307,3 +307,21 @@ flowchart LR
 薄委托（`admin.CreateMigrationRequest` 是 migration 侧 DTO 的类型别名，
 REST/gRPC 契约零变更）。把两者进一步拆成**独立服务**仍以多舰队独立
 扩缩容的真实需求为触发条件（见 docs/roadmap.md）。
+
+### 9.1 迁移-窗口联动
+
+创建迁移时自动在源服务器上铺维护窗口，源服务器在迁移期间进入保护
+（不再接收新连接）。窗口复用的是已交付的批量窗口 API
+（`POST /v1/admin/maintenance-windows/batch`），不新增独立路径。
+
+| 设计决定 | 取值 | 理由 |
+| --- | --- | --- |
+| 触发时机 | `CreateMigration` 成功后 | 迁移开始即需保护；窗口先于迁移记录写入 |
+| 目标服务器 | 源服务器（不含目标） | 目标是迁入方，铺窗无意义 |
+| 窗口时长 | 24h（`DefaultMigrationWindowDuration`） | 迁移是开放状态记录（无终止时间），窗口是保护便利，到期自动失效不锁死源服务器 |
+| 错误语义 | fail-closed | 窗口铺不上 → 迁移记录不写（源服务器不会被无保护地迁走）；per-server 失败同样上抛 |
+| 回滚处理 | 窗口自然到期，不自动取消 | 迁移记录无窗口 ID 字段（不扩 schema）；运维可用 `DELETE /v1/admin/maintenance-windows/{id}` 手动取消 |
+| 架构归属 | `migration.Service` 持有可选 `WindowCreator` 接口 | 联动逻辑归 migration 包（状态机时序），窗口创建由 admin 注入实现（不反向依赖） |
+
+窗口铺不上时的行为：`CreateMigration` 返回 `create maintenance windows: ...` 错误，
+迁移记录**不写入**（fail-closed）。运维修正后重试即可。

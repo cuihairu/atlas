@@ -15,7 +15,7 @@
 
 - [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0
 - [x] Routing 策略扩展余项（权重 / 灰度白名单）— 权重已交付（2026-10-14）：`weight` 字段 + 三库存储契约 + `POST /v1/admin/servers/{id}/weight` + 推荐排序按有效负载 `load × 100 / weight`（诊断附 `weight`/`effective_load`）；灰度白名单 = 私有 tag 圈组 + 权重放量（已写进 api.md），routing/admin/httpapi/storetest 25+ tests 绿
-- [ ] 公告与窗口批量编排：多服务器运营场景验证提出需求后做 — 🚧 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）已交付，与迁移编排联动为余项（见下）
+- [x] 公告与窗口批量编排 — 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）+ **迁移-窗口联动**已交付（2026-10-14）：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）；`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖）；migration/admin/httpapi 测试绿
 - [ ] Kubernetes 部署样例：有部署需求提出后做
 - [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发
 

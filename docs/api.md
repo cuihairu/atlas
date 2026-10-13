@@ -574,6 +574,13 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 
 **Response** `201 Created`：迁移记录（`id` 形如 `mig-<unixnano>`，`status` 起于 `pending`）。
 
+**迁移-窗口联动（2026-10-14 起）**：创建迁移时自动在**源服务器**上铺维护窗口
+（`start_at` = 当前时刻，`end_at` = `start_at + 24h`，`announce` 默认 `true`），
+窗口复用批量窗口 API 同一创建路径。窗口铺不上则**fail-closed**：返回
+`500` 错误（`create maintenance windows: ...`），迁移记录**不写入**。
+窗口不自动取消（回滚后自然到期），运维可用 `DELETE /v1/admin/maintenance-windows/{id}`
+手动取消。详见 [migration.md §9.1](migration.md#_9-1-迁移-窗口联动)。
+
 > **v0.1 现状**：此端点只创建记录，不启动编排、不推进状态（`migrating` / `verifying` / `completed` 无可达路径）；源服务器不存在返回 `404 SERVER_NOT_FOUND`。唯一可达的状态推进是下面的 rollback。
 
 ### GET /v1/admin/migrations

@@ -29,14 +29,40 @@ type CreateMigrationRequest struct {
 	TargetServer  string   `json:"target_server"`
 }
 
-// Service provides migration orchestration.
-type Service struct {
-	store Store
+// DefaultMigrationWindowDuration is how long an auto-created migration
+// maintenance window lasts. Migrations are open-ended state records (the
+// status moves pending → migrating → completed but the record itself has no
+// end); the window is a protection convenience that auto-expires, so the
+// source servers are never locked in maintenance forever. Tunable later via
+// config if ops needs longer coverage.
+const DefaultMigrationWindowDuration = 24 * time.Hour
+
+// WindowCreator is the optional dependency for the migration-window
+// linkage: when a migration is created, maintenance windows are
+// auto-created on the source servers so they enter protection during the
+// migration. The migration module owns the when (at creation, fail-closed
+// before the migration record is written); the caller provides the how
+// (which window API to use).
+type WindowCreator interface {
+	CreateWindows(ctx context.Context, serverIDs []string, startAt, endAt time.Time) error
 }
 
-// New creates a new migration service.
-func New(s Store) *Service {
-	return &Service{store: s}
+// Service provides migration orchestration.
+type Service struct {
+	store   Store
+	windows WindowCreator // nil = no linkage (migration record only)
+}
+
+// New creates a new migration service. The variadic windows argument is
+// optional; when provided, CreateMigration auto-creates maintenance
+// windows on the source servers (fail-closed). Existing callers that
+// pass only the store get the unchanged behavior.
+func New(s Store, windows ...WindowCreator) *Service {
+	var w WindowCreator
+	if len(windows) > 0 {
+		w = windows[0]
+	}
+	return &Service{store: s, windows: w}
 }
 
 // CreateMigration creates a new migration record.
@@ -61,6 +87,17 @@ func (s *Service) CreateMigration(ctx context.Context, req CreateMigrationReques
 	}
 
 	now := time.Now()
+
+	// Linkage: auto-create maintenance windows on source servers so they
+	// enter protection during the migration. Fail-closed: if windows can't
+	// be created, the migration record is not written (sources would be
+	// unprotected).
+	if s.windows != nil {
+		if err := s.windows.CreateWindows(ctx, req.SourceServers, now, now.Add(DefaultMigrationWindowDuration)); err != nil {
+			return nil, fmt.Errorf("create maintenance windows: %w", err)
+		}
+	}
+
 	m := &model.Migration{
 		ID:            fmt.Sprintf("mig-%d", now.UnixNano()),
 		SourceServers: req.SourceServers,

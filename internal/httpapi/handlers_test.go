@@ -614,6 +614,42 @@ func TestAdminCreateMigration_Invalid(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestAdminCreateMigration_AutoCreatesWindows(t *testing.T) {
+	ts, store := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-1002")
+	registerTestServer(t, ts, "game-2001")
+
+	body := map[string]any{
+		"source_servers": []string{"game-1001", "game-1002"},
+		"target_server":  "game-2001",
+	}
+	resp := postJSON(t, ts, "/v1/admin/migrations", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create migration: expected 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Windows should be auto-created on both source servers.
+	for _, srcID := range []string{"game-1001", "game-1002"} {
+		windows, err := store.ListMaintenanceWindows(context.Background(), srcID, 0)
+		if err != nil {
+			t.Fatalf("ListMaintenanceWindows(%s): %v", srcID, err)
+		}
+		if len(windows) != 1 {
+			t.Errorf("windows(%s) = %d, want 1", srcID, len(windows))
+		}
+	}
+
+	// Target server should NOT get a window.
+	windows, _ := store.ListMaintenanceWindows(context.Background(), "game-2001", 0)
+	if len(windows) != 0 {
+		t.Errorf("target windows = %d, want 0", len(windows))
+	}
+}
+
 func TestAdminGetMigration(t *testing.T) {
 	ts, _ := setupTestServer(t)
 	defer ts.Close()
