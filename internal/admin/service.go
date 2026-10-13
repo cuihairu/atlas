@@ -342,6 +342,126 @@ func (s *Service) ListMaintenanceWindows(ctx context.Context, serverID string, l
 	return s.store.ListMaintenanceWindows(ctx, serverID, limit)
 }
 
+// BatchMaintenanceWindowRequest schedules one window template across a fleet
+// of servers in a single call — the per-server flow
+// (POST /v1/admin/servers/{id}/maintenance-window) turns a fleet-wide change
+// into N hand-built requests.
+type BatchMaintenanceWindowRequest struct {
+	ServerIDs []string  `json:"server_ids"`
+	StartAt   time.Time `json:"start_at"` // zero = now
+	EndAt     time.Time `json:"end_at"`   // required
+	// StaggerSeconds shifts server i's window (both ends, duration preserved)
+	// by i*StaggerSeconds — rolling maintenance instead of taking the whole
+	// fleet down at once. Zero = simultaneous.
+	StaggerSeconds int `json:"stagger_seconds,omitempty"`
+	// Announce mirrors the single-window default: true (or omitted) links a
+	// warning-level announcement to each window.
+	Announce *bool `json:"announce,omitempty"`
+	// DryRun validates the whole plan (existence, ranges) and returns the
+	// planned windows without creating anything — the preview step before a
+	// fleet-wide change.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// BatchWindowFailure pairs a server with the reason its window was not
+// scheduled.
+type BatchWindowFailure struct {
+	ServerID string `json:"server_id"`
+	Error    string `json:"error"`
+}
+
+// BatchMaintenanceWindowResult reports what the batch did. Under DryRun,
+// Windows is the validated plan (ids are preview values) and nothing was
+// persisted.
+type BatchMaintenanceWindowResult struct {
+	Windows []*model.MaintenanceWindow `json:"windows"`
+	Failed  []BatchWindowFailure       `json:"failed,omitempty"`
+}
+
+// BatchCreateMaintenanceWindows schedules windows for a list of servers from
+// one template. Template-level mistakes (empty ServerIDs, missing end_at,
+// inverted range) fail the whole call; per-server problems (unknown server,
+// store error) land in the result's Failed slice so one bad server does not
+// roll back the rest — the stores expose no cross-server transaction.
+func (s *Service) BatchCreateMaintenanceWindows(ctx context.Context, req BatchMaintenanceWindowRequest) (*BatchMaintenanceWindowResult, error) {
+	if len(req.ServerIDs) == 0 {
+		return nil, fmt.Errorf("%w: server_ids is empty", model.ErrInvalid)
+	}
+	if req.EndAt.IsZero() {
+		return nil, fmt.Errorf("%w: end_at is required", model.ErrInvalid)
+	}
+
+	now := time.Now()
+	startAt := req.StartAt
+	if startAt.IsZero() {
+		startAt = now
+	}
+	if !startAt.Before(req.EndAt) {
+		return nil, fmt.Errorf("%w: maintenance window end_at must be after start_at", model.ErrInvalid)
+	}
+	announce := req.Announce == nil || *req.Announce
+	// Captured once and suffixed per entry: now alone would give every
+	// window (and its announcement) the same id inside the batch.
+	base := now.UnixNano()
+
+	result := &BatchMaintenanceWindowResult{}
+	seen := make(map[string]bool, len(req.ServerIDs))
+	for i, serverID := range req.ServerIDs {
+		if seen[serverID] {
+			continue
+		}
+		seen[serverID] = true
+		if serverID == "" {
+			result.Failed = append(result.Failed, BatchWindowFailure{ServerID: serverID, Error: "server_id is empty"})
+			continue
+		}
+
+		offset := time.Duration(i) * time.Duration(req.StaggerSeconds) * time.Second
+		w := &model.MaintenanceWindow{
+			ID:       fmt.Sprintf("mwin-%d-%d", base, i),
+			ServerID: serverID,
+			StartAt:  startAt.Add(offset),
+			EndAt:    req.EndAt.Add(offset),
+		}
+		if _, err := s.store.GetServer(ctx, serverID); err != nil {
+			result.Failed = append(result.Failed, BatchWindowFailure{ServerID: serverID, Error: err.Error()})
+			continue
+		}
+		if err := w.Validate(); err != nil {
+			result.Failed = append(result.Failed, BatchWindowFailure{ServerID: serverID, Error: err.Error()})
+			continue
+		}
+		if req.DryRun {
+			result.Windows = append(result.Windows, w)
+			continue
+		}
+
+		if announce {
+			a := &model.Announcement{
+				ID:       fmt.Sprintf("ann-%d-%d", base, i),
+				ServerID: &serverID,
+				Title:    fmt.Sprintf("Maintenance scheduled: %s", serverID),
+				Body: fmt.Sprintf("Server %s will be under maintenance from %s to %s.",
+					serverID, w.StartAt.UTC().Format(time.RFC3339), w.EndAt.UTC().Format(time.RFC3339)),
+				Level:    model.AnnouncementWarning,
+				StartsAt: w.StartAt,
+				EndsAt:   w.EndAt,
+			}
+			if err := s.store.CreateAnnouncement(ctx, a); err != nil {
+				result.Failed = append(result.Failed, BatchWindowFailure{ServerID: serverID, Error: err.Error()})
+				continue
+			}
+			w.AnnouncementID = &a.ID
+		}
+		if err := s.store.CreateMaintenanceWindow(ctx, w); err != nil {
+			result.Failed = append(result.Failed, BatchWindowFailure{ServerID: serverID, Error: err.Error()})
+			continue
+		}
+		result.Windows = append(result.Windows, w)
+	}
+	return result, nil
+}
+
 // DeleteMaintenanceWindow cancels a scheduled window. A window already in
 // progress keeps the server in maintenance — use the normal enable/maintenance
 // transitions to move it out.

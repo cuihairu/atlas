@@ -177,3 +177,85 @@ func TestAdminAnnouncementCRUDEndpoints(t *testing.T) {
 		t.Fatalf("invalid level status = %d, want 400", resp.StatusCode)
 	}
 }
+
+// TestAdminBatchMaintenanceWindowEndpoint covers the fleet batch endpoint:
+// staggered template over N servers, partial failure semantics, dry run.
+func TestAdminBatchMaintenanceWindowEndpoint(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "srv-1")
+	registerTestServer(t, ts, "srv-2")
+
+	now := time.Now()
+	body := map[string]any{
+		"server_ids":      []string{"srv-1", "srv-2"},
+		"start_at":        now.Format(time.RFC3339),
+		"end_at":          now.Add(time.Hour).Format(time.RFC3339),
+		"stagger_seconds": 600,
+	}
+	resp := postJSON(t, ts, "/v1/admin/maintenance-windows/batch", body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("batch status = %d, want 200", resp.StatusCode)
+	}
+	var out struct {
+		Windows []*model.MaintenanceWindow `json:"windows"`
+		Failed  []struct {
+			ServerID string `json:"server_id"`
+			Error    string `json:"error"`
+		} `json:"failed"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out.Windows) != 2 || len(out.Failed) != 0 {
+		t.Fatalf("result = %+v", out)
+	}
+	if !out.Windows[1].StartAt.After(out.Windows[0].StartAt) {
+		t.Errorf("second window start %v not staggered after %v",
+			out.Windows[1].StartAt, out.Windows[0].StartAt)
+	}
+
+	// Both windows land in the admin list.
+	lresp := getJSON(t, ts, "/v1/admin/maintenance-windows")
+	var lbody struct {
+		Windows []*model.MaintenanceWindow `json:"maintenance_windows"`
+	}
+	_ = json.NewDecoder(lresp.Body).Decode(&lbody)
+	if len(lbody.Windows) != 2 {
+		t.Fatalf("admin list = %d, want 2", len(lbody.Windows))
+	}
+
+	// Dry run: plan returned, nothing persisted.
+	dresp := postJSON(t, ts, "/v1/admin/maintenance-windows/batch", map[string]any{
+		"server_ids": []string{"srv-1"},
+		"start_at":   now.Format(time.RFC3339),
+		"end_at":     now.Add(time.Hour).Format(time.RFC3339),
+		"dry_run":    true,
+	})
+	if dresp.StatusCode != http.StatusOK {
+		t.Fatalf("dry run status = %d, want 200", dresp.StatusCode)
+	}
+	var dout struct {
+		Windows []*model.MaintenanceWindow `json:"windows"`
+	}
+	_ = json.NewDecoder(dresp.Body).Decode(&dout)
+	if len(dout.Windows) != 1 {
+		t.Fatalf("dry run plan = %+v", dout)
+	}
+	if lresp2 := getJSON(t, ts, "/v1/admin/maintenance-windows"); lresp2.StatusCode != http.StatusOK {
+		t.Fatalf("list after dry run status = %d", lresp2.StatusCode)
+	} else {
+		var body2 struct {
+			Windows []*model.MaintenanceWindow `json:"maintenance_windows"`
+		}
+		_ = json.NewDecoder(lresp2.Body).Decode(&body2)
+		if len(body2.Windows) != 2 {
+			t.Errorf("dry run changed the list to %d windows, want 2", len(body2.Windows))
+		}
+	}
+
+	// Empty server_ids rejected.
+	if resp := postJSON(t, ts, "/v1/admin/maintenance-windows/batch", map[string]any{
+		"end_at": now.Add(time.Hour).Format(time.RFC3339),
+	}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty server_ids status = %d, want 400", resp.StatusCode)
+	}
+}

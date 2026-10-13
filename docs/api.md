@@ -653,6 +653,46 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 
 取消窗口（`204 No Content`）。已进入维护的服务器不会被自动拉出，需走常规 `enable` / `maintenance` 转移；已自动创建的公告不会被撤回。
 
+### POST /v1/admin/maintenance-windows/batch
+
+舰队级批量创建：一份窗口模板铺到 `server_ids` 列表，`announce` 语义与单台创建一致（缺省 `true`，每台自动创建并关联一条 warning 公告）。
+
+**Request**
+
+```json
+{
+  "server_ids": ["game-1001", "game-1002", "game-1003"],
+  "start_at": "2026-10-20T02:00:00Z",
+  "end_at": "2026-10-20T04:00:00Z",
+  "stagger_seconds": 600,
+  "announce": true,
+  "dry_run": false
+}
+```
+
+- `start_at` 缺省取当前时刻；`end_at` 必填。
+- `stagger_seconds`：第 i 台的窗口整体（起止同时）后移 `i × stagger_seconds`——滚动维护，避免全舰队同时下线；`0`（缺省）为同时。
+- `dry_run`：只校验（服务器存在、时间范围合法）并返回计划中的窗口（id 为预览值，未持久化），不创建任何窗口或公告。
+- `server_ids` 去重保序；空元素与未知服务器逐台记入 `failed`，不影响其余服务器——批量是部分成功语义（存储层无跨服务器事务）。
+
+**Response** `200 OK`
+
+```json
+{
+  "windows": [
+    { "id": "mwin-1759376400000000000-0", "server_id": "game-1001", "start_at": "2026-10-20T02:00:00Z", "end_at": "2026-10-20T04:00:00Z", "announcement_id": "ann-1759376400000000000-0", "created_at": "…" },
+    { "id": "mwin-1759376400000000000-2", "server_id": "game-1003", "start_at": "2026-10-20T02:20:00Z", "end_at": "2026-10-20T04:20:00Z", "announcement_id": "ann-1759376400000000000-2", "created_at": "…" }
+  ],
+  "failed": [
+    { "server_id": "game-1002", "error": "maintenance window for unknown server game-1002: …" }
+  ]
+}
+```
+
+错误：`400 INVALID_ARGUMENT`（`server_ids` 为空、`end_at` 缺失、模板时间范围倒置）。
+
+### POST /v1/admin/announcements
+
 ### POST /v1/admin/announcements
 
 创建公告。`server_id` 缺省为全局公告；`level` ∈ `info` / `warning` / `critical`（缺省 `info`）。

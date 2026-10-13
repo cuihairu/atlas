@@ -198,6 +198,9 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/admin/servers/{id}/tags/{code}", h.handleAdminRemoveServerTag)
 	// Maintenance windows & announcements (TODO v0.1.20).
 	mux.HandleFunc("POST /v1/admin/servers/{id}/maintenance-window", h.handleAdminCreateMaintenanceWindow)
+	// Fleet batch: one template across N servers, staggered rolling
+	// maintenance, partial-success result, dry-run preview.
+	mux.HandleFunc("POST /v1/admin/maintenance-windows/batch", h.handleAdminBatchCreateMaintenanceWindow)
 	mux.HandleFunc("GET /v1/admin/maintenance-windows", h.handleAdminListMaintenanceWindows)
 	mux.HandleFunc("DELETE /v1/admin/maintenance-windows/{id}", h.handleAdminDeleteMaintenanceWindow)
 	mux.HandleFunc("POST /v1/admin/announcements", h.handleAdminCreateAnnouncement)
@@ -1608,6 +1611,30 @@ func (h *Handler) handleAdminDeleteMaintenanceWindow(w http.ResponseWriter, r *h
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAdminBatchCreateMaintenanceWindow schedules one window template
+// across a fleet of servers. The result is a multi-outcome body: windows are
+// created per server and per-server failures come back inside the same
+// response, so a partial success is reported rather than masked.
+func (h *Handler) handleAdminBatchCreateMaintenanceWindow(w http.ResponseWriter, r *http.Request) {
+	var req admin.BatchMaintenanceWindowRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	res, err := h.admin.BatchCreateMaintenanceWindows(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (h *Handler) handleAdminCreateAnnouncement(w http.ResponseWriter, r *http.Request) {

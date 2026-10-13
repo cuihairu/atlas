@@ -239,6 +239,19 @@ sequenceDiagram
 - 窗口期间运维手动转移(比如 `drain`)→ 以运维操作为准,窗口结束**不会**把服务器拉回来。
 - 取消一个进行中的窗口 → 服务器保持当前状态;要把它从维护里拉出来,走正常的 `POST /v1/admin/servers/{id}/enable`。
 
+### 3.6 批量编排(舰队级模板)
+
+整支舰队同一晚维护,逐台 `POST /v1/admin/servers/{id}/maintenance-window` 要手工拼 N 次请求——`POST /v1/admin/maintenance-windows/batch` 用**一份模板 + 一份 server_ids 列表**替代:
+
+- **模板字段**与单台创建一致(`start_at` 缺省 now、`end_at` 必填、`announce` 缺省 true 每台联动一条 warning 公告)。
+- **`stagger_seconds` 滚动错峰**:第 i 台的起止同时后移 `i × stagger_seconds`,窗口时长不变——舰队轮流进出维护,而不是同时全部下线。例:3 台、`stagger_seconds: 600`,维护窗口依次 02:00、02:10、02:20 开始。
+- **`dry_run` 预览**:只校验(服务器存在、时间合法)并返回计划中的窗口,不落任何窗口或公告——舰队级变更前的最后一步确认。
+- **部分成功语义**:`server_ids` 去重保序;空元素与未知服务器逐台记入响应的 `failed`(带原因),不影响其余服务器。存储层没有跨服务器事务,失败台次看 `failed` 逐台补建即可。
+
+与迁移编排的联动(迁移前自动铺窗)尚未交付,仍是本候选方向的余项。
+
+---
+
 ---
 
 ## 4. 端点速查
@@ -250,6 +263,7 @@ sequenceDiagram
 | `DELETE` | `/v1/admin/announcements/{announcement_id}` | 删除公告(204) |
 | `GET` | `/v1/discovery/announcements` | 客户端拉取生效公告(全局 + `?server_id=`) |
 | `POST` | `/v1/admin/servers/{id}/maintenance-window` | 创建计划维护窗口(announce 缺省 true) |
+| `POST` | `/v1/admin/maintenance-windows/batch` | 舰队级批量创建(stagger 滚动错峰 / dry_run 预览 / 部分成功) |
 | `GET` | `/v1/admin/maintenance-windows` | 窗口列表(新→旧),`?server_id=` / `?limit=` |
 | `DELETE` | `/v1/admin/maintenance-windows/{window_id}` | 取消窗口(不撤公告、不动已维护中的服务器) |
 

@@ -166,7 +166,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 ## API Quick Reference
 
-Atlas 当前暴露 47 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
+Atlas 当前暴露 48 个业务端点（默认配置，含审计端点），分为六组（另有 `/healthz` / `/readyz` / `/metrics` 系统端点）：
 
 ### Registry（服务器注册）
 
