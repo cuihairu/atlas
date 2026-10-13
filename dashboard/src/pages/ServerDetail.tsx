@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Descriptions, Card, Table, Button, Space, Progress, Spin, message, Popconfirm,
-  Select, Input, Switch, Tooltip, Tag,
+  Select, Input, Switch, Tooltip, Tag, Result,
 } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import StatusTag from '../components/StatusTag';
@@ -59,12 +59,15 @@ export default function ServerDetail() {
     try {
       const [s, c, tags] = await Promise.all([
         getServer(id),
-        listCharactersByServer(id),
+        // 次要请求失败只降级（空列表），不能拖垮整页。
+        listCharactersByServer(id).catch(() => [] as Character[]),
         getServerTags(id).catch(() => ({ server_id: id, tags: [] as ServerTag[] })),
       ]);
       setServer(s);
       setCharacters(c);
       setAdminTags(tags.tags);
+    } catch {
+      // 主请求失败：客户端已弹错，server 保持 null，渲染层落到错误面板。
     } finally {
       setLoading(false);
     }
@@ -126,7 +129,25 @@ export default function ServerDetail() {
     }
   };
 
-  if (loading || !server) return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
+  if (loading) return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
+
+  // 加载结束但 server 仍为空 = 主请求失败：给错误面板（重试/返回），不再停在加载态。
+  if (!server) {
+    return (
+      <Result
+        status="warning"
+        title={t('loadFailed')}
+        subTitle={t('loadFailedHint')}
+        style={{ marginTop: 80 }}
+        extra={
+          <Space>
+            <Button type="primary" onClick={() => fetch()}>{t('retry')}</Button>
+            <Button onClick={() => navigate('/servers')}>{t('backToServers')}</Button>
+          </Space>
+        }
+      />
+    );
+  }
 
   const pct = server.capacity > 0 ? Math.round((server.players / server.capacity) * 100) : 0;
 

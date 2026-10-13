@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 // The dashboard talks to two Atlas listeners: the public API (:8080) and the
 // admin API (:8082, no CORS by design). Same-origin relative paths plus this
@@ -14,4 +14,8 @@ export default defineConfig({
   plugins: [react()],
   server: { proxy },
   preview: { proxy },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
 })

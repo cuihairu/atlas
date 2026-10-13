@@ -199,3 +199,4 @@
 - [x] go.mod toolchain 钉 1.27.2：清掉 11 条 Go 标准库漏洞告警（govulncheck 0）+ Dockerfile golang:1.27.2-alpine
 - [x] 文档-码一致性 41 条修复（合服表述、gRPC 访问日志字段、PG 池缺省、2026-10-03 基线数字全量复测替换等）— 详见 docs/审计-文档一致性.md 2026-10-13 轮
 - [x] redis 事件适配器 sweep 测试改确定性驱动（全量 -race 并行下消费循环被饿死 >30s 超时）
+- [x] BUG-1 收尾：ServerDetail getServer 失败渲染错误面板（重试/返回）、角色列表请求失败降级空列表，补 vitest 3 例（此前 dashboard 无任何测试设施）

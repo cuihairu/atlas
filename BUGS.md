@@ -19,6 +19,7 @@
 - **结论**：路由与部署均正常，404 为测试时刻的镜像/构建时效问题（该时刻后已随 latest 滚动修复）。**真正的崩溃风险在前端空值**：`ServerDetail` 的 `Promise.all` 中 `getServer`/`listCharactersByServer` 无 catch（任一失败 → 页面卡死在 Spin 并抛未处理 rejection），`characters`/`tags.tags` 缺失时 `.length` 直接白屏（与迁移页 `null.some` 同款教训）。
 - **修法**：详情页空值兜底（tags 请求 catch 归一化默认值、可选字段全量 `??` 防护）；`getServer` / `listCharactersByServer` 失败时页面仍停在加载态，待后续增补 catch。
 - **状态**：[x] 已修复（tags 请求已兜底；另两个请求的兜底为未完成余项）
+- **补修（2026-10-13）**：`getServer` 失败渲染错误面板（Result：重试 / 返回服务器列表），`listCharactersByServer` 失败降级为空列表不再拖垮整页；补 vitest 回归测试 3 例（getServer 失败 / 角色列表失败 / 正常路径）。
 
 ## ③ /servers 页「区域」等聚合各页各自现查现算，数字不一致（2026-10-04）
 
