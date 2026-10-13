@@ -17,7 +17,7 @@
 - [ ] Routing 策略扩展余项（权重 / 灰度白名单）：真实运营需求反馈后做
 - [ ] 公告与窗口批量编排：多服务器运营场景验证提出需求后做 — 🚧 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）已交付，与迁移编排联动为余项（见下）
 - [ ] Kubernetes 部署样例：有部署需求提出后做
-- [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发
+- [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发
 
 ## Discovery 读路径管线化
 

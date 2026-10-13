@@ -1,6 +1,7 @@
 // Package admin implements the administrative operations described in
-// docs/api.md §Admin: server state management, stats, character search,
-// and migration orchestration.
+// docs/api.md §Admin: server state management, stats, and character search.
+// Migration orchestration lives in its own package (internal/migration) per
+// the boundary fixed in docs/migration.md §9; admin only delegates to it.
 package admin
 
 import (
@@ -8,24 +9,23 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/migration"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 )
 
 // CreateMigrationRequest is the DTO for creating a migration.
-type CreateMigrationRequest struct {
-	SourceServers []string `json:"source_servers"`
-	TargetServer  string   `json:"target_server"`
-}
+type CreateMigrationRequest = migration.CreateMigrationRequest
 
 // Service provides administrative operations.
 type Service struct {
-	store store.Store
+	store     store.Store
+	migration *migration.Service
 }
 
 // New creates a new admin service.
 func New(s store.Store) *Service {
-	return &Service{store: s}
+	return &Service{store: s, migration: migration.New(s)}
 }
 
 // SetMaintenance transitions a server into maintenance state.
@@ -119,76 +119,28 @@ func (s *Service) SearchCharacters(ctx context.Context, filter store.CharacterSe
 }
 
 // CreateMigration creates a new migration record.
+// See internal/migration: the orchestration state machine lives there.
 func (s *Service) CreateMigration(ctx context.Context, req CreateMigrationRequest) (*model.Migration, error) {
-	if len(req.SourceServers) == 0 {
-		return nil, fmt.Errorf("%w: at least one source server is required", model.ErrInvalid)
-	}
-	if req.TargetServer == "" {
-		return nil, fmt.Errorf("%w: target server is required", model.ErrInvalid)
-	}
-
-	// Validate source servers exist.
-	for _, srcID := range req.SourceServers {
-		if _, err := s.store.GetServer(ctx, srcID); err != nil {
-			return nil, fmt.Errorf("source server %s: %w", srcID, err)
-		}
-	}
-
-	// Validate target server exists.
-	if _, err := s.store.GetServer(ctx, req.TargetServer); err != nil {
-		return nil, fmt.Errorf("target server %s: %w", req.TargetServer, err)
-	}
-
-	now := time.Now()
-	m := &model.Migration{
-		ID:            fmt.Sprintf("mig-%d", now.UnixNano()),
-		SourceServers: req.SourceServers,
-		TargetServer:  req.TargetServer,
-		Status:        model.MigrationPending,
-		StartedAt:     now,
-	}
-
-	if err := s.store.CreateMigration(ctx, m); err != nil {
-		return nil, fmt.Errorf("create migration: %w", err)
-	}
-
-	return m, nil
+	return s.migration.CreateMigration(ctx, req)
 }
 
 // GetMigration returns a migration by ID.
+// See internal/migration: the orchestration state machine lives there.
 func (s *Service) GetMigration(ctx context.Context, id string) (*model.Migration, error) {
-	m, err := s.store.GetMigration(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("get migration: %w", err)
-	}
-	return m, nil
+	return s.migration.GetMigration(ctx, id)
 }
 
 // RollbackMigration transitions a migration to rolled_back status.
 // Only migrations in pending, migrating, or failed status can be rolled back.
+// See internal/migration: the orchestration state machine lives there.
 func (s *Service) RollbackMigration(ctx context.Context, id string) error {
-	m, err := s.store.GetMigration(ctx, id)
-	if err != nil {
-		return fmt.Errorf("rollback migration: %w", err)
-	}
-
-	switch m.Status {
-	case model.MigrationPending, model.MigrationMigrating, model.MigrationFailed:
-		// OK to rollback.
-	default:
-		return fmt.Errorf("%w: cannot rollback migration in status %q", model.ErrInvalid, m.Status)
-	}
-
-	return s.store.UpdateMigrationStatus(ctx, id, model.MigrationRolledBack, nil)
+	return s.migration.RollbackMigration(ctx, id)
 }
 
 // ListMigrations returns recent migrations.
+// See internal/migration: the orchestration state machine lives there.
 func (s *Service) ListMigrations(ctx context.Context, limit int) ([]*model.Migration, error) {
-	migrations, err := s.store.ListMigrations(ctx, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list migrations: %w", err)
-	}
-	return migrations, nil
+	return s.migration.ListMigrations(ctx, limit)
 }
 
 // ── Realms & Shards (TODO v0.1.14) ──────────────────────────────

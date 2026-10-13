@@ -300,3 +300,10 @@ flowchart LR
 "迁移编排"与"角色索引投影"揉成一个包。v0.1 系列的
 `internal/admin`（迁移服务）与 `internal/directory`（索引投影）天然分流，
 拆分的唯一动因是独立扩缩容，而不是清理职能。
+
+2026-10-14 起这条"代码层不揉成一包"的底线已落地：迁移编排状态机
+（create / get / list / rollback）抽到独立包 `internal/migration`
+（自有窄 Store 接口，不依赖具体存储实现），`internal/admin` 只保留
+薄委托（`admin.CreateMigrationRequest` 是 migration 侧 DTO 的类型别名，
+REST/gRPC 契约零变更）。把两者进一步拆成**独立服务**仍以多舰队独立
+扩缩容的真实需求为触发条件（见 docs/roadmap.md）。
