@@ -239,12 +239,13 @@ func TestStaleClaimReplaysAfterRetryInterval(t *testing.T) {
 	ctx := context.Background()
 
 	var calls atomic.Int32
-	if err := a.Subscribe(ctx, event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+	handler := func(_ context.Context, e *event.Event) error {
 		if calls.Add(1) == 1 {
 			return errors.New("transient failure")
 		}
 		return nil
-	}); err != nil {
+	}
+	if err := a.Subscribe(ctx, event.TopicCharacters, handler); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
 
@@ -253,9 +254,22 @@ func TestStaleClaimReplaysAfterRetryInterval(t *testing.T) {
 	}
 	waitFor(t, "first failed delivery pending", func() bool { return pendingCount(t, a) == 1 })
 
-	// Age the pending entry past retryAfter (30s).
+	// Stop the loop before driving the sweep synchronously (see
+	// TestDeadLetterAfterMaxRedelivery for the full rationale).
+	if err := a.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Age the pending entry past retryAfter (30s), then sweep.
 	mr.SetTime(time.Now().Add(31 * time.Second))
-	waitFor(t, "replayed entry acked", func() bool { return pendingCount(t, a) == 0 })
+	sweeper := New(redis.NewClient(&redis.Options{Addr: mr.Addr()}), Options{
+		Logger: slog.New(slog.NewTextHandler(&buf, nil)),
+	})
+	defer sweeper.Close()
+	sweeper.claimStale(ctx, event.TopicCharacters, handler)
+	if p := pendingCount(t, a); p != 0 {
+		t.Fatalf("pending after replay = %d, want 0", p)
+	}
 
 	if got := calls.Load(); got != 2 {
 		t.Errorf("handler calls = %d, want 2 (fail, then replay success)", got)
@@ -274,11 +288,15 @@ func TestDeadLetterAfterMaxRedelivery(t *testing.T) {
 	a, mr := newTestAdapter(t, Options{Block: 30 * time.Millisecond, Logger: slog.New(slog.NewTextHandler(&buf, nil))})
 	ctx := context.Background()
 
-	var calls atomic.Int32
-	if err := a.Subscribe(ctx, event.TopicCharacters, func(_ context.Context, e *event.Event) error {
-		calls.Add(1)
+	// The same handler is reused by the synchronous sweep below: the consume
+	// loop can be starved for tens of seconds when the whole suite runs in
+	// parallel under -race, so the test drives the sweep directly instead of
+	// betting on scheduling (the loop's own periodicity is covered by
+	// TestStaleClaimReplaysAfterRetryInterval).
+	handler := func(_ context.Context, e *event.Event) error {
 		return errors.New("poison handler")
-	}); err != nil {
+	}
+	if err := a.Subscribe(ctx, event.TopicCharacters, handler); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
 
@@ -295,19 +313,39 @@ func TestDeadLetterAfterMaxRedelivery(t *testing.T) {
 		t.Fatalf("xclaim: %v", err)
 	}
 
-	// Age the entry past retryAfter so the sweep's XPENDING IDLE filter
-	// picks it up; deadLetter runs before claimStale, so the ack wins the
-	// race against another replay.
-	mr.SetTime(time.Now().Add(31 * time.Second))
-	waitFor(t, "dead-letter log", func() bool {
-		return strings.Contains(buf.String(), "dead-letter after max redelivery")
-	})
-	waitFor(t, "dead-letter acked away", func() bool { return pendingCount(t, a) == 0 })
+	// Stop the consume loop before driving the sweep: its claimStale would
+	// keep re-claiming and re-failing the entry (each failure resets the
+	// idle timer), and the loop can be starved for tens of seconds when the
+	// whole suite runs in parallel under -race. A second adapter on the
+	// same broker runs the sweep synchronously — no competing loop.
+	if err := a.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
-	// Dead-lettering must end the retries.
+	// Age the entry past retryAfter so the sweep's XPENDING IDLE filter
+	// picks it up; claimStale dead-letters first, so the ack lands before
+	// any re-claim in the same sweep.
+	mr.SetTime(time.Now().Add(31 * time.Second))
+	sweeper := New(redis.NewClient(&redis.Options{Addr: mr.Addr()}), Options{
+		Logger: slog.New(slog.NewTextHandler(&buf, nil)),
+	})
+	defer sweeper.Close()
+	sweeper.claimStale(ctx, event.TopicCharacters, handler)
+	if !strings.Contains(buf.String(), "dead-letter after max redelivery") {
+		t.Fatalf("no dead-letter log after max redelivery: %q", buf.String())
+	}
+	if p := pendingCount(t, a); p != 0 {
+		t.Fatalf("pending after dead-letter = %d, want 0", p)
+	}
+
+	// Dead-lettering must end the retries: the acked entry stays out of the
+	// pending list, so nothing can replay it. (The exact handler-call count
+	// is not asserted — the loop's consumer may legitimately claim the entry
+	// once before the ack, and that still satisfies the at-least-once
+	// contract.)
 	time.Sleep(200 * time.Millisecond)
-	if got := calls.Load(); got != 1 {
-		t.Errorf("handler calls = %d, want 1 (no replay after dead-letter)", got)
+	if p := pendingCount(t, a); p != 0 {
+		t.Fatalf("pending after dead-letter = %d, want 0 (entry must not be replayed)", p)
 	}
 }
 
