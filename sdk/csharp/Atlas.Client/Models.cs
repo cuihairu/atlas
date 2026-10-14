@@ -27,6 +27,7 @@ public sealed class Server
     public string Status { get; set; } = "";
     public int Players { get; set; }
     public double Load { get; set; }
+    public int Weight { get; set; }
     public DateTimeOffset? LastSeenAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

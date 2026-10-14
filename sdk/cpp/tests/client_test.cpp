@@ -66,7 +66,8 @@ struct TestServer {
             res.set_content(
                 R"({"servers":[{"id":"game-1","name":"Test","type":"game","region":"cn-east",)"
                 R"("version":"1.0.0","platform":"any","endpoint":{"host":"10.0.0.1","port":30001},)"
-                R"("capacity":100,"status":"online","players":5,"load":0.25}]})",
+                R"("capacity":100,"status":"online","players":5,"load":0.25,)"
+                R"("weight":200}]})",
                 "application/json");
         });
 
@@ -181,6 +182,7 @@ void TestLifecycle(TestServer& ts) {
     CHECK(servers.size() == 1);
     CHECK(servers[0].id == "game-1");
     CHECK(servers[0].endpoint.port == 30001);
+    CHECK(servers[0].weight == 200);
 
     bool threw = false;
     try {

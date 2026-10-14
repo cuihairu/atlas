@@ -76,5 +76,5 @@ ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 \
 | 自动心跳 | 同步版后台线程（`AutoHeartbeat`），异步版 asyncio 任务（`AsyncHeartbeatTask`）；`on_error` 回调上报失败，循环不停 |
 | 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为 None） |
 | 三端口 | `base_url` 覆盖公网/Admin；`registry_base_url` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
-| 灰度权重 | `set_weight(server_id, weight)`（Admin 域，同步/异步同名）：`0` 中性、`1..1000`，越界抛 `AtlasError(INVALID_ARGUMENT)`；返回 `WeightResult(server_id, weight)` |
+| 灰度权重 | `set_weight(server_id, weight)`（Admin 域，同步/异步同名）：`0` 中性、`1..1000`，越界抛 `AtlasError(INVALID_ARGUMENT)`；返回 `WeightResult(server_id, weight)`；`Server` 模型同带 `weight`（未设置时为 0） |
 | 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |

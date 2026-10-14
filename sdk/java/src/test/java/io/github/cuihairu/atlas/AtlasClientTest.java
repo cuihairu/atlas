@@ -111,7 +111,7 @@ class AtlasClientTest {
         s.routes.add(FakeAtlas.route("GET", "/v1/discovery/servers", r -> {
             seen[0] = r.query();
             return FakeAtlas.reply(200,
-                    "{\"servers\":[{\"id\":\"game-1\",\"status\":\"online\",\"players\":12}]}");
+                    "{\"servers\":[{\"id\":\"game-1\",\"status\":\"online\",\"players\":12,\"weight\":200}]}");
         }));
         s.routes.add(FakeAtlas.route("GET", "/v1/discovery/servers/nope",
                 r -> FakeAtlas.reply(404,
@@ -125,6 +125,7 @@ class AtlasClientTest {
         assertEquals(1, got.size());
         assertEquals("game-1", got.get(0).id);
         assertEquals(12, got.get(0).players);
+        assertEquals(200, got.get(0).weight);
         assertEquals(Map.of("region", "cn-east", "status", "online", "limit", "20"), seen[0]);
 
         AtlasError e = assertThrows(AtlasError.class, () -> c.getServer("nope"));

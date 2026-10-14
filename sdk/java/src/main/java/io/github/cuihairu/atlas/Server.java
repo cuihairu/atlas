@@ -51,6 +51,9 @@ public class Server {
     @SerializedName("load")
     public double load;
 
+    @SerializedName("weight")
+    public int weight;
+
     @SerializedName("last_seen_at")
     public Instant lastSeenAt;
 

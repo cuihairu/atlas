@@ -101,7 +101,7 @@ try (AtlasClient client = new AtlasClient(new AtlasClientOptions()
 | 方法 | 返回 | 说明 |
 | --- | --- | --- |
 | `setMaintenance` / `setDrain` / `enable` / `disable(serverId)` | `StatusResult` | 生命周期操作 |
-| `setWeight(serverId, weight)` | `WeightResult` | 灰度路由权重：`0` 中性、`1..1000`；越界 400 |
+| `setWeight(serverId, weight)` | `WeightResult` | 灰度路由权重：`0` 中性、`1..1000`；越界 400；`Server` 模型同带 `weight`（缺省 0） |
 | `getStats()` | `Stats` | 舰队统计 |
 | `searchCharacters(CharacterFilter)` | `CharacterPage` | `name / serverId / classId / minLevel / maxLevel / limit / cursor` |
 | `createMigration(CreateMigrationRequest)` | `Migration` | `source_servers` 数组 + `target_server`，合服可多源 |

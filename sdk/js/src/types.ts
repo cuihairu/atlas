@@ -21,6 +21,7 @@ export interface Server {
   status: string;
   players: number;
   load: number;
+  weight: number;
   lastSeenAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
@@ -187,6 +188,7 @@ export function parseServer(d?: Raw): Server {
     status: d?.status ?? "",
     players: d?.players ?? 0,
     load: d?.load ?? 0,
+    weight: d?.weight ?? 0,
     lastSeenAt: parseDate(d?.last_seen_at),
     createdAt: parseDate(d?.created_at),
     updatedAt: parseDate(d?.updated_at),

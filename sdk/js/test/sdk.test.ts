@@ -203,7 +203,7 @@ test("discovery and error mapping", async () => {
     /\/v1\/discovery\/servers$/,
     (req) => {
       Object.assign(seen, req.query);
-      return [200, { servers: [{ id: "game-1", status: "online", players: 12 }] }];
+      return [200, { servers: [{ id: "game-1", status: "online", players: 12, weight: 200 }] }];
     },
   ]);
   s.routes.push([
@@ -221,6 +221,7 @@ test("discovery and error mapping", async () => {
     assert.equal(got.length, 1);
     assert.equal(got[0].id, "game-1");
     assert.equal(got[0].players, 12);
+    assert.equal(got[0].weight, 200);
     assert.deepEqual(seen, { region: "cn-east", status: "online", limit: "20" });
 
     await assert.rejects(c.getServer("nope"), (err: unknown) => {

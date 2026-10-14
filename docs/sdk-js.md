@@ -98,7 +98,7 @@ client.close();
 | 方法 | 返回 | 说明 |
 | --- | --- | --- |
 | `setMaintenance(serverId)` / `setDrain` / `enable` / `disable` | `StatusResult` | 生命周期操作 |
-| `setWeight(serverId, weight)` | `WeightResult` | 灰度路由权重：`0` 中性、`1..1000`；越界 400 |
+| `setWeight(serverId, weight)` | `WeightResult` | 灰度路由权重：`0` 中性、`1..1000`；越界 400；`Server` 接口同带 `weight`（缺省 0） |
 | `getStats()` | `Stats` | 舰队统计（服务器数按状态/区域/版本分布、总在线、总容量、角色总数） |
 | `searchCharacters(filter)` | `CharacterPage` | filter：`{ name?, serverId?, classId?, minLevel?, maxLevel?, limit?, cursor? }` |
 | `createMigration({ sourceServers, targetServer })` | `Migration` | 合服可多源 |

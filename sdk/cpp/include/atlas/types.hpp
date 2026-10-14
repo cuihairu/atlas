@@ -70,6 +70,7 @@ struct Server {
     std::string status;
     int players = 0;
     double load = 0.0;
+    int weight = 0;
     std::optional<TimePoint> last_seen_at;
     TimePoint created_at{};
     TimePoint updated_at{};
@@ -94,6 +95,7 @@ inline void from_json(const nlohmann::json& j, Server& s) {
     s.status = j.value("status", "");
     s.players = j.value("players", 0);
     s.load = j.value("load", 0.0);
+    s.weight = j.value("weight", 0);
     if (j.contains("last_seen_at") && j["last_seen_at"].is_string()) {
         s.last_seen_at = ParseTime(j["last_seen_at"].get<std::string>());
     }

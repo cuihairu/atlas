@@ -187,7 +187,8 @@ def test_discovery_and_error_mapping() -> None:
 
     def servers(req: Dict[str, Any]) -> Tuple[int, Any]:
         seen.update(req["query"])
-        return 200, {"servers": [{"id": "game-1", "status": "online", "players": 12}]}
+        return 200, {"servers": [{"id": "game-1", "status": "online", "players": 12,
+                                  "weight": 200}]}
 
     s.routes.append(route("GET", r"/v1/discovery/servers", servers))
     s.routes.append(route("GET", r"/v1/discovery/servers/nope", lambda q: (
@@ -196,6 +197,7 @@ def test_discovery_and_error_mapping() -> None:
     try:
         got = c.list_servers(ServerFilter(region="cn-east", status="online", limit=20))
         assert len(got) == 1 and got[0].id == "game-1" and got[0].players == 12
+        assert got[0].weight == 200
         assert seen == {"region": "cn-east", "status": "online", "limit": "20"}
 
         with pytest.raises(AtlasError) as exc:
