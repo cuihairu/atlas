@@ -321,6 +321,16 @@ StatusResult Client::Disable(const std::string& server_id) {
     return ParseStatus(body);
 }
 
+WeightResult Client::SetWeight(const std::string& server_id, int weight) {
+    json body_in = {{"weight", weight}};
+    json body = impl_->DoWithRetry(false, "POST", "/v1/admin/servers/" + UrlEscape(server_id) + "/weight",
+                                   &body_in, impl_->opts.admin_api_key);
+    WeightResult out;
+    if (body.contains("server_id") && !body["server_id"].is_null()) out.server_id = body["server_id"];
+    out.weight = body.value("weight", 0);
+    return out;
+}
+
 Stats Client::GetStats() {
     json body = impl_->DoWithRetry(false, "GET", "/v1/admin/stats", nullptr, impl_->opts.admin_api_key);
     return body.get<Stats>();

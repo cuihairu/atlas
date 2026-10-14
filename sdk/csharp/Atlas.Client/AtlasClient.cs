@@ -189,6 +189,13 @@ public sealed class AtlasClient : IDisposable, IAsyncDisposable
         SendAsync<StatusResult>(HttpMethod.Post, _publicBase,
             $"/v1/admin/servers/{Esc(serverId)}/{action}", null, null, Auth.Admin, ct);
 
+    /// <summary>Sets the operator routing weight (0 clears to neutral;
+    /// 1..1000 attracts traffic proportionally).</summary>
+    public Task<WeightResult> SetWeightAsync(string serverId, int weight, CancellationToken ct = default) =>
+        SendAsync<WeightResult>(HttpMethod.Post, _publicBase,
+            $"/v1/admin/servers/{Esc(serverId)}/weight", null,
+            new Dictionary<string, int> { ["weight"] = weight }, Auth.Admin, ct);
+
     /// <summary>Returns the fleet overview (Admin).</summary>
     public Task<Stats> StatsAsync(CancellationToken ct = default) =>
         SendAsync<Stats>(HttpMethod.Get, _publicBase, "/v1/admin/stats", null,

@@ -227,3 +227,10 @@ public sealed class StatusResult
     public string ServerId { get; set; } = "";
     public string Status { get; set; } = "";
 }
+
+/// <summary>WeightResult is the {"server_id","weight"} reply.</summary>
+public sealed class WeightResult
+{
+    public string ServerId { get; set; } = "";
+    public int Weight { get; set; }
+}

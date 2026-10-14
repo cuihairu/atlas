@@ -158,6 +158,11 @@ struct StatusResult {
     std::string status;
 };
 
+struct WeightResult {
+    std::optional<std::string> server_id;
+    int weight = 0;
+};
+
 // Filter for ListServers; empty fields are omitted.
 struct ServerFilter {
     std::optional<std::string> region;

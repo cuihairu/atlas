@@ -328,6 +328,15 @@ public class AtlasClient implements AutoCloseable {
         return lifecycle("disable", serverId);
     }
 
+    /** Sets the operator routing weight (0 clears to neutral, 1..1000). */
+    public WeightResult setWeight(String serverId, int weight) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("weight", weight);
+        WeightResult r = request("POST", "/v1/admin/servers/" + serverId + "/weight",
+                null, body, opts.getAdminApiKey(), false, WeightResult.class);
+        return r != null ? r : new WeightResult();
+    }
+
     public Stats getStats() {
         Stats s = request("GET", "/v1/admin/stats", null, null,
                 opts.getAdminApiKey(), false, Stats.class);

@@ -65,4 +65,5 @@ ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 ./bui
 | 心跳节奏 | 上报间隔 : 判死阈值 = 1:3（默认 10s / suspect 30s / offline 60s） |
 | 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为空） |
 | 三端口 | `base_url` 覆盖公网/Admin；`registry_base_url` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
+| 灰度权重 | `SetWeight(server_id, weight)`（Admin 域）：`0` 中性、`1..1000`，越界抛 `atlas::Error(INVALID_ARGUMENT)`；返回 `WeightResult{server_id, weight}` |
 | 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |

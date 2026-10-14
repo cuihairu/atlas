@@ -25,6 +25,7 @@ from .types import (
     Stats,
     StatusResult,
     UpdateCharacterRequest,
+    WeightResult,
 )
 
 __version__ = "0.1.8"
@@ -53,4 +54,5 @@ __all__ = [
     "Stats",
     "StatusResult",
     "UpdateCharacterRequest",
+    "WeightResult",
 ]

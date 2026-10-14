@@ -149,6 +149,12 @@ class StatusResult:
 
 
 @dataclass
+class WeightResult:
+    server_id: Optional[str] = None
+    weight: int = 0
+
+
+@dataclass
 class Character:
     account_id: int = 0
     server_id: str = ""

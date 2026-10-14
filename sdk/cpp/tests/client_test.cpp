@@ -24,6 +24,7 @@ struct TestServer {
     std::atomic<int> register_auth_ok{0};
     std::atomic<int> heartbeat_count{0};
     std::atomic<int> last_players{0};
+    std::atomic<int> last_weight{-1};
 
     std::mutex hdr_mu;
     std::string last_request_id;
@@ -93,6 +94,23 @@ struct TestServer {
                 R"("level":1,"class_id":3,"created_at":"2026-10-01T00:00:00Z",)"
                 R"("updated_at":"2026-10-01T00:00:00Z"})",
                 "application/json");
+        });
+
+        srv.Post(R"(/v1/admin/servers/([^/]+)/weight)", [&](const httplib::Request& req, httplib::Response& res) {
+            auto body = nlohmann::json::parse(req.body);
+            int w = body.value("weight", -1);
+            // Same bound as admin.MaxServerWeight (0 clears, 1..1000 routes).
+            if (w < 0 || w > 1000) {
+                res.status = 400;
+                res.set_content(R"({"error":{"code":"INVALID_ARGUMENT","message":"weight out of range"}})",
+                                "application/json");
+                return;
+            }
+            last_weight = w;
+            res.set_content(nlohmann::json{{"server_id", req.matches[1].str()},
+                                            {"weight", w}}
+                                .dump(),
+                            "application/json");
         });
 
         srv.Get("/v1/admin/stats", [&](const httplib::Request& req, httplib::Response& res) {
@@ -222,6 +240,28 @@ void TestDefaultHeaders(TestServer& ts) {
     CHECK(ts.last_request_id == "cpp-req-1");
 }
 
+void TestSetWeight(TestServer& ts) {
+    atlas::Client c(TestOptions("http://127.0.0.1:" + std::to_string(ts.port)));
+
+    auto w = c.SetWeight("game-1", 200);
+    CHECK(w.server_id.value_or("") == "game-1");
+    CHECK(w.weight == 200);
+    CHECK(ts.last_weight.load() == 200);
+
+    // 0 clears back to neutral.
+    auto cleared = c.SetWeight("game-1", 0);
+    CHECK(cleared.weight == 0);
+    CHECK(ts.last_weight.load() == 0);
+
+    bool invalid = false;
+    try {
+        c.SetWeight("game-1", 5000);
+    } catch (const atlas::Error& e) {
+        invalid = e.code() == "INVALID_ARGUMENT" && e.status() == 400;
+    }
+    CHECK(invalid);
+}
+
 } // namespace
 
 int main() {
@@ -230,6 +270,7 @@ int main() {
     TestLifecycle(ts);
     TestAutoHeartbeat(ts);
     TestDefaultHeaders(ts);
+    TestSetWeight(ts);
     if (failures == 0) {
         std::cout << "all atlas cpp sdk tests passed\n";
         return 0;

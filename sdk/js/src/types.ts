@@ -70,6 +70,11 @@ export interface StatusResult {
   status: string;
 }
 
+export interface WeightResult {
+  serverId?: string;
+  weight: number;
+}
+
 export interface Character {
   accountId: number;
   serverId: string;

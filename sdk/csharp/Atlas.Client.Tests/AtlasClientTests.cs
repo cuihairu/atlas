@@ -317,6 +317,24 @@ public sealed class AtlasClientTests
     }
 
     [Fact]
+    public async Task SetWeight_SendsBodyAndUsesAdminAuth()
+    {
+        using var fake = new FakeAtlas();
+        fake.On(r => r is { Method: "POST", Path: "/v1/admin/servers/game-1/weight" },
+            """{"server_id":"game-1","weight":200}""");
+
+        using var client = Client(fake.BaseUrl, adminKey: "admin-key");
+        var res = await client.SetWeightAsync("game-1", 200);
+
+        Assert.Equal(200, res.Weight);
+        Assert.Equal("game-1", res.ServerId);
+        var req = fake.Requests.Single();
+        Assert.True(req.HasHeader("Authorization", "Bearer admin-key"));
+        var body = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(req.Body!);
+        Assert.Equal(200, body.GetProperty("weight").GetInt32());
+    }
+
+    [Fact]
     public async Task Stats_UsesAdminAuth()
     {
         using var fake = new FakeAtlas();

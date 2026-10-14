@@ -317,6 +317,8 @@ def test_admin() -> None:
         200, {"server_id": "game-1", "status": "maintenance"})))
     s.routes.append(route("POST", r"/v1/admin/servers/game-1/enable", lambda q: (
         200, {"server_id": "game-1", "status": "online"})))
+    s.routes.append(route("POST", r"/v1/admin/servers/game-1/weight", lambda q: (
+        200, {"server_id": "game-1", "weight": 200})))
     s.routes.append(route("GET", r"/v1/admin/stats", lambda q: (
         200, {"total_servers": 2, "servers_by_status": {"online": 2},
               "servers_by_region": {"cn-east": 2}, "servers_by_version": {"1.0.0": 2},
@@ -338,6 +340,10 @@ def test_admin() -> None:
         assert c.enable("game-1").status == "online"
         life = body_of(s, "POST", r"/v1/admin/servers/game-1/maintenance")
         assert life["headers"]["Authorization"] == "Bearer adm-key"
+
+        w = c.set_weight("game-1", 200)
+        assert (w.server_id, w.weight) == ("game-1", 200)
+        assert body_of(s, "POST", r"/v1/admin/servers/game-1/weight")["body"] == {"weight": 200}
 
         stats = c.get_stats()
         assert (stats.total_servers, stats.total_characters) == (2, 9)
@@ -518,6 +524,23 @@ def test_async_lifecycle_and_heartbeat() -> None:
         assert len(beats) >= 2 and beats[-1]["players"] == 8
 
     asyncio.run(run())
+
+
+def test_async_admin_weight() -> None:
+    s = FakeAtlas()
+    s.routes.append(route("POST", r"/v1/admin/servers/game-1/weight", lambda q: (
+        200, {"server_id": "game-1", "weight": 300})))
+
+    async def run() -> None:
+        async with AtlasAsyncClient(
+            s.url, admin_api_key="adm-key", base_backoff=0.001,
+        ) as c:
+            w = await c.set_weight("game-1", 300)
+            assert (w.server_id, w.weight) == ("game-1", 300)
+
+    asyncio.run(run())
+    s.close()
+    assert body_of(s, "POST", r"/v1/admin/servers/game-1/weight")["body"] == {"weight": 300}
 
 
 # ── Default headers (docs/api.md 请求追踪) ──

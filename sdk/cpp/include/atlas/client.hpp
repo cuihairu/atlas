@@ -97,6 +97,7 @@ public:
     StatusResult SetDrain(const std::string& server_id);
     StatusResult Enable(const std::string& server_id);
     StatusResult Disable(const std::string& server_id);
+    WeightResult SetWeight(const std::string& server_id, int weight);
     Stats GetStats();
     CharacterPage SearchCharacters(const CharacterFilter& filter);
     Migration CreateMigration(const CreateMigrationRequest& req);

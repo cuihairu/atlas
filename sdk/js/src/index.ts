@@ -27,4 +27,5 @@ export type {
   Stats,
   StatusResult,
   UpdateCharacterRequest,
+  WeightResult,
 } from "./types.ts";

@@ -375,6 +375,7 @@ test("admin", async () => {
   s.routes.push(
     ["POST", /\/v1\/admin\/servers\/game-1\/maintenance$/, () => [200, { server_id: "game-1", status: "maintenance" }]],
     ["POST", /\/v1\/admin\/servers\/game-1\/enable$/, () => [200, { server_id: "game-1", status: "online" }]],
+    ["POST", /\/v1\/admin\/servers\/game-1\/weight$/, () => [200, { server_id: "game-1", weight: 200 }]],
     [
       "GET",
       /\/v1\/admin\/stats$/,
@@ -411,6 +412,11 @@ test("admin", async () => {
     assert.equal((await c.enable("game-1")).status, "online");
     const life = bodyOf(s, "POST", /\/maintenance$/);
     assert.equal(life.headers.authorization, "Bearer adm-key");
+
+    const w = await c.setWeight("game-1", 200);
+    assert.equal(w.weight, 200);
+    assert.equal(w.serverId, "game-1");
+    assert.deepEqual(bodyOf(s, "POST", /\/weight$/).body, { weight: 200 });
 
     const stats = await c.getStats();
     assert.equal(stats.totalServers, 2);

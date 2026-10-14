@@ -234,6 +234,8 @@ class AtlasClientTest {
                 r -> FakeAtlas.reply(200, "{\"server_id\":\"game-1\",\"status\":\"maintenance\"}")));
         s.routes.add(FakeAtlas.route("POST", "/v1/admin/servers/game-1/enable",
                 r -> FakeAtlas.reply(200, "{\"server_id\":\"game-1\",\"status\":\"online\"}")));
+        s.routes.add(FakeAtlas.route("POST", "/v1/admin/servers/game-1/weight",
+                r -> FakeAtlas.reply(200, "{\"server_id\":\"game-1\",\"weight\":200}")));
         s.routes.add(FakeAtlas.route("GET", "/v1/admin/stats",
                 r -> FakeAtlas.reply(200, "{\"total_servers\":2,\"servers_by_status\":{\"online\":2},"
                         + "\"servers_by_region\":{\"cn-east\":2},\"servers_by_version\":{\"1.0.0\":2},"
@@ -255,6 +257,12 @@ class AtlasClientTest {
         assertEquals("online", c.enable("game-1").status);
         FakeAtlas.Recorded life = s.request("POST", Pattern.compile(".*/servers/game-1/maintenance"));
         assertEquals("Bearer adm-key", life.headers().get("authorization"));
+
+        WeightResult w = c.setWeight("game-1", 200);
+        assertEquals(200, w.weight);
+        assertEquals("game-1", w.serverId);
+        FakeAtlas.Recorded wReq = s.request("POST", Pattern.compile(".*/servers/game-1/weight"));
+        assertTrue(wReq.body().contains("\"weight\":200"));
 
         Stats stats = c.getStats();
         assertEquals(2, stats.totalServers);

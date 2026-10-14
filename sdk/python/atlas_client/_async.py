@@ -27,6 +27,7 @@ from .types import (
     Stats,
     StatusResult,
     UpdateCharacterRequest,
+    WeightResult,
 )
 
 __all__ = ["AtlasAsyncClient"]
@@ -238,6 +239,17 @@ class AtlasAsyncClient:
 
     async def disable(self, server_id: str) -> StatusResult:
         return await self._lifecycle("disable", server_id)
+
+    async def set_weight(self, server_id: str, weight: int) -> WeightResult:
+        """Sets the operator routing weight (0 clears to neutral, 1..1000)."""
+        body = await self._request(
+            "POST", f"/v1/admin/servers/{server_id}/weight",
+            json_body={"weight": weight},
+            bearer=self._t.admin_api_key,
+        ) or {}
+        return WeightResult(
+            server_id=body.get("server_id"), weight=body.get("weight", 0)
+        )
 
     async def get_stats(self) -> Stats:
         body = await self._request(

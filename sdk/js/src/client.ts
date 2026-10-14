@@ -22,6 +22,7 @@ import type {
   Stats,
   StatusResult,
   UpdateCharacterRequest,
+  WeightResult,
 } from "./types.ts";
 import {
   characterFilterParams,
@@ -321,6 +322,16 @@ export class AtlasClient {
 
   async disable(serverId: string): Promise<StatusResult> {
     return this.lifecycle("disable", serverId);
+  }
+
+  /** Sets the operator routing weight (0 clears to neutral, 1..1000). */
+  async setWeight(serverId: string, weight: number): Promise<WeightResult> {
+    const body = (await this.request(
+      "POST",
+      `/v1/admin/servers/${encodeURIComponent(serverId)}/weight`,
+      { json: { weight }, bearer: this.adminApiKey },
+    )) as Record<string, any>;
+    return { serverId: body?.server_id, weight: body?.weight ?? 0 };
   }
 
   async getStats(): Promise<Stats> {
