@@ -44,6 +44,8 @@ class Server:
     players: int = 0
     load: float = 0.0
     weight: int = 0
+    source: str = ""
+    started_at: Optional[datetime] = None
     last_seen_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -66,6 +68,8 @@ class Server:
             players=int(d.get("players", 0)),
             load=float(d.get("load", 0.0)),
             weight=int(d.get("weight", 0)),
+            source=d.get("source", ""),
+            started_at=_parse_time(d.get("started_at")),
             last_seen_at=_parse_time(d.get("last_seen_at")),
             created_at=_parse_time(d.get("created_at")),
             updated_at=_parse_time(d.get("updated_at")),

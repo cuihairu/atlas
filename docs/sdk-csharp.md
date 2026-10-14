@@ -100,7 +100,7 @@ await client.UnregisterAsync("game-1001");
 | 方法 | 返回 | 说明 |
 | --- | --- | --- |
 | `SetMaintenanceAsync` / `SetDrainAsync` / `EnableAsync` / `DisableAsync(serverId)` | `Task<StatusResult>` | 生命周期操作 |
-| `SetWeightAsync(serverId, weight)` | `Task<WeightResult>` | 灰度路由权重：`0` 中性、`1..1000`；越界 400 |
+| `SetWeightAsync(serverId, weight)` | `Task<WeightResult>` | 灰度路由权重：`0` 中性、`1..1000`；越界 400；`Server` 模型同带 `weight`（缺省 0）、`started_at`（进程启动时间）、`source`（config=配置文件托管） |
 | `StatsAsync()` | `Task<Stats>` | 舰队统计 |
 | `SearchCharactersAsync(CharacterFilter)` | `Task<CharacterPage>` | `Name / ServerId / ClassId / MinLevel / MaxLevel / Limit / Cursor` |
 | `CreateMigrationAsync(CreateMigrationRequest)` | `Task<Migration>` | `SourceServers` 数组 + `TargetServer`，合服可多源 |

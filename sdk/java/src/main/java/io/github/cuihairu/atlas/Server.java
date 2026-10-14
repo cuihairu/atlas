@@ -54,6 +54,14 @@ public class Server {
     @SerializedName("weight")
     public int weight;
 
+    /** Profile ownership: "" / "api" = API-registered, "config" = config-file declared. */
+    @SerializedName("source")
+    public String source = "";
+
+    /** Game server process start time reported at register; null on pre-v0.1.20 records. */
+    @SerializedName("started_at")
+    public Instant startedAt;
+
     @SerializedName("last_seen_at")
     public Instant lastSeenAt;
 

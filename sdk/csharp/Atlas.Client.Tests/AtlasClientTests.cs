@@ -99,12 +99,14 @@ public sealed class AtlasClientTests
     {
         using var fake = new FakeAtlas();
         fake.On(r => r is { Method: "GET", Path: "/v1/discovery/servers/game-1" },
-            """{"id":"game-1","status":"online","players":3,"weight":200}""");
+            """{"id":"game-1","status":"online","players":3,"weight":200,"source":"config","started_at":"2026-10-01T00:00:00Z"}""");
 
         using var client = Client(fake.BaseUrl);
         var s = await client.GetServerAsync("game-1");
         Assert.Equal(3, s.Players);
         Assert.Equal(200, s.Weight);
+        Assert.Equal("config", s.Source);
+        Assert.Equal(DateTimeOffset.Parse("2026-10-01T00:00:00Z"), s.StartedAt);
     }
 
     [Fact]

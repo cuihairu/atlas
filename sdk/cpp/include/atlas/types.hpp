@@ -71,6 +71,10 @@ struct Server {
     int players = 0;
     double load = 0.0;
     int weight = 0;
+    // Profile ownership: "" / "api" = API-registered, "config" = config-file declared.
+    std::string source;
+    // Game server process start time reported at register (absent on pre-v0.1.20 records).
+    std::optional<TimePoint> started_at;
     std::optional<TimePoint> last_seen_at;
     TimePoint created_at{};
     TimePoint updated_at{};
@@ -96,6 +100,10 @@ inline void from_json(const nlohmann::json& j, Server& s) {
     s.players = j.value("players", 0);
     s.load = j.value("load", 0.0);
     s.weight = j.value("weight", 0);
+    s.source = j.value("source", "");
+    if (j.contains("started_at") && j["started_at"].is_string()) {
+        s.started_at = ParseTime(j["started_at"].get<std::string>());
+    }
     if (j.contains("last_seen_at") && j["last_seen_at"].is_string()) {
         s.last_seen_at = ParseTime(j["last_seen_at"].get<std::string>());
     }

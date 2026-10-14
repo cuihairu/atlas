@@ -203,7 +203,7 @@ test("discovery and error mapping", async () => {
     /\/v1\/discovery\/servers$/,
     (req) => {
       Object.assign(seen, req.query);
-      return [200, { servers: [{ id: "game-1", status: "online", players: 12, weight: 200 }] }];
+      return [200, { servers: [{ id: "game-1", status: "online", players: 12, weight: 200, source: "config", started_at: "2026-10-01T00:00:00Z" }] }];
     },
   ]);
   s.routes.push([
@@ -222,6 +222,9 @@ test("discovery and error mapping", async () => {
     assert.equal(got[0].id, "game-1");
     assert.equal(got[0].players, 12);
     assert.equal(got[0].weight, 200);
+    assert.equal(got[0].source, "config");
+    assert.ok(got[0].startedAt instanceof Date);
+    assert.equal(got[0].startedAt?.getUTCFullYear(), 2026);
     assert.deepEqual(seen, { region: "cn-east", status: "online", limit: "20" });
 
     await assert.rejects(c.getServer("nope"), (err: unknown) => {

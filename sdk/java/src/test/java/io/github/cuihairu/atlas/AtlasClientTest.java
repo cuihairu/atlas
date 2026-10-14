@@ -4,6 +4,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -111,7 +112,9 @@ class AtlasClientTest {
         s.routes.add(FakeAtlas.route("GET", "/v1/discovery/servers", r -> {
             seen[0] = r.query();
             return FakeAtlas.reply(200,
-                    "{\"servers\":[{\"id\":\"game-1\",\"status\":\"online\",\"players\":12,\"weight\":200}]}");
+                    "{\"servers\":[{\"id\":\"game-1\",\"status\":\"online\",\"players\":12,"
+                            + "\"weight\":200,\"source\":\"config\","
+                            + "\"started_at\":\"2026-10-01T00:00:00Z\"}]}");
         }));
         s.routes.add(FakeAtlas.route("GET", "/v1/discovery/servers/nope",
                 r -> FakeAtlas.reply(404,
@@ -126,6 +129,9 @@ class AtlasClientTest {
         assertEquals("game-1", got.get(0).id);
         assertEquals(12, got.get(0).players);
         assertEquals(200, got.get(0).weight);
+        assertEquals("config", got.get(0).source);
+        assertNotNull(got.get(0).startedAt);
+        assertEquals(Instant.parse("2026-10-01T00:00:00Z"), got.get(0).startedAt);
         assertEquals(Map.of("region", "cn-east", "status", "online", "limit", "20"), seen[0]);
 
         AtlasError e = assertThrows(AtlasError.class, () -> c.getServer("nope"));

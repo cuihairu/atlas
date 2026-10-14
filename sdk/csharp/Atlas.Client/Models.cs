@@ -28,6 +28,10 @@ public sealed class Server
     public int Players { get; set; }
     public double Load { get; set; }
     public int Weight { get; set; }
+    /// <summary>Profile ownership: "" / "api" = API-registered, "config" = config-file declared.</summary>
+    public string Source { get; set; } = "";
+    /// <summary>Game server process start time reported at register; null on pre-v0.1.20 records.</summary>
+    public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? LastSeenAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
