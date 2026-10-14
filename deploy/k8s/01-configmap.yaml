@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-config
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: config
+data:
+  # Store backend: "memory" (dev only), "postgres", or "mysql".
+  ATLAS_STORE: "postgres"
+  # PostgreSQL connection string. ATLAS_PG_PASSWORD should be a Secret, not here.
+  ATLAS_DATABASE_URL: "postgres://atlas:CHANGEME@postgres:5432/atlas?sslmode=disable"
+  # Redis runtime state.
+  ATLAS_REDIS_URL: "redis://redis:6379/0"
+  # Admin API key — put the real value in a Secret, not this ConfigMap.
+  # ATLAS_ADMIN_API_KEY: "REPLACE_WITH_SECRET_REF"
+  # --- Optional tuning (uncomment and adjust as needed) ---
+  # ATLAS_OTLP_ENDPOINT: "http://otel-collector:4318"  # OTLP/HTTP span export
+  # ATLAS_CORS_ORIGINS: "https://your-client.example.com"
+  # ATLAS_EVENT_ADAPTER: "redis"  # decouple directory writes via Redis Streams

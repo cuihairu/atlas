@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: atlas
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: atlas
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: atlas
+        app.kubernetes.io/component: app
+    spec:
+      # Wait for postgres + redis to be ready before starting atlas.
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -U atlas; do sleep 2; done
+        - name: wait-for-redis
+          image: redis:8-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until redis-cli -h redis ping; do sleep 2; done
+      containers:
+        - name: atlas
+          image: ghcr.io/cuihairu/atlas:latest  # pin to a SHA tag in production
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: public
+              containerPort: 8080  # Discovery / Directory / Routing
+            - name: registry
+              containerPort: 8081  # Registry (internal)
+            - name: admin
+              containerPort: 8082  # Admin / metrics
+            - name: grpc
+              containerPort: 9090  # gRPC
+          envFrom:
+            - configMapRef:
+                name: atlas-config
+          env:
+            # Admin API key — put the real value in a Secret.
+            # - name: ATLAS_ADMIN_API_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: atlas-secrets
+            #       key: admin-api-key
+          livenessProbe:
+            exec:
+              command: ["/atlas", "healthcheck"]
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ["/atlas", "healthcheck"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: atlas
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP  # change to LoadBalancer / NodePort for external access
+  selector:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: app
+  ports:
+    - name: public
+      port: 8080
+      targetPort: 8080
+    - name: registry
+      port: 8081
+      targetPort: 8081
+    - name: admin
+      port: 8082
+      targetPort: 8082
+    - name: grpc
+      port: 9090
+      targetPort: 9090

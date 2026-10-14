@@ -160,7 +160,7 @@ curl 'localhost:8080/v1/discovery/servers?status=online'
 
 Common configuration lives in `.env` plus compose environment variables: to change the image version, set `ATLAS_IMAGE` (e.g. the bare short SHA `e3f802d` for controlled upgrades); to change the database password, set `ATLAS_PG_PASSWORD` (sensitive values go only into `.env`, which `.gitignore` already excludes); to move character writes onto the message bus, add `ATLAS_EVENT_ADAPTER=redis` to `atlas.environment` in the compose file (this reuses the stack's own Redis — see [Data Sync](https://github.com/cuihairu/atlas/blob/main/docs/sync.md)). Stop and clean up: `docker compose down` (keeps data) / `docker compose down -v` (also removes the data volumes).
 
-> Building from source for development (without the GHCR image)? Use `deployments/docker/docker-compose.yml`. For multi-replica high availability, see `deploy/docker-compose.ha.yaml` and the [high-availability doc](https://github.com/cuihairu/atlas/blob/main/docs/ha.md).
+> Building from source for development (without the GHCR image)? Use `deployments/docker/docker-compose.yml`. For multi-replica high availability, see `deploy/docker-compose.ha.yaml` and the [high-availability doc](https://github.com/cuihairu/atlas/blob/main/docs/ha.md). For Kubernetes, see `deploy/k8s/README.md`.
 
 ---
 
@@ -259,7 +259,7 @@ atlas/
 ├── plugins/apisix/         APISIX access plugins
 ├── dashboard/              built-in admin console (frontend source and build output)
 ├── examples/               runnable examples per language
-├── deploy/                 haproxy / postgres / redis deployment configs
+├── deploy/                 haproxy / postgres / redis / k8s deployment configs
 ├── deployments/docker/     Dockerfile + docker-compose
 ├── docs/                   design docs (VitePress site)
 ├── Makefile

@@ -1,0 +1,179 @@
+# Schema migration ConfigMap + Job.
+# The ConfigMap bundles the PostgreSQL migration SQL; the Job runs them
+# against postgres on first deploy (postgres:17-alpine has psql).
+#
+# To update migrations:
+#   1. Regenerate this ConfigMap from the migrations/ directory.
+#   2. Bump the Job's .metadata.annotations.revision so the Job re-runs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: atlas-migrations
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: migration
+data:
+  0001_init.sql: |
+    -- Atlas v0.1.1 initial schema
+    -- See docs/data-model.md for design rationale.
+    BEGIN;
+    CREATE TABLE IF NOT EXISTS realms (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, region TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS shards (
+        id TEXT PRIMARY KEY, realm_id TEXT REFERENCES realms(id) ON DELETE SET NULL,
+        name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_shards_realm ON shards (realm_id);
+    CREATE TABLE IF NOT EXISTS servers (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'game', region TEXT NOT NULL,
+        realm_id TEXT REFERENCES realms(id) ON DELETE SET NULL,
+        shard_id TEXT REFERENCES shards(id) ON DELETE SET NULL,
+        version TEXT NOT NULL, platform TEXT NOT NULL DEFAULT '',
+        endpoint_host TEXT NOT NULL, endpoint_port INTEGER NOT NULL,
+        capacity INTEGER NOT NULL DEFAULT 0,
+        metadata JSONB NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'starting',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_servers_region_status ON servers (region, status);
+    CREATE INDEX IF NOT EXISTS idx_servers_realm ON servers (realm_id);
+    CREATE INDEX IF NOT EXISTS idx_servers_shard ON servers (shard_id);
+    CREATE TABLE IF NOT EXISTS character_index (
+        account_id BIGINT NOT NULL, server_id TEXT NOT NULL,
+        character_id BIGINT NOT NULL, name TEXT NOT NULL,
+        level INTEGER NOT NULL DEFAULT 1, class_id INTEGER NOT NULL DEFAULT 0,
+        avatar TEXT NOT NULL DEFAULT '', metadata JSONB NOT NULL DEFAULT '{}',
+        last_login_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (account_id, server_id, character_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_char_by_account ON character_index (account_id);
+    CREATE INDEX IF NOT EXISTS idx_char_by_char_id ON character_index (character_id);
+    CREATE INDEX IF NOT EXISTS idx_char_by_server ON character_index (server_id);
+    CREATE TABLE IF NOT EXISTS server_migrations (
+        id TEXT PRIMARY KEY, source_servers JSONB NOT NULL DEFAULT '[]',
+        target_server TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        completed_at TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_migration_status ON server_migrations (status);
+    COMMIT;
+  0002_realms_shards_indexes.sql: |
+    BEGIN;
+    CREATE INDEX IF NOT EXISTS idx_realms_created ON realms (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_shards_created ON shards (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_realms_status ON realms (status);
+    CREATE INDEX IF NOT EXISTS idx_shards_status ON shards (status);
+    COMMIT;
+  0003_maintenance_announcements.sql: |
+    BEGIN;
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS maintenance_windows (
+        id TEXT PRIMARY KEY, server_id TEXT NOT NULL,
+        start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL,
+        previous_status TEXT NOT NULL DEFAULT '', announcement_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_maintenance_windows_server ON maintenance_windows (server_id);
+    CREATE INDEX IF NOT EXISTS idx_maintenance_windows_start ON maintenance_windows (start_at);
+    CREATE TABLE IF NOT EXISTS announcements (
+        id TEXT PRIMARY KEY, server_id TEXT, title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '', level TEXT NOT NULL DEFAULT 'info',
+        starts_at TIMESTAMPTZ NOT NULL, ends_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_announcements_server ON announcements (server_id);
+    CREATE INDEX IF NOT EXISTS idx_announcements_window ON announcements (starts_at, ends_at);
+    COMMIT;
+  0004_servers_source.sql: |
+    BEGIN;
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+    COMMIT;
+  0005_server_tags.sql: |
+    BEGIN;
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+    COMMIT;
+  0006_crossserver_config.sql: |
+    BEGIN;
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS notify_mode TEXT NOT NULL DEFAULT '';
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS notify_callback_url TEXT NOT NULL DEFAULT '';
+    CREATE TABLE IF NOT EXISTS crossserver_config (
+        id TEXT PRIMARY KEY DEFAULT 'default',
+        version BIGINT NOT NULL DEFAULT 0,
+        hash TEXT NOT NULL DEFAULT '',
+        spec JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    COMMIT;
+  0007_server_weight.sql: |
+    BEGIN;
+    ALTER TABLE servers ADD COLUMN IF NOT EXISTS weight INT NOT NULL DEFAULT 0;
+    COMMIT;
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: atlas-migrate
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: migration
+spec:
+  # Re-run by bumping this annotation value.
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: atlas
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: postgres:17-alpine
+          env:
+            - name: PGHOST
+              value: "postgres"
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: "atlas"
+            - name: PGPASSWORD
+              value: "CHANGEME"  # use a Secret in production
+            - name: PGDATABASE
+              value: "atlas"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL..."
+              until pg_isready -U atlas; do sleep 2; done
+              echo "Applying migrations..."
+              for f in /migrations/0*.sql; do
+                echo "Applying $f"
+                psql -v ON_ERROR_STOP=1 -f "$f" || exit 1
+              done
+              echo "Migrations complete."
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: migrations
+          configMap:
+            name: atlas-migrations
