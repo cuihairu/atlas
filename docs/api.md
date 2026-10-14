@@ -446,7 +446,7 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 | --- | --- | --- |
 | `GET/POST /v1/admin/servers/{id}/tags`、`DELETE …/tags/{code}` | 运营标记（含公开性控制） | [concepts.md 标签段](concepts.md) |
 | `GET/PUT /v1/admin/crossserver/config` | 跨服配置读 / 全文发布（含 notify 扩散报告） | [config-center.md](config-center.md) |
-| `GET /v1/admin/audit` | Admin 操作审计流（`ATLAS_AUDIT_ENABLED`，默认开） | [security.md](security.md) |
+| `GET /v1/admin/audit` | Admin 操作审计流（`ATLAS_AUDIT_ENABLED`，默认开） | [security.md §3 操作审计](security.md#_3-操作审计) |
 
 ### POST /v1/admin/servers/{id}/maintenance
 
@@ -478,6 +478,31 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ```
 
 状态机语义详见 [lifecycle.md](lifecycle.md)。
+
+### GET /v1/admin/audit
+
+Admin 操作审计流（`ATLAS_AUDIT_ENABLED`，默认开）。**Query**：`?limit=N`（缺省 50，正整数）。
+
+**Response** `200 OK`
+
+```json
+{
+  "entries": [
+    {
+      "time": "2026-10-14T02:10:00.123456Z",
+      "actor": "operator:3f8a1c2b9d0e",
+      "method": "POST",
+      "path": "/v1/admin/servers/game-1001/weight",
+      "status": 200,
+      "body": {"weight": 200}
+    }
+  ]
+}
+```
+
+- **body**：仅变更类方法（POST/PUT/PATCH/DELETE）带，作为变更记录；截断到 `ATLAS_AUDIT_MAX_BODY`（缺省 4096 字节），非法 JSON 包装为字符串。
+- **actor**：`role:key指纹`，mTLS 为 `role:key指纹:证书指纹`，未配 Key 的开发模式为 `role:anonymous`。
+- 读的是**内存环**（`ATLAS_AUDIT_MAX`，缺省 1000 条），重启即丢；REST 与 gRPC 写操作汇流进同一个环，持久化归档以结构化日志为准。语义与链序见 [security.md](security.md#审计)。
 
 ### GET /v1/admin/stats
 
@@ -719,8 +744,6 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 ```
 
 错误：`400 INVALID_ARGUMENT`（`server_ids` 为空、`end_at` 缺失、模板时间范围倒置）。
-
-### POST /v1/admin/announcements
 
 ### POST /v1/admin/announcements
 

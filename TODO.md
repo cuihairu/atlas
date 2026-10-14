@@ -15,7 +15,7 @@
 
 - [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0
 - [x] Routing 策略扩展余项（权重 / 灰度白名单）— 权重已交付（2026-10-14）：`weight` 字段 + 三库存储契约 + `POST /v1/admin/servers/{id}/weight` + 推荐排序按有效负载 `load × 100 / weight`（诊断附 `weight`/`effective_load`）；灰度白名单 = 私有 tag 圈组 + 权重放量（已写进 api.md），routing/admin/httpapi/storetest 25+ tests 绿；REST 五 SDK（python 同步异步 / js / java / csharp / cpp）`set_weight` 铺齐（Go SDK 有意排除：端点 REST-only，grpcBackend 无 REST 回退）— commit f46b7cf
-- [x] 公告与窗口批量编排 — 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）+ **迁移-窗口联动**已交付（2026-10-14）：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）；`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖）；migration/admin/httpapi 测试绿
+- [x] 公告与窗口批量编排 — 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）**已在管理台可视化**（2026-10-14 补）：运维页「批量窗口」入口，一份时段贴服务器列表铺多台，错峰间隔 + 仅预览开关，逐台成功/失败结果表（部分成功不静默）；逻辑抽 operationsBatch.tsx 可单测（19 vitest 绿）+ **迁移-窗口联动**已交付（2026-10-14）：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）；`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖）；migration/admin/httpapi 测试绿
 - [x] Kubernetes 部署样例 — 已交付（2026-10-14）：`deploy/k8s/` 目录含 namespace + configmap + postgres StatefulSet + redis Deployment + 迁移 Job + atlas Deployment/Service + README（边界：无 Helm chart、无 Operator，仅基础 Deployment/Service/Job manifest，符合 roadmap「明确不做」清单）
 - [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发
 
@@ -200,3 +200,8 @@
 - [x] 文档-码一致性 41 条修复（合服表述、gRPC 访问日志字段、PG 池缺省、2026-10-03 基线数字全量复测替换等）— 详见 docs/审计-文档一致性.md 2026-10-13 轮
 - [x] redis 事件适配器 sweep 测试改确定性驱动（全量 -race 并行下消费循环被饿死 >30s 超时）
 - [x] BUG-1 收尾：ServerDetail getServer 失败渲染错误面板（重试/返回）、角色列表请求失败降级空列表，补 vitest 3 例（此前 dashboard 无任何测试设施）
+
+### 管理台补面（2026-10-14）
+
+- [x] 舰队批量维护窗口可视化：运维页「批量窗口」入口（服务器列表贴入 + 错峰间隔 + 仅预览开关 + 逐台成功/失败结果表），逻辑抽 operationsBatch.tsx 可脱离 antd 表单单测 — 26 vitest 绿
+- [x] Admin 操作审计页（/audit）：`GET /v1/admin/audit` 自 v0.1.17 交付起就没进管理台，本轮补齐——写操作展示变更体、状态码 2xx/4xx/5xx 分色、limit 可调、失败重试；页脚如实标注内存环重启即丢；api.md 补该端点正式小节（此前只在索引表一行）；修 docs/api.md 重复标题（POST /v1/admin/announcements 出现两次）；AuditLog.test 7 例（dashboard 全量 26 绿）

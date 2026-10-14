@@ -13,6 +13,9 @@ import type {
   AnnouncementListResponse,
   MaintenanceWindow,
   MaintenanceWindowListResponse,
+  MaintenanceWindowBatchRequest,
+  MaintenanceWindowBatchResponse,
+  AuditListResponse,
   CrossServerSpec,
   CrossServerConfig,
   CrossServerSaveResponse,
@@ -343,6 +346,23 @@ export function createMaintenanceWindow(
 
 export function deleteMaintenanceWindow(id: string): Promise<void> {
   return request(`/v1/admin/maintenance-windows/${id}`, { method: 'DELETE' }, ADMIN_BASE);
+}
+
+/** 舰队级批量窗口：一份模板铺到多台，部分成功语义（成功进 windows，未知/非法进 failed）。 */
+export function createMaintenanceWindowsBatch(
+  body: MaintenanceWindowBatchRequest,
+): Promise<MaintenanceWindowBatchResponse> {
+  return request('/v1/admin/maintenance-windows/batch', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }, ADMIN_BASE);
+}
+
+// ── Admin 操作审计 ───────────────────────────────────────────────────
+
+/** 最近 N 条 Admin 操作（服务端环形缓冲，缺省 50 条）。 */
+export function listAuditEntries(params?: { limit?: number }): Promise<AuditListResponse> {
+  return request(`/v1/admin/audit${qs(params ?? {})}`, undefined, ADMIN_BASE);
 }
 
 // ── 跨服配置中心 ─────────────────────────────────────────────────────

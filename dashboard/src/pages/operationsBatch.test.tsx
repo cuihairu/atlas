@@ -42,8 +42,8 @@ describe('buildBatchRequest', () => {
 
   it('converts the picked range to ISO timestamps', () => {
     const body = buildBatchRequest({ server_ids: ['game-1001'] }, range)
-    expect(new Date(body.start_at).toISOString()).toBe('2026-10-20T02:00:00.000Z')
-    expect(new Date(body.end_at).toISOString()).toBe('2026-10-20T04:00:00.000Z')
+    expect(body.start_at).toBe('2026-10-20T02:00:00.000Z')
+    expect(body.end_at).toBe('2026-10-20T04:00:00.000Z')
   })
 
   it('keeps operator flags and floors a fractional stagger', () => {

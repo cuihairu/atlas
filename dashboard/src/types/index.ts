@@ -241,6 +241,25 @@ export interface CharacterSearchResponse {
   next_cursor?: string;
 }
 
+// ── Admin 操作审计（GET /v1/admin/audit）─────────────────────────────
+// 服务端环形缓冲最近 N 条（ATLAS_AUDIT_MAX，默认 1000），REST 与 gRPC
+// 写操作共用一个环（httpapi.AuditLog.Record 两侧汇流）。
+export interface AuditEntry {
+  time: string;
+  /** "role:证书指纹" 或 "role:api-key"（httpapi.Actor.String）。 */
+  actor: string;
+  method: string;
+  path: string;
+  status: number;
+  /** 变更记录：仅 mutating 方法有，截断到 ATLAS_AUDIT_MAX_BODY。 */
+  body?: unknown;
+  query?: string;
+}
+
+export interface AuditListResponse {
+  entries: AuditEntry[];
+}
+
 export interface Migration {
   id: string;
   source_server_id: string;
@@ -288,6 +307,31 @@ export interface MaintenanceWindow {
 
 export interface MaintenanceWindowListResponse {
   maintenance_windows: MaintenanceWindow[];
+}
+
+/** 舰队级批量窗口模板：一份时段铺到 server_ids，错峰 stagger / 预览 dry_run。 */
+export interface MaintenanceWindowBatchRequest {
+  server_ids: string[];
+  /** 缺省取当前时刻。 */
+  start_at?: string;
+  end_at: string;
+  /** 第 i 台的窗口整体后移 i × stagger_seconds（滚动维护）；0 = 同时。 */
+  stagger_seconds?: number;
+  /** 缺省 true：每台自动创建并关联一条 warning 公告。 */
+  announce?: boolean;
+  /** 只校验并返回计划中的窗口（id 为预览值），不落库。 */
+  dry_run?: boolean;
+}
+
+export interface MaintenanceWindowBatchFailure {
+  server_id: string;
+  error: string;
+}
+
+/** 批量是部分成功语义：成功进 windows，未知/非法服务器逐台进 failed。 */
+export interface MaintenanceWindowBatchResponse {
+  windows: MaintenanceWindow[];
+  failed: MaintenanceWindowBatchFailure[];
 }
 
 // ── 跨服配置中心（/v1/admin/crossserver/config）──────────────────────

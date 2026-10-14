@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Form, Input, Select, Switch, Space, Tag,
-  message, Popconfirm, DatePicker, Typography,
+  message, Popconfirm, DatePicker, InputNumber, Typography,
 } from 'antd';
 import { PlusOutlined, NotificationOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -13,7 +13,8 @@ import {
   listAnnouncements, createAnnouncement, deleteAnnouncement,
   listMaintenanceWindows, createMaintenanceWindow, deleteMaintenanceWindow,
 } from '../api/client';
-import type { Announcement, MaintenanceWindow } from '../types';
+import { submitBatch, BatchOutcome, type BatchFormValues } from './operationsBatch';
+import type { Announcement, MaintenanceWindow, MaintenanceWindowBatchResponse } from '../types';
 
 const LEVEL_COLOR: Record<string, string> = {
   info: 'blue',
@@ -33,9 +34,12 @@ export default function Operations() {
   const [loading, setLoading] = useState(true);
   const [annModal, setAnnModal] = useState(false);
   const [winModal, setWinModal] = useState(false);
+  const [batchModal, setBatchModal] = useState(false);
+  const [batchResult, setBatchResult] = useState<MaintenanceWindowBatchResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [annForm] = Form.useForm();
   const [winForm] = Form.useForm();
+  const [batchForm] = Form.useForm();
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -108,6 +112,39 @@ export default function Operations() {
     await deleteMaintenanceWindow(id);
     message.success(t('actionOk'));
     await fetchAll();
+  };
+
+  // ── 舰队批量窗口 ───────────────────────────────────────────────────
+  // 预览（dry_run）与真实创建走同一条提交路径：结果留在弹窗里逐台列出，
+  // 运营确认无误再关；部分成功不静默——失败台数单独提示。
+
+  const submitWindowsBatch = async () => {
+    let v: BatchFormValues & { range: [Dayjs, Dayjs] };
+    try {
+      v = await batchForm.validateFields();
+    } catch {
+      return; // 校验失败就地红字提示，不发请求
+    }
+    setSaving(true);
+    try {
+      const result = await submitBatch(v, v.range);
+      setBatchResult(result);
+      if (v.dry_run) return; // 预览不落库，不刷新列表
+      if (result.failed.length > 0) {
+        message.warning(`${t('winBatchPartialMsg')}: ${result.failed.length}`);
+      } else {
+        message.success(t('winBatchOkMsg'));
+      }
+      await fetchAll();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeBatch = () => {
+    setBatchModal(false);
+    setBatchResult(null);
+    batchForm.resetFields();
   };
 
   const annColumns = [
@@ -198,7 +235,12 @@ export default function Operations() {
 
       <Card
         title={<Space><ClockCircleOutlined />{t('maintenanceWindows')}</Space>}
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setWinModal(true)}>{t('winCreate')}</Button>}
+        extra={
+          <Space>
+            <Button icon={<PlusOutlined />} onClick={() => setBatchModal(true)}>{t('winBatch')}</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setWinModal(true)}>{t('winCreate')}</Button>
+          </Space>
+        }
       >
         <Table
           rowKey="id"
@@ -268,6 +310,57 @@ export default function Operations() {
             <Switch />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={t('winBatchTitle')}
+        open={batchModal}
+        onOk={submitWindowsBatch}
+        confirmLoading={saving}
+        onCancel={closeBatch}
+        width={720}
+        destroyOnClose
+      >
+        <Form
+          form={batchForm}
+          layout="vertical"
+          initialValues={{ announce: true, stagger_seconds: 0, dry_run: false }}
+        >
+          <Form.Item
+            name="server_ids"
+            label={t('winBatchServers')}
+            tooltip={t('winBatchServersTip')}
+            rules={[{ required: true, message: t('winBatchServersTip') }]}
+          >
+            <Select
+              mode="tags"
+              tokenSeparators={[',', ' ', '\n']}
+              placeholder="game-1001, game-1002"
+              open={false}
+            />
+          </Form.Item>
+          <Form.Item name="range" label={t('winWindow')} rules={[{ required: true }]}>
+            <DatePicker.RangePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
+          <Space size={24} align="start">
+            <Form.Item
+              name="stagger_seconds"
+              label={t('winBatchStagger')}
+              tooltip={t('winBatchStaggerTip')}
+            >
+              <InputNumber min={0} max={86400} step={60} style={{ width: 180 }} />
+            </Form.Item>
+            <Form.Item name="dry_run" label={t('winBatchDryRun')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item name="announce" label={t('winAnnounce')} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          </Space>
+        </Form>
+        {batchResult && (
+          <BatchOutcome result={batchResult} dryRun={Boolean(batchForm.getFieldValue('dry_run'))} />
+        )}
       </Modal>
     </Space>
   );

@@ -14,6 +14,7 @@ import {
   FireOutlined,
   MedicineBoxOutlined,
   SettingOutlined,
+  FileSearchOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useLang, setLang, t, type Lang } from '../i18n';
@@ -43,6 +44,7 @@ export default function AppLayout() {
     { key: '/crossserver', icon: <ClusterOutlined />, label: t('crossserverConfig') },
     { key: '/diagnose', icon: <MedicineBoxOutlined />, label: t('menuDiagnose') },
     { key: '/system', icon: <SettingOutlined />, label: t('systemConfig') },
+    { key: '/audit', icon: <FileSearchOutlined />, label: t('menuAudit') },
   ];
 
   // Determine selected key from path
