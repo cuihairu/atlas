@@ -42,7 +42,9 @@ Atlas 的 API 分为五组，职责清晰互不重叠。
     "host": "10.0.1.21",
     "port": 30001
   },
-  "capacity": 2000
+  "capacity": 2000,
+  "reg_kind": "temporary",
+  "ttl_seconds": 3600
 }
 ```
 
@@ -79,6 +81,12 @@ metadata    # 注册元数据（可选，键值对）：平台不解释内容，
 notify_mode / notify_callback_url
             # 跨服配置变更通知声明（subscribe / callback / poll，详见
             # config-center.md）：随注册存储，配置中心据此推送
+reg_kind / ttl_seconds
+            # 注册生命周期类别（可选，详见 lifecycle.md §3.1）：reg_kind 缺省
+            # 为 permanent（永不自动过期，删除走 DELETE /v1/admin/servers/{id}）；
+            # temporary 需要配 ttl_seconds > 0，注册时刻起算，到期由健康监控
+            # 自动回收记录与运行时数据。重复注册整体替换该字段（省略即回到
+            # permanent）
 ```
 
 **幂等性**：重复注册同一 `server_id` 视为更新（幂等 upsert，可变字段被覆盖），
@@ -463,6 +471,17 @@ GET /v1/routing/recommended?region=cn-east&platform=android&account_id=10001
 ### POST /v1/admin/servers/{id}/disable
 
 禁用服务器。客户端完全不可见。
+
+### DELETE /v1/admin/servers/{server_id}
+
+**删除服务器记录**（路径参数 `{server_id}`，即实际路由中的 `{id}`；连同运行时数据）。这是**显式删除指令**——永久注册不会自动过期，
+回收只能走这里（语义见 [lifecycle.md](lifecycle.md) §3.1 注册生命周期）。
+
+- 未知服务器 `404 SERVER_NOT_FOUND`；
+- config 声明的服务器（`source=config`）`409 SERVER_CONFIG_MANAGED`——
+  改 [servers config](server-config.md) 文件，不走 API；
+- 成功 `200 OK`：`{"server_id": "game-1001", "status": "deleted"}`；
+- 操作进入 Admin 审计流（`GET /v1/admin/audit`）。
 
 ### POST /v1/admin/servers/{id}/weight
 

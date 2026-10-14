@@ -126,6 +126,28 @@ func (s *Service) Disable(ctx context.Context, serverID string) error {
 	return nil
 }
 
+// DeleteServer removes a server record and its runtime data entirely — the
+// explicit instruction by which a permanent registration is deleted
+// (docs/lifecycle.md §3). Nothing automatic ever calls this path: the health
+// monitor's reclaim loop is restricted to reg_kind=temporary. Config-managed
+// records (source="config") are rejected — they are owned by the servers
+// config file, the same ownership rule register applies.
+func (s *Service) DeleteServer(ctx context.Context, serverID string) error {
+	srv, err := s.store.GetServer(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("delete server: %w", err)
+	}
+	if srv.Source == "config" {
+		return fmt.Errorf("%w: server %s is config-managed; remove it from the servers config file", model.ErrConflict, serverID)
+	}
+	if err := s.store.DeleteServer(ctx, serverID); err != nil {
+		return fmt.Errorf("delete server: %w", err)
+	}
+	// Best-effort cleanup of runtime data.
+	_ = s.store.DeleteRuntime(ctx, serverID)
+	return nil
+}
+
 // GetStats returns aggregated server and character statistics.
 func (s *Service) GetStats(ctx context.Context) (*model.Stats, error) {
 	stats, err := s.store.GetStats(ctx)

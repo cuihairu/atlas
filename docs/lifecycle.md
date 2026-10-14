@@ -132,6 +132,20 @@ stateDiagram-v2
 | 任意 → `disabled` | 运维 | `POST /v1/admin/servers/{id}/disable` |
 | 任意 → `offline` | 游戏服务器 | `unregister` |
 
+### 3.1 注册生命周期：永久 / 暂时
+
+注册分两类，由注册请求的 `reg_kind` 显式标记（2026-10-14 交付）：
+
+| 类别 | 标记 | 删除路径 |
+| --- | --- | --- |
+| 永久注册 | `reg_kind = "permanent"`（缺省，含所有存量记录） | **不自动过期**；只能通过 `DELETE /v1/admin/servers/{id}` 显式删除 |
+| 暂时注册 | `reg_kind = "temporary"` + `ttl_seconds > 0` | **自动过期**：健康监控巡检时回收超过生存期的记录 |
+
+- 标记是**显式**的，不靠"有没有 TTL"推断：自动过期路径只对 `reg_kind = "temporary"` 生效，空值 / 永久标记的记录**任何情况下都不会被自动清理**——包括绕过校验写入了残留 TTL 的行。
+- 暂时注册的生存期是**绝对时长**：从注册时刻（`created_at`）起算 `ttl_seconds`，与心跳无关（不需要读运行时数据，三库行为一致）。到期后记录与运行时数据一并回收。
+- 重新 `register` 整体替换生命周期类别（与 metadata 同语义）：省略 `reg_kind` 的重注册回到永久，原有的生存期随之丢弃。
+- `unregister` 不删除记录（只置 `offline`），对两类注册都是如此；`DELETE /v1/admin/servers/{id}` 是唯一的显式删除入口，config 声明的服务器（source=config）拒绝删除——改 servers config 文件。
+
 ---
 
 ## 4. 自动掉线判定
@@ -237,6 +251,29 @@ webhook 载荷示例：
 | `players` | 注册时的初始在线人数，直接写入运行时数据；Atlas 重启后游戏服务器重注册不会上报 0 |
 | `started_at` | 游戏服务器进程启动时间；缺省取注册时刻。重注册（进程重启）会刷新，Discovery 侧可据此展示 uptime |
 
+### 4.4 永久注册离线告警（2026-10-14）
+
+§4.1 的占比告警看的是"失联比例"，而单台**永久注册**的服务器静默退出也是值得立即知道的事件。永久注册的服务器在巡检中被判定为 `offline`（§4 阈值）时，健康监控额外发一条**单服务器告警**——仍走 §4.1 的告警渠道（Warn 日志 + `ATLAS_ALERT_WEBHOOK_URL`），不另起通知链路：
+
+```json
+{
+  "alert": "permanent_offline",
+  "state": "firing",
+  "server_id": "game-1002",
+  "reg_kind": "permanent",
+  "offline_for": "1m5s",
+  "maintenance": false,
+  "fired_at": "2026-10-14T03:27:30Z"
+}
+```
+
+语义要点：
+
+- **豁免**：`maintenance` 状态由运维设置、巡检不碰（§3），所以处于维修状态的服务器**不会产生该告警**——维护窗口期间不会刷屏。
+- **一次一报**：状态转移只在状态变化时发生，一次宕机对应一条告警；恢复后再次宕机是新的转移，才再报一条。
+- **暂时注册不告警**：temporary 的消失是预期生命周期（§3.1 到期回收），不视为事件。
+- 边界：Atlas 自身停机 / 重启期间发生的离线在重启后的首次巡检里不会重新转移（状态已离线，无转移事件），该时段的告警由 §4.1 的占比告警与日志监控兜底。
+
 ---
 
 ## 5. 计划维护窗口（v0.1.20）
@@ -276,6 +313,7 @@ POST /v1/admin/servers/{id}/maintenance-window
 | 注册 | `POST /v1/registry/servers/register` |
 | 心跳 | `POST /v1/registry/servers/{id}/heartbeat` |
 | 主动下线 | `POST /v1/registry/servers/{id}/unregister` |
+| 显式删除记录 | `DELETE /v1/admin/servers/{id}`（永久注册的唯一删除路径，§3.1） |
 | 进入维护 | `POST /v1/admin/servers/{id}/maintenance` |
 | 排水 | `POST /v1/admin/servers/{id}/drain` |
 | 启用 | `POST /v1/admin/servers/{id}/enable` |

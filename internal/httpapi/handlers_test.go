@@ -1356,3 +1356,95 @@ func TestAnnouncementValidation(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+// TestRegisterRegKind: the register endpoint accepts the lifecycle fields
+// and they land on the stored record.
+func TestRegisterRegKind(t *testing.T) {
+	ts, mem := setupTestServer(t)
+	defer ts.Close()
+
+	body := map[string]any{
+		"server_id":    "game-temp",
+		"name":         "Leased Server",
+		"type":         "game",
+		"region":       "cn-east",
+		"version":      "1.0.0",
+		"platform":     "android",
+		"endpoint":     map[string]any{"host": "10.0.0.1", "port": 30001},
+		"capacity":     2000,
+		"reg_kind":     "temporary",
+		"ttl_seconds":  300,
+	}
+	resp := postJSON(t, ts, "/v1/registry/servers/register", body)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("register: expected 201, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	srv, err := mem.GetServer(context.Background(), "game-temp")
+	if err != nil {
+		t.Fatalf("GetServer: %v", err)
+	}
+	if srv.RegKind != model.RegTemporary || srv.RegTTLSeconds != 300 {
+		t.Errorf("stored reg fields = %s/%d, want temporary/300", srv.RegKind, srv.RegTTLSeconds)
+	}
+}
+
+// TestAdminDeleteServer covers the explicit removal endpoint end to end:
+// deletion succeeds for API-owned records, config-managed ones are rejected
+// with 409, and unknown ids give 404.
+func TestAdminDeleteServer(t *testing.T) {
+	ts, mem := setupTestServer(t)
+	defer ts.Close()
+
+	registerTestServer(t, ts, "game-1001")
+
+	// Config-managed record: DELETE is rejected with 409.
+	if _, err := mem.GetServer(context.Background(), "game-1001"); err != nil {
+		t.Fatalf("GetServer: %v", err)
+	}
+	cfgSrv := &model.Server{
+		ID: "game-cfg", Name: "Cfg", Type: "game", Region: "cn-east",
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.2", Port: 30002},
+		Status:   model.StatusOnline, Source: "config",
+	}
+	if err := mem.RegisterServer(context.Background(), cfgSrv); err != nil {
+		t.Fatalf("register cfg server: %v", err)
+	}
+
+	req, _ := http.NewRequest("DELETE", ts.URL+"/v1/admin/servers/game-cfg", nil)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("delete cfg: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Errorf("delete config-managed: expected 409, got %d", resp.StatusCode)
+	}
+
+	// Unknown id: 404.
+	req, _ = http.NewRequest("DELETE", ts.URL+"/v1/admin/servers/ghost", nil)
+	resp, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("delete ghost: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("delete unknown: expected 404, got %d", resp.StatusCode)
+	}
+
+	// API-owned record: 200 and the record is gone.
+	req, _ = http.NewRequest("DELETE", ts.URL+"/v1/admin/servers/game-1001", nil)
+	resp, err = ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("delete: expected 200, got %d", resp.StatusCode)
+	}
+	if _, err := mem.GetServer(context.Background(), "game-1001"); err == nil {
+		t.Error("deleted record still present")
+	}
+}

@@ -181,7 +181,11 @@ func (s Server) toModel() *model.Server {
 		Capacity: s.Capacity,
 		Metadata: s.Metadata,
 		Source:   "config",
-		Status:   model.StatusStarting,
+		// Declared servers are config-owned: the marker is materialized
+		// explicitly so the record never reads as unset (behaviour is the
+		// same — permanent, never auto-expired).
+		RegKind: model.RegPermanent,
+		Status:  model.StatusStarting,
 	}
 }
 

@@ -46,6 +46,27 @@ type RegisterRequest struct {
 	// the whole map: undeclared keys are dropped, mirroring the profile
 	// upsert semantics of the other mutable fields.
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// RegKind declares the registration lifecycle class explicitly
+	// (model.RegPermanent / model.RegTemporary, docs/lifecycle.md §3.1).
+	// Omitted means permanent — the only reading of the marker that keeps
+	// existing registrants on today's never-expire behaviour. A temporary
+	// registration must also carry TTLSeconds > 0; the pair is validated
+	// together in model.Server.Validate.
+	RegKind string `json:"reg_kind,omitempty"`
+	// TTLSeconds is the absolute lifetime of a temporary registration,
+	// counted from the registration time: once it has passed, the health
+	// monitor reclaims the record.
+	TTLSeconds int `json:"ttl_seconds,omitempty"`
+}
+
+// regKindOf resolves the request's lifecycle class to the value stored on
+// the record: an omitted marker means permanent. The pair (class, TTL) is
+// validated afterwards by model.Server.Validate.
+func regKindOf(req RegisterRequest) string {
+	if req.RegKind == "" {
+		return model.RegPermanent
+	}
+	return req.RegKind
 }
 
 // Service manages server registration and heartbeats.
@@ -155,8 +176,13 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*model.Ser
 		NotifyMode:        req.NotifyMode,
 		NotifyCallbackURL: req.NotifyCallbackURL,
 		Metadata:          req.Metadata,
-		StartedAt:         &startedAt,
-		Status:            model.StatusStarting,
+		// An omitted marker is materialized as permanent rather than left
+		// unset: every record written from here carries its lifecycle class
+		// explicitly, so the expiry path never has to infer it.
+		RegKind:       regKindOf(req),
+		RegTTLSeconds: req.TTLSeconds,
+		StartedAt:     &startedAt,
+		Status:        model.StatusStarting,
 	}
 
 	if err := srv.Validate(); err != nil {

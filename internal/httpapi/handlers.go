@@ -169,6 +169,7 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/admin/servers/{id}/drain", h.handleAdminDrain)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/enable", h.handleAdminEnable)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/disable", h.handleAdminDisable)
+	mux.HandleFunc("DELETE /v1/admin/servers/{id}", h.handleAdminDeleteServer)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/weight", h.handleAdminSetServerWeight)
 	mux.HandleFunc("GET /v1/admin/stats", h.handleAdminStats)
 	mux.HandleFunc("GET /v1/admin/servers", h.handleAdminListServers)
@@ -253,7 +254,12 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		// callback mode also carries the URL atlas signals.
 		NotifyMode        string            `json:"notify_mode,omitempty"`
 		NotifyCallbackURL string            `json:"notify_callback_url,omitempty"`
-		Metadata          map[string]string `json:"metadata,omitempty"`
+		// Registration lifecycle class (docs/lifecycle.md §3): "permanent"
+		// (default) never auto-expires and needs an explicit admin delete;
+		// "temporary" is reclaimed once created_at + ttl_seconds passes.
+		RegKind    string            `json:"reg_kind,omitempty"`
+		TTLSeconds int               `json:"ttl_seconds,omitempty"`
+		Metadata   map[string]string `json:"metadata,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -274,6 +280,8 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Capacity:          req.Capacity,
 		NotifyMode:        req.NotifyMode,
 		NotifyCallbackURL: req.NotifyCallbackURL,
+		RegKind:           req.RegKind,
+		TTLSeconds:        req.TTLSeconds,
 		Metadata:          req.Metadata,
 	}
 
@@ -792,6 +800,30 @@ func (h *Handler) handleAdminDisable(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server_id": id,
 		"status":    "disabled",
+	})
+}
+
+// handleAdminDeleteServer removes a server record entirely — the explicit
+// instruction by which a permanent registration is deleted
+// (docs/lifecycle.md §3). Config-managed servers are rejected with the same
+// ownership rule register applies.
+func (h *Handler) handleAdminDeleteServer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.admin.DeleteServer(r.Context(), id); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrConflict) {
+			writeError(w, http.StatusConflict, "SERVER_CONFIG_MANAGED", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"status":    "deleted",
 	})
 }
 

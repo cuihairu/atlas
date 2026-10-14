@@ -370,3 +370,78 @@ func scrapeMetrics(t *testing.T, m *metrics.Metrics) string {
 	}
 	return string(body)
 }
+
+// TestRegisterRegKindValidation covers the registration lifecycle class
+// rules: a temporary registration declares a positive TTL, a permanent one
+// carries none, unknown values are rejected, and an omitted marker is
+// materialized as permanent.
+func TestRegisterRegKindValidation(t *testing.T) {
+	svc := newTestService()
+	ctx := context.Background()
+
+	// Omitted marker → materialized permanent with no TTL.
+	srv, err := svc.Register(ctx, testRequest())
+	if err != nil {
+		t.Fatalf("Register without reg_kind: %v", err)
+	}
+	if srv.RegKind != model.RegPermanent {
+		t.Errorf("omitted reg_kind = %q, want permanent", srv.RegKind)
+	}
+	if srv.RegTTLSeconds != 0 {
+		t.Errorf("omitted reg_kind must carry no TTL, got %d", srv.RegTTLSeconds)
+	}
+
+	// Temporary requires a positive TTL.
+	req := testRequest()
+	req.RegKind = model.RegTemporary
+	req.TTLSeconds = 0
+	if _, err := svc.Register(ctx, req); !errors.Is(err, model.ErrInvalid) {
+		t.Errorf("temporary without ttl_seconds: err=%v, want ErrInvalid", err)
+	}
+
+	// Permanent must not carry a TTL.
+	req = testRequest()
+	req.RegKind = model.RegPermanent
+	req.TTLSeconds = 300
+	if _, err := svc.Register(ctx, req); !errors.Is(err, model.ErrInvalid) {
+		t.Errorf("permanent with ttl_seconds: err=%v, want ErrInvalid", err)
+	}
+
+	// Unknown class is rejected.
+	req = testRequest()
+	req.RegKind = "ephemeral"
+	if _, err := svc.Register(ctx, req); !errors.Is(err, model.ErrInvalid) {
+		t.Errorf("unknown reg_kind: err=%v, want ErrInvalid", err)
+	}
+}
+
+// TestRegisterRegKindWholeReplace: re-registering replaces the lifecycle
+// class whole (like metadata) — a server re-registered without reg_kind goes
+// back to permanent, dropping the lease.
+func TestRegisterRegKindWholeReplace(t *testing.T) {
+	svc := newTestService()
+	ctx := context.Background()
+
+	req := testRequest()
+	req.RegKind = model.RegTemporary
+	req.TTLSeconds = 300
+	srv, err := svc.Register(ctx, req)
+	if err != nil {
+		t.Fatalf("Register temporary: %v", err)
+	}
+	if srv.RegKind != model.RegTemporary || srv.RegTTLSeconds != 300 {
+		t.Fatalf("temporary roundtrip = %s/%d", srv.RegKind, srv.RegTTLSeconds)
+	}
+
+	// Re-register without the fields: permanent again, lease dropped.
+	srv, err = svc.Register(ctx, testRequest())
+	if err != nil {
+		t.Fatalf("Register again without reg_kind: %v", err)
+	}
+	if srv.RegKind != model.RegPermanent {
+		t.Errorf("re-registered reg_kind = %q, want permanent", srv.RegKind)
+	}
+	if srv.RegTTLSeconds != 0 {
+		t.Errorf("re-registered TTL must drop, got %d", srv.RegTTLSeconds)
+	}
+}

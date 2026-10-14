@@ -120,6 +120,43 @@ func (a *Alerter) emit(ctx context.Context, name string, count, total int, ratio
 	})
 }
 
+// ServerOfflineEvent carries one permanent registration's offline
+// transition to the alert channel (docs/lifecycle.md §3 离线告警).
+type ServerOfflineEvent struct {
+	ServerID    string
+	RegKind     string
+	OfflineFor  time.Duration
+	Maintenance bool
+}
+
+// EmitServerOffline reports one permanent registration going offline. No
+// latching is needed: an offline transition fires once per outage because
+// the status machine transitions only on state change (a recovered server
+// re-registers or heartbeats, and its next outage is a separate event).
+func (a *Alerter) EmitServerOffline(ctx context.Context, ev ServerOfflineEvent) {
+	if a == nil {
+		return
+	}
+	a.logger.Warn("permanent registration offline",
+		"server_id", ev.ServerID,
+		"reg_kind", ev.RegKind,
+		"offline_for", ev.OfflineFor.String(),
+		"maintenance", ev.Maintenance,
+	)
+	if a.cfg.WebhookURL == "" {
+		return
+	}
+	a.postWebhook(ctx, serverOfflinePayload{
+		Alert:       "permanent_offline",
+		State:       "firing",
+		ServerID:    ev.ServerID,
+		RegKind:     ev.RegKind,
+		OfflineFor:  ev.OfflineFor.String(),
+		Maintenance: ev.Maintenance,
+		FiredAt:     a.now().UTC().Format(time.RFC3339),
+	})
+}
+
 type webhookPayload struct {
 	Alert     string  `json:"alert"`
 	State     string  `json:"state"`
@@ -130,7 +167,17 @@ type webhookPayload struct {
 	FiredAt   string  `json:"fired_at"`
 }
 
-func (a *Alerter) postWebhook(ctx context.Context, payload webhookPayload) {
+type serverOfflinePayload struct {
+	Alert       string `json:"alert"`
+	State       string `json:"state"`
+	ServerID    string `json:"server_id"`
+	RegKind     string `json:"reg_kind"`
+	OfflineFor  string `json:"offline_for"`
+	Maintenance bool   `json:"maintenance"`
+	FiredAt     string `json:"fired_at"`
+}
+
+func (a *Alerter) postWebhook(ctx context.Context, payload any) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		a.logger.Error("health alert webhook encode failed", "error", err)

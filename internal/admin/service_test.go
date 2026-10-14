@@ -830,3 +830,53 @@ func TestSetServerWeight(t *testing.T) {
 		t.Errorf("set on missing server = %v, want ErrNotFound", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DeleteServer (explicit removal — the only path that deletes a permanent
+// registration; docs/lifecycle.md §3)
+// ---------------------------------------------------------------------------
+
+func TestDeleteServer_RemovesRecordAndRuntime(t *testing.T) {
+	svc, mem := setupService(t)
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	if err := mem.RecordHeartbeat(context.Background(), "game-1001", model.Heartbeat{Players: 1}); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+
+	if err := svc.DeleteServer(context.Background(), "game-1001"); err != nil {
+		t.Fatalf("DeleteServer: %v", err)
+	}
+	if _, err := mem.GetServer(context.Background(), "game-1001"); !store.IsNotFound(err) {
+		t.Errorf("record should be gone, got err=%v", err)
+	}
+	if _, err := mem.GetRuntime(context.Background(), "game-1001"); !store.IsNotFound(err) {
+		t.Errorf("runtime should be gone, got err=%v", err)
+	}
+}
+
+func TestDeleteServer_NotFound(t *testing.T) {
+	svc, _ := setupService(t)
+	if err := svc.DeleteServer(context.Background(), "ghost"); !store.IsNotFound(err) {
+		t.Errorf("err=%v, want ErrNotFound", err)
+	}
+}
+
+func TestDeleteServer_ConfigManagedRejected(t *testing.T) {
+	svc, mem := setupService(t)
+	registerServer(t, mem, "game-cfg", model.StatusOnline)
+	srv, err := mem.GetServer(context.Background(), "game-cfg")
+	if err != nil {
+		t.Fatalf("GetServer: %v", err)
+	}
+	srv.Source = "config"
+	if err := mem.RegisterServer(context.Background(), srv); err != nil {
+		t.Fatalf("mark config: %v", err)
+	}
+
+	if err := svc.DeleteServer(context.Background(), "game-cfg"); !errors.Is(err, model.ErrConflict) {
+		t.Errorf("err=%v, want ErrConflict", err)
+	}
+	if _, err := mem.GetServer(context.Background(), "game-cfg"); err != nil {
+		t.Errorf("config-managed record must survive, got err=%v", err)
+	}
+}

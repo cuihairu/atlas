@@ -138,7 +138,9 @@ func (m *Monitor) sweep(ctx context.Context) error {
 				age := now.Sub(srv.CreatedAt)
 				m.metrics.ObserveHeartbeatLag(age)
 				if age > m.offlineAfter {
-					if err := m.transition(ctx, srv, model.StatusOffline, "no heartbeat since creation (age %v)", age); err != nil {
+					if err := m.transition(ctx, srv, model.StatusOffline, "no heartbeat since creation (age %v)", age); err == nil {
+						m.alertPermanentOffline(ctx, srv, age)
+					} else {
 						m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
 					}
 				}
@@ -152,7 +154,9 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		switch srv.Status {
 		case model.StatusStarting, model.StatusOnline:
 			if age > m.offlineAfter {
-				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err != nil {
+				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err == nil {
+					m.alertPermanentOffline(ctx, srv, age)
+				} else {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
 				}
 			} else if age > m.suspectAfter {
@@ -163,7 +167,9 @@ func (m *Monitor) sweep(ctx context.Context) error {
 
 		case model.StatusSuspect:
 			if age > m.offlineAfter {
-				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err != nil {
+				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err == nil {
+					m.alertPermanentOffline(ctx, srv, age)
+				} else {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
 				}
 			} else if age <= m.suspectAfter {
@@ -175,6 +181,15 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		}
 	}
 
+	// Temporary registrations expire on their own path — separate from the
+	// status machine above and unreachable for any other class
+	// (docs/lifecycle.md §3 注册生命周期). The lease counts from the
+	// registration time (created_at + reg_ttl_seconds), so reclaiming needs
+	// no runtime data and behaves identically on every store backend. Only
+	// an explicit RegTemporary marker enters this loop: permanent and
+	// legacy (unset) records can never be auto-deleted here.
+	m.expireTemporary(ctx, servers, now)
+
 	// Fleet-level alerting on the post-sweep status distribution.
 	if m.alerter != nil {
 		total, suspect, offline := countStatuses(servers)
@@ -182,6 +197,66 @@ func (m *Monitor) sweep(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// expireTemporary reclaims temporary registrations whose lease has run out.
+// The lease is absolute (registration time + reg_ttl_seconds), not a
+// heartbeat-renewed one: reclaiming therefore needs no runtime reads and
+// works the same on memory / PostgreSQL / MySQL. A failed reclaim retries
+// on the next sweep.
+func (m *Monitor) expireTemporary(ctx context.Context, servers []*model.Server, now time.Time) {
+	for _, srv := range servers {
+		if !srv.IsTemporary() {
+			continue
+		}
+		ttl := time.Duration(srv.RegTTLSeconds) * time.Second
+		if ttl <= 0 {
+			continue
+		}
+		age := now.Sub(srv.CreatedAt)
+		if age <= ttl {
+			continue
+		}
+		if err := m.store.DeleteServer(ctx, srv.ID); err != nil {
+			if store.IsNotFound(err) {
+				continue // already gone; runtime cleanup still follows
+			}
+			m.logger.Error("temporary registration reclaim failed",
+				"server_id", srv.ID, "ttl", ttl.String(), "age", age.String(), "error", err)
+			continue
+		}
+		if err := m.store.DeleteRuntime(ctx, srv.ID); err != nil && !store.IsNotFound(err) {
+			m.logger.Warn("temporary runtime reclaim failed", "server_id", srv.ID, "error", err)
+		}
+		m.logger.Info("temporary registration expired",
+			"server_id", srv.ID, "ttl", ttl.String(), "age", age.String())
+	}
+}
+
+// alertPermanentOffline reports a permanent registration that just left the
+// auto-managed rotation for offline (docs/lifecycle.md §3 离线告警). The
+// monitor only drives offline transitions for auto-managed statuses
+// (starting / online / suspect) — operator-set maintenance never reaches
+// this path, which is the 维修状态豁免 the alert contract requires.
+func (m *Monitor) alertPermanentOffline(ctx context.Context, srv *model.Server, age time.Duration) {
+	if m.alerter == nil {
+		return
+	}
+	kind := srv.RegKind
+	if kind == "" {
+		kind = model.RegPermanent // legacy rows behave as permanent
+	}
+	if kind == model.RegTemporary {
+		// A temporary registration leaving the fleet is expected lifecycle
+		// (TTL reclaim) — only permanent registrations alert on offline.
+		return
+	}
+	m.alerter.EmitServerOffline(ctx, ServerOfflineEvent{
+		ServerID:    srv.ID,
+		RegKind:     kind,
+		OfflineFor:  age,
+		Maintenance: false, // maintenance is operator-set and never transitions here
+	})
 }
 
 func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus model.ServerStatus, reasonFmt string, args ...any) error {

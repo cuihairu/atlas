@@ -268,6 +268,8 @@ func (s *Store) applyRegisterServer(ins *instruction) error {
 		existing.Endpoint = srv.Endpoint
 		existing.Capacity = srv.Capacity
 		existing.Source = srv.Source
+		existing.RegKind = srv.RegKind
+		existing.RegTTLSeconds = srv.RegTTLSeconds
 		existing.NotifyMode = srv.NotifyMode
 		existing.NotifyCallbackURL = srv.NotifyCallbackURL
 		existing.Metadata = srv.Metadata

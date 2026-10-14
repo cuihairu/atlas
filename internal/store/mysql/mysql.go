@@ -69,8 +69,9 @@ func (s *Store) RegisterServer(ctx context.Context, srv *model.Server) error {
 	const q = `
 INSERT INTO servers (id, name, type, region, realm_id, shard_id, version, platform,
                      endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source,
+                     reg_kind, reg_ttl_seconds,
                      notify_mode, notify_callback_url, metadata)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
     type          = VALUES(type),
@@ -88,6 +89,8 @@ ON DUPLICATE KEY UPDATE
     started_at    = VALUES(started_at),
     updated_at    = VALUES(updated_at),
     source        = VALUES(source),
+    reg_kind      = VALUES(reg_kind),
+    reg_ttl_seconds = VALUES(reg_ttl_seconds),
     notify_mode   = VALUES(notify_mode),
     notify_callback_url = VALUES(notify_callback_url),
     metadata      = VALUES(metadata)
@@ -97,6 +100,7 @@ ON DUPLICATE KEY UPDATE
 		srv.RealmID, srv.ShardID, srv.Version, srv.Platform,
 		srv.Endpoint.Host, srv.Endpoint.Port, srv.Capacity,
 		string(srv.Status), srv.StartedAt, srv.CreatedAt, srv.UpdatedAt, srv.Source,
+		srv.RegKind, srv.RegTTLSeconds,
 		srv.NotifyMode, srv.NotifyCallbackURL, string(metadataJSON(srv.Metadata)),
 	)
 	if err != nil {
@@ -109,6 +113,7 @@ func (s *Store) GetServer(ctx context.Context, id string) (*model.Server, error)
 	const q = `
 SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags, weight,
+       reg_kind, reg_ttl_seconds,
        notify_mode, notify_callback_url, metadata
 FROM servers WHERE id = ?
 `
@@ -130,6 +135,7 @@ func (s *Store) ListServers(ctx context.Context, f store.ServerFilter) ([]*model
 
 	q := `SELECT id, name, type, region, realm_id, shard_id, version, platform,
        endpoint_host, endpoint_port, capacity, status, started_at, created_at, updated_at, source, tags, weight,
+       reg_kind, reg_ttl_seconds,
        notify_mode, notify_callback_url, metadata
 FROM servers WHERE 1=1`
 	args := []any{}
@@ -683,6 +689,7 @@ func scanServer(row scannable) (*model.Server, error) {
 		&srv.Endpoint.Host, &srv.Endpoint.Port, &srv.Capacity,
 		&srv.Status, &srv.StartedAt, &srv.CreatedAt, &srv.UpdatedAt, &srv.Source,
 		&tagsRaw, &srv.Weight,
+		&srv.RegKind, &srv.RegTTLSeconds,
 		&srv.NotifyMode, &srv.NotifyCallbackURL, &metaRaw,
 	)
 	if err != nil {

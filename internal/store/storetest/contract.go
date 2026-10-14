@@ -76,6 +76,7 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 	t.Run("Stats", func(t *testing.T) { stats(t, ctx, s, rt) })
 	t.Run("CrossServerConfig", func(t *testing.T) { crossServerConfig(t, ctx, s) })
 	t.Run("Weight", func(t *testing.T) { weight(t, ctx, s) })
+	t.Run("RegKind", func(t *testing.T) { regKind(t, ctx, s) })
 }
 
 // weight covers the operator-set routing weight: set, read back, preserve
@@ -138,6 +139,73 @@ func weight(t *testing.T, ctx context.Context, s Core) {
 	// Unknown server maps to ErrNotFound.
 	if err := s.UpdateServerWeight(ctx, id("ghost"), 100); !store.IsNotFound(err) {
 		t.Errorf("update weight on missing server = %v, want ErrNotFound", err)
+	}
+}
+
+// regKind covers the registration lifecycle marker: the class and its lease
+// round-trip, and a re-register replaces them whole (the incoming class
+// wins — same replace semantics as metadata, not the admin-owned
+// tags/weight rule).
+func regKind(t *testing.T, ctx context.Context, s Core) {
+	realmID, shardID := createRealmShard(t, ctx, s, id("rgk"))
+	srv := &model.Server{
+		ID: id("rgk"), Name: "srv-r", Type: "game", Region: id("rgk-region"),
+		RealmID: &realmID, ShardID: &shardID,
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 1000,
+		RegKind:       model.RegPermanent,
+		RegTTLSeconds: 0,
+	}
+	if err := s.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register permanent: %v", err)
+	}
+	got, err := s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.RegKind != model.RegPermanent || got.RegTTLSeconds != 0 {
+		t.Errorf("permanent roundtrip = %q/%d, want permanent/0", got.RegKind, got.RegTTLSeconds)
+	}
+
+	// Re-register with the temporary class: the marker and lease overwrite.
+	upd := &model.Server{
+		ID: srv.ID, Name: srv.Name, Type: "game", Region: srv.Region,
+		RealmID: &realmID, ShardID: &shardID,
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 1000,
+		RegKind:       model.RegTemporary,
+		RegTTLSeconds: 300,
+	}
+	if err := s.RegisterServer(ctx, upd); err != nil {
+		t.Fatalf("re-register temporary: %v", err)
+	}
+	got, err = s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get after re-register: %v", err)
+	}
+	if got.RegKind != model.RegTemporary || got.RegTTLSeconds != 300 {
+		t.Errorf("temporary roundtrip = %q/%d, want temporary/300", got.RegKind, got.RegTTLSeconds)
+	}
+
+	// Re-declaring permanent drops the lease: the pair is replaced whole.
+	if err := s.RegisterServer(ctx, &model.Server{
+		ID: srv.ID, Name: srv.Name, Type: "game", Region: srv.Region,
+		RealmID: &realmID, ShardID: &shardID,
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 1000,
+		RegKind:  model.RegPermanent,
+	}); err != nil {
+		t.Fatalf("re-register permanent: %v", err)
+	}
+	got, err = s.GetServer(ctx, srv.ID)
+	if err != nil {
+		t.Fatalf("get after re-declare: %v", err)
+	}
+	if got.RegKind != model.RegPermanent || got.RegTTLSeconds != 0 {
+		t.Errorf("re-declared permanent = %q/%d, want permanent/0", got.RegKind, got.RegTTLSeconds)
 	}
 }
 

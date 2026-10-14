@@ -79,6 +79,22 @@ const (
 	StatusDisabled ServerStatus = "disabled"
 )
 
+// Registration lifecycle classes (docs/lifecycle.md §3 注册生命周期).
+//
+//   - RegPermanent: never auto-expired; only an explicit admin instruction
+//     can remove the record.
+//   - RegTemporary: reclaimed automatically once RegTTLSeconds have passed
+//     since the record's creation time (absolute TTL).
+//
+// The class is carried explicitly on the record — it is never inferred from
+// the absence of a TTL — so an unset value cannot opt a record into
+// auto-deletion. Empty means a row written before the marker existed; it
+// behaves as permanent in every path.
+const (
+	RegPermanent = "permanent"
+	RegTemporary = "temporary"
+)
+
 // AllServerStatuses lists every valid status in lifecycle order.
 var AllServerStatuses = []ServerStatus{
 	StatusStarting,
@@ -186,6 +202,18 @@ type Server struct {
 	// profile fields are config-owned and the register API rejects updates
 	// for it (heartbeats and lifecycle operations still apply).
 	Source string `json:"source,omitempty"`
+	// RegKind carries the registration lifecycle class explicitly
+	// (RegPermanent / RegTemporary — see the constants above). Set by the
+	// register API on every registration; empty only on rows written before
+	// the marker existed, which behave as permanent everywhere. The health
+	// monitor's expiry path acts only on RegTemporary, so a permanent or
+	// legacy record can never be auto-deleted.
+	RegKind string `json:"reg_kind,omitempty"`
+	// RegTTLSeconds is the absolute lifetime of a RegTemporary registration,
+	// in seconds, counted from the record's creation time: once it has
+	// passed, the health monitor reclaims the record. 0 = no TTL (permanent
+	// records, legacy rows). A temporary registration must declare it (> 0).
+	RegTTLSeconds int `json:"reg_ttl_seconds,omitempty"`
 	// NotifyMode declares how this server wants to be told about cross-server
 	// config updates (config center, see internal/crossserver): "subscribe"
 	// (message-bus topic), "callback" (atlas POSTs NotifyCallbackURL), or
@@ -242,6 +270,33 @@ type Runtime struct {
 }
 
 // Validate checks a Server for structural correctness before registration.
+// IsTemporary reports whether this record carries the temporary
+// registration class. Only an explicit RegTemporary marker counts — an
+// unset (legacy) or permanent marker never opts a record into the
+// auto-expiry path.
+func (s *Server) IsTemporary() bool {
+	return s.RegKind == RegTemporary
+}
+
+// validateRegKind checks the registration class and its TTL: the class
+// must be a known value, a temporary registration must declare a positive
+// TTL, and a permanent one must not carry one.
+func (s *Server) validateRegKind() error {
+	switch s.RegKind {
+	case "", RegPermanent:
+		if s.RegTTLSeconds != 0 {
+			return fmt.Errorf("%w: reg_ttl_seconds only applies to reg_kind=temporary", ErrInvalid)
+		}
+	case RegTemporary:
+		if s.RegTTLSeconds <= 0 {
+			return fmt.Errorf("%w: reg_kind=temporary requires a positive ttl_seconds", ErrInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: reg_kind must be permanent or temporary", ErrInvalid)
+	}
+	return nil
+}
+
 func (s *Server) Validate() error {
 	if strings.TrimSpace(s.ID) == "" {
 		return fmt.Errorf("%w: server id is required", ErrInvalid)
@@ -260,6 +315,9 @@ func (s *Server) Validate() error {
 	}
 	if s.Status != "" && !s.Status.Valid() {
 		return fmt.Errorf("%w: unknown status %q", ErrInvalid, s.Status)
+	}
+	if err := s.validateRegKind(); err != nil {
+		return err
 	}
 	modes := s.NotifyModes()
 	for _, mode := range modes {
