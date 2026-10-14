@@ -119,6 +119,8 @@ flowchart TB
 
 ```bash
 # Run with in-memory store (no dependencies)
+
+> [English](README.md) | **中文**
 make run
 
 # Run tests
