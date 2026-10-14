@@ -3,7 +3,7 @@
 // each row expands to a Steps timeline showing created → migrating → done.
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Table, Button, Modal, Form, Input, Space, Tag, Badge, Steps, message, Popconfirm,
+  Table, Button, Modal, Form, Input, Space, Tag, Badge, Steps, message, Popconfirm, Alert,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useLang, t } from '../i18n';
@@ -205,6 +205,12 @@ export default function Migrations() {
         onCancel={() => setModalOpen(false)}
         confirmLoading={creating}
       >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t('migWindowLinkage')}
+        />
         <Form form={form} layout="vertical">
           <Form.Item
             name="source_server_id"
