@@ -231,6 +231,17 @@ export function removeServerTag(
   return request(`/v1/admin/servers/${id}/tags/${code}`, { method: 'DELETE' }, ADMIN_BASE);
 }
 
+/** 设置路由权重（0..1000，0 清除=中性）。 */
+export function setServerWeight(
+  id: string,
+  weight: number,
+): Promise<{ server_id: string; weight: number }> {
+  return request(`/v1/admin/servers/${id}/weight`, {
+    method: 'POST',
+    body: JSON.stringify({ weight }),
+  }, ADMIN_BASE);
+}
+
 export function serverMaintenance(id: string): Promise<void> {
   return request(`/v1/admin/servers/${id}/maintenance`, { method: 'POST' });
 }

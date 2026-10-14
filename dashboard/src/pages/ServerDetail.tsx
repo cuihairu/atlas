@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Descriptions, Card, Table, Button, Space, Progress, Spin, message, Popconfirm,
-  Select, Input, Switch, Tooltip, Tag, Result,
+  Select, Input, Switch, Tooltip, Tag, Result, InputNumber, Slider,
 } from 'antd';
-import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
 import StatusTag from '../components/StatusTag';
 import TagBadge from '../components/TagBadge';
 import { useLang, t, getLang } from '../i18n';
@@ -13,6 +13,7 @@ import {
   getServerTags,
   addServerTag,
   removeServerTag,
+  setServerWeight,
   listCharactersByServer,
   serverMaintenance,
   serverDrain,
@@ -53,6 +54,10 @@ export default function ServerDetail() {
   const [isPublic, setIsPublic] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // Routing weight form state.
+  const [weight, setWeight] = useState<number>(0);
+  const [weightSaving, setWeightSaving] = useState(false);
+
   const fetch = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -66,6 +71,7 @@ export default function ServerDetail() {
       setServer(s);
       setCharacters(c);
       setAdminTags(tags.tags);
+      setWeight(s.weight ?? 0);
     } catch {
       // 主请求失败：客户端已弹错，server 保持 null，渲染层落到错误面板。
     } finally {
@@ -126,6 +132,20 @@ export default function ServerDetail() {
       message.success(t('tagRemoved'));
     } catch {
       // handled by client
+    }
+  };
+
+  const saveWeight = async () => {
+    if (!id) return;
+    setWeightSaving(true);
+    try {
+      await setServerWeight(id, weight);
+      message.success(t('weightSaved'));
+      fetch();
+    } catch {
+      // handled by client
+    } finally {
+      setWeightSaving(false);
     }
   };
 
@@ -219,6 +239,14 @@ export default function ServerDetail() {
           ) : (
             <span style={{ color: '#999' }}>-</span>
           )}
+        </div>
+        <div style={{ marginTop: 8 }}>
+          <span style={{ marginRight: 8 }}>{t('weight')}:</span>
+          <Tooltip title={t('weightNeutralHint')}>
+            <Tag color={server.weight && server.weight !== 100 ? 'geekblue' : 'default'}>
+              {server.weight && server.weight > 0 ? server.weight : t('weightNeutral')}
+            </Tag>
+          </Tooltip>
         </div>
       </Card>
 
@@ -341,6 +369,37 @@ export default function ServerDetail() {
           </Button>
         </Space>
         <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>{t('tagHint')}</div>
+      </Card>
+
+      <Card title={t('weightManage')} style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 12 }}>
+          <span style={{ marginRight: 8 }}>{t('weight')}:</span>
+          <InputNumber
+            min={0}
+            max={1000}
+            value={weight}
+            onChange={(v) => setWeight(v ?? 0)}
+            style={{ width: 100 }}
+          />
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={weightSaving}
+            onClick={saveWeight}
+            style={{ marginLeft: 8 }}
+          >
+            {t('weightSave')}
+          </Button>
+        </div>
+        <Slider
+          min={0}
+          max={1000}
+          value={weight}
+          onChange={(v) => setWeight(v)}
+          marks={{ 0: '0', 50: '50', 100: '100', 200: '200', 500: '500', 1000: '1000' }}
+          style={{ maxWidth: 400 }}
+        />
+        <div style={{ marginTop: 8, color: '#999', fontSize: 12 }}>{t('weightHint')}</div>
       </Card>
 
       <Card title={t('actions')} style={{ marginBottom: 24 }}>

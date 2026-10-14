@@ -131,6 +131,14 @@ const zh = {
   noTags: '暂无标记',
   confirmRemoveTag: '移除标记「{name}」？',
   tagHint: '预设标记自带文案与档位; 自定义标记默认内部, 勾选「对外」才对玩家可见。「禁止注册」会在注册/创角接口生效。',
+  // ── 路由权重（灰度放量）──
+  weight: '路由权重',
+  weightManage: '路由权重（灰度放量）',
+  weightNeutral: '中性',
+  weightNeutralHint: '0 或 100 = 中性（不参与放量）；>100 吸引更多流量，<100 抑制流量。',
+  weightSaved: '路由权重已保存',
+  weightSave: '保存',
+  weightHint: '推荐排序按有效负载 = 负载 × 100 ÷ 权重 比较；权重 200 ≈ 吸引约两倍流量（稳态）。只影响推荐元数据，不改状态 / 维护窗口 / 已有角色优先。',
   // ── 公告与维护窗口 ──
   operations: '公告与维护',
   announcements: '公告',
@@ -466,6 +474,14 @@ const en: Record<keyof typeof zh, string> = {
   noTags: 'No tags yet',
   confirmRemoveTag: 'Remove tag "{name}"?',
   tagHint: 'Preset tags carry their own label and tier; custom tags default to internal — flip "Public" to expose them. "no_register" blocks the register/create-character API.',
+  // ── Routing weight (canary rollout) ──
+  weight: 'Routing weight',
+  weightManage: 'Routing Weight (canary rollout)',
+  weightNeutral: 'Neutral',
+  weightNeutralHint: '0 or 100 = neutral (no traffic shaping); >100 attracts more traffic, <100 dampens it.',
+  weightSaved: 'Routing weight saved',
+  weightSave: 'Save',
+  weightHint: 'Recommendation ranking compares effective load = load × 100 ÷ weight; weight 200 attracts roughly 2x traffic in steady state. Metadata only — never touches status, maintenance windows, or owned-character stickiness.',
   // ── Operations: announcements & maintenance windows ──
   operations: 'Notices & Maintenance',
   announcements: 'Announcements',

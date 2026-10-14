@@ -13,6 +13,7 @@ vi.mock('../api/client', () => ({
   getServerTags: vi.fn(),
   addServerTag: vi.fn(),
   removeServerTag: vi.fn(),
+  setServerWeight: vi.fn(),
   serverMaintenance: vi.fn(),
   serverDrain: vi.fn(),
   serverEnable: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('../api/client', () => ({
 const getServer = vi.mocked(client.getServer)
 const listCharactersByServer = vi.mocked(client.listCharactersByServer)
 const getServerTags = vi.mocked(client.getServerTags)
+const setServerWeight = vi.mocked(client.setServerWeight)
 
 const srv: Server = {
   id: 'srv-1',
@@ -89,5 +91,50 @@ describe('ServerDetail 详情页数据加载', () => {
     expect(await screen.findByText('Alpha')).toBeTruthy()
     expect(await screen.findByText('Hero')).toBeTruthy()
     expect(screen.getByText(`${t('characterList')} (1)`)).toBeTruthy()
+  })
+})
+
+describe('ServerDetail 路由权重', () => {
+  // 权重 Tag 是页面上唯一的 ant-tag 且内容唯一（tier 下拉里也有「中性」二字），
+  // 用 class 收窄到 Tag 元素。
+  const weightTag = async () => {
+    const tags = await screen.findAllByText(t('weightNeutral'))
+    return tags.find((el) => el.className.includes('ant-tag'))
+  }
+
+  it('权重为 0 时显示「中性」', async () => {
+    renderPage()
+
+    expect(await weightTag()).toBeTruthy()
+  })
+
+  it('权重为 200 时显示数值', async () => {
+    getServer.mockResolvedValue({ ...srv, weight: 200 })
+    renderPage()
+
+    const tags = await screen.findAllByText('200')
+    const tag = tags.find((el) => el.className.includes('ant-tag'))
+    expect(tag).toBeTruthy()
+  })
+
+  it('设置权重后调用 API 并刷新页面', async () => {
+    setServerWeight.mockResolvedValue({ server_id: 'srv-1', weight: 200 })
+    renderPage()
+
+    expect(await weightTag()).toBeTruthy()
+
+    const input = screen.getByDisplayValue('0') as HTMLInputElement
+    // antd InputNumber renders a nested input; set the value via the native setter.
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype, 'value',
+    )?.set
+    nativeSetter?.call(input, '200')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const saveName = new RegExp([...t('weightSave')].join('\\s*'))
+    await screen.findByRole('button', { name: saveName })
+    screen.getByRole('button', { name: saveName }).click()
+
+    expect(setServerWeight).toHaveBeenCalledWith('srv-1', 200)
   })
 })

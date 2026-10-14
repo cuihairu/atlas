@@ -30,6 +30,8 @@ export interface Server {
   status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting';
   /** Player-facing responses expose only public tags. */
   tags?: ServerTag[];
+  /** 运营路由权重（灰度放量 knob）：100 = 中性，>100 吸引流量，<100 抑制。 */
+  weight?: number;
   players: number;
   capacity: number;
   load: number;
