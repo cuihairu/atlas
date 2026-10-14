@@ -332,6 +332,8 @@ const zh = {
   matchedFallback: '回退命中',
   ownedServer: '已有角色',
   eligibleServer: '可入选',
+  maintWindow: '维护窗口',
+  effectiveLoad: '有效负载',
   diagnoseTip: '与 /v1/routing/recommended 同一条管线：排序、逐维判定、归因全部摊开，不另设判据。',
   diagnoseWinner: '推荐',
   // ── 系统配置只读页（item 8）──
@@ -675,6 +677,8 @@ const en: Record<keyof typeof zh, string> = {
   matchedFallback: 'Fallback match',
   ownedServer: 'Owns character',
   eligibleServer: 'Eligible',
+  maintWindow: 'Maint. window',
+  effectiveLoad: 'Eff. load',
   diagnoseTip: 'Same pipeline as /v1/routing/recommended: ranking, per-dimension verdicts and reasons are the actual intermediates — no second criteria set.',
   diagnoseWinner: 'Recommended',
   // ── Read-only system config (item 8) ──

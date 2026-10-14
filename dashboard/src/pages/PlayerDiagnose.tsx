@@ -5,7 +5,7 @@
 // routing），本页不另写判据。
 import { useState } from 'react';
 import {
-  Card, Form, Input, Button, Table, Tag, Descriptions, Result, Space, Typography, Alert,
+  Card, Form, Input, Button, Table, Tag, Descriptions, Result, Space, Typography, Alert, Tooltip,
 } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useLang, t } from '../i18n';
@@ -80,15 +80,32 @@ export default function PlayerDiagnose() {
     },
     {
       title: t('verdict'),
-      width: 220,
+      width: 260,
       render: (_: unknown, row: DiagnosisServerVerdict) => (
         <Space size={4} wrap>
           {row.matched_strict && <Tag color="green">{t('matchedStrict')}</Tag>}
           {row.matched_fallback && !row.matched_strict && <Tag color="orange">{t('matchedFallback')}</Tag>}
           {row.owned && <Tag color="geekblue">{t('ownedServer')}</Tag>}
+          {row.maintenance_window && <Tag color="red">{t('maintWindow')}</Tag>}
           {row.eligible ? <Tag color="blue">{t('eligibleServer')}</Tag> : <Tag>{t('no')}</Tag>}
         </Space>
       ),
+    },
+    {
+      title: t('weight'),
+      width: 80,
+      render: (_: unknown, row: DiagnosisServerVerdict) =>
+        row.weight && row.weight > 0 && row.weight !== 100 ? (
+          <Tooltip title={t('weightNeutralHint')}>
+            <span>{row.weight}</span>
+          </Tooltip>
+        ) : '—',
+    },
+    {
+      title: t('effectiveLoad'),
+      width: 80,
+      render: (_: unknown, row: DiagnosisServerVerdict) =>
+        row.effective_load != null ? (row.effective_load * 100).toFixed(1) + '%' : '—',
     },
     {
       title: t('verdictReason'),

@@ -129,6 +129,12 @@ export interface DiagnosisServerVerdict {
   matched_strict: boolean;
   matched_fallback: boolean;
   owned: boolean;
+  /** 活动中或 Lead 内开始的维护窗口（窗口排除判定）。 */
+  maintenance_window?: MaintenanceWindow;
+  /** 运营路由权重（0 = 未设置，同中性）。 */
+  weight?: number;
+  /** 有效负载 = load × 100 / weight（weight >0 且 ≠100 时才有意义）。 */
+  effective_load?: number;
   eligible: boolean;
   /** 未入候选时的拒绝原因（region=na (需要 eu)）或冠军归因。 */
   reason?: string;
