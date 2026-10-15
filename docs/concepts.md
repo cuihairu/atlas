@@ -1,3 +1,5 @@
+[English](concepts.en.md) | [中文](concepts.md)
+
 # 概念模型
 
 本文定义 Atlas 中的核心概念，以及它们之间的关系。

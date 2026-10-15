@@ -1,3 +1,5 @@
+[English](data-model.en.md) | [中文](data-model.md)
+
 # 数据模型
 
 Atlas 的存储按**访问模式**分两层：注册表 / 角色目录等持久态由可插拔存储承载（`ATLAS_STORE`：`memory` 默认、零依赖开箱即用；`postgres` 面向生产；`mysql` 实现已备、主程序装配未接），**运行时状态**（心跳、玩家数、负载，TTL ≤ 120s）固定走 Redis。本章以生产形态（PostgreSQL + Redis）给表结构：

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="static/logo.svg" alt="Atlas" width="80" height="80" />
+  <img src="static/logo.svg" alt="Atlas" width="64" height="64" />
 </p>
 
 <h1 align="center">Atlas</h1>

@@ -1,3 +1,5 @@
+[English](api.en.md) | [中文](api.md)
+
 # API 参考
 
 Atlas 的 API 分为五组，职责清晰互不重叠。

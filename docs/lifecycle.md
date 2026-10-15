@@ -1,3 +1,5 @@
+[English](lifecycle.en.md) | [中文](lifecycle.md)
+
 # 服务器生命周期
 
 服务器不是简单的 `online / offline`，而应有完整生命周期。这对大型游戏尤为重要。
