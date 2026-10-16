@@ -1,35 +1,35 @@
-[English](data-model.en.md) | [中文](data-model.md)
+[English](data-model.md) | [简体中文](zh/data-model.md)
 
-# 数据模型
+# Data Model
 
-Atlas 的存储按**访问模式**分两层：注册表 / 角色目录等持久态由可插拔存储承载（`ATLAS_STORE`：`memory` 默认、零依赖开箱即用；`postgres` 面向生产；`mysql` 实现已备、主程序装配未接），**运行时状态**（心跳、玩家数、负载，TTL ≤ 120s）固定走 Redis。本章以生产形态（PostgreSQL + Redis）给表结构：
+Atlas's storage is divided into two layers by **access pattern**: persistent state such as the registry / character directory is carried by a pluggable store (`ATLAS_STORE`: `memory` by default, zero-dependency and usable out of the box; `postgres` for production; the `mysql` implementation exists but is not wired into the main program), while **runtime state** (heartbeat, player count, load, TTL ≤ 120s) always goes through Redis. This chapter gives the table structures in the production form (PostgreSQL + Redis):
 
-| 存储 | 承载内容 | 访问模式 |
+| Storage | Content carried | Access pattern |
 | --- | --- | --- |
-| **Redis** | 心跳时间戳、`status`、`load`、`players` | 高频写、高频读、可丢失 |
-| **PostgreSQL** | `servers`、`realms`、`shards`、`character_index`、`migrations` | 低频写、事务性、需持久 |
+| **Redis** | Heartbeat timestamp, `status`, `load`, `players` | High-frequency writes, high-frequency reads, lossy |
+| **PostgreSQL** | `servers`, `realms`, `shards`, `character_index`, `migrations` | Low-frequency writes, transactional, requires persistence |
 
 ---
 
-## 1. 为什么这样分
+## 1. Why divide it this way
 
-- **心跳是易失数据。** 服务器掉线后，最后一次心跳的精确数值没有历史价值。Redis TTL 天然契合这个语义。
-- **服务器档案是事实。** 名称、区域、版本、拓扑归属需要持久化与审计。
-- **角色索引需要事务与外键。** 合服/转服产生跨行变更，事务能力是刚需。
-- **列表页是热点。** 拉服务器列表是最高频的读，这份流量走 Redis，不进 PG。
+- **Heartbeats are volatile data.** After a server goes down, the exact value of the last heartbeat has no historical value. Redis TTL fits this semantic naturally.
+- **Server profiles are facts.** Names, regions, versions, and topology ownership need persistence and auditing.
+- **The character index needs transactions and foreign keys.** Server merge / server transfer produce cross-row changes, and transactional capability is a hard requirement.
+- **The list page is a hot spot.** Fetching the server list is the highest-frequency read; this traffic goes through Redis, not PG.
 
-### 一致性策略
+### Consistency strategy
 
-**PostgreSQL 为准，Redis 为缓存。**
+**PostgreSQL as the source of truth, Redis as cache.**
 
-- 写路径先落 PG，再更新 Redis。
-- Redis 中的运行时字段（`load` / `players` / `status`）允许短暂不一致，它们本身就是近似值。
-- 心跳超时由健康监控巡检计算 `last_seen_at` 年龄（默认每 10s），回写 PG 的 `status`；Redis 键 TTL（120s）仅做自清理。
-- Redis 全量丢失时，可从 PG 重建运行时状态（服务器档案都在，只是心跳数据丢失）。
+- The write path lands in PG first, then updates Redis.
+- Runtime fields in Redis (`load` / `players` / `status`) are allowed to be briefly inconsistent; they are themselves approximations.
+- Heartbeat timeout is computed by the health monitoring sweep, which computes the age of `last_seen_at` (default every 10s) and writes back to PG's `status`; the Redis key TTL (120s) is only for self-cleanup.
+- When Redis is fully lost, runtime state can be rebuilt from PG (the server profiles are all there, only the heartbeat data is lost).
 
 ---
 
-## 2. PostgreSQL 表结构
+## 2. PostgreSQL Table Structures
 
 ### servers
 
@@ -62,27 +62,27 @@ CREATE INDEX idx_servers_realm        ON servers (realm_id);
 CREATE INDEX idx_servers_shard        ON servers (shard_id);
 ```
 
-`tags` 为运营标记（migrations/0005，JSONB 数组 `{code,label,tier,public}`，注册 upsert 不触碰该列）；`notify_mode` / `notify_callback_url` 为跨服配置变更通知声明（migrations/0006，取值 `subscribe` / `callback` / `poll`，详见 [config-center.md](config-center.md)）。
+`tags` holds operational tags (migrations/0005, a JSONB array `{code,label,tier,public}`; the registration upsert does not touch this column); `notify_mode` / `notify_callback_url` are cross-server config change notification declarations (migrations/0006, values `subscribe` / `callback` / `poll`, see [config-center.md](config-center.md) for details).
 
-`source` 标记档案归属（migrations/0004）：`''` = API 注册（默认），`config` = 配置文件声明（`ATLAS_SERVERS_CONFIG`）——config 归属的记录注册 API 拒改其档案字段（`409 SERVER_MANAGED_BY_CONFIG`），心跳与生命周期操作照常。
+`source` marks profile ownership (migrations/0004): `''` = API registration (default), `config` = config file declaration (`ATLAS_SERVERS_CONFIG`)—the registration API refuses to modify the profile fields of records owned by config (`409 SERVER_MANAGED_BY_CONFIG`); heartbeat and lifecycle operations proceed as usual.
 
-`status` 的取值域见 [lifecycle.md](lifecycle.md)：
+The value domain of `status` is in [lifecycle.md](lifecycle.md):
 
-| 状态 | 语义 |
+| Status | Semantics |
 | --- | --- |
-| `starting` | 进程启动中，尚未就绪 |
-| `online` | 正常服务 |
-| `draining` | 排水中（优雅下线） |
-| `maintenance` | 维护中 |
-| `suspect` | 疑似失联 |
-| `offline` | 已下线 |
-| `disabled` | 运维禁用 |
+| `starting` | Process starting up, not yet ready |
+| `online` | Serving normally |
+| `draining` | Draining (graceful shutdown) |
+| `maintenance` | Under maintenance |
+| `suspect` | Suspected unreachable |
+| `offline` | Offline |
+| `disabled` | Operationally disabled |
 
-> **语义批注（三态模型，见 [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)）**：
-> 本表 `servers.status` 落库的是 **Effective（生效态）**——合成结果，所有对外视图
-> （发现 / 推荐 / 统计）读它的就是这个值，不存在与别处 `status` 打架的语义。
+> **Semantic annotation (three-state model, see [lifecycle.md §0](lifecycle.md#_0-three-states-desired-observed-effective)e)**:
+> What this table's `servers.status` persists is the **Effective** state—a composite result; all external views
+> (discovery / recommendation / statistics) read exactly this value, and there is no semantics conflicting with a `status` elsewhere.
 
-`players`、`load`、`last_seen_at` **不在此表**，它们在 Redis 中。
+`players`, `load`, and `last_seen_at` are **not in this table**; they are in Redis.
 
 ---
 
@@ -114,7 +114,7 @@ CREATE TABLE shards (
 CREATE INDEX idx_shards_realm ON shards (realm_id);
 ```
 
-`realm_id` 可为 `NULL`，允许 Shard 直接挂在 Region 下。这与 [concepts.md](concepts.md) 中"层级可选"的原则一致。
+`realm_id` may be `NULL`, allowing a Shard to attach directly under Region. This is consistent with the "optional hierarchy" principle in [concepts.md](concepts.md).
 
 ---
 
@@ -142,13 +142,13 @@ CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
 ```
 
-**这是投影表，不是权威数据表。** 完整角色数据在游戏服务器的角色数据库中。见 [concepts.md §7](concepts.md#7-character)。
+**This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#7-character.)
 
-主键选 `(account_id, server_id, character_id)` 三元组，因为：
-- 同一账号可在多个服务器有角色
-- `character_id` 全局唯一性由游戏服务器保证，但 Atlas 不依赖它作为主键，以容忍不同服务器 ID 空间冲突
+The primary key is chosen as the `(account_id, server_id, character_id)` triple because:
+- The same account can have characters on multiple servers
+- The global uniqueness of `character_id` is guaranteed by the game server, but Atlas does not depend on it as the primary key, in order to tolerate ID space conflicts across different servers
 
-`idx_char_by_char_id` 用于 `GET /v1/directory/characters/{id}` 反查。
+`idx_char_by_char_id` is used for the reverse lookup in `GET /v1/directory/characters/{id}`.
 
 ---
 
@@ -167,41 +167,41 @@ CREATE TABLE server_migrations (
 CREATE INDEX idx_migration_status ON server_migrations (status);
 ```
 
-详见 [migration.md](migration.md)。
+See [migration.md](migration.md) for details.
 
 ---
 
-## 3. Redis 键设计
+## 3. Redis Key Design
 
-### 服务器运行时状态
+### Server runtime state
 
-| 键 | 类型 | 说明 | TTL |
+| Key | Type | Description | TTL |
 | --- | --- | --- | --- |
-| `atlas:server:{server_id}:runtime` | HASH | 服务器运行时快照，字段见下表 | 120 秒，每次心跳刷新 |
+| `atlas:server:{server_id}:runtime` | HASH | Server runtime snapshot, fields in the table below | 120 seconds, refreshed on every heartbeat |
 
-**`atlas:server:{id}:runtime`** 字段：
+**`atlas:server:{id}:runtime`** fields:
 
-| 字段 | 示例 | 说明 |
+| Field | Example | Description |
 | --- | --- | --- |
-| `status` | `online` | 心跳上报的**观测态**（Observed 侧，见 [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)），判活依据是 `last_seen_at` 而非本字段 |
-| `players` | `843` | 当前在线玩家数（整数字符串） |
-| `load` | `0.42` | 负载比，`[0, 1]` 浮点字符串 |
-| `last_seen_at` | `2026-01-01T12:00:00Z` | 最近一次心跳的写入时间（RFC3339），判活依据 |
+| `status` | `online` | The **observed state** reported by heartbeat (Observed side, see [lifecycle.md §0](lifecycle.md#_0-three-states-desired-observed-effective)e); the liveness basis is `last_seen_at`, not this field |
+| `players` | `843` | Current online player count (integer string) |
+| `load` | `0.42` | Load ratio, a `[0, 1]` float string |
+| `last_seen_at` | `2026-01-01T12:00:00Z` | The write time of the most recent heartbeat (RFC3339), the liveness basis |
 
-TTL 为 120 秒（`redisstore.runtimeTTL`），刻意大于判活阈值（suspect 30s / offline 60s）：键过期只负责运行时数据的自清理，判活由监控按 `last_seen_at` 计算心跳年龄完成。
+The TTL is 120 seconds (`redisstore.runtimeTTL`), deliberately larger than the liveness thresholds (suspect 30s / offline 60s): key expiry is only responsible for self-cleanup of runtime data, while liveness is determined by monitoring computing the heartbeat age from `last_seen_at`.
 
-档案字段（`capacity`、`region`、`realm`、`shard`、`version`、`endpoint`）**不进 Redis**，始终以 PG 为准。
+Profile fields (`capacity`, `region`, `realm`, `shard`, `version`, `endpoint`) **do not go into Redis** and are always based on PG.
 
-### 列表与推荐的读路径
+### Read paths for lists and recommendations
 
-当前实现没有 ZSET 索引：Discovery 与 Routing 都以 PG 为候选源，Redis 只负责补充运行时字段。
+The current implementation has no ZSET index: both Discovery and Routing use PG as the candidate source, and Redis only supplements runtime fields.
 
-| 读路径 | 实现 |
+| Read path | Implementation |
 | --- | --- |
-| Discovery 列表 | PG `ListServers`（条件过滤 + 可见性过滤）→ 批量读 Redis `runtime`（一次 `GetRuntimes` pipeline，见 internal/discovery/discovery.go:70）合并 `players / load / last_seen_at` |
-| Routing 推荐 | PG 候选集 → 合并运行时 → 打分排序：已有角色 > 最低负载 > 剩余容量最大 > 稳定 ID 兜底 |
+| Discovery list | PG `ListServers` (conditional filter + visibility filter) → batch read Redis `runtime` (one `GetRuntimes` pipeline, see internal/discovery/discovery.go:70) and merge `players / load / last_seen_at` |
+| Routing recommendation | PG candidate set → merge runtime → score and sort: has an existing character > lowest load > largest remaining capacity > stable ID as a fallback |
 
-### 心跳写路径
+### Heartbeat write path
 
 ```mermaid
 flowchart LR
@@ -210,9 +210,9 @@ flowchart LR
     P --> E["EXPIRE atlas:server:{id}:runtime<br/>TTL 120s"]
 ```
 
-单次心跳涉及 2 个 Redis 命令（`HSET` + `EXPIRE`），pipeline 一次往返完成。
+A single heartbeat involves 2 Redis commands (`HSET` + `EXPIRE`), completed in one pipeline round trip.
 
-### 掉线检测
+### Disconnection detection
 
 ```mermaid
 flowchart TD
@@ -229,9 +229,9 @@ flowchart TD
 
 ---
 
-## 4. 数据流
+## 4. Data Flow
 
-### 写路径
+### Write path
 
 ```mermaid
 flowchart TD
@@ -240,7 +240,7 @@ flowchart TD
     AT -->|"服务器档案（注册时）"| PG[("PostgreSQL")]
 ```
 
-### 读路径
+### Read path
 
 ```mermaid
 flowchart TD
@@ -249,7 +249,7 @@ flowchart TD
     M --> RESP["返回"]
 ```
 
-### 角色索引路径
+### Character index path
 
 ```mermaid
 flowchart TD
@@ -260,37 +260,37 @@ flowchart TD
     UP --> PG[("PostgreSQL character_index")]
 ```
 
-角色索引不进 Redis，因为它是按 `account_id` 的点查，PG 索引足以支撑，且需要事务保证合服时的跨行一致性。
+The character index does not go into Redis, because it is a point lookup by `account_id`; the PG index is sufficient to support it, and it needs transactions to guarantee cross-row consistency during a server merge.
 
 ---
 
-## 5. 数据量估算
+## 5. Data Volume Estimation
 
-以中等规模 MMORPG 为例：
+Taking a medium-scale MMORPG as an example:
 
-| 数据 | 规模 | 存储 |
+| Data | Scale | Storage |
 | --- | --- | --- |
-| 服务器 | 1,000 台 | PG + Redis，可忽略 |
-| 心跳写入 | 1,000 × 0.1 QPS = 100 QPS | Redis |
-| 列表读取 | 5,000 QPS | PG 候选集 + Redis 运行时合并 |
-| 角色索引 | 5,000 万行 | PG |
-| 角色点查 | 2,000 QPS | PG（走 `idx_char_by_account`） |
+| Servers | 1,000 | PG + Redis, negligible |
+| Heartbeat writes | 1,000 × 0.1 QPS = 100 QPS | Redis |
+| List reads | 5,000 QPS | PG candidate set + Redis runtime merge |
+| Character index | 50 million rows | PG |
+| Character point lookups | 2,000 QPS | PG (via `idx_char_by_account`) |
 
-角色索引是唯一有规模压力的表。分片基础设施（v0.1.16）已就位：
+The character index is the only table with scale pressure. The sharding infrastructure (v0.1.16) is already in place:
 
-- **策略接口** `store.CharacterShardStrategy` + 默认实现 `HashShardStrategy`（`account_id` 的 FNV-1a hash 对分片数取模，纯函数、跨进程稳定）；
-- **分片组合** `store/sharded` 实现 `CharacterStore`：按 `account_id` 路由的读写一跳到达；无法路由的查询（全局 `character_id` 点查、按服列表、Admin 搜索）扇出全部分片后按游标序归并；
-- **迁移工具** `cmd/atlas-reshard`（或 `sharded.Reshard`）：游标分页读源、幂等 upsert 写目标，支持单库 → N 库、N 分片 → M 分片重切；
-- **启用方式** `ATLAS_CHAR_SHARDS`（默认 1）：单物理库时逻辑分片（验证路由路径）；多库物理拆分仅迁移工具（`cmd/atlas-reshard --to-dsn`）支持，主程序装配未接（同 MySQL 口径）。
+- **Strategy interface** `store.CharacterShardStrategy` + the default implementation `HashShardStrategy` (FNV-1a hash of `account_id` modulo the shard count, a pure function, stable across processes);
+- **Sharded composition** `store/sharded` implements `CharacterStore`: reads and writes routed by `account_id` arrive in one hop; queries that cannot be routed (global `character_id` point lookup, per-server listing, Admin search) fan out to all shards and are then merged in cursor order;
+- **Migration tool** `cmd/atlas-reshard` (or `sharded.Reshard`): cursor-paginated reads from the source, idempotent upsert writes to the target, supporting single-DB → N-DB and N-shard → M-shard re-splitting;
+- **How to enable** `ATLAS_CHAR_SHARDS` (default 1): with a single physical DB this is logical sharding (validating the routing path); multi-DB physical splitting is supported only by the migration tool (`cmd/atlas-reshard --to-dsn`) and is not wired into the main program (same stance as MySQL).
 
-物理拆分（每分片独立 PG 实例）属于部署运维决策，接口与迁移工具已按 v2.0 目标预留，见 [roadmap.md](roadmap.md)。
+Physical splitting (a separate PG instance per shard) is a deployment and operations decision; the interface and migration tool are already reserved for the v2.0 target, see [roadmap.md](roadmap.md).
 
 ---
 
-## 6. 迁移与备份
+## 6. Migration and Backup
 
-- **PG**：常规逻辑备份 + WAL 归档。`character_index` 可从游戏服务器的角色数据库**全量重建**，这是它作为投影表的最大运维优势。
-- **Redis**：不需要备份。全量丢失时从 PG 的 `servers` 表重建运行时状态，代价是所有服务器需重新上报一次心跳（通常 15 秒内恢复）。
+- **PG**: conventional logical backup + WAL archiving. `character_index` can be **fully rebuilt** from the game server's character database, which is its greatest operational advantage as a projection table.
+- **Redis**: no backup needed. When fully lost, runtime state is rebuilt from PG's `servers` table, at the cost of all servers needing to report one heartbeat again (usually recovered within 15 seconds).
 
 ```mermaid
 flowchart TD
@@ -300,9 +300,9 @@ flowchart TD
 ```
 
 
-## 7. 维护窗口与公告（v0.1.20）
+## 7. Maintenance Windows and Announcements (v0.1.20)
 
-两张补充表（`migrations/0003_maintenance_announcements.sql`），都偏运维侧、数据量小：
+Two supplementary tables (`migrations/0003_maintenance_announcements.sql`), both leaning operational with small data volume:
 
 ```sql
 -- 计划维护窗口（瞬态：监控应用完毕即删除，不存历史）
@@ -339,8 +339,8 @@ CREATE INDEX idx_announcements_server     ON announcements (server_id);
 CREATE INDEX idx_announcements_window     ON announcements (starts_at, ends_at);
 ```
 
-要点：
+Key points:
 
-- **窗口是瞬态的**：健康监控在窗口结束后恢复状态并 `DELETE`，表里只会出现「尚未开始 / 进行中」的窗口；公告则是持久记录。
-- **`servers.started_at`**（0003 新增列）：注册时上报的进程启动时间，重注册刷新；Discovery 响应携带，用于展示 uptime。
-- 公告的时间区间是**半开区间** `[starts_at, ends_at)`，与维护窗口的判定一致。
+- **Windows are transient**: health monitoring restores the status after the window ends and `DELETE`s the row; the table only ever contains windows that are "not yet started / in progress"; announcements, by contrast, are persistent records.
+- **`servers.started_at`** (a column added in 0003): the process start time reported at registration, refreshed on re-registration; carried in the Discovery response and used to display uptime.
+- The announcement time interval is a **half-open interval** `[starts_at, ends_at)`, consistent with the maintenance window's determination.

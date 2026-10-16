@@ -1,22 +1,22 @@
-[English](architecture.en.md) | [中文](architecture.md)
+[English](architecture.md) | [简体中文](zh/architecture.md)
 
 <p align="center">
   <img src="../static/logo.svg" alt="Atlas" width="64" height="64" />
 </p>
 
-# 架构设计
+# Architecture Design
 
-## 1. 总览
+## 1. Overview
 
-Atlas 是一个面向在线游戏的**控制面（Control Plane）**。它不处理游戏逻辑，不存储角色权威数据，只负责回答"服务器在哪、是否可用、玩家的角色在哪"这一类目录性问题。
+Atlas is a **Control Plane** for online games. It does not process game logic and does not store authoritative character data; it is only responsible for answering directory questions such as "where are the servers, are they available, where is the player's character".
 
-> **定位声明（2026-10-04）：Atlas is a game infrastructure control plane, not a game backend.**
+> **Positioning statement (2026-10-04): Atlas is a game infrastructure control plane, not a game backend.**
 >
-> Atlas 回答**目录性问题**："我是谁？""谁在线？""我的角色在哪？""应该推荐哪个服务器？"
-> ——永远不回答**游戏运行时问题**："这个玩家现在能不能进？""这场对局怎么撮合？"
-> "这个副本实例开在哪台机器？""角色的背包里有什么？"
+> Atlas answers **directory questions**: "Who am I?" "Who is online?" "Where is my character?" "Which server should be recommended?"
+> —it never answers **game runtime questions**: "Can this player enter right now?" "How is this match made?"
+> "Which machine is this dungeon instance opened on?" "What is in the character's inventory?"
 >
-> **Atlas NEVER owns：**
+> **Atlas NEVER owns:**
 >
 > ```text
 > ❌ 角色权威数据           —— Directory 永远是 Projection（concepts.md §7）
@@ -26,9 +26,9 @@ Atlas 是一个面向在线游戏的**控制面（Control Plane）**。它不处
 > ❌ 账号认证              —— 玩家身份由网关 / 账号系统校验，Atlas 只消费身份元数据
 > ```
 >
-> 上述能力的**上游决策权不在 Atlas**：它们可以与 Atlas 集成（例如调度器
-> 读 Discovery 的候选集），但**永远不内建**。任何新功能立项先回答：
-> "这是目录性问题还是运行时问题？"——运行时问题一律不进来。
+> The **upstream decision authority for the above capabilities does not lie with Atlas**: they can integrate with Atlas (for example, a scheduler
+> reading Discovery's candidate set), but they are **never built in**. Any new feature proposal must first answer:
+> "Is this a directory question or a runtime question?"—runtime questions never come in.
 
 ```mermaid
 flowchart TB
@@ -66,43 +66,43 @@ flowchart TB
 
 ---
 
-## 2. 分层职责
+## 2. Layered Responsibilities
 
-| 层 | 组件 | 职责 |
+| Layer | Component | Responsibility |
 | --- | --- | --- |
-| 接入层 | APISIX | TLS 终结、认证鉴权、限流、路由、负载均衡、WAF、可观测性 |
-| 服务层 | Atlas Core | Registry / Discovery / Directory / Routing 四大模块。Routing 只做**推荐 / 定位元数据**，不做调度执行（边界声明见 §1） |
-| 数据层 | Redis | Observed 运行时状态：心跳、负载、在线数（判活依据 `last_seen_at`） |
-| 数据层 | PostgreSQL | 持久事实 + Effective 状态：服务器档案、拓扑、角色索引、迁移记录（`servers.status` 为合成结果，见 §4.4） |
-| 来源层 | Game Server | 角色数据的 Source of Truth，经 Atlas 写入接口（HTTP `:8080` POST `/v1/directory/characters`，或 gRPC `:9090` `DirectoryService`，同一实现）投递索引事件；不直连消息队列 |
+| Access layer | APISIX | TLS termination, authentication and authorization, rate limiting, routing, load balancing, WAF, observability |
+| Service layer | Atlas Core | The four major modules Registry / Discovery / Directory / Routing. Routing only does **recommendation / location metadata**, not scheduling execution (boundary statement in §1) |
+| Data layer | Redis | Observed runtime state: heartbeat, load, online count (liveness basis is `last_seen_at`) |
+| Data layer | PostgreSQL | Persistent facts + Effective state: server profiles, topology, character index, migration records (`servers.status` is a composite result, see §4.4) |
+| Source layer | Game Server | The Source of Truth for character data; delivers index events through Atlas's write interface (HTTP `:8080` POST `/v1/directory/characters`, or gRPC `:9090` `DirectoryService`, the same implementation); does not connect directly to the message queue |
 
 ---
 
-## 3. 与网关的边界
+## 3. Boundary with the Gateway
 
-**核心原则：Atlas 是独立服务，网关是可选的接入层。**
+**Core principle: Atlas is a standalone service, and the gateway is an optional access layer.**
 
-### APISIX 负责
+### What APISIX handles
 
-TLS 终结、认证鉴权、限流、路由、负载均衡、可观测性、WAF。
+TLS termination, authentication and authorization, rate limiting, routing, load balancing, observability, WAF.
 
-这些是**通用网关能力**，与游戏业务语义无关，任何后端服务都需要，不应由 Atlas 重复实现。APISIX、Kong、Envoy、Nginx 都能提供这些能力。
+These are **generic gateway capabilities**, unrelated to game business semantics; every backend service needs them and Atlas should not reimplement them. APISIX, Kong, Envoy, and Nginx can all provide these capabilities.
 
-### Atlas 负责
+### What Atlas handles
 
-服务器注册与发现、角色目录、健康监控与生命周期、Realm / Shard、合服迁移、接入推荐元数据。
+Server registration and discovery, character directory, health monitoring and lifecycle, Realm / Shard, server merge migration, access recommendation metadata.
 
-这些是**游戏领域语义**，只有 Atlas 理解"什么是 Realm""什么是合服"。
+These are **game domain semantics**; only Atlas understands "what a Realm is" and "what a server merge is".
 
-### 为什么不做网关插件
+### Why not build a gateway plugin
 
-把 Atlas 做成 APISIX / Kong / Envoy 的插件会带来三个问题：
+Making Atlas a plugin for APISIX / Kong / Envoy brings three problems:
 
-1. **生命周期耦合** — 插件运行在网关 worker 内，无法独立扩缩容、独立灰度、独立回滚。
-2. **能力受限** — 插件难以持有长连接、后台定时任务（如健康扫描）、独立存储连接池。
-3. **可移植性丧失** — 换成 Nginx / Envoy / Traefik / 直连，Atlas 就不可用了。
+1. **Lifecycle coupling** — A plugin runs inside the gateway worker and cannot scale, canary, or roll back independently.
+2. **Limited capabilities** — A plugin struggles to hold long connections, background scheduled tasks (such as health sweeps), and independent storage connection pools.
+3. **Loss of portability** — Switching to Nginx / Envoy / Traefik / direct connection would make Atlas unusable.
 
-正确的形态是：
+The correct form is:
 
 ```mermaid
 flowchart LR
@@ -113,13 +113,13 @@ flowchart LR
     CORE -.->|可选集成| GWI["网关集成<br/>APISIX / Kong / Envoy / Nginx"]
 ```
 
-这样 Atlas 可以脱离任何网关独立存在，网关只是众多部署形态中的一种。
+This way Atlas can exist independently of any gateway, and the gateway is just one of many deployment forms.
 
 ---
 
-## 4. 数据流
+## 4. Data Flow
 
-### 4.1 服务器注册与心跳
+### 4.1 Server Registration and Heartbeat
 
 ```mermaid
 sequenceDiagram
@@ -136,7 +136,7 @@ sequenceDiagram
     GS->>A: POST /v1/registry/servers/{id}/unregister（优雅下线）
 ```
 
-Atlas 依据心跳时间戳自动推进健康状态：
+Atlas automatically advances the health status based on the heartbeat timestamp:
 
 ```mermaid
 stateDiagram-v2
@@ -149,9 +149,9 @@ stateDiagram-v2
     offline --> starting: 重新注册
 ```
 
-详见 [lifecycle.md](lifecycle.md)。
+See [lifecycle.md](lifecycle.md) for details.
 
-### 4.2 客户端查询
+### 4.2 Client Query
 
 ```mermaid
 flowchart LR
@@ -160,17 +160,17 @@ flowchart LR
     C2["Client"] --> GW2["APISIX"] --> DIR["Directory"] --> P2[("PostgreSQL<br/>角色索引")]
 ```
 
-Discovery 是高频读路径，Redis 承载热点；Directory 是按 `account_id` 的点查，PostgreSQL 索引足以支撑。
+Discovery is a high-frequency read path, and Redis carries the hot spot; Directory is a point lookup by `account_id`, which a PostgreSQL index is sufficient to support.
 
-### 4.3 角色索引同步
+### 4.3 Character Index Sync
 
-**写入接口是唯一入口，消息队列段发生在 Atlas 内部**——游戏服务器只调 Atlas
-的写入接口：HTTP `:8080` 的 `POST /v1/directory/characters`（REST SDK 同款）或
-gRPC `:9090` 的 `DirectoryService`（Go SDK 可选传输），二者同一实现；写入处理器
-校验后交给 EventAdapter：默认 `http` 适配器进程内同步落地；切换为
-`redis / kafka / nats / rabbitmq` 后同一接口改为入队并返回 `202`，由 Atlas
-**内建的消费循环**（`main.go` 里的 `Subscribe`）取回事件调用 `ApplyEvent`
-落地。生产者与消费者都是 Atlas，**游戏服务器不直连 broker**：
+**The write interface is the only entry point, and the message queue segment happens inside Atlas**—game servers only call Atlas's
+write interface: `POST /v1/directory/characters` on HTTP `:8080` (the same as the REST SDK) or
+`DirectoryService` on gRPC `:9090` (an optional transport for the Go SDK), both the same implementation; the write handler,
+after validation, hands off to the EventAdapter: by default the `http` adapter lands synchronously in-process; after switching to
+`redis / kafka / nats / rabbitmq` the same interface enqueues and returns `202`, and Atlas's
+**built-in consume loop** (`Subscribe` in `main.go`) retrieves the event and calls `ApplyEvent`
+to land it. Both the producer and the consumer are Atlas; **game servers do not connect directly to the broker**:
 
 ```mermaid
 flowchart LR
@@ -187,69 +187,69 @@ flowchart LR
     A --> PG
 ```
 
-Atlas 只保存投影，不保存权威数据。详见 [sync.md](sync.md)。
+Atlas only stores projections, not authoritative data. See [sync.md](sync.md) for details.
 
-> `character.login` / `character.moved` 两类事件已定义并可被消费，但当前版本
-> **没有内建触发源**（写端点只产生 created / updated / deleted），见
-> [sync.md](sync.md) 事件表注。
+> The two event types `character.login` / `character.moved` are already defined and can be consumed, but the current version
+> **has no built-in trigger source** (the write endpoints only produce created / updated / deleted), see the
+> note in the event table of [sync.md](sync.md).
 
-### 4.4 状态语义：Desired / Observed / Effective
+### 4.4 Status Semantics: Desired / Observed / Effective
 
-作为控制面，Atlas 对每台服务器区分三类状态，**语义分层、互不打架**：
+As a control plane, Atlas distinguishes three kinds of status for each server, **with layered semantics that do not conflict**:
 
-| 态 | 定义 | 落点 |
+| State | Definition | Landing point |
 | --- | --- | --- |
-| **Desired（期望态）** | 运维声明：`maintenance` / `drain` / `disable` / `enable`；计划维护窗口到点自动写入 | 管理操作 → PG `servers.status` |
-| **Observed（观测态）** | 心跳观测：`starting` / `online` / `suspect` / `offline` 由 `last_seen_at` 年龄推进 | Redis runtime HASH；健康监控巡检后回写 PG |
-| **Effective（生效态）** | 对外广告的合成结果，所有对外视图（发现 / 推荐 / 统计）只暴露它 | PG `servers.status` |
+| **Desired** | Operational declaration: `maintenance` / `drain` / `disable` / `enable`; a scheduled maintenance window writes automatically when due | Admin operation → PG `servers.status` |
+| **Observed** | Heartbeat observation: `starting` / `online` / `suspect` / `offline` advanced by the age of `last_seen_at` | Redis runtime HASH; written back to PG after the health monitoring sweep |
+| **Effective** | The composite result advertised externally; all external views (discovery / recommendation / statistics) expose only this | PG `servers.status` |
 
-合成规则：**Desired 优先于 Observed、永不互斥**——`disabled` 永不被自动状态机覆盖，
-`maintenance` / `draining` 期间心跳不把状态拉回 `online`。完整定义见
-[lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)，存储批注见
-[data-model.md](data-model.md)。
+Composite rule: **Desired takes precedence over Observed and they are never mutually exclusive**—`disabled` is never overwritten by the automatic state machine,
+and during `maintenance` / `draining` a heartbeat does not pull the status back to `online`. See
+[lifecycle.md §0](lifecycle.md#_0-three-states-desired-observed-effective) for the complete definition, and
+[data-model.md](data-model.md) for the storage annotation.
 
 ---
 
-## 5. 存储分层
+## 5. Storage Layering
 
-采用 **PostgreSQL + Redis** 双存储，按访问模式分工而非按数据类型分工：
+A dual storage of **PostgreSQL + Redis** is used, divided by access pattern rather than by data type:
 
-| 存储 | 承载内容 | 访问模式 |
+| Storage | Content carried | Access pattern |
 | --- | --- | --- |
-| **Redis** | 心跳时间戳、`status`、`load`、`players` | 高频写（每服务器每 N 秒一次）、高频读（列表页） |
-| **PostgreSQL** | `servers`、`realms`、`shards`、`character_index`、`migrations` | 低频写、事务性、需要持久与关联查询 |
+| **Redis** | Heartbeat timestamp, `status`, `load`, `players` | High-frequency writes (once per server every N seconds), high-frequency reads (list page) |
+| **PostgreSQL** | `servers`, `realms`, `shards`, `character_index`, `migrations` | Low-frequency writes, transactional, requires persistence and relational queries |
 
-### 为什么这样分
+### Why divide it this way
 
-- **心跳是易失数据。** 服务器掉线后，最后一次心跳的精确数值没有历史价值，放 Redis 用 TTL 自动过期，天然契合语义。
-- **服务器档案是事实。** 名称、区域、版本、拓扑归属需要持久化与审计，放 PostgreSQL。
-- **角色索引需要事务与外键。** 合服/转服会产生跨行变更，PostgreSQL 的事务能力是刚需。
-- **列表页是热点。** 客户端拉服务器列表是最高频的读，这份流量走 Redis，不进 PG。
+- **Heartbeats are volatile data.** After a server goes down, the exact value of the last heartbeat has no historical value; putting it in Redis with TTL-based expiry fits the semantics naturally.
+- **Server profiles are facts.** Names, regions, versions, and topology ownership need persistence and auditing, so they go in PostgreSQL.
+- **The character index needs transactions and foreign keys.** Server merge / server transfer produce cross-row changes, and PostgreSQL's transactional capability is a hard requirement.
+- **The list page is a hot spot.** Clients fetching the server list is the highest-frequency read; this traffic goes through Redis, not PG.
 
-### 双写一致性
+### Dual-write consistency
 
-v0.1 采用 **PostgreSQL 为准、Redis 为缓存** 的策略：
+v0.1 adopts the strategy of **PostgreSQL as the source of truth, Redis as cache**:
 
-- 写路径先落 PG，再更新 Redis。
-- Redis 中的运行时字段（`load` / `players` / `status`）允许短暂不一致，因为它们本身就是近似值。
-- 心跳超时由健康监控巡检（默认每 10s）计算 `last_seen_at` 年龄并回写 PG 的 `status`；Redis 键上的 TTL（120s）只为键自清理，不参与判活。
+- The write path lands in PG first, then updates Redis.
+- Runtime fields in Redis (`load` / `players` / `status`) are allowed to be briefly inconsistent, because they are themselves approximations.
+- Heartbeat timeout is computed by the health monitoring sweep (default every 10s), which computes the age of `last_seen_at` and writes back to PG's `status`; the TTL on the Redis key (120s) is only for key self-cleanup and does not participate in liveness determination.
 
-详细表结构与键设计见 [data-model.md](data-model.md)。
+See [data-model.md](data-model.md) for detailed table structures and key design.
 
 ---
 
-## 6. 部署形态
+## 6. Deployment Forms
 
-### 最小部署
+### Minimal deployment
 
 ```mermaid
 flowchart LR
     A["Atlas"] --- P[("PostgreSQL")] --- R[("Redis")]
 ```
 
-4 个 service（atlas / migrate / postgres / redis），docker-compose 一键拉起；migrate 为一次性迁移任务，跑完即退。
+4 services (atlas / migrate / postgres / redis), brought up with a single docker-compose command; migrate is a one-shot migration task that exits once done.
 
-### 生产部署
+### Production deployment
 
 ```mermaid
 flowchart TB
@@ -262,127 +262,127 @@ flowchart TB
     A1 --> P[("PostgreSQL<br/>主从 / 流复制")]
 ```
 
-Atlas Core 无状态，可水平扩展；所有状态都在 Redis 与 PostgreSQL 中。
+Atlas Core is stateless and can scale horizontally; all state is in Redis and PostgreSQL.
 
 ---
 
-## 7. 可观测性
+## 7. Observability
 
-Atlas 对外暴露的运维指标建议覆盖：
+The operational metrics Atlas exposes externally are recommended to cover:
 
-| 指标 | 含义 |
+| Metric | Meaning |
 | --- | --- |
-| `atlas_registry_servers_total{status}` | 当前各状态服务器数 |
-| `atlas_registry_heartbeat_lag_seconds` | 心跳年龄分布 |
-| `atlas_directory_characters_total` | 角色索引总量 |
-| `atlas_discovery_requests_total{filter}` | 发现查询量与筛选维度 |
-| `atlas_admin_requests_total{endpoint,status}` | Admin 请求量与响应码（REST 路由模式 + gRPC Admin 全方法名，状态码同词表） |
-| `atlas_health_transitions_total{from,to}` | 生命周期状态迁移量 |
-| `atlas_directory_write_duration_seconds{op}` | 角色目录写路径延迟（REST 写 + 事件投影） |
-| `atlas_registry_write_duration_seconds{op}` | 注册/心跳/注销写路径延迟（最热写路径，写劣化先于此显形） |
-| `atlas_store_queue_*` | memory store 指令写队列 14 序列（深度 / 水位 / 入队 / 应用 / 合并 / 幂等命中 / 背压退化 / flush 批量与时延 / 按类型分布 / 回放环长度；SQL 后端不出序列，同源 `/v1/admin/indexqueue/status`） |
+| `atlas_registry_servers_total{status}` | Current number of servers in each status |
+| `atlas_registry_heartbeat_lag_seconds` | Heartbeat age distribution |
+| `atlas_directory_characters_total` | Total character index size |
+| `atlas_discovery_requests_total{filter}` | Discovery query volume and filter dimensions |
+| `atlas_admin_requests_total{endpoint,status}` | Admin request volume and response codes (REST route patterns + full gRPC Admin method names, status codes per the same vocabulary) |
+| `atlas_health_transitions_total{from,to}` | Lifecycle status transition volume |
+| `atlas_directory_write_duration_seconds{op}` | Character directory write path latency (REST write + event projection) |
+| `atlas_registry_write_duration_seconds{op}` | Registration/heartbeat/unregistration write path latency (the hottest write path; write degradation shows here first) |
+| `atlas_store_queue_*` | memory store command write queue, 14 series (depth / watermark / enqueue / apply / merge / idempotent hits / backpressure degradation / flush batch and latency / distribution by type / replay ring length; the SQL backend exposes no series, same source as `/v1/admin/indexqueue/status`) |
 
-三个 HTTP 监听口与 gRPC 口另有请求级追踪：`X-Request-ID`（gRPC 为 `x-request-id` metadata）沿用/生成并回显，请求完成时记录含 request_id 的访问日志（`/healthz`、`/readyz`、`/metrics` 除外），被限流/鉴权拒绝的请求同样有 id，详见 docs/api.md「请求追踪」。配置 `ATLAS_OTLP_ENDPOINT` 后，同一请求还会开启 OpenTelemetry server span 导出到任意 OTLP 接收端（Jaeger / Tempo / collector），span 属性携带同一 request id，见 api.md「分布式追踪」。
+The three HTTP listeners and the gRPC port additionally have request-level tracing: `X-Request-ID` (gRPC uses the `x-request-id` metadata) is propagated/generated and echoed, and on request completion an access log containing the request_id is recorded (except for `/healthz`, `/readyz`, `/metrics`); requests rejected by rate limiting/authentication also have an id. See docs/api.md "Request Tracing" for details. After configuring `ATLAS_OTLP_ENDPOINT`, the same request also opens an OpenTelemetry server span exported to any OTLP receiver (Jaeger / Tempo / collector), and the span attributes carry the same request id; see api.md "Distributed Tracing".
 
-这些指标同时服务于容量规划与告警（例如 `suspect` 状态服务器数突增）。
+These metrics serve both capacity planning and alerting (for example, a sudden spike in the number of servers in `suspect` status).
 
 ---
 
-## 8. 架构选型理由
+## 8. Rationale for Architectural Choices
 
-### 8.1 网关选型：APISIX 是推荐，不是绑定
+### 8.1 Gateway choice: APISIX is recommended, not a binding
 
-Atlas 是标准 HTTP REST 服务，**任何能做反向代理的网关都可以放在前面**：
+Atlas is a standard HTTP REST service, and **any gateway capable of reverse proxying can be placed in front of it**:
 
-| 网关 | 限流 | 动态路由 | 可观测性 | 备注 |
+| Gateway | Rate limiting | Dynamic routing | Observability | Notes |
 | --- | --- | --- | --- | --- |
-| **APISIX** | 插件内置，毫秒级热更新 | etcd watch，原生动态 | Prometheus/SkyWalking | 推荐，理由见下 |
-| **Kong** | 插件内置 | 依赖 DB 或声明式 | 插件支持 | 成熟，但中文社区弱 |
-| **Envoy** | 本地限流或外部限流服务 | xDS 协议 | 原生支持 | 需要控制面，运维重 |
-| **Nginx** | `limit_req` 模块 | reload 或 OpenResty | 需额外配置 | 最轻量，但动态能力弱 |
-| **Caddy** | 插件 | 自动 HTTPS | 基础 | 适合小规模 |
-| **无网关** | Atlas 自身中间件 | — | — | 开发/测试，不推荐生产 |
+| **APISIX** | Built into plugins, millisecond-level hot updates | etcd watch, natively dynamic | Prometheus/SkyWalking | Recommended, reasons below |
+| **Kong** | Built into plugins | Depends on DB or declarative | Plugin support | Mature, but weak Chinese community |
+| **Envoy** | Local rate limiting or external rate limiting service | xDS protocol | Native support | Needs a control plane, heavy operations |
+| **Nginx** | `limit_req` module | reload or OpenResty | Needs extra configuration | Lightest, but weak dynamic capability |
+| **Caddy** | Plugins | Automatic HTTPS | Basic | Suitable for small scale |
+| **No gateway** | Atlas's own middleware | — | — | Development/testing, not recommended for production |
 
-**Atlas 自身已内建基础限流**——`internal/httpapi/ratelimit.go` 令牌桶中间件（路径前缀最长匹配规则 + 按客户端 IP 计桶），配 `ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT` 即启用（v0.1.17 落地）。但生产环境仍建议把限流放在网关层，原因是：
-- 网关限流在 Atlas 进程之外，Atlas 过载时网关还能挡
-- 网关可以对不同路由设不同限流策略（注册接口严格，查询接口宽松）
-- 网关限流不需要改 Atlas 代码
+**Atlas already has built-in basic rate limiting**—the token bucket middleware in `internal/httpapi/ratelimit.go` (longest path-prefix matching rule + per-client-IP bucket), enabled by configuring `ATLAS_RATE_LIMITS` / `ATLAS_RATE_LIMIT_DEFAULT` (landed in v0.1.17). But in production it is still recommended to put rate limiting at the gateway layer, because:
+- Gateway rate limiting is outside the Atlas process, so when Atlas is overloaded the gateway can still hold the line
+- The gateway can set different rate limiting policies for different routes (strict for registration, lenient for queries)
+- Gateway rate limiting does not require changing Atlas code
 
-**选 APISIX 的具体理由：**
+**Specific reasons for choosing APISIX:**
 
-1. **动态路由是刚需。** 游戏服务器频繁上下线，网关必须能毫秒级更新路由表，不需要 reload。APISIX 的 etcd watch 机制天然契合。
-2. **限流插件开箱即用。** `limit-count`、`limit-req`、`limit-conn` 三个插件覆盖了游戏场景的所有限流需求，不需要自己写。
-3. **国内社区活跃。** 中文文档完善，遇到问题能找到人。Kong 和 Envoy 在国内的社区弱一些。
-4. **插件可以前置通用逻辑。** 认证、WAF、日志在网关层做，Atlas 就不需要重复实现。
+1. **Dynamic routing is a hard requirement.** Game servers go up and down frequently, so the gateway must be able to update the routing table at millisecond level without a reload. APISIX's etcd watch mechanism fits naturally.
+2. **Rate limiting plugins work out of the box.** The three plugins `limit-count`, `limit-req`, `limit-conn` cover all rate limiting needs of game scenarios, with no need to write your own.
+3. **Active domestic community.** Complete Chinese documentation, and you can find people when you hit problems. Kong and Envoy have weaker communities domestically.
+4. **Plugins can front-load generic logic.** Authentication, WAF, and logging done at the gateway layer mean Atlas does not need to reimplement them.
 
-**但如果你已经有 Kong / Envoy / Nginx 的运维经验，直接用就好。** Atlas 不关心前面是什么网关，它只暴露标准的 REST 端点。
+**But if you already have operational experience with Kong / Envoy / Nginx, just use it.** Atlas does not care what gateway is in front; it only exposes standard REST endpoints.
 
-### 8.2 为什么 Atlas 是独立服务而不是网关插件
+### 8.2 Why Atlas is a standalone service rather than a gateway plugin
 
-这个决定经过反复权衡。插件模式看起来更简单，但在游戏场景下有三个致命问题：
+This decision went through repeated weighing. The plugin model looks simpler, but has three fatal problems in game scenarios:
 
-**1. 生命周期耦合**
+**1. Lifecycle coupling**
 
-| 形态 | 网关进程 crash 时 | 后果 |
+| Form | When the gateway process crashes | Consequence |
 | --- | --- | --- |
-| 插件模式 | Atlas 一起挂 | 所有游戏服务器注册状态丢失 |
-| 独立服务 | Atlas 不受影响 | 心跳继续，网关恢复后自动回连 |
+| Plugin model | Atlas goes down with it | All game server registration state is lost |
+| Standalone service | Atlas is unaffected | Heartbeats continue; the gateway reconnects automatically after recovery |
 
-游戏服务器的注册和心跳不应该因为网关重启而中断。
+Game server registration and heartbeats should not be interrupted because the gateway restarts.
 
-**2. 后台任务受限**
+**2. Limited background tasks**
 
-Atlas 需要运行后台任务：
-- 心跳超时扫描（每 10 秒）
-- 合服迁移编排（可能持续数分钟）
-- 健康状态机推进
+Atlas needs to run background tasks:
+- Heartbeat timeout sweep (every 10 seconds)
+- Server merge migration orchestration (may last several minutes)
+- Health state machine advancement
 
-插件运行在请求-响应模型中，没有原生的后台任务能力。要实现就得 hack，不优雅也不可靠。
+Plugins run in a request-response model and have no native background task capability. To achieve this you would have to hack it, which is neither elegant nor reliable.
 
-**3. 独立扩缩容**
+**3. Independent scaling**
 
-| 形态 | 扩缩行为 | 结果 |
+| Form | Scaling behavior | Result |
 | --- | --- | --- |
-| 插件模式 | 网关扩 10 副本 → Atlas 逻辑跟着扩 10 份 | 资源浪费 |
-| 独立服务 | 网关扩 10 副本（流量），Atlas 扩 2 副本（注册与查询） | 各自按需扩缩 |
+| Plugin model | Gateway scales to 10 replicas → Atlas logic scales to 10 copies along with it | Resource waste |
+| Standalone service | Gateway scales to 10 replicas (traffic), Atlas scales to 2 replicas (registration and queries) | Each scales on demand |
 
-网关的流量峰值和 Atlas 的计算负载是不同的曲线，绑定在一起无法独立优化。
+The gateway's traffic peaks and Atlas's compute load are different curves; binding them together prevents independent optimization.
 
-### 8.3 为什么 PostgreSQL + Redis 而不是单一数据库
+### 8.3 Why PostgreSQL + Redis rather than a single database
 
-| 数据特征 | 放在哪 | 理由 |
+| Data characteristic | Where it goes | Reason |
 | --- | --- | --- |
-| 心跳、负载、在线数 | Redis | 高频写（每服务器每 10 秒），TTL 自动过期，丢失可恢复 |
-| 服务器档案 | PostgreSQL | 低频写，需要持久化和审计 |
-| 角色索引 | PostgreSQL | 合服需要跨行事务，Redis 事务能力不够 |
-| 运行时合并读 | Redis | 列表/详情读路径把 PG 档案与 Redis 运行时（`players` / `load` / `last_seen_at`）合并返回 |
+| Heartbeat, load, online count | Redis | High-frequency writes (per server every 10 seconds), TTL-based expiry, loss is recoverable |
+| Server profiles | PostgreSQL | Low-frequency writes, need persistence and auditing |
+| Character index | PostgreSQL | Server merges need cross-row transactions; Redis's transactional capability is insufficient |
+| Runtime merged reads | Redis | The list/detail read path merges the PG profile with the Redis runtime (`players` / `load` / `last_seen_at`) and returns it |
 
-**为什么不用 PostgreSQL 单独完成？**
+**Why not do it with PostgreSQL alone?**
 
-技术上可以——心跳也写 PG，用定时任务扫描 `last_seen_at` 字段（Atlas 的巡检本来就要回写 PG 状态，这个方案是自洽的）。但：
-- 1000 台服务器 × 0.1 QPS = 100 QPS 的心跳写入，PG 能扛但不优雅
-- 运行时数值（`players` / `load`）每次心跳都变，放 PG 意味着最高频的写落在最贵的一层
-- Redis 键 TTL 过期是原生的自清理语义，PG 需要额外的清理任务
+Technically possible—write heartbeats to PG too, and use a scheduled task to scan the `last_seen_at` field (Atlas's sweep already writes back PG status, so this scheme is self-consistent). But:
+- 1000 servers × 0.1 QPS = 100 QPS of heartbeat writes; PG can handle it but it is not elegant
+- Runtime values (`players` / `load`) change on every heartbeat; putting them in PG means the highest-frequency writes land on the most expensive layer
+- Redis key TTL expiry is a native self-cleanup semantic; PG needs an extra cleanup task
 
-**为什么不用 Redis 单独完成？**
+**Why not do it with Redis alone?**
 
-Redis 不适合：
-- 事务性写入（合服时角色索引跨行变更）
-- 持久化审计（服务器历史、迁移记录）
-- 复杂查询（按名称搜索角色）
+Redis is not suitable for:
+- Transactional writes (cross-row changes to the character index during a server merge)
+- Persistent auditing (server history, migration records)
+- Complex queries (searching characters by name)
 
-双存储的代价是运维复杂度多一个组件，但对于游戏基础设施这个量级，这是值得的。
+The cost of dual storage is one more component in operational complexity, but for game infrastructure at this scale, it is worth it.
 
-### 8.4 为什么用 Go 而不是 C++ / Rust
+### 8.4 Why Go rather than C++ / Rust
 
-| 维度 | Go | C++ | Rust |
+| Dimension | Go | C++ | Rust |
 | --- | --- | --- | --- |
-| **开发效率** | 高，标准库完善 | 低，构建和依赖管理复杂 | 中，学习曲线陡 |
-| **并发模型** | goroutine，天然适合心跳/扫描 | 需手动管理线程 | async/await，但心智负担重 |
-| **部署** | 单二进制，无依赖 | 需要运行时库 | 单二进制，无依赖 |
-| **生态** | pgx、go-redis、net/http 都是高质量 | 需要选型，版本碎片化 | 生态好但游戏领域库少 |
-| **团队匹配** | Go 是游戏后端主流语言 | 游戏服务器主语言，但基础设施不一定用 | 非主流 |
+| **Development efficiency** | High, complete standard library | Low, complex build and dependency management | Medium, steep learning curve |
+| **Concurrency model** | goroutine, naturally suited to heartbeat/sweep | Requires manual thread management | async/await, but heavy cognitive load |
+| **Deployment** | Single binary, no dependencies | Needs runtime libraries | Single binary, no dependencies |
+| **Ecosystem** | pgx, go-redis, net/http are all high quality | Requires selection, version fragmentation | Good ecosystem but few game-domain libraries |
+| **Team fit** | Go is a mainstream language for game backends | The main language for game servers, but infrastructure may not use it | Non-mainstream |
 
-Atlas 是控制面，不是数据面。控制面优先考虑开发效率和运维简单性，Go 的单二进制 + goroutine 模型是最合适的选择。
+Atlas is a control plane, not a data plane. Control planes prioritize development efficiency and operational simplicity, and Go's single-binary + goroutine model is the most suitable choice.
 
-游戏服务器本身用 C++ 是合理的（性能敏感），但 Atlas 不在热路径上——它不处理游戏帧，不转发战斗包，只回答"服务器在哪、角色在哪"。这类控制面用 Go 完全够用。
+Using C++ for game servers themselves is reasonable (performance-sensitive), but Atlas is not on the hot path—it does not process game frames, does not forward combat packets, and only answers "where are the servers, where is the character". For this kind of control plane, Go is entirely sufficient.

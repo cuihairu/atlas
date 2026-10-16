@@ -1,67 +1,83 @@
-# 公告与计划维护
+[English](operations.md) | [简体中文](zh/operations.md)
 
-公告(Announcement)与计划维护窗口(Maintenance Window)是 Atlas 管理面(:8082)面向**运维日常**的两个能力:一个把消息送达玩家客户端,一个把服务器状态按时间表自动切换。两者可以独立使用,也可以联动——创建维护窗口时自动生成一条覆盖同时段的维护公告。
+# Announcements and Planned Maintenance
+
+Announcements and maintenance windows are the two operations-facing capabilities of
+the Atlas admin plane (:8082): one delivers messages to player clients, the other
+switches server state on a schedule. They can be used independently or together —
+creating a maintenance window automatically generates a matching maintenance
+announcement covering the same period.
 
 ---
 
-## 1. 为什么需要
+## 1. Why they exist
 
-| 场景 | 没有 Atlas 时 | 有 Atlas 时 |
+| Scenario | Without Atlas | With Atlas |
 | --- | --- | --- |
-| **紧急故障** | 公告靠客户端热更,发版要等玩家更新;没有统一通道,玩家继续往故障服挤 | Admin 一条 API 发布 `critical` 公告,`starts_at` 设为当前时刻立即生效;客户端下次登录拉 `/v1/discovery/announcements` 即见 |
-| **计划停机维护** | 运维定闹钟手动把服务器置维护、手动发公告、维护完再手动恢复,漏一步就是事故 | 提前创建维护窗口:`start_at` 到点自动进入 `maintenance`、`end_at` 到点自动恢复,同时段自动挂 `warning` 公告 |
-| **活动预告** | 运营排期表和游戏内公告两套系统,时间对不齐 | `info` 级公告 + 生效区间,提前创建、到点自动出现、过期自动消失 |
-| **客户端发版窗口** | 旧版本客户端连新服务器,兼容问题爆发 | 维护窗口 + 公告提示"请更新客户端",窗口结束自动恢复服务 |
+| **Emergency outage** | Announcements need a client hot-update, so shipping waits for players to update; with no unified channel, players keep piling into the broken server | One Admin API call publishes a `critical` announcement with `starts_at` set to now for immediate effect; clients see it on their next login when they pull `/v1/discovery/announcements` |
+| **Planned downtime** | Operations sets an alarm, manually puts the server into maintenance, manually posts the announcement, and manually restores it afterwards — miss a step and it's an incident | Create the window ahead of time: at `start_at` it enters `maintenance` automatically, at `end_at` it restores automatically, and a `warning` announcement is attached for the same period |
+| **Event pre-announcement** | The operations schedule and the in-game announcement are two separate systems whose times never line up | An `info` announcement plus an effective interval: create it ahead of time, it appears automatically at the start, and disappears automatically when it expires |
+| **Client release window** | Old clients hit new servers and compatibility issues explode | A maintenance window plus an announcement telling players to update; service is restored automatically when the window ends |
 
-核心设计:**声明式,而非操作式**。运维只声明"什么时候、发生什么",到点的状态切换由 Atlas 健康监控的巡检循环自动执行。
+The core design principle: **declarative, not imperative**. Operations only declares
+"when and what"; the state switch at the appointed time is carried out automatically
+by Atlas's health-monitoring sweep loop.
 
 ---
 
-## 2. 公告系统
+## 2. Announcement system
 
-### 2.1 概念
+### 2.1 Concepts
 
-公告是一条**带生效区间、面向客户端**的通知。它不修改任何服务器状态,纯粹是信息通道。
+An announcement is a **client-facing notification with an effective interval**. It
+modifies no server state whatsoever — it is purely an information channel.
 
 ```text
-Admin 发布 ──▶ Announcement(全局 或 服务器级)──▶ 玩家客户端经 Discovery 拉取
-                     │
-                     └─ starts_at ≤ now < ends_at 时才出现在 Discovery 响应里
+Admin publishes ──▶ Announcement (global or server-scoped) ──▶ player clients pull via Discovery
+                        │
+                        └─ only appears in Discovery responses while starts_at ≤ now < ends_at
 ```
 
-字段(完整定义见 [api.md](api.md#post-v1-admin-announcements)):
+Fields (the complete definition is in [api.md](api.md#post-v1-admin-announcements)):
 
-| 字段 | 必填 | 说明 |
+| Field | Required | Description |
 | --- | --- | --- |
-| `server_id` | 否 | 缺省(不传)即**全局公告**;传了则只在该服务器的查询中返回 |
-| `title` | ✅ | 标题 |
-| `body` | 否 | 正文 |
-| `level` | 否 | `info` / `warning` / `critical`,缺省 `info` |
-| `starts_at` | ✅ | 生效起点(RFC3339) |
-| `ends_at` | ✅ | 生效终点,必须晚于 `starts_at` |
+| `server_id` | no | Omitted (not sent) means a **global announcement**; when set, it is only returned by queries for that server |
+| `title` | ✅ | Title |
+| `body` | no | Body text |
+| `level` | no | `info` / `warning` / `critical`, defaults to `info` |
+| `starts_at` | ✅ | Start of the effective interval (RFC3339) |
+| `ends_at` | ✅ | End of the effective interval, must be later than `starts_at` |
 
-服务端生成 `id`(`ann-<纳秒时间戳>`)与 `created_at`。
+The server generates `id` (`ann-<nanosecond timestamp>`) and `created_at`.
 
-### 2.2 三级严重度
+### 2.2 Three severity levels
 
-| 级别 | 语义 | 典型用途 | 客户端建议呈现 |
+| Level | Semantics | Typical use | Suggested client presentation |
 | --- | --- | --- | --- |
-| `info` | 一般信息 | 活动预告、版本更新内容、双倍掉落 | 列表项、跑马灯 |
-| `warning` | 需要注意 | 计划维护预告、网络波动、延迟升高 | 选服界面黄色标记、登录弹窗 |
-| `critical` | 紧急 | 紧急停机、回档公告、安全事件 | 强弹窗、阻止进入相关服务器 |
+| `info` | General information | Event previews, version update notes, double drops | List item, marquee ticker |
+| `warning` | Needs attention | Planned maintenance notices, network jitter, latency spikes | Yellow marker on the server-selection screen, login dialog |
+| `critical` | Urgent | Emergency shutdowns, rollback notices, security incidents | Blocking dialog, prevents entering the related servers |
 
-### 2.3 生效与可见性
+### 2.3 Effect and visibility
 
-- **时间区间语义**:`starts_at ≤ 当前时间 < ends_at` 才算生效。提前创建、到点自动出现、过期自动消失,无需删除。
-- **作用域**:Discovery 端点返回**全局公告 + 所查服务器自己的公告**;查询 A 服务器看不到 B 服务器的公告。
-- Admin 侧 `GET /v1/admin/announcements?active=true` 可只看当前生效的,`?server_id=` 过滤(注意:Admin 列表与 Discovery 语义一致,返回全局 + 指定服务器)。
+- **Interval semantics**: it counts as in effect only while `starts_at ≤ now < ends_at`.
+  Create it ahead of time, it appears automatically at the start, and it disappears
+  automatically when it expires — no deletion needed.
+- **Scope**: the Discovery endpoints return **global announcements plus the queried
+  server's own announcements**; a query for server A cannot see server B's
+  announcements.
+- On the Admin side, `GET /v1/admin/announcements?active=true` filters to currently
+  effective entries, and `?server_id=` filters by server. (Note: the Admin list has the
+  same semantics as Discovery — global plus the specified server.)
 
-### 2.4 场景演练:紧急故障公告
+### 2.4 Walkthrough: emergency outage announcement
 
-凌晨 2 点,`game-1001` 出现回档风险,需要立刻通知玩家并阻止进入:
+At 2 AM, `game-1001` is at risk of a rollback, so players must be notified immediately
+and prevented from entering:
 
 ```bash
-# 1. 发布 critical 公告,starts_at 设为现在,立即生效
+# 1. Publish a critical announcement with starts_at set to now, effective immediately
 curl -X POST http://localhost:8082/v1/admin/announcements \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer <ADMIN_API_KEY>' \
@@ -74,19 +90,22 @@ curl -X POST http://localhost:8082/v1/admin/announcements \
     "ends_at": "2026-10-02T06:00:00Z"
   }'
 
-# 2. 同步把服务器手动置入维护,新玩家不再进入
+# 2. Meanwhile put the server into maintenance by hand so new players cannot enter
 curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance \
   -H 'Authorization: Bearer <ADMIN_API_KEY>'
 
-# 3. 玩家侧验证:Discovery 只返回生效中的公告
+# 3. Player-side check: Discovery returns only effective announcements
 curl 'http://localhost:8080/v1/discovery/announcements?server_id=game-1001'
 ```
 
-恢复后:运维 `enable` 服务器、`DELETE /v1/admin/announcements/{announcement_id}` 撤下公告(或等它自然过期)。
+After recovery: operations runs `enable` on the server and takes the announcement down
+with `DELETE /v1/admin/announcements/{announcement_id}` (or simply waits for it to
+expire naturally).
 
-### 2.5 场景演练:活动预告
+### 2.5 Walkthrough: event preview
 
-提前三天排期,到点自动出现、结束自动消失:
+Schedule it three days ahead so it appears automatically at the start and vanishes
+automatically at the end:
 
 ```bash
 curl -X POST http://localhost:8082/v1/admin/announcements \
@@ -101,42 +120,52 @@ curl -X POST http://localhost:8082/v1/admin/announcements \
   }'
 ```
 
-注意这里**不带 `server_id`**——全局公告,所有服务器的玩家都能看到。
+Note that there is **no `server_id`** here — this is a global announcement, visible to
+players on every server.
 
-### 2.6 玩家侧如何消费
+### 2.6 How clients consume it
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant C as 玩家客户端
-    participant GW as 网关(APISIX)
-    participant D as Atlas Discovery(:8080)
+    participant C as Player client
+    participant GW as Gateway (APISIX)
+    participant D as Atlas Discovery (:8080)
 
-    C->>GW: 登录成功
+    C->>GW: Login succeeds
     C->>GW: GET /v1/discovery/announcements?server_id=game-1001
-    GW->>D: 转发(公网域,无 Atlas 侧认证)
-    D-->>C: 200 { announcements: [全局 + game-1001 的生效公告] }
-    C->>C: 按 level 渲染(info 列表 / warning 标记 / critical 弹窗)
-    C->>GW: GET /v1/discovery/servers?... (选服列表,维护服带 maintenance 标记)
+    GW->>D: Forward (public zone, no Atlas-side authn)
+    D-->>C: 200 { announcements: [global + effective announcements for game-1001] }
+    C->>C: Render by level (info list / warning marker / critical dialog)
+    C->>GW: GET /v1/discovery/servers?... (server list, maintenance servers marked)
 ```
 
-拉取时机建议:**登录后一次 + 选服界面刷新时一次**。公告是低频写、极高频读的数据,客户端无需轮询;运维发公告的时效预期是"玩家下次进选服界面时看到",而不是推送秒达。
+Suggested pull timing: **once after login, plus once when the server-selection screen
+refreshes**. Announcements are low-frequency writes and very high-frequency reads, so
+clients need not poll. The realistic expectation when operations publishes one is
+"players see it the next time they open the server-selection screen", not instant push
+delivery.
 
 ---
 
-## 3. 计划维护窗口
+## 3. Planned maintenance windows
 
-### 3.1 概念:声明式维护
+### 3.1 Concept: declarative maintenance
 
-维护窗口是一份**提前声明的时间表**:到 `start_at` 时,健康监控把服务器自动置入 `maintenance`;到 `end_at` 时自动恢复原状态。运维不需要定闹钟。
+A maintenance window is a **schedule declared in advance**: at `start_at` the health
+monitor automatically puts the server into `maintenance`, and at `end_at` it
+automatically restores the previous state. Operations sets no alarms.
 
-**维护前引导**:路由推荐(`/v1/routing/recommended`)在窗口开始前
-`ATLAS_ROUTING_MAINTENANCE_LEAD`(默认 5 分钟)起就把该服务器排除在推荐外
-——新玩家不再被引向即将维护的服务器(存量玩家由维护流程排水),即使此刻
-状态仍是 `online`。窗口结束自动恢复推荐。配合 §3.2 的例行维护场景:创建
-窗口后,引导期 + 自动进维护 + 自动出维护全程无人值守。
+**Pre-maintenance lead-in**: routing recommendations (`/v1/routing/recommended`)
+exclude the server starting `ATLAS_ROUTING_MAINTENANCE_LEAD` (5 minutes by default)
+before the window opens — new players are no longer steered toward a server that is
+about to go into maintenance (existing players are drained by the maintenance flow),
+even while its status is still `online`. Recommendations are restored automatically
+when the window ends. Combined with the routine-maintenance walkthrough in §3.2: once
+you create the window, the lead-in, the automatic entry into maintenance and the
+automatic exit are all unattended.
 
-创建接口:
+Creating one:
 
 ```bash
 curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance-window \
@@ -149,7 +178,7 @@ curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance-window
   }'
 ```
 
-响应 `201 Created`(完整窗口对象):
+Response `201 Created` (the full window object):
 
 ```json
 {
@@ -163,117 +192,155 @@ curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance-window
 }
 ```
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `previous_status` | 窗口应用前服务器的状态;窗口开启前为空。应用后为空表示没有恢复目标(见 §3.4 边界规则) |
-| `announcement_id` | `announce: true`(缺省)时自动创建的维护公告 ID,两边已关联 |
-| `start_at` | 可省略——省略即"现在开始",对应"今晚维护到搞定为止"的常见流 |
+| `previous_status` | The server's status before the window applied; empty until the window opens. Empty after applying means there is nothing to restore (see the boundary rules in §3.5) |
+| `announcement_id` | The ID of the maintenance announcement auto-created when `announce: true` (the default); the two are already linked |
+| `start_at` | May be omitted — omitting it means "start now", matching the common "maintain tonight until it's fixed" flow |
 
-### 3.2 场景演练:每周四凌晨例行维护
+### 3.2 Walkthrough: routine maintenance every Thursday at 02:00
 
-1. **周三**,运维为舰队里每台需要维护的服务器批量创建窗口(`start_at` 周四 02:00、`end_at` 04:00,`announce` 缺省):
-   每台服务器同时多出一条 warning 级公告「Maintenance scheduled: game-1001」,生效区间与窗口完全一致,周四 02:00 前玩家就能在选服界面看到预告。
-2. **周四 02:00**,健康监控的下一次巡检(默认每 10 秒)发现窗口到期,把 `online` 的服务器自动置入 `maintenance`,`previous_status` 记为 `online`。
-3. **窗口期间**:选服列表里该服务器带 `maintenance` 标记(可见但不可进入);游戏服务器自己的心跳照常上报,不受影响。
-4. **周四 04:00**,巡检发现窗口结束:服务器仍处于窗口置入的 `maintenance` → 自动恢复为 `online`,窗口记录删除。公告也已过 `ends_at`,自动从 Discovery 消失。
+1. **Wednesday**, operations batch-creates a window for every server in the fleet that
+   needs maintenance (`start_at` Thursday 02:00, `end_at` 04:00, `announce` defaulted):
+   each server simultaneously gains a `warning` announcement "Maintenance scheduled:
+   game-1001", whose effective interval exactly matches the window, so players see the
+   preview on the server-selection screen before Thursday 02:00.
+2. **Thursday 02:00**, the health monitor's next sweep (every 10 seconds by default)
+   finds the window due and automatically moves `online` servers into `maintenance`,
+   recording `previous_status` as `online`.
+3. **During the window**: the server carries a `maintenance` marker in the server list
+   (visible but not enterable); the game server's own heartbeats continue as usual and
+   are unaffected.
+4. **Thursday 04:00**, the sweep finds the window has ended: a server still in the
+   `maintenance` placed by this window is automatically restored to `online`, and the
+   window record is deleted. The announcement has also passed `ends_at` and disappears
+   from Discovery automatically.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant OP as 运维
-    participant A as Atlas Admin(:8082)
-    participant HM as 健康监控(巡检循环)
+    participant OP as Operations
+    participant A as Atlas Admin (:8082)
+    participant HM as Health monitor (sweep loop)
     participant S as Server game-1001
-    participant C as 玩家客户端
+    participant C as Player client
 
-    OP->>A: POST …/maintenance-window(start_at 周四 02:00,end_at 04:00)
-    A-->>OP: 201 窗口 + 自动创建 warning 公告(announcement_id 关联)
-    Note over A,C: 公告 starts_at 到点后,玩家即可看到维护预告
-    loop 每 10s 巡检
-        HM->>HM: 窗口是否已开启?
+    OP->>A: POST …/maintenance-window (start_at Thu 02:00, end_at 04:00)
+    A-->>OP: 201 window + auto-created warning announcement (linked by announcement_id)
+    Note over A,C: Once the announcement starts_at arrives, players can see the preview
+    loop sweep every 10s
+        HM->>HM: Has the window started?
     end
-    Note over HM,S: 周四 02:00,下一次巡检
-    HM->>S: online → maintenance(previous_status = online)
-    C->>HM: 选服界面:game-1001 显示「维护中」,不可进入
-    Note over HM,S: 周四 04:00,窗口结束
-    HM->>S: 仍在 maintenance(窗口置入的)→ 恢复 online,删除窗口
-    C->>HM: 选服界面:game-1001 恢复可选
+    Note over HM,S: Thursday 02:00, next sweep
+    HM->>S: online → maintenance (previous_status = online)
+    C->>HM: Server selection: game-1001 shows "Under maintenance", cannot enter
+    Note over HM,S: Thursday 04:00, window ends
+    HM->>S: still maintenance (placed by the window) → restore online, delete window
+    C->>HM: Server selection: game-1001 selectable again
 ```
 
-### 3.3 定时进入维护的机制
+### 3.3 How scheduled maintenance entry works
 
-健康监控的巡检循环(与心跳判活同一个循环,见 [lifecycle.md §5](lifecycle.md#_5-计划维护窗口-v0-1-20))在心跳检查**之前**处理窗口:
+The health monitor's sweep loop (the same loop that does heartbeat liveness checks, see
+[lifecycle.md §5](lifecycle.md#_5-scheduled-maintenance-windows-v0-1-20)) processes
+windows **before** the heartbeat checks:
 
-| 时机 | 行为 |
+| Moment | Behaviour |
 | --- | --- |
-| `start_at` 到达 | 服务器处于 auto-managed 状态(starting / online / suspect)→ 置入 `maintenance`,`previous_status` 记原状态 |
-| `end_at` 到达 | 服务器仍处于**该窗口置入的** `maintenance` → 恢复 `previous_status`,删除窗口记录 |
-| 服务器已是 `maintenance` / `offline` / `draining` / `disabled` | 不动它;窗口标记为已应用(`previous_status` 留空),结束时不恢复任何东西 |
+| `start_at` arrives | The server is in an auto-managed state (starting / online / suspect) → move it into `maintenance`, recording `previous_status` |
+| `end_at` arrives | The server is still in the `maintenance` **placed by this window** → restore `previous_status` and delete the window record |
+| The server is already `maintenance` / `offline` / `draining` / `disabled` | Leave it alone; mark the window as applied (leaving `previous_status` empty), and restore nothing at the end |
 
-与直接调 `POST /v1/admin/servers/{id}/maintenance` 的区别:**手动维护是"立即+人工恢复"**,窗口是"定时+自动恢复"。窗口只负责它自己放入的服务器。
+How this differs from calling `POST /v1/admin/servers/{id}/maintenance` directly:
+**manual maintenance is "immediate + human restore"**, while a window is "scheduled +
+automatic restore". A window is only responsible for the servers it put there itself.
 
-### 3.4 公告联动(announce)
+### 3.4 Announcement linkage (announce)
 
-`announce` 缺省为 `true`,创建窗口时会**同时**创建一条公告:
+`announce` defaults to `true`, and creating a window **also** creates an announcement:
 
-| 属性 | 值 |
+| Property | Value |
 | --- | --- |
-| 作用域 | 该服务器(server_id 同窗口) |
-| 级别 | `warning` |
-| 标题 | `Maintenance scheduled: <server_id>` |
-| 正文 | `Server <server_id> will be under maintenance from <start> to <end>.`(RFC3339) |
-| 生效区间 | 与窗口 `start_at` / `end_at` 完全一致 |
+| Scope | That server (server_id same as the window) |
+| Level | `warning` |
+| Title | `Maintenance scheduled: <server_id>` |
+| Body | `Server <server_id> will be under maintenance from <start> to <end>.` (RFC3339) |
+| Effective interval | Exactly the window's `start_at` / `end_at` |
 
-两个方向各自独立:
+The two directions are independent:
 
-- `announce: false` → 只建窗口,不发公告(比如内部压测,不想惊动玩家)。
-- 想要自定义文案?`announce: false` 建窗口,再自己 `POST /v1/admin/announcements` 发一条中文公告,区间对齐即可。自动公告的文案是英文模板,正式运营建议自管公告。
+- `announce: false` → creates only the window, with no announcement (for an internal
+  load test you don't want to disturb players over).
+- Want custom copy? Create the window with `announce: false`, then post your own
+  announcement via `POST /v1/admin/announcements` and align the interval. The
+  auto-generated announcement uses an English template; for real operations you are
+  better off managing announcements yourself.
 
-**取消窗口(DELETE)不会撤回已创建的公告**——公告有独立的生效区间,到点自动过期;需要立刻消失就单独 DELETE 公告。
+**Deleting a window (DELETE) does not withdraw the announcement it created** — the
+announcement has its own effective interval and expires on its own; if you need it
+gone immediately, delete the announcement separately.
 
-### 3.5 边界规则(运维优先)
+### 3.5 Boundary rules (operations always wins)
 
-自动状态机永不覆盖运维决策:
+The automatic state machine never overrides an operations decision:
 
-- 窗口开启时服务器处于 `draining` / `disabled`(运维显式设置)或已 `offline` → **不动它**。
-- 窗口期间运维手动转移(比如 `drain`)→ 以运维操作为准,窗口结束**不会**把服务器拉回来。
-- 取消一个进行中的窗口 → 服务器保持当前状态;要把它从维护里拉出来,走正常的 `POST /v1/admin/servers/{id}/enable`。
+- If a server is `draining` / `disabled` (explicitly set by operations) or already
+  `offline` when the window opens → **leave it alone**.
+- If operations manually transitions a server during the window (e.g. `drain`) → the
+  operations action wins, and the window ending **will not** pull the server back.
+- Cancel an in-progress window → the server keeps its current state; to pull it out of
+  maintenance, use the normal `POST /v1/admin/servers/{id}/enable`.
 
-### 3.6 批量编排(舰队级模板)
+### 3.6 Batch orchestration (fleet-level templates)
 
-整支舰队同一晚维护,逐台 `POST /v1/admin/servers/{id}/maintenance-window` 要手工拼 N 次请求——`POST /v1/admin/maintenance-windows/batch` 用**一份模板 + 一份 server_ids 列表**替代:
+Maintaining an entire fleet on the same night means hand-assembling N requests of
+`POST /v1/admin/servers/{id}/maintenance-window` — `POST
+/v1/admin/maintenance-windows/batch` replaces that with **one template plus a list of
+server_ids**:
 
-- **模板字段**与单台创建一致(`start_at` 缺省 now、`end_at` 必填、`announce` 缺省 true 每台联动一条 warning 公告)。
-- **`stagger_seconds` 滚动错峰**:第 i 台的起止同时后移 `i × stagger_seconds`,窗口时长不变——舰队轮流进出维护,而不是同时全部下线。例:3 台、`stagger_seconds: 600`,维护窗口依次 02:00、02:10、02:20 开始。
-- **`dry_run` 预览**:只校验(服务器存在、时间合法)并返回计划中的窗口,不落任何窗口或公告——舰队级变更前的最后一步确认。
-- **部分成功语义**:`server_ids` 去重保序;空元素与未知服务器逐台记入响应的 `failed`(带原因),不影响其余服务器。存储层没有跨服务器事务,失败台次看 `failed` 逐台补建即可。
+- **Template fields** are the same as for single-server creation (`start_at` defaults
+  to now, `end_at` is required, `announce` defaults to true and links one `warning`
+  announcement per server).
+- **`stagger_seconds` rolls the schedule**: the i-th server's start and end both shift
+  by `i × stagger_seconds` while the window duration stays constant — the fleet enters
+  and leaves maintenance in turns instead of going down all at once. Example: 3 servers
+  with `stagger_seconds: 600` start at 02:00, 02:10 and 02:20.
+- **`dry_run` preview**: validates only (servers exist, times are legal) and returns the
+  planned windows without writing any window or announcement — the last confirmation
+  step before a fleet-scale change.
+- **Partial-success semantics**: `server_ids` is deduplicated with order preserved;
+  empty elements and unknown servers are recorded per server in the response's `failed`
+  (with a reason) without affecting the rest. The storage layer has no cross-server
+  transaction, so for failed entries you can simply create them one by one from
+  `failed`.
 
-与迁移编排的联动(迁移前自动铺窗)尚未交付,仍是本候选方向的余项。
+Linkage with migration orchestration (auto-staging windows before a migration) has not
+shipped yet; it remains on the candidate-directions list.
 
 ---
 
----
+## 4. Endpoint quick reference
 
-## 4. 端点速查
-
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/admin/announcements` | 发布公告(缺省全局;level 缺省 info) |
-| `GET` | `/v1/admin/announcements` | 列出公告,`?server_id=` / `?active=true` / `?limit=` |
-| `DELETE` | `/v1/admin/announcements/{announcement_id}` | 删除公告(204) |
-| `GET` | `/v1/discovery/announcements` | 客户端拉取生效公告(全局 + `?server_id=`) |
-| `POST` | `/v1/admin/servers/{id}/maintenance-window` | 创建计划维护窗口(announce 缺省 true) |
-| `POST` | `/v1/admin/maintenance-windows/batch` | 舰队级批量创建(stagger 滚动错峰 / dry_run 预览 / 部分成功) |
-| `GET` | `/v1/admin/maintenance-windows` | 窗口列表(新→旧),`?server_id=` / `?limit=` |
-| `DELETE` | `/v1/admin/maintenance-windows/{window_id}` | 取消窗口(不撤公告、不动已维护中的服务器) |
+| `POST` | `/v1/admin/announcements` | Publish an announcement (global by default; level defaults to info) |
+| `GET` | `/v1/admin/announcements` | List announcements, `?server_id=` / `?active=true` / `?limit=` |
+| `DELETE` | `/v1/admin/announcements/{announcement_id}` | Delete an announcement (204) |
+| `GET` | `/v1/discovery/announcements` | Clients pull effective announcements (global + `?server_id=`) |
+| `POST` | `/v1/admin/servers/{id}/maintenance-window` | Create a planned maintenance window (announce defaults to true) |
+| `POST` | `/v1/admin/maintenance-windows/batch` | Fleet-level batch creation (staggered roll / dry_run preview / partial success) |
+| `GET` | `/v1/admin/maintenance-windows` | List windows (newest first), `?server_id=` / `?limit=` |
+| `DELETE` | `/v1/admin/maintenance-windows/{window_id}` | Cancel a window (does not withdraw the announcement, does not touch servers already in maintenance) |
 
-Admin 端点需 `Authorization: Bearer <ADMIN_API_KEY>`(`ATLAS_ADMIN_API_KEYS`,开发模式不配置则开放);Discovery 端点为公网只读。错误码与字段约束的完整定义见 [api.md](api.md#admin)。
+Admin endpoints require `Authorization: Bearer <ADMIN_API_KEY>` (`ATLAS_ADMIN_API_KEYS`;
+if unset in development mode they are open); Discovery endpoints are public read-only.
+For the complete error codes and field constraints see [api.md](api.md#admin).
 
 ---
 
-## 5. 相关文档
+## 5. Related documentation
 
-- [API 参考](api.md) — 端点的请求/响应与错误码完整定义
-- [服务器生命周期](lifecycle.md) — `maintenance` 状态在状态机中的位置、心跳判活与窗口巡检机制
-- [数据模型](data-model.md) — `maintenance_windows` / `announcements` 表结构
-- [安全](security.md) — Admin 域的 API Key、RBAC 与审计
+- [API Reference](api.md) — complete request/response and error-code definitions
+- [Server Lifecycle](lifecycle.md) — where `maintenance` sits in the state machine, heartbeat liveness and the window sweep mechanism
+- [Data Model](data-model.md) — the `maintenance_windows` / `announcements` table structures
+- [Security](security.md) — API keys, RBAC and auditing for the Admin domain

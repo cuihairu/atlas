@@ -1,13 +1,14 @@
-[English](sdk-cpp.en.md) | [中文](sdk-cpp.md)
+[English](sdk-cpp.md) | [简体中文](zh/sdk-cpp.md)
 
 # C++ SDK
 
-`sdk/cpp/`（v0.1.7 交付）。REST 客户端，与 Go SDK 同一 API 面。依赖已以单头
-形式 vendor 在 `sdk/cpp/third_party/`（cpp-httplib v0.58.0、nlohmann/json
-v3.12.0，见 [VENDORED.md](https://github.com/cuihairu/atlas/blob/main/sdk/cpp/third_party/VENDORED.md)），
-无外部系统依赖，C++17 即可编译。
+`sdk/cpp/` (delivered in v0.1.7). A REST client with the same API surface as
+the Go SDK. Dependencies are vendored as single headers under
+`sdk/cpp/third_party/` (cpp-httplib v0.58.0, nlohmann/json
+v3.12.0, see [VENDORED.md](https://github.com/cuihairu/atlas/blob/main/sdk/cpp/third_party/VENDORED.md)),
+with no external system dependencies; C++17 is enough to compile.
 
-## 构建
+## Build
 
 ```bash
 cd sdk/cpp
@@ -16,14 +17,14 @@ cmake --build build -j
 ctest --test-dir build
 ```
 
-在自己的工程里引用：`add_subdirectory` 本目录后链接 `atlas_sdk`，include
-根为 `include/` 与 `third_party/`：
+To use it in your own project: `add_subdirectory` this directory and link
+`atlas_sdk`; the include roots are `include/` and `third_party/`:
 
 ```cpp
 #include "atlas/client.hpp"
 ```
 
-## 快速上手
+## Quick start
 
 ```cpp
 using namespace std::chrono_literals;
@@ -51,21 +52,21 @@ auto page = c.ListCharactersByServer(rec.server.id); // 角色目录
 c.Unregister(req.server_id);                      // 优雅下线
 ```
 
-完整示例见 [`examples/cpp`](https://github.com/cuihairu/atlas/blob/main/examples/cpp/main.cpp)：
+For the complete example see [`examples/cpp`](https://github.com/cuihairu/atlas/blob/main/examples/cpp/main.cpp):
 
 ```bash
 cd examples/cpp && cmake -S . -B build && cmake --build build
 ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 ./build/atlas_example_cpp
 ```
 
-## 关键语义
+## Key semantics
 
-| 主题 | 说明 |
+| Topic | Description |
 | --- | --- |
-| 错误处理 | 所有方法失败抛 `atlas::Error`（`status()` / `code()` / `message()`），code 与 REST 错误码一致 |
-| 重试 | 网络错误 + 5xx 自动全抖动指数退避（`max_retries` 默认 3）；4xx 不重试 |
-| 心跳节奏 | 上报间隔 : 判死阈值 = 1:3（默认 10s / suspect 30s / offline 60s） |
-| 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为空） |
-| 三端口 | `base_url` 覆盖公网/Admin；`registry_base_url` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
-| 灰度权重 | `SetWeight(server_id, weight)`（Admin 域）：`0` 中性、`1..1000`，越界抛 `atlas::Error(INVALID_ARGUMENT)`；返回 `WeightResult{server_id, weight}`；`Server` 结构同带 `weight`（缺省 0）、`started_at`（进程启动时间）、`source`（config=配置文件托管） |
-| 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |
+| Error handling | All methods throw `atlas::Error` on failure (`status()` / `code()` / `message()`); code matches the REST error codes |
+| Retries | Network errors + 5xx are retried automatically with full-jitter exponential backoff (`max_retries` defaults to 3); 4xx is not retried |
+| Heartbeat cadence | Reporting interval : failure-detection threshold = 1:3 (defaults 10s / suspect 30s / offline 60s) |
+| Directory write reply | Synchronous REST returns a flat Character object (the SDK normalizes it to `status="created"/"updated"`); the async adapter returns `{"status":"queued"}` (`character` is empty) |
+| Three ports | `base_url` covers the public network/Admin; `registry_base_url` covers the standalone Registry port; when merged behind a reverse proxy, both can have the same value |
+| Canary weight | `SetWeight(server_id, weight)` (Admin domain): `0` neutral, `1..1000`; out of range throws `atlas::Error(INVALID_ARGUMENT)`; returns `WeightResult{server_id, weight}`; the `Server` struct also carries `weight` (default 0), `started_at` (process start time), `source` (config = managed by config file) |
+| Empty collections | An empty list from the server may be serialized as `null`; the SDK treats it as `[]` |

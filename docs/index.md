@@ -4,50 +4,50 @@ layout: home
 hero:
   name: Atlas
   text: Game Infrastructure Directory / Control Plane
-  tagline: 面向在线游戏的服务器注册、发现与角色目录基础设施。回答四个问题——"我是谁？""谁在线？""我的角色在哪？""我该进哪台服？" 它是控制面（Control Plane），不是游戏后端。
+  tagline: Server registration, discovery and character directory infrastructure for online games. It answers four questions — "Who am I?", "Who is online?", "Where is my character?", "Which server should I join?" It is a control plane, not a game backend.
   image:
     src: /logo.svg
     alt: Atlas
   actions:
     - theme: brand
-      text: 快速上手
+      text: Quick Start
       link: /api-quickstart
     - theme: alt
-      text: 按场景找文档
+      text: Find Docs by Scenario
       link: #使用场景
 
 features:
-  - title: 服务器注册与心跳
-    details: 游戏服务器启动时注册身份、拓扑与端点，通过周期心跳保持在线状态。心跳超时后自动进入 suspect → offline，客户端永远看不到已死的服务器。
-  - title: 跨服角色目录
-    details: 账号到角色的跨服索引。玩家在一个界面看到自己在所有服务器上的角色名称、等级与标签。这是投影索引，不持有权威数据——角色数据库始终归游戏服务器所有。
-  - title: 合服与迁移记录
-    details: 合服、转服、迁服的迁移记录与回退 API（状态记录级）。角色搬迁与校验由游戏服执行，Atlas 提供幂等目录写端点承接。
-  - title: 公告与计划维护
-    details: 运维声明、Atlas 执行——紧急故障一条 API 发公告，计划维护提前建窗口：start_at 到点自动进入维护、end_at 自动恢复，维护公告同时段自动挂出，客户端登录即见。
+  - title: Server Registration and Heartbeat
+    details: A game server registers its identity, topology and endpoints at startup, and keeps its online status through periodic heartbeats. After a heartbeat timeout it automatically moves to suspect → offline, so clients never see a dead server.
+  - title: Cross-Server Character Directory
+    details: An account-to-character cross-server index. Players see their character names, levels and tags on every server in a single view. This is a projection index, not authoritative data — the character database always belongs to the game server.
+  - title: Server Merge and Migration Records
+    details: Migration records and rollback API for server merges, transfers and migrations (status-record level). Character relocation and verification are performed by the game server; Atlas provides idempotent directory write endpoints to carry them.
+  - title: Announcements and Planned Maintenance
+    details: Operations declare, Atlas executes — one API call announces an emergency failure, and planned maintenance creates a window ahead of time — at start_at it automatically enters maintenance, at end_at it automatically recovers, the maintenance announcement is posted automatically for the same period, and clients see it as soon as they log in.
 ---
 
-[English](index.en.md) | [中文](index.md)
+[English](index.md) | [简体中文](zh/index.md)
 
-## 界面速览
+## Interface at a Glance
 
-管理台（Dashboard）长什么样，一眼看全——自动轮播，也可用两侧箭头、下方圆点或键盘 ←/→ 翻看：
+What the dashboard looks like, all in one view — it auto-rotates, and you can also browse with the arrows on both sides, the dots below, or the ←/→ keys:
 
 <script setup>
 const showcaseSlides = [
-  { image: '/screenshots/overview.png', title: '总览', caption: '总览 — 在线服务器 / 玩家 / 容量与状态分布', link: '/scenarios#scenario-overview' },
-  { image: '/screenshots/servers.png', title: '服务器列表', caption: '服务器列表 — 状态、角标（火热/新服/爆满）与容量水位', link: '/scenarios#scenario-tags' },
-  { image: '/screenshots/server-detail-tags.png', title: '服务器详情', caption: '服务器详情 — 标记管理（对外/内部）与实时指标', link: '/scenarios#scenario-tags' },
-  { image: '/screenshots/characters.png', title: '角色搜索', caption: '角色搜索 — 跨服角色索引，按名字/服务器/等级过滤', link: '/scenarios#scenario-characters' },
-  { image: '/screenshots/migrations.png', title: '迁移管理', caption: '迁移管理 — 合服/转服编排与回滚', link: '/scenarios#scenario-migration' },
+  { image: '/screenshots/overview.png', title: 'Overview', caption: 'Overview — online servers / players / capacity and status distribution', link: '/scenarios#scenario-overview' },
+  { image: '/screenshots/servers.png', title: 'Server List', caption: 'Server List — status, badges (hot/new/full) and capacity watermark', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/server-detail-tags.png', title: 'Server Detail', caption: 'Server Detail — tag management (public/internal) and real-time metrics', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/characters.png', title: 'Character Search', caption: 'Character Search — cross-server character index, filter by name/server/level', link: '/scenarios#scenario-characters' },
+  { image: '/screenshots/migrations.png', title: 'Migration Management', caption: 'Migration Management — server merge/transfer orchestration and rollback', link: '/scenarios#scenario-migration' },
 ]
 </script>
 
 <ShowcaseCarousel :slides="showcaseSlides" />
 
-每张截图都来自真实运行的 Atlas + 管理台（数据为演示集群）。按场景一步步走一遍，见 **[场景导览](/scenarios)**；实现层面的取舍见 **[性能设计](/performance)**。
+Every screenshot comes from a real running Atlas + dashboard (the data is a demo cluster). Walk through it scenario by scenario in **[Scenario Tour](/scenarios)**; for the implementation-level trade-offs see **[Performance Design](/performance)**.
 
-## 一条命令跑起来
+## Run It with One Command
 
 ```bash
 go run ./cmd/atlas
@@ -57,31 +57,31 @@ go run ./cmd/atlas
 # …level=INFO msg="gRPC API listening"     addr=:9090
 ```
 
-看到四行 listening，Atlas 就在跑了（内存存储，零依赖；gRPC 口可用 `ATLAS_GRPC_ADDR=""` 关掉）。接下来[快速上手](/api-quickstart)
-用约 5 分钟、全部真实命令走完**注册上线 → 玩家选服 → 角色目录 → 运维操作 → 优雅下线**的完整链路。
+Once you see the four listening lines, Atlas is running (in-memory storage, zero dependencies; the gRPC port can be turned off with `ATLAS_GRPC_ADDR=""`). Next, the [Quick Start](/api-quickstart)
+walks the full chain of **register online → player picks a server → character directory → admin operations → graceful shutdown** in about 5 minutes with all real commands.
 
-## 使用场景
+## Use Cases
 
-Atlas 站在游戏服务器和玩家客户端中间，三类人各自从这里拿走不同的东西：
+Atlas sits between game servers and player clients, and three kinds of people each take something different from it:
 
-| 你是 | 典型问题 | 去哪 |
+| You are | Typical questions | Where to go |
 | --- | --- | --- |
-| 游戏服务器开发者 | 进程怎么接入注册、心跳怎么打、如何优雅下线？不想写注册代码行不行？ | [快速上手 §1/§4](/api-quickstart) · [服务器生命周期](/lifecycle) · [服务器信息配置化](/server-config) · [六语言 SDK](/sdk-go) |
-| 客户端 / 网关开发者 | 玩家登录后进哪台服？我的角色在哪？公告从哪拉？ | [快速上手 §2](/api-quickstart) · [接入推荐与粘滞](/concepts) · [APISIX 接入](/apisix) |
-| 运维 / 平台 | 大区分服怎么管？怎么发公告、排维护？半夜掉线谁告诉我？合服转服怎么编排？ | [Realm 与 Shard](/realms-shards) · [公告与计划维护](/operations) · [健康警报](/lifecycle#_4-1-健康警报-v0-1-15-交付) · [合服 / 转服 / 迁服](/migration) |
-| 架构 / 平台负责人 | 多副本怎么部署？消息总线怎么选？扛得住多少 QPS？ | [高可用](/ha) · [部署拓扑](/topology) · [数据同步](/sync) · [性能基准](/benchmarks) |
+| Game server developer | How does a process hook into registration, how do heartbeats work, how do I shut down gracefully? Can I skip writing registration code? | [Quick Start §1/§4](/api-quickstart) · [Server Lifecycle](/lifecycle) · [Server Info as Config](/server-config) · [Six-Language SDK](/sdk-go) |
+| Client / gateway developer | Which server does the player join after login? Where is my character? Where do I pull announcements from? | [Quick Start §2](/api-quickstart) · [Server Recommendation and Sticky](/concepts) · [APISIX Integration](/apisix) |
+| Operations / platform | How do I manage realms and shards? How do I post announcements and schedule maintenance? Who tells me when something drops offline at midnight? How do I orchestrate merges and transfers? | [Realm and Shard](/realms-shards) · [Announcements and Planned Maintenance](/operations) · [Health Alerting](/lifecycle#_4-1-health-alerting-delivered-in-v0-1-15) · [Server Merge / Transfer / Migration](/migration) |
+| Architect / platform lead | How do I deploy multiple replicas? How do I pick a message bus? How much QPS can it take? | [High Availability](/ha) · [Deployment Topology](/topology) · [Data Sync](/sync) · [Benchmarks](/benchmarks) |
 
-## 能力速览
+## Capabilities at a Glance
 
-| 能力 | 一句话说清 | 文档 |
+| Capability | In one sentence | Docs |
 | --- | --- | --- |
-| 注册与心跳 | 游戏服务器登记身份与端点，心跳保活，失联两段式判死（suspect → offline） | [生命周期](/lifecycle) |
-| 发现与推荐 | 按区域 / 大区 / 分服筛选在线服；账号维度推荐"该进哪服"，有角色则粘滞 | [快速上手 §2](/api-quickstart) |
-| 角色目录 | 账号 → 跨服角色索引，登录一次拉全；写端点唯一入口，可选 Message Bus 异步缓冲，at-least-once 幂等落地 | [数据同步](/sync) |
-| 服务器信息配置化 | 静态舰队用 JSON 声明服务器，起服即生效，不写注册代码；profile 一键切环境 | [服务器信息配置化](/server-config) |
-| Realm / Shard | 大区 → 分服 → 实例三层运营档案，玩家端按维度拉列表 | [Realm 与 Shard](/realms-shards) |
-| 公告与计划维护 | 公告到生效区间自动可见；维护窗口到点自动进维护、结束自动恢复 | [公告与计划维护](/operations) |
-| 健康警报 | 失联 / 死亡占比越阈值，锁存发 webhook + Warn 日志，不刷屏 | [健康警报](/lifecycle#_4-1-健康警报-v0-1-15-交付) |
-| 合服 / 转服 / 迁服 | 角色索引原子迁移，先复制、后切换、再清理，失败可回滚 | [迁移](/migration) |
-| 网关与鉴权 | APISIX 两插件：玩家 token 校验 + 身份注入，按端点组限流 | [APISIX 接入插件](/apisix) |
-| 高可用 | Atlas 副本无状态化，PG / Redis 后端共享，HAProxy 心跳扇入 | [高可用](/ha) |
+| Registration and heartbeat | Game servers register identity and endpoints, heartbeats keep them alive, loss of contact is two-stage failure detection (suspect → offline) | [Lifecycle](/lifecycle) |
+| Discovery and recommendation | Filter online servers by region / realm / shard; recommend "which server to join" per account, sticky if a character exists | [Quick Start §2](/api-quickstart) |
+| Character directory | Account → cross-server character index, pulled in full with one login; the write endpoint is the sole entry point, optionally buffered asynchronously via Message Bus, landing at-least-once and idempotent | [Data Sync](/sync) |
+| Server info as config | Static fleet declares servers in JSON, effective as soon as the server starts, no registration code; profile switches environments in one step | [Server Info as Config](/server-config) |
+| Realm / Shard | Three-tier operational records: realm → shard → instance, clients pull lists by dimension | [Realm and Shard](/realms-shards) |
+| Announcements and planned maintenance | Announcements become visible automatically within their effective interval; maintenance windows enter maintenance on time and recover automatically at the end | [Announcements and Planned Maintenance](/operations) |
+| Health alerting | When the lost-contact / dead ratio crosses a threshold, latch and fire a webhook + Warn log, without spamming | [Health Alerting](/lifecycle#_4-1-health-alerting-delivered-in-v0-1-15) |
+| Server merge / transfer / migration | Atomic character index migration: copy first, switch next, clean up last, rollback on failure | [Migration](/migration) |
+| Gateway and authentication | Two APISIX plugins: player token validation + identity injection, rate limiting by endpoint group | [APISIX Integration Plugins](/apisix) |
+| High availability | Atlas replicas are stateless, PG / Redis backends are shared, HAProxy fans in heartbeats | [High Availability](/ha) |

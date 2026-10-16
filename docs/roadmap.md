@@ -1,8 +1,8 @@
-[English](roadmap.en.md) | [中文](roadmap.md)
+[English](roadmap.md) | [简体中文](zh/roadmap.md)
 
-# 路线图
+# Roadmap
 
-## 最终定位
+## Final positioning
 
 > **Atlas is a game infrastructure control plane for online games — Server Registry / Server Discovery / Player Character Directory / Routing & Placement Metadata / Server Lifecycle / Operational Coordination. Not a game backend, not a server list service.**
 
@@ -15,53 +15,53 @@ flowchart TB
     A --> T["Routing<br/>“该进哪台服?”"]
 ```
 
-定位声明与 NEVER-owns 边界（角色权威数据 / 对局状态 / 玩家 Session / 数值经济 / 账号认证）见
-[architecture.md](architecture.md#_1-总览) 首屏；这个定位比单纯的 Game Server Discovery 更完整，
-而且与游戏服务器框架、账号系统天然互补。
+The positioning statement and the NEVER-owns boundaries (character authoritative data / match state / player sessions /
+numeric economy / account authentication) are on the first screen of [architecture.md](architecture.md#_1-overview;) this positioning is
+more complete than plain Game Server Discovery, and it is naturally complementary to game server frameworks and account systems.
 
 ---
 
-## 当前状态:v0.1 系列全量交付
+## Current status: v0.1 series fully delivered
 
-**v0.1 系列（内部里程碑 v0.1.0 ~ v0.1.20）已经全部交付完毕**，对外发布五个 release：
+**The v0.1 series (internal milestones v0.1.0 ~ v0.1.20) has been fully delivered**, with five public releases:
 
-| Release | 内容 |
+| Release | Contents |
 | --- | --- |
-| [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP：核心模型跑通（Registry / Discovery / Directory / 健康监控 / REST API） |
-| [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | v0.1 系列收官：MVP 之上补齐全部工程化能力（69 个提交） |
-| [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | 跨服配置中心 + 服务器标记体系 + 声明式服务器配置 + 管理台扩展 + Docker/部署腿（50 个提交） |
-| [v0.1.3](https://github.com/cuihairu/atlas/releases/tag/v0.1.3) | v0.2 前奏：OTel 链路追踪 + 六 SDK 巩固 + memory 倒排索引/写队列 + dash 存储队列可观测 |
-| [v0.1.4](https://github.com/cuihairu/atlas/releases/tag/v0.1.4) | 源码二轮走查：事件幂等与 RabbitMQ 重投退避修复、诊断 live_runtime、不安全默认启动告警、角色读路径 bench 证据、README 双语化（20 个提交） |
+| [v0.1.0](https://github.com/cuihairu/atlas/releases/tag/v0.1.0) | MVP: core model working end to end (Registry / Discovery / Directory / health monitoring / REST API) |
+| [v0.1.1](https://github.com/cuihairu/atlas/releases/tag/v0.1.1) | v0.1 series wrap-up: all engineering capabilities filled in on top of the MVP (69 commits) |
+| [v0.1.2](https://github.com/cuihairu/atlas/releases/tag/v0.1.2) | Cross-server config center + server tag system + declarative server configuration + dashboard extensions + Docker/deployment leg (50 commits) |
+| [v0.1.3](https://github.com/cuihairu/atlas/releases/tag/v0.1.3) | v0.2 prelude: OTel tracing + six-SDK consolidation + memory inverted index/write queue + dash storage queue observability |
+| [v0.1.4](https://github.com/cuihairu/atlas/releases/tag/v0.1.4) | Second source walkthrough: event idempotency and RabbitMQ redelivery backoff fixes, live_runtime diagnostics, unsafe-default startup warnings, character read-path bench evidence, bilingual README (20 commits) |
 
-> 早期路线图曾把事件驱动、SDK、gRPC、高可用分别规划在 v0.2 ~ v1.0。实际开发中它们以 v0.1.x 内部里程碑的形式全部完成于 0.1 系列内——**原 v0.2 ~ v1.0 的每一项都已交付**，见下表。
+> The early roadmap had event-driven, SDKs, gRPC, and high availability planned across v0.2 ~ v1.0. In actual development they all completed inside the 0.1 series as v0.1.x internal milestones — **every item from the original v0.2 ~ v1.0 has been delivered**; see the table below.
 
-### 已交付能力总览
+### Delivered capability overview
 
-| 能力 | 交付内容 | 里程碑 |
+| Capability | Delivered | Milestone |
 | --- | --- | --- |
-| ✅ Server Registry | register / heartbeat / unregister，幂等注册，重注册恢复 | v0.1.0（恢复语义 v0.1.x 巡检修复） |
-| ✅ Server Discovery | 多维筛选 + 游标分页 + 服务器详情 | v0.1.0 |
-| ✅ Character Directory | CRUD + 账号跨服索引，幂等投影 | v0.1.0 |
-| ✅ 生命周期状态机 | starting / online / draining / maintenance / suspect / offline / disabled，两段式掉线判定 | v0.1.0 起，v0.1.x 补全 |
-| ✅ Admin 生命周期操作 | maintenance / drain / enable / disable | v0.1.x |
-| ✅ 事件同步 | EventAdapter 抽象 + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
-| ✅ Prometheus 指标 | :8082 `/metrics`（Grafana 为外接指引，见 topology.md——仓库内无看板实体） | v0.1.3 |
-| ✅ Routing 接入推荐 | `GET /v1/routing/recommended`，同账号角色粘滞 | v0.1.x |
-| ✅ gRPC 双传输 | 5 服务 23 RPC，:9090（核心面与 REST 同源） | v0.1.5 |
-| ✅ 六语言 SDK | Go(双传输) / C++ / Python(同步异步) / JS/TS / Java / C#，自动心跳内置 | v0.1.6 ~ v0.1.11 |
-| ✅ APISIX 插件 | atlas-auth 玩家 token 鉴权注入 + atlas-ratelimit 端点组限流 | v0.1.13 |
-| ✅ Realm / Shard 管理 | Admin CRUD + 三存储实现 + 索引迁移 | v0.1.14 |
-| ✅ 健康告警 | suspect / offline 占比阈值 + webhook 通知（锁存语义） | v0.1.15 |
-| ✅ 角色索引分片 | account-hash 分片 + 跨分片查询 + 重切工具 | v0.1.16 |
-| ✅ 安全加固 | Registry mTLS、Admin RBAC + 审计（证书指纹）、令牌桶限流、三端口安全域 | v0.1.17 |
-| ✅ Dashboard 增强 | 实时服务器地图、玩家趋势、迁移进度、主题切换、中英 i18n、服务器负载热力图（REST + gRPC + dash 页，2026-10-12 交付） | v0.1.18 |
-| ✅ 高可用 | Redis 哨兵/集群、PG 连接池调优、HAProxy 心跳扇入、主从复制指南 | v0.1.19 |
-| ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
-| ✅ 质量基建 | service/handler 覆盖率 >80% 目标（CI 报告 + Codecov 上报，未作失败门禁）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
+| ✅ Server Registry | register / heartbeat / unregister, idempotent registration, re-registration recovery | v0.1.0 (recovery semantics fixed by the v0.1.x patrol) |
+| ✅ Server Discovery | multi-dimensional filtering + cursor pagination + server details | v0.1.0 |
+| ✅ Character Directory | CRUD + account cross-server index, idempotent projection | v0.1.0 |
+| ✅ Lifecycle state machine | starting / online / draining / maintenance / suspect / offline / disabled, two-stage failure detection | from v0.1.0, completed in v0.1.x |
+| ✅ Admin lifecycle operations | maintenance / drain / enable / disable | v0.1.x |
+| ✅ Event sync | EventAdapter abstraction + HTTP / Redis Streams / Kafka / NATS(JetStream) / RabbitMQ | v0.1.2 / v0.1.12 |
+| ✅ Prometheus metrics | :8082 `/metrics` (Grafana covered as external guidance in topology.md — no dashboard entity in the repo) | v0.1.3 |
+| ✅ Routing server recommendation | `GET /v1/routing/recommended`, per-account character stickiness | v0.1.x |
+| ✅ gRPC dual transport | 5 services, 23 RPCs, :9090 (core surface shares the source with REST) | v0.1.5 |
+| ✅ Six-language SDKs | Go (dual transport) / C++ / Python (sync and async) / JS/TS / Java / C#, automatic heartbeat built in | v0.1.6 ~ v0.1.11 |
+| ✅ APISIX plugins | atlas-auth player token auth injection + atlas-ratelimit endpoint-group rate limiting | v0.1.13 |
+| ✅ Realm / Shard management | Admin CRUD + three-store implementations + index migration | v0.1.14 |
+| ✅ Health alerting | suspect / offline ratio thresholds + webhook notifications (latching semantics) | v0.1.15 |
+| ✅ Character index sharding | account-hash sharding + cross-shard queries + resharding tool | v0.1.16 |
+| ✅ Security hardening | Registry mTLS, Admin RBAC + audit (certificate fingerprints), token-bucket rate limiting, three-port security domains | v0.1.17 |
+| ✅ Dashboard enhancements | real-time server map, player trends, migration progress, theme switching, Chinese/English i18n, server load heatmap (REST + gRPC + dash pages, delivered 2026-10-12) | v0.1.18 |
+| ✅ High availability | Redis sentinel/cluster, PG connection pool tuning, HAProxy heartbeat fan-in, primary-replica replication guide | v0.1.19 |
+| ✅ Admin plane: maintenance windows and announcements | server metadata, planned maintenance windows (scheduled automatic entry/exit), announcement system (three severity levels) | v0.1.20 |
+| ✅ Quality infrastructure | service/handler coverage >80% target (CI report + Codecov upload, not a failing gate), performance benchmarks, Dependabot, periodic security audit CI | v0.1.x |
 
-能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
+How to use each capability and in which scenarios — see the [README usage scenarios](https://github.com/cuihairu/atlas#使用场景) and [Announcements and Planned Maintenance](operations.md).
 
-### 明确不做（范围纪律）
+### Explicitly not doing (scope discipline)
 
 ```text
 ❌ Kubernetes Operator      —— Atlas 是普通无状态服务，compose/k8s 自行编排即可
@@ -75,66 +75,65 @@ flowchart TB
 ❌ 背包 / 经济 / 排行榜等业务表 —— 游戏业务数据库的事，Atlas 连列都不建
 ```
 
-这些不是"还没做"，是**设计决定**：Atlas 是控制面目录服务，以上每一项都有更合适的归属。
-它们可以与 Atlas 集成（调度器读 Discovery 候选集、玩家服务写 Directory 事件），
-但**不内建**——判别式见 [architecture.md](architecture.md#_1-总览) 定位声明。
+These are not "not yet done" — they are **design decisions**: Atlas is a control-plane directory service, and every item above has a more appropriate home.
+They can integrate with Atlas (a scheduler reads Discovery candidate sets, player services write Directory events), but they are **not built in** — the litmus test is the positioning statement in [architecture.md](architecture.md#_1-overview.)
 
 ---
 
-## v0.2+ 候选方向
+## v0.2+ candidate directions
 
-以下是**候选清单，不是承诺**——按需求驱动排期，欢迎 issue 讨论：
+The following is a **candidate list, not a commitment** — scheduling is demand-driven, and issue discussion is welcome:
 
-| 方向 | 说明 | 前置条件 |
+| Direction | Description | Preconditions |
 | --- | --- | --- |
-| **API 稳定化与 v1.0** | 冻结 REST/gRPC 契约、承诺兼容性、正式 v1.0 release | API 面在生产环境验证充分 |
-| ✅ **Discovery 读路径管线化**（P1，2026-10-04 交付） | `RuntimeStore.GetRuntimes` 批量读：Redis pipeline 一次 Exec（N 次 RTT → 1–2 次，Cluster 按 slot 分批）、memory 单锁读全；列表路径批量合并、单点详情不变；契约测试与降级语义钉住（commit 9f99745 / 8201f57）。决策面收尾（2026-10-05）：健康巡检 sweep 与 Routing 推荐/诊断合并同样批量，失败 fail closed 传播 | 已完成；基准与往返估算见 [性能设计](/performance) §2 / [基准页](/benchmarks) §3 |
-| ✅ **故障模式回归套件**（P1，2026-10-04 交付） | 「正确性优先于 QPS」演练矩阵（[性能设计](/performance) §7）逐项自动化：分区巡检 / 重注册契约 / 幂等与 rollback / Redis FLUSHALL 数据丢失（miniredis 兜底，契约不再 skip）；仅 PG 连接池自愈与副本宕机保留为部署级演练（ha.md） | 已完成，验证位置见 §7 表格 |
-| 🔒 **状态三态显式化（已定档）** | 概念定稿（lifecycle §0 / architecture §4.4 / data-model 存储批注）+ 代码批注落位（`ServerStatus` 类型与 `Server.Status` 字段已标注三态分层）；**字段 / 接口重命名未做**——只在 v1.0 API 冻结窗口执行，避免契约碎片化 | v1.0 API 冻结窗口（触发即执行） |
-| 🚧 **Migration Controller 独立模块（部分交付，2026-10-14）** | 概念边界定稿（migration §9）且代码分流已在位（`internal/admin` 编排 / `internal/directory` 投影零交叉）；**代码模块拆分已交付**：编排状态机抽到独立包 `internal/migration`（窄 Store 接口、零存储依赖），`internal/admin` 只留薄委托，REST/gRPC 契约零变更；**拆成独立服务未做**——只在独立扩缩容有真实需求时执行 | 多舰队独立迁移集群 / 独立扩缩容（触发即执行） |
-| ✅ **Routing 维护前引导**（P1，2026-10-04 交付） | 推荐感知维护窗口：活动窗口或 Lead 内（缺省 5m，`ATLAS_ROUTING_MAINTENANCE_LEAD` 可调）开始的服务器进入排除——strict/fallback 两阶段一致生效，全排除如实 404；diagnose 逐台摊开窗口判定（`maintenance_window` 字段 + `maintenance_window=active|upcoming` 原因），`eligible` 计入窗口 | 已完成，语义见 [API §Routing](/api#routing) 与 [生命周期 §5](/lifecycle#_5-计划维护窗口-v0-1-20) |
-| ✅ **Routing 策略扩展：权重（2026-10-14 交付）** | 运营权重 `weight`（1..1000，0=中性）上服务器记录（migration 0007，admin-owned：register/心跳永不改写，`POST /v1/admin/servers/{id}/weight` 设置）；推荐排序第 2 步改按**有效负载** `load × 100 / weight` 比较——权重 >100 在稳态吸引约相应比例流量（如 200 ≈ 两倍），<100 抑制，即灰度放量 knob（配私有 tag 圈灰度组=白名单）；只改推荐元数据不越调度边界：状态/维护窗口/已有角色优先全部照旧；诊断页逐台附 `weight` + `effective_load`（contract 三库 + routing/admin/httpapi 测试绿） | 已完成 |
-| ✅ **公告与窗口批量编排**（2026-10-14 全量交付） | 舰队级窗口模板（`stagger_seconds` 滚动错峰 / `dry_run` 预览 / 部分成功语义）+ 批量创建已交付：`POST /v1/admin/maintenance-windows/batch`，管理台运维页「批量窗口」入口逐台列出成功/失败；**迁移-窗口联动已交付**：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）——`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖），migration/admin/httpapi 测试绿，详见 [migration.md §9.1](/migration#_9-1-迁移-窗口联动) | 已完成 |
-| ✅ **可观测性深化（首期 + 注册写路径 + Admin 计数 + span 树）** | 首期：请求级追踪 X-Request-ID 贯通三监听口 + 目录写路径延迟指标 `atlas_directory_write_duration_seconds`；二期（2026-10-04）：注册写路径指标 `atlas_registry_write_duration_seconds{op}`（`op` = register / heartbeat / unregister）——全舰队最热写路径，写劣化先于此显形；三期（2026-10-07）：`atlas_admin_requests_total` 接入 gRPC Admin RPC（endpoint=全方法名、status=映射 HTTP 码，链序与 REST 同为最外层、被拒调用同样计数）；四期（2026-10-07）：X-Request-ID 贯通 gRPC 口（`x-request-id` metadata 沿用/生成/回显 + `grpc request` 访问日志，追踪拦截器最外层，被拒 RPC 同样有 id）；五期（2026-10-08）：OpenTelemetry span 树拍板落地——官方 OTel Go SDK + OTLP/HTTP 导出（协议是承诺，后端不锁定，Jaeger / Tempo / 厂商 collector 皆可收），`ATLAS_OTLP_ENDPOINT` 未配置即全局 no-op 零开销（与 gRPC TLS 未配置即明文同一默认哲学），REST 按路由模式 / gRPC 按全方法名开 server root span，注册 / 发现 / 路由 / 目录四服务自动挂 `internal` 子 span 成树，`atlas.request_id` 与 X-Request-ID 同 id 日志链路互查，ParentBased 采样 `ATLAS_TRACING_SAMPLE_RATIO` | 已完成；指标仍走 Prometheus，不引入第二套 metrics 后端（0fe965d / f5359e2） |
-| ✅ **Kubernetes 部署样例**（2026-10-14 交付） | 基础 manifest 交付：`deploy/k8s/`（namespace + configmap + postgres StatefulSet + redis Deployment + 迁移 Job + atlas Deployment/Service + README 部署指南与生产 checklist）；**边界不变**：无 Helm chart、无 Operator（[明确不做](#明确不做)清单），Atlas 是无状态服务，K8s 上 Deployment+Service 即可 | 已完成 |
+| **API stabilization and v1.0** | Freeze the REST/gRPC contracts, commit to compatibility, official v1.0 release | API surface sufficiently validated in production |
+| ✅ **Discovery read-path pipelining** (P1, delivered 2026-10-04) | `RuntimeStore.GetRuntimes` batch reads: Redis pipeline with a single Exec (N RTTs → 1–2, Cluster batches by slot), memory reads everything under one lock; the list path merges into batches while single-server details are unchanged; contract tests and degradation semantics pinned down (commits 9f99745 / 8201f57). Decision-surface wrap-up (2026-10-05): the health patrol sweep and Routing recommendation/diagnostics merge into the same batching, failures propagate fail-closed | Done; benchmarks and round-trip estimates in [Performance Design](/performance) §2 / [Benchmarks](/benchmarks) §3 |
+| ✅ **Failure-mode regression suite** (P1, delivered 2026-10-04) | Item-by-item automation of the "correctness before QPS" drill matrix ([Performance Design](/performance) §7): partition patrol / re-registration contract / idempotency and rollback / Redis FLUSHALL data loss (miniredis as the fallback, contracts no longer skip); only PG connection-pool self-healing and replica downtime remain deployment-level drills (ha.md) | Done; verification locations in the §7 table |
+| 🔒 **Explicit three-state status (locked in)** | Concepts finalized (lifecycle §0 / architecture §4.4 / data-model storage annotations) + code annotations in place (the `ServerStatus` type and `Server.Status` field are annotated with the three-state layering); **field / interface renames not done** — to be executed only in the v1.0 API freeze window, to avoid contract fragmentation | v1.0 API freeze window (execute when triggered) |
+| 🚧 **Migration Controller standalone module (partially delivered, 2026-10-14)** | Concept boundaries finalized (migration §9) and code split already in place (`internal/admin` orchestration / `internal/directory` projection, zero cross-talk); **code module split delivered**: the orchestration state machine extracted into the standalone package `internal/migration` (narrow Store interface, zero storage dependencies), `internal/admin` keeps only a thin delegation, REST/gRPC contracts unchanged; **splitting into a standalone service not done** — only when independent scaling has a real need | Multi-fleet dedicated migration clusters / independent scaling (execute when triggered) |
+| ✅ **Routing maintenance lead-in** (P1, delivered 2026-10-04) | Recommendation aware of maintenance windows: servers whose window is active or starts within the Lead (default 5m, tunable via `ATLAS_ROUTING_MAINTENANCE_LEAD`) are excluded — strict/fallback both stages apply consistently, fully excluded returns an honest 404; diagnose lays out the window verdict per server (`maintenance_window` field + `maintenance_window=active|upcoming` reason), `eligible` counts the window | Done; semantics in [API §Routing](/api#routing) and [Lifecycle §5](/lifecycle#_5-scheduled-maintenance-windows-v0-1-20) |
+| ✅ **Routing policy extension: weights (delivered 2026-10-14)** | Ops weight `weight` (1..1000, 0 = neutral) on the server record (migration 0007, admin-owned: register/heartbeat never rewrite it, set via `POST /v1/admin/servers/{id}/weight`); recommendation sorting step 2 now compares **effective load** `load × 100 / weight` — a weight >100 attracts roughly the proportional share of traffic in steady state (e.g. 200 ≈ double), <100 suppresses, i.e. a canary rollout knob (pair with a private tag to scope the canary group = whitelist); only recommendation metadata changes, no crossing the scheduling boundary: status/maintenance windows/existing-character priority all behave as before; the diagnostics page shows `weight` + `effective_load` per server (contract across the three stores + routing/admin/httpapi tests green) | Done |
+| ✅ **Announcement and window batch orchestration** (fully delivered 2026-10-14) | Fleet-level window templates (`stagger_seconds` rolling stagger / `dry_run` preview / partial-success semantics) + batch creation delivered: `POST /v1/admin/maintenance-windows/batch`, with a "Batch Windows" entry on the dashboard ops page listing per-server success/failure; **migration-window linkage delivered**: `CreateMigration` automatically lays a 24h maintenance window on source servers (reusing the batch window API, fail-closed: if windows cannot be laid down the migration record is not written; windows are not auto-cancelled, ops can DELETE manually) — `migration.Service` holds an optional `WindowCreator` interface (timing belongs to the migration package, window creation injected by admin, no reverse dependency), migration/admin/httpapi tests green; see [migration.md §9.1](/migration#_9-1-migration-window-linkage) | Done |
+| ✅ **Observability deepening (phase 1 + registry write path + Admin counters + span tree)** | Phase 1: request-level tracing with X-Request-ID threaded through all three listeners + directory write-path latency metric `atlas_directory_write_duration_seconds`; phase 2 (2026-10-04): registry write-path metrics `atlas_registry_write_duration_seconds{op}` (`op` = register / heartbeat / unregister) — the fleet's hottest write path, where write degradation shows up first; phase 3 (2026-10-07): `atlas_admin_requests_total` extended to gRPC Admin RPCs (endpoint = full method name, status = mapped HTTP code, same outermost chain position as REST, rejected calls counted too); phase 4 (2026-10-07): X-Request-ID threaded through the gRPC port (`x-request-id` metadata reuse/generate/echo + `grpc request` access logs, tracing interceptor outermost, rejected RPCs also get an id); phase 5 (2026-10-08): OpenTelemetry span tree decided and landed — official OTel Go SDK + OTLP/HTTP export (the protocol is the commitment, the backend is not locked in; Jaeger / Tempo / vendor collectors can all receive), unset `ATLAS_OTLP_ENDPOINT` means a global no-op with zero overhead (the same default philosophy as gRPC TLS defaulting to plaintext when unset), server root spans opened per REST route pattern / per full gRPC method name, the four services registry / discovery / routing / directory automatically attach `internal` child spans forming a tree, `atlas.request_id` shares the id with X-Request-ID for cross-lookup in logs, ParentBased sampling via `ATLAS_TRACING_SAMPLE_RATIO` | Done; metrics still go through Prometheus, no second metrics backend introduced (0fe965d / f5359e2) |
+| ✅ **Kubernetes deployment example** (delivered 2026-10-14) | Basic manifests delivered: `deploy/k8s/` (namespace + configmap + postgres StatefulSet + redis Deployment + migration Job + atlas Deployment/Service + README deployment guide and production checklist); **boundaries unchanged**: no Helm chart, no Operator (the [Explicitly Not Doing](#explicitly-not-doing-scope-discipline) list) — Atlas is a stateless service, Deployment+Service suffices on K8s | Done |
 
 ---
 
-## 演进原则
+## Evolution principles
 
-### 1. 先跑通模型，再谈工程化
+### 1. Get the model working first, engineering second
 
-0.1 系列证明了这条顺序是对的：核心模型（注册、发现、投影）先稳定，事件总线、SDK、gRPC、高可用都是在这个底座上按里程碑叠加的。
+The 0.1 series proved this order right: the core model (registration, discovery, projection) stabilized first, and the event bus, SDKs, gRPC, and high availability were layered onto that foundation milestone by milestone.
 
-### 2. Atlas Core 独立于任何网关
+### 2. Atlas Core is independent of any gateway
 
-APISIX 从第一天起就是**可选集成层**，不是依赖。这个原则贯穿所有版本。
+APISIX has been an **optional integration layer**, not a dependency, since day one. This principle runs through every version.
 
-### 3. Character Directory 永远是 Projection
+### 3. The Character Directory is always a Projection
 
-任何版本都不要让 Atlas 持有角色权威数据。这是职责边界，不是性能取舍。
+No version should let Atlas hold authoritative character data. This is a responsibility boundary, not a performance trade-off.
 
-### 4. 写入接口从第一天就幂等
+### 4. Write APIs idempotent from day one
 
-无论是 HTTP 还是 Message Bus，重试都不应产生副作用。这个决定成本极低，但后悔成本极高。
+Whether HTTP or Message Bus, retries must not cause side effects. This decision costs almost nothing up front but is extremely expensive to regret.
 
-### 5. 层级结构保持可选
+### 5. Hierarchy stays optional
 
-Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、MOBA、SLG 的拓扑差异是永久的。
+The optionality of Region / Realm / Shard will not tighten as features grow. The topology differences between MMORPGs, MOBAs, and SLGs are permanent.
 
-### 6. 边界先定死，再扩功能（Control Plane 纪律）
+### 6. Fix the boundaries first, then add features (Control Plane discipline)
 
-任何新功能立项先回答"这是目录性问题还是运行时问题"：
+Before any new feature is approved, answer "is this a directory problem or a runtime problem":
 
-- 目录性问题（谁在线 / 角色在哪 / 该进哪台服 / 何时维护）——候选，按需求排期；
-- 运行时问题（能进不能进 / 怎么撮合 / 实例开哪 / 背包有什么）——**不内建**，给出与 Atlas 的集成点即可。
+- Directory problems (who is online / where are the characters / which server to join / when to maintain) — candidates, scheduled by demand;
+- Runtime problems (admit or not / how to match / where to place instances / what is in the inventory) — **not built in**; just provide the integration point with Atlas.
 
-这条纪律是「明确不做」清单的活判据，防止 Atlas 膨胀成游戏平台后端。
-定位声明见 [architecture.md](architecture.md#_1-总览)，模块边界见 [migration.md](migration.md) §9。
+This discipline is the live litmus test behind the "Explicitly Not Doing" list, keeping Atlas from bloating into a game platform backend.
+The positioning statement is in [architecture.md](architecture.md#_1-overview;) module boundaries in [migration.md](migration.md) §9.
 
 ---
 
-## 项目结构
+## Project structure
 
 ```text
 atlas/
@@ -179,4 +178,4 @@ atlas/
 └── go.mod
 ```
 
-**当前状态**：v0.1 系列交付完毕，对外发布五个 release（v0.1.0 ~ v0.1.4，v0.1.4 为最新）。后续方向见「v0.2+ 候选方向」。
+**Current status**: the v0.1 series is fully delivered, with five public releases (v0.1.0 ~ v0.1.4, v0.1.4 the latest). Future directions are under "v0.2+ candidate directions".

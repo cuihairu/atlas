@@ -1,18 +1,19 @@
-[English](sdk-csharp.en.md) | [中文](sdk-csharp.md)
+[English](sdk-csharp.md) | [简体中文](zh/sdk-csharp.md)
 
 # C# SDK
 
-`sdk/csharp/`（v0.1.11 交付）。HttpClient + System.Text.Json 的 REST
-客户端，与 Go / C++ / Python / JS / Java SDK 同一 API 面。目标
-net8.0 + net10.0，零第三方依赖，NuGet 包名 `Atlas.Client`。
+`sdk/csharp/` (delivered in v0.1.11). An HttpClient + System.Text.Json REST
+client with the same API surface as the Go / C++ / Python / JS / Java SDKs.
+Targets net8.0 + net10.0, zero third-party dependencies, NuGet package name
+`Atlas.Client`.
 
-## 安装
+## Installation
 
 ```bash
 dotnet add package Atlas.Client
 ```
 
-## 快速上手
+## Quick start
 
 ```csharp
 using Atlas;
@@ -45,82 +46,82 @@ loop.Stop();                                                // 优雅下线
 await client.UnregisterAsync("game-1001");
 ```
 
-## 客户端选项
+## Client options
 
-`AtlasClientOptions`（全部可选）：
+`AtlasClientOptions` (all optional):
 
-| 选项 | 默认值 | 说明 |
+| Option | Default | Description |
 | --- | --- | --- |
-| `BaseUrl` | `http://localhost:8080` | 公网 + Admin 域基址 |
-| `RegistryBaseUrl` | 同 `BaseUrl` | Registry 独立端口（`:8081`）覆盖；反代合并部署时不用设 |
-| `RegistryToken` | 空 | Registry 域 Bearer（`ATLAS_REGISTRY_TOKENS` 之一） |
-| `AdminApiKey` | 空 | Admin 域 API Key（`ATLAS_ADMIN_API_KEYS` 之一） |
-| `DefaultHeaders` | 空 | 每次调用都带的静态头（键原样覆盖；进程级 `X-Request-ID` 关联 id 走这里，见 api.md「请求追踪」） |
-| `TimeoutMs` | `10000` | `HttpClient.Timeout`；`0` 关闭；超时按网络错误参与重试 |
-| `MaxRetries` | `3` | 瞬时失败（网络错误 / 5xx）重试次数；4xx 不重试 |
-| `BaseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |
-| `HttpInvoker` | 空 | 注入自管 `HttpClient`（Polly / IHttpClientFactory 场景）；注入后 SDK 不负责其释放 |
+| `BaseUrl` | `http://localhost:8080` | Base address for the public network + Admin domain |
+| `RegistryBaseUrl` | same as `BaseUrl` | Override for the standalone Registry port (`:8081`); no need to set it when merged behind a reverse proxy |
+| `RegistryToken` | empty | Registry domain Bearer (one of `ATLAS_REGISTRY_TOKENS`) |
+| `AdminApiKey` | empty | Admin domain API Key (one of `ATLAS_ADMIN_API_KEYS`) |
+| `DefaultHeaders` | empty | Static headers sent with every call (keys override as-is; process-level `X-Request-ID` correlation id goes here, see api.md "Request tracing") |
+| `TimeoutMs` | `10000` | `HttpClient.Timeout`; `0` disables it; a timeout participates in retries as a network error |
+| `MaxRetries` | `3` | Number of retries for transient failures (network errors / 5xx); 4xx is not retried |
+| `BaseBackoffMs` | `100` | Backoff ceiling for the first retry, doubling each time + full jitter, capped at 10s |
+| `HttpInvoker` | empty | Inject a self-managed `HttpClient` (Polly / IHttpClientFactory scenarios); once injected, the SDK is not responsible for disposing it |
 
-## API 全览
+## Full API overview
 
-所有方法均带 `CancellationToken ct = default` 尾参。
+All methods take a trailing `CancellationToken ct = default` parameter.
 
-### Registry（Service Token，走 `RegistryBaseUrl`）
+### Registry (Service Token, goes through `RegistryBaseUrl`)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `RegisterAsync(RegisterRequest)` | `Task<RegisterResult>` | 幂等注册 |
-| `HeartbeatAsync(serverId, HeartbeatRequest)` | `Task<HeartbeatResult>` | `Status` 为服务端**当前生效状态**（suspect/offline 时如实返回，别只看 HTTP 200） |
-| `UnregisterAsync(serverId)` | `Task<StatusResult>` | 主动下线 |
+| `RegisterAsync(RegisterRequest)` | `Task<RegisterResult>` | Idempotent registration |
+| `HeartbeatAsync(serverId, HeartbeatRequest)` | `Task<HeartbeatResult>` | `Status` is the server's **currently effective status** (returned truthfully when suspect/offline — don't just look at HTTP 200) |
+| `UnregisterAsync(serverId)` | `Task<StatusResult>` | Take the server offline proactively |
 
-### Discovery（公网）
+### Discovery (public network)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `ListServersAsync(ServerFilter? filter = null)` | `Task<List<Server>>` | null = 全量 |
-| `GetServerAsync(serverId)` | `Task<Server>` | 单台详情 |
+| `ListServersAsync(ServerFilter? filter = null)` | `Task<List<Server>>` | null = full list |
+| `GetServerAsync(serverId)` | `Task<Server>` | Details for a single server |
 
-### Directory（公网读，游戏服务器写）
+### Directory (public read, game server write)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
 | `CreateCharacterAsync(CreateCharacterRequest)` | `Task<CharacterWriteResult>` | |
 | `GetCharacterAsync(long characterId)` | `Task<Character>` | |
-| `ListCharactersByAccountAsync(long accountId)` | `Task<List<Character>>` | 账号跨服全部角色 |
-| `ListCharactersByServerAsync(serverId, limit, cursor)` | `Task<CharacterPage>` | 翻页传上页 `NextCursor` |
-| `UpdateCharacterAsync(characterId, UpdateCharacterRequest)` | `Task<CharacterWriteResult>` | 未设字段保持不变（PATCH） |
+| `ListCharactersByAccountAsync(long accountId)` | `Task<List<Character>>` | All characters of an account across servers |
+| `ListCharactersByServerAsync(serverId, limit, cursor)` | `Task<CharacterPage>` | Pass the previous page's `NextCursor` to page |
+| `UpdateCharacterAsync(characterId, UpdateCharacterRequest)` | `Task<CharacterWriteResult>` | Fields not set remain unchanged (PATCH) |
 | `DeleteCharacterAsync(characterId)` | `Task<CharacterWriteResult>` | |
 
-### Routing（公网）
+### Routing (public network)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `RecommendAsync(accountId, region?, version?, platform?)` | `Task<Recommendation>` | `{Server, Reason}`；`Reason` ∈ `lowest_load` / `highest_capacity` / `has_character` / `fallback`；`accountId > 0` 才触发角色粘滞 |
+| `RecommendAsync(accountId, region?, version?, platform?)` | `Task<Recommendation>` | `{Server, Reason}`; `Reason` ∈ `lowest_load` / `highest_capacity` / `has_character` / `fallback`; character stickiness is only triggered when `accountId > 0` |
 
-### Admin（API Key，走 `BaseUrl`）
+### Admin (API Key, goes through `BaseUrl`)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `SetMaintenanceAsync` / `SetDrainAsync` / `EnableAsync` / `DisableAsync(serverId)` | `Task<StatusResult>` | 生命周期操作 |
-| `SetWeightAsync(serverId, weight)` | `Task<WeightResult>` | 灰度路由权重：`0` 中性、`1..1000`；越界 400；`Server` 模型同带 `weight`（缺省 0）、`started_at`（进程启动时间）、`source`（config=配置文件托管） |
-| `StatsAsync()` | `Task<Stats>` | 舰队统计 |
+| `SetMaintenanceAsync` / `SetDrainAsync` / `EnableAsync` / `DisableAsync(serverId)` | `Task<StatusResult>` | Lifecycle operations |
+| `SetWeightAsync(serverId, weight)` | `Task<WeightResult>` | Canary routing weight: `0` neutral, `1..1000`; out of range returns 400; the `Server` model also carries `weight` (default 0), `started_at` (process start time), `source` (config = managed by config file) |
+| `StatsAsync()` | `Task<Stats>` | Fleet statistics |
 | `SearchCharactersAsync(CharacterFilter)` | `Task<CharacterPage>` | `Name / ServerId / ClassId / MinLevel / MaxLevel / Limit / Cursor` |
-| `CreateMigrationAsync(CreateMigrationRequest)` | `Task<Migration>` | `SourceServers` 数组 + `TargetServer`，合服可多源 |
+| `CreateMigrationAsync(CreateMigrationRequest)` | `Task<Migration>` | `SourceServers` array + `TargetServer`; a server merge can have multiple sources |
 | `GetMigrationAsync(id)` / `ListMigrationsAsync(limit = 0)` | `Task<Migration>` / `Task<List<Migration>>` | |
-| `RollbackMigrationAsync(id)` | `Task<Migration>` | 一键回退 |
+| `RollbackMigrationAsync(id)` | `Task<Migration>` | One-click rollback |
 
-### 自动心跳
+### Automatic heartbeat
 
-| 成员 | 说明 |
+| Member | Description |
 | --- | --- |
-| `StartHeartbeat(serverId, TimeSpan interval, HeartbeatRequest? req = null, Action<AtlasError>? onError = null)` | 立即首发一跳，之后每 `interval` 续报；需要立刻可被推荐时先同步调一次 `HeartbeatAsync` |
-| `loop.Set(int players, double load)` | 线程安全更新下一跳载荷 |
-| `loop.OnError(Action<AtlasError>)` | 每次失败回调；循环不停 |
-| `loop.Stop()` | 幂等停止 |
-| `loop.Dispose()` / `DisposeAsync()` | 等价于 `Stop()` |
-| `client.Dispose()` / `DisposeAsync()` | 释放内部 `HttpClient`（自注入的 `HttpInvoker` 除外） |
+| `StartHeartbeat(serverId, TimeSpan interval, HeartbeatRequest? req = null, Action<AtlasError>? onError = null)` | Sends one beat immediately, then keeps reporting every `interval`; when you need to be recommendable right away, call `HeartbeatAsync` synchronously once first |
+| `loop.Set(int players, double load)` | Thread-safe update of the next beat's payload |
+| `loop.OnError(Action<AtlasError>)` | Callback on every failure; the loop does not stop |
+| `loop.Stop()` | Idempotent stop |
+| `loop.Dispose()` / `DisposeAsync()` | Equivalent to `Stop()` |
+| `client.Dispose()` / `DisposeAsync()` | Releases the internal `HttpClient` (except for a self-injected `HttpInvoker`) |
 
-## 场景：玩家登录选服
+## Scenario: player login and server selection
 
 ```mermaid
 sequenceDiagram
@@ -138,7 +139,7 @@ sequenceDiagram
     A-->>C: { Character, Status: "created" }
 ```
 
-## 场景：游戏服务器优雅下线
+## Scenario: graceful shutdown of a game server
 
 ```csharp
 await client.SetDrainAsync("game-1001");   // 1. 停止接新玩家
@@ -147,32 +148,32 @@ loop.Stop();                               // 2. 停心跳
 await client.UnregisterAsync("game-1001"); // 3. 注销
 ```
 
-完整示例见 [`examples/csharp`](https://github.com/cuihairu/atlas/blob/main/examples/csharp/Program.cs)：
+For the complete example see [`examples/csharp`](https://github.com/cuihairu/atlas/blob/main/examples/csharp/Program.cs):
 
 ```bash
 dotnet run --project examples/csharp
 ```
 
-## 错误处理
+## Error handling
 
-所有方法失败抛 `AtlasError`：
+All methods throw `AtlasError` on failure:
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `Status` | HTTP 状态码；`0` = 网络错误（重试耗尽后抛出） |
-| `Code` | 与 REST 错误码一致（`INVALID_ARGUMENT` / `SERVER_NOT_FOUND` / `RATE_LIMITED` / `STORAGE_UNAVAILABLE` / `NETWORK` …） |
-| `Message` | 服务端错误消息或网络错误描述 |
+| `Status` | HTTP status code; `0` = network error (thrown after retries are exhausted) |
+| `Code` | Matches the REST error codes (`INVALID_ARGUMENT` / `SERVER_NOT_FOUND` / `RATE_LIMITED` / `STORAGE_UNAVAILABLE` / `NETWORK` …) |
+| `Message` | Server error message or network error description |
 
-自动心跳循环**不抛错**——失败进 `OnError` 回调，循环继续。
+The automatic heartbeat loop **does not throw** — failures go to the `OnError` callback and the loop continues.
 
-## 关键语义
+## Key semantics
 
-| 主题 | 说明 |
+| Topic | Description |
 | --- | --- |
-| 重试 | 网络错误 + 5xx 自动全抖动指数退避（`MaxRetries` 默认 3，上限 10s）；4xx 不重试 |
-| 心跳节奏 | 上报间隔 : 判死阈值 = 1:3（默认 10s / suspect 30s / offline 60s）；示例先同步首发再开循环，规避"注册未在线即推荐"竞态 |
-| 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 按 JSON 形状解析并归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`Character` 为 null） |
-| 三端口 | `BaseUrl` 覆盖公网/Admin；`RegistryBaseUrl` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
-| 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理（servers / characters / migrations 全部兜底） |
-| 命名 | 传输层 snake_case，SDK 层 PascalCase（`JsonNamingPolicy.SnakeCaseLower` 双向映射），时间戳为 `DateTimeOffset` |
-| 外部注入 | `HttpInvoker` 可传入自管 `HttpClient`（Polly/IHttpClientFactory 场景），此时 SDK 不负责其释放 |
+| Retries | Network errors + 5xx are retried automatically with full-jitter exponential backoff (`MaxRetries` defaults to 3, capped at 10s); 4xx is not retried |
+| Heartbeat cadence | Reporting interval : failure-detection threshold = 1:3 (defaults 10s / suspect 30s / offline 60s); the example sends the first beat synchronously before starting the loop, avoiding the "recommended before registration is online" race |
+| Directory write reply | Synchronous REST returns a flat Character object (the SDK parses it by JSON shape and normalizes it to `status="created"/"updated"`); the async adapter returns `{"status":"queued"}` (`Character` is null) |
+| Three ports | `BaseUrl` covers the public network/Admin; `RegistryBaseUrl` covers the standalone Registry port; when merged behind a reverse proxy, both can have the same value |
+| Empty collections | An empty list from the server may be serialized as `null`; the SDK treats it as `[]` (servers / characters / migrations all have this fallback) |
+| Naming | snake_case at the transport layer, PascalCase at the SDK layer (bidirectional mapping via `JsonNamingPolicy.SnakeCaseLower`), timestamps are `DateTimeOffset` |
+| External injection | `HttpInvoker` can take a self-managed `HttpClient` (Polly/IHttpClientFactory scenarios); in that case the SDK is not responsible for disposing it |

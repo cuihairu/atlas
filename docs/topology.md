@@ -1,72 +1,79 @@
-# 部署拓扑（v0.1.20）
+[English](topology.md) | [简体中文](zh/topology.md)
 
-从客户端到存储的完整部署视图。端口、职责与流量方向一一对应；高可用细节
-（副本、哨兵、主从）见 [ha.md](ha.md)，状态机见 [lifecycle.md](lifecycle.md)。
+# Deployment Topology (v0.1.20)
+
+The complete deployment view from client to storage. Ports, responsibilities and
+traffic directions map one to one; for high-availability details (replicas, sentinels,
+primary/replica) see [ha.md](ha.md), and for the state machine see
+[lifecycle.md](lifecycle.md).
 
 ```mermaid
 flowchart TB
-    Player["玩家客户端"]
-    GW["APISIX / 网关（公网）<br/>routes: /v1/discovery/*<br/>TLS 终结 · 鉴权 · 限流"]
-    PUB["Atlas 公共端口<br/>:8080 discovery"]
-    GSN["游戏服务器 × N<br/>(登录/对战)"]
-    HAP["HAProxy TCP 模式<br/>内网，registry 扇入<br/>:8081 → N× Atlas"]
-    CLUSTER["Atlas 集群（无状态 × N）<br/>:8080 public · :8081 registry<br/>:8082 admin · :9090 gRPC"]
+    Player["Player client"]
+    GW["APISIX / Gateway (public)<br/>routes: /v1/discovery/*<br/>TLS termination · authn · rate limit"]
+    PUB["Atlas public port<br/>:8080 discovery"]
+    GSN["Game servers × N<br/>(login / match)"]
+    HAP["HAProxy TCP mode<br/>internal, registry fan-in<br/>:8081 → N× Atlas"]
+    CLUSTER["Atlas cluster (stateless × N)<br/>:8080 public · :8081 registry<br/>:8082 admin · :9090 gRPC"]
     REDIS["Redis<br/>master + replica<br/>+ 3× Sentinel"]
-    PG["PostgreSQL<br/>primary + hot standby<br/>(流复制)"]
+    PG["PostgreSQL<br/>primary + hot standby<br/>(streaming replication)"]
 
     Player --> GW
     GW --> PUB
     GW --> GSN
-    GSN -->|"心跳 10s（注册/心跳/注销）"| HAP
+    GSN -->|"heartbeat 10s (register/heartbeat/deregister)"| HAP
     PUB --> CLUSTER
     HAP --> CLUSTER
-    CLUSTER -->|"运行时/心跳"| REDIS
-    CLUSTER -->|"注册表/角色索引"| PG
+    CLUSTER -->|"runtime / heartbeat"| REDIS
+    CLUSTER -->|"registry / character index"| PG
 
     PROM["Prometheus"] --> MET["Atlas admin :8082 /metrics"] --> GRAF["Grafana"]
 ```
 
-## 1. 分层职责
+## 1. Layered responsibilities
 
-| 层 | 组件 | 职责 | 说明 |
+| Layer | Component | Responsibility | Notes |
 | --- | --- | --- | --- |
-| 接入 | APISIX（或网关） | TLS 终结、玩家侧鉴权、限流、路由 `/v1/discovery/*` | 公网唯一入口；发现接口是只读的，可积极缓存 |
-| 接入 | HAProxy TCP 模式 | 游戏服务器心跳扇入到 Atlas registry 端口 | 纯四层透传，registry 自带 token / mTLS（v0.1.17） |
-| 服务 | Atlas public `:8080` | Discovery / Routing（只读）+ Directory（角色索引读**写**）+ 跨服配置拉取 | 无状态，横向扩展；Directory 写端点也挂此口 |
-| 服务 | Atlas registry `:8081` | 注册 / 心跳 / 注销（写）+ 跨服配置拉取 | 心跳 3:1:6 节奏（lifecycle.md §4.2）；配置拉取与 :8080 双口同挂 |
-| 服务 | Atlas admin `:8082` | 生命周期操作、统计、维护窗口、公告 | 内网/管理网；RBAC + 审计 + 限流 |
-| 服务 | Atlas gRPC `:9090` | 同 HTTP 的内部高性能通道 | 游戏服务器可选直连 |
-| 存储 | Redis | 运行时数据：心跳、玩家数、负载（TTL ≤ 120s） | 哨兵故障转移；Atlas 只做键值读写 |
-| 存储 | PostgreSQL | 注册表、角色索引投影、迁移、realm/shard、维护窗口、公告 | 主从流复制；单写点 |
-| 可观测 | Prometheus / Grafana | 指标抓取与健康面板 | `GET /metrics`；告警 webhook 见 lifecycle.md §4.1 |
-| 管理 | Dashboard | 运维控制台（React） | 直连 admin 端口或经网关代理 |
+| Ingress | APISIX (or a gateway) | TLS termination, player-side authn, rate limiting, routing for `/v1/discovery/*` | The only public entry point; discovery endpoints are read-only, so they can be cached aggressively |
+| Ingress | HAProxy TCP mode | Fan game-server heartbeats in to the Atlas registry port | Pure layer-4 passthrough; the registry has its own tokens / mTLS (v0.1.17) |
+| Service | Atlas public `:8080` | Discovery / Routing (read-only) + Directory (character index reads **and writes**) + cross-server config pull | Stateless, scales horizontally; the Directory write endpoint is also on this port |
+| Service | Atlas registry `:8081` | Register / heartbeat / deregister (writes) + cross-server config pull | Heartbeat 3:1:6 pacing (lifecycle.md §4.2); config pull is served on both this and :8080 |
+| Service | Atlas admin `:8082` | Lifecycle operations, stats, maintenance windows, announcements | Internal / management network; RBAC + audit + rate limiting |
+| Service | Atlas gRPC `:9090` | A high-performance internal channel equivalent to the HTTP one | Optional for game servers to connect directly |
+| Storage | Redis | Runtime data: heartbeats, player counts, load (TTL ≤ 120s) | Sentinel failover; Atlas only does key-value reads and writes |
+| Storage | PostgreSQL | Registry, character index projections, migrations, realm/shard, maintenance windows, announcements | Primary/replica streaming replication; a single write point |
+| Observability | Prometheus / Grafana | Metric scraping and health dashboards | `GET /metrics`; for the alert webhook see lifecycle.md §4.1 |
+| Management | Dashboard | Operations console (React) | Connects straight to the admin port, or is proxied through the gateway |
 
-## 2. 流量方向与端口矩阵
+## 2. Traffic directions and port matrix
 
-| 来源 → 目标 | 端口 | 协议 | 安全 |
+| Source → Target | Port | Protocol | Security |
 | --- | --- | --- | --- |
-| 玩家 → APISIX | 443 | HTTPS | 网关鉴权 + 限流 |
-| APISIX → Atlas | 8080 | HTTP | 内网 / mTLS 可选 |
-| 游戏服务器 → HAProxy → Atlas | 8081 | HTTP | `ATLAS_REGISTRY_TOKENS`，升级 mTLS 见 security.md |
-| 运维 / Dashboard → Atlas | 8082 | HTTP | `ATLAS_ADMIN_API_KEYS` + RBAC + 审计 + 限流 |
-| 内部服务 → Atlas | 9090 | gRPC | 内网 |
-| Atlas → Redis | 6379 / 26379 | RESP | `requirepass`，哨兵拓扑（ha.md §3） |
-| Atlas → PostgreSQL | 5432 | TCP | scram-sha-256，池调优（ha.md §5） |
-| Prometheus → Atlas | 8082/metrics | HTTP | 内网（admin 口；配置了 `ATLAS_ADMIN_API_KEYS` 时同受钥鉴权） |
+| Player → APISIX | 443 | HTTPS | Gateway authn + rate limiting |
+| APISIX → Atlas | 8080 | HTTP | Internal / mTLS optional |
+| Game server → HAProxy → Atlas | 8081 | HTTP | `ATLAS_REGISTRY_TOKENS`; for upgrading to mTLS see security.md |
+| Operations / Dashboard → Atlas | 8082 | HTTP | `ATLAS_ADMIN_API_KEYS` + RBAC + audit + rate limiting |
+| Internal service → Atlas | 9090 | gRPC | Internal |
+| Atlas → Redis | 6379 / 26379 | RESP | `requirepass`, sentinel topology (ha.md §3) |
+| Atlas → PostgreSQL | 5432 | TCP | scram-sha-256, pool tuning (ha.md §5) |
+| Prometheus → Atlas | 8082/metrics | HTTP | Internal (admin port; subject to the same key authn when `ATLAS_ADMIN_API_KEYS` is configured) |
 
-## 3. 部署形态
+## 3. Deployment shapes
 
-**单机（开发 / 验证）**：一个 Atlas 进程（`ATLAS_STORE=memory`）+ 游戏服务器，无外部依赖。
+**Single node (development / validation)**: one Atlas process (`ATLAS_STORE=memory`) plus
+the game servers, with no external dependencies.
 
-**标准生产（推荐起点）**：
+**Standard production (recommended starting point)**:
 
-- Atlas × 2（不同可用区），HAProxy 扇入 registry，APISIX 对公网；
-- PostgreSQL 主 + 热备（流复制）；
-- Redis master + replica + 3 Sentinel；
-- Prometheus + Grafana + `ATLAS_ALERT_WEBHOOK_URL` 告警通道。
+- Atlas × 2 (in different availability zones), HAProxy fanning in to the registry,
+  APISIX facing the public internet;
+- PostgreSQL primary + hot standby (streaming replication);
+- Redis master + replica + 3 Sentinel;
+- Prometheus + Grafana + an alerting channel via `ATLAS_ALERT_WEBHOOK_URL`.
 
-**大规模**：角色索引分片（`ATLAS_CHAR_SHARDS` > 1，data-model.md §5）、事件适配器
-改 Kafka / NATS（sync.md §4）、admin 单副本粘性（审计环按副本隔离，ha.md §1）。
+**Large scale**: shard the character index (`ATLAS_CHAR_SHARDS` > 1, data-model.md §5),
+swap the event adapter for Kafka / NATS (sync.md §4), and make the admin side sticky
+single-replica (the audit ring is per-replica, ha.md §1).
 
-一键实验栈（2× Atlas + HAProxy + PG 主从 + Redis 哨兵）：
-`deploy/docker-compose.ha.yaml`。
+One-command lab stack (2× Atlas + HAProxy + PG primary/replica + Redis Sentinel):
+`deploy/docker-compose.ha.yaml`.

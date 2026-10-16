@@ -1,79 +1,99 @@
-# 性能基准
+[English](benchmarks.md) | [简体中文](zh/benchmarks.md)
 
-Registry 与 Discovery 的服务层基准（`go test -bench`，memory store，排除网络与
-序列化），用于回答两个容量问题：**一台 Atlas 能接多少心跳**、**一次列表有多贵**。
-Redis / PostgreSQL 后端的端到端数字取决于部署拓扑（见 [ha.md](ha)），本文给的是
-服务层逻辑开销的下界（上界）参照。
+# Benchmarks
 
-## 1. 复现方式
+Service-layer benchmarks for Registry and Discovery (`go test -bench`, memory store,
+excluding network and serialization). They answer two capacity questions: **how many
+heartbeats a single Atlas can absorb** and **what one list call actually costs**.
+End-to-end numbers for the Redis / PostgreSQL backends depend on deployment topology
+(see [ha.md](ha)); what follows is a reference for the lower (upper) bound of the
+service-layer logic cost.
+
+## 1. How to reproduce
 
 ```bash
-# 全部基准（约 15s）
+# All benchmarks (~15s)
 go test ./internal/registry/ ./internal/discovery/ -run xxx -bench . -benchtime 1s -benchmem
 
-# 单项（回归对比时用 -count=5 取中位数）
+# A single one (use -count=5 and take the median for regression comparisons)
 go test ./internal/discovery/ -run xxx -bench BenchmarkListServers -benchmem
 ```
 
-QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映每次调用的
-分配次数，是回归检测比时间更稳定的信号。
+QPS ≈ `1e9 / ns_per_op` (single goroutine). The allocs/op figure from `-benchmem`
+reflects how many allocations each call makes, and is a steadier regression signal
+than wall-clock time.
 
-## 2. 基线数字
+## 2. Baseline numbers
 
-2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27。ns/op、B/op、allocs/op
-与 QPS 列为 2026-10-13 复测钉值（min-of-5，空载；分配数确定，不受机器负载影响）。
-写路径数字含 v0.2 指令队列（2026-10-08 落地，见 [性能设计](/performance#8-2)）的
-逐条回执成本——改前直锁路径对照见性能设计 §8.5：
+2026-10, Linux / amd64 / i9-10880H (14 logical cores), Go 1.27. The ns/op, B/op,
+allocs/op and QPS columns are pinned values from a 2026-10-13 re-measurement
+(min-of-5, idle machine; allocation counts are deterministic and unaffected by machine
+load). The write-path numbers include the per-item receipt cost of the v0.2 command
+queue (landed 2026-10-08, see [Performance Design](/performance#8-2)); for the
+before/after comparison against the old direct-lock path see Performance Design §8.5:
 
-| 基准 | 场景 | ns/op | B/op | allocs/op | 单核 QPS |
+| Benchmark | Scenario | ns/op | B/op | allocs/op | Single-core QPS |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `BenchmarkRegister` | 新服务器注册（写路径 + 初始心跳） | 13,378 | 4,671 | 25 | ~75k |
-| `BenchmarkReRegister` | 幂等重注册（控制面重启恢复路径） | 11,038 | 5,001 | 28 | ~91k |
-| `BenchmarkHeartbeat` | 心跳热路径（每服务器每 10s 一次） | 5,055 | 1,992 | 11 | ~198k |
-| `BenchmarkHeartbeatParallel` | 64 台服务器并发心跳扇入 | 4,378 | 1,916 | 13 | ~228k×14 核 |
-| `BenchmarkGetServer` | 单服务器详情（含运行时合并） | 1,313 | 656 | 7 | ~762k |
-| `BenchmarkListServers/fleet_100` | 全量列表（100 台，含运行时合并） | 41.6µ | 30KB | 120 | ~24k |
-| `BenchmarkListServers/fleet_1000` | 全量列表（1,000 台） | 243µ | 60KB | 123 | ~4.1k |
-| `BenchmarkListServers/fleet_5000` | 全量列表（5,000 台） | 1.30m | 260KB | 127 | ~772 |
-| `BenchmarkListServersRegion` | region 过滤 + limit 100（1,000 台） | 569µ | 67KB | 216 | ~1.8k |
+| `BenchmarkRegister` | New server registration (write path + initial heartbeat) | 13,378 | 4,671 | 25 | ~75k |
+| `BenchmarkReRegister` | Idempotent re-registration (control-plane restart recovery path) | 11,038 | 5,001 | 28 | ~91k |
+| `BenchmarkHeartbeat` | Heartbeat hot path (once per server every 10s) | 5,055 | 1,992 | 11 | ~198k |
+| `BenchmarkHeartbeatParallel` | Concurrent heartbeat fan-in from 64 servers | 4,378 | 1,916 | 13 | ~228k×14 cores |
+| `BenchmarkGetServer` | Single server detail (including runtime merge) | 1,313 | 656 | 7 | ~762k |
+| `BenchmarkListServers/fleet_100` | Full list (100 servers, including runtime merge) | 41.6µ | 30KB | 120 | ~24k |
+| `BenchmarkListServers/fleet_1000` | Full list (1,000 servers) | 243µ | 60KB | 123 | ~4.1k |
+| `BenchmarkListServers/fleet_5000` | Full list (5,000 servers) | 1.30m | 260KB | 127 | ~772 |
+| `BenchmarkListServersRegion` | region filter + limit 100 (over 1,000 servers) | 569µ | 67KB | 216 | ~1.8k |
 
-## 3. 读数
+## 3. Reading the numbers
 
-- **心跳不是瓶颈**：单核约 20 万 QPS 意味着 10 万台服务器 × 10s 心跳 = 1 万 QPS，
-  一个核的 5%；扇入并发下每 op 与单 goroutine 基本持平（指令队列攒批吸收竞争，
-  见性能设计 §8.5），仍有约 20 倍余量。容量规划时先算心跳，**但真正的约束
-  在 Redis 写入与网络**（见下）。
-- **注册比重心跳贵约 2.7 倍**（校验 + upsert + 初始心跳），但注册只在启动/恢复时
-  发生，峰值 = 全舰队同时重注册。1 万台舰队冷恢复 ≈ 7.5 万 QPS·核（`BenchmarkRegister`
-  单核吞吐），单副本即可吸收（10k 注册约 0.13s 消化完）。
-- **列表是 O(fleet)**：时间随舰队规模线性增长，分配则近常数（120→127 allocs）。
-  生产用 Redis 的读路径已**管线化（P1，2026-10-04 落地）**：`RuntimeStore.GetRuntimes`
-  批量读由 pipeline 一次 Exec 完成，列表不再逐台 `GetRuntime`——**网络往返从 N 次
-  降到 1–2 次**（单节点 1 次；Cluster 按 slot 分批，每批 1 次）。管线化后的
-  Redis 后端估算（0.3ms/RTT + 载荷传输，内网 1Gbps 量级）：
+- **Heartbeats are not the bottleneck.** ~200k QPS on one core means 100,000 servers
+  heartbeating every 10s = 10k QPS, i.e. 5% of a single core. Under fan-in concurrency
+  the per-op cost stays essentially flat versus a single goroutine (the command queue
+  batches and absorbs the contention, see Performance Design §8.5), leaving roughly
+  20× headroom. When planning capacity, start with heartbeats — **but the real
+  constraint is the Redis writes and the network** (see below).
+- **Registration costs about 2.7× a heartbeat** (validation + upsert + initial
+  heartbeat), but registration only happens at startup/recovery, and its peak is the
+  whole fleet re-registering at once. A cold recovery of a 10k fleet ≈ 75k QPS·cores
+  (`BenchmarkRegister` single-core throughput), which a single replica absorbs (10k
+  registrations drain in about 0.13s).
+- **Listing is O(fleet)**: time grows linearly with fleet size while allocations stay
+  near-constant (120→127 allocs). The production Redis read path has been
+  **pipelined (P1, landed 2026-10-04)**: `RuntimeStore.GetRuntimes` batch reads are
+  done with a single pipeline Exec, so listing no longer calls `GetRuntime` per server
+  — **network round trips drop from N to 1–2** (1 for a single node; for Cluster, one
+  per slot batch). Estimated cost on the pipelined Redis backend (0.3ms/RTT plus
+  payload transfer, 1Gbps-class LAN):
 
-| 舰队规模 | 服务层耗时 | Redis 后端估算（1 次往返 + 传输） |
-| --- | ---: | ---: |
-| 100 | 42µs | ~0.4ms（~20KB） |
-| 1,000 | 243µs | ~2ms（~200KB） |
-| 5,000 | 1.3ms | ~4ms（~1MB） |
+  | Fleet size | Service-layer time | Redis backend estimate (1 round trip + transfer) |
+  | --- | ---: | ---: |
+  | 100 | 42µs | ~0.4ms (~20KB) |
+  | 1,000 | 243µs | ~2ms (~200KB) |
+  | 5,000 | 1.3ms | ~4ms (~1MB) |
 
-  服务层分配近常数（fleet_1000 为 123 allocs/op，来自批量读的 ids 切片与结果 map
-  容器；回归判断以分配数为准，见 §4），管线化的收益全部在网络往返上。
+  Service-layer allocations stay near-constant (123 allocs/op at fleet_1000, from the
+  ids slice and result map containers of the batch read; judge regressions by
+  allocation count, see §4) — the entire benefit of pipelining is on the network round
+  trips.
 
-  缓解手段（仍然有效）：网关对 `/v1/discovery/servers` 做短 TTL 缓存（列表是
-  准实时数据，1–5s 缓存不改变语义）；`region` / `limit` 过滤把单次响应控制在
-  100 台量级。
+  Mitigations (still effective): the gateway can put a short-TTL cache in front of
+  `/v1/discovery/servers` (the list is quasi-real-time data, a 1–5s cache does not
+  change semantics); `region` / `limit` filters keep a single response around the
+  100-server scale.
 
-- **回归警戒线**：Heartbeat > 10µs、Register > 20µs、fleet_1000 列表 > 1ms
-  （服务层数字）即应停下来查 diff，通常意味着多了锁或分配。
+- **Regression guardrails**: Heartbeat > 10µs, Register > 20µs, or a fleet_1000 list
+  > 1ms (service-layer numbers) means you should stop and inspect the diff — it usually
+  means an extra lock or extra allocation crept in.
 
-## 4. 方法与边界
+## 4. Method and boundaries
 
-- memory store：测的是**服务层逻辑**（校验、组装、过滤、合并）的上界参照，
-  不含网络、TLS、JSON 编解码与存储 I/O。
-- `-benchtime 1s` 的单次运行有 ±5% 噪声；对比优化效果请用 `-count=5` +
-  `benchstat`。
-- 基线表测量于机器空载时。复测若机器有并发负载（编译、CI），ns/op 会整体
-  放大数倍而 **allocs/op / B/op 不变**——回归判断以分配数为准，或等空载复测。
-- 心跳 / 注册数字来自唯一 ID 的全新写入；幂等重注册单独列出。
+- Memory store: this measures **service-layer logic** (validation, assembly, filtering,
+  merging) as an upper-bound reference, excluding network, TLS, JSON encoding and
+  storage I/O.
+- A single run at `-benchtime 1s` carries ±5% noise; use `-count=5` plus `benchstat`
+  when comparing optimizations.
+- The baseline table was measured on an idle machine. If you re-measure under
+  concurrent load (a build, CI), ns/op inflates several-fold while **allocs/op and B/op
+  stay unchanged** — judge regressions by allocation count, or wait for an idle machine.
+- Heartbeat / registration numbers come from fresh writes with unique IDs; idempotent
+  re-registration is listed separately.

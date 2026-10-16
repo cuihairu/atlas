@@ -1,21 +1,24 @@
-[English](server-config.en.md) | [中文](server-config.md)
+[English](server-config.md) | [简体中文](zh/server-config.md)
 
-# 服务器信息配置化
+# Server Information Configuration
 
-服务器信息（realm / shard / 端点 / 容量）以往只有一条进来的路：游戏服务器调注册 API
-`POST /v1/registry/servers/register`。配置化提供第二条路：**把服务器直接声明在配置文件里，
-Atlas 起服务即生效**——不必先到管理台或 API 注册一遍，换环境、换服务器组 = 换配置。
+Server information (realm / shard / endpoint / capacity) previously had only one inbound path: the
+game server calling the registration API `POST /v1/registry/servers/register`. Configuration-based
+declaration provides a second path: **declare servers directly in a config file and Atlas picks
+them up as soon as it starts** — no need to register once at the dashboard or the API first;
+switching environment or server group = switching the config.
 
-| 场景 | 用哪条路 |
+| Scenario | Which path |
 | --- | --- |
-| 静态舰队、预开通的服务器组、环境迁移 | **配置声明**（本页） |
-| 动态实例、频繁上下线的进程 | 注册 API + 心跳（[lifecycle.md](lifecycle.md)） |
+| Static fleet, pre-provisioned server groups, environment migration | **Config declaration** (this page) |
+| Dynamic instances, processes that frequently come up and go down | Registration API + heartbeat ([lifecycle.md](lifecycle.md) |
 
-两条路并存，字段一一对应，边界与冲突行为本页全部写明。
+The two paths coexist and their fields correspond one-to-one; the boundaries and conflict behavior
+are fully documented on this page.
 
-## 1. 最小示例：纯配置起一组服务器
+## 1. Minimal Example: Bringing Up a Group of Servers from Config Alone
 
-`servers.json`（扁平结构，不分组）：
+`servers.json` (flat structure, no grouping):
 
 ```json
 {
@@ -43,21 +46,22 @@ Atlas 起服务即生效**——不必先到管理台或 API 注册一遍，换�
 }
 ```
 
-启动时指向它：
+Point to it at startup:
 
 ```bash
 ATLAS_SERVERS_CONFIG=./servers.json ./atlas
 ```
 
-日志确认生效（创建 / 刷新 / 释放三类计数）：
+Log confirming it took effect (three counters: created / updated / released):
 
 ```text
 servers config applied file=./servers.json profile= declared=2 created=2 updated=0 released=0
 ```
 
-声明的服务器立即存在于存储中。与注册 API 的语义一致：**首次心跳前对外不可见**（状态
-`starting`，巡检 60s 无心跳会置 `offline`），实例起进程后照常发心跳即可上线、进入
-推荐轮转：
+The declared servers exist in storage immediately. The semantics match the registration API:
+**not visible externally until the first heartbeat** (status `starting`; a patrol at 60s with no
+heartbeat sets it to `offline`); once the instance starts its process, sending heartbeats as
+usual brings it online and into the recommendation rotation:
 
 ```bash
 curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat \
@@ -65,7 +69,8 @@ curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat \
 # {"server_id":"game-1001","status":"online","next_heartbeat_in":10}
 ```
 
-发现与推荐链路对配置声明的服务器完全无感——它们就是普通的在线服务器：
+The discovery and recommendation path is completely transparent to config-declared servers —
+they are ordinary online servers:
 
 ```bash
 curl localhost:8080/v1/discovery/servers
@@ -74,9 +79,10 @@ curl "localhost:8080/v1/routing/recommended?account_id=42&region=cn-east"
 # {"server": {...}, "reason": "lowest_load"}
 ```
 
-## 2. 多环境 / 多服务器组：profile 切换
+## 2. Multiple Environments / Multiple Server Groups: Profile Switching
 
-一个文件声明多组，一个环境变量切换——**换环境 = 换一个 profile 值**：
+One file declares multiple groups and one environment variable switches — **switching environment
+= switching a profile value**:
 
 ```json
 {
@@ -89,24 +95,27 @@ curl "localhost:8080/v1/routing/recommended?account_id=42&region=cn-east"
 }
 ```
 
-| 切换方式 | 命令 |
+| Switching method | Command |
 | --- | --- |
-| 跑 dev 组（文件默认） | `ATLAS_SERVERS_CONFIG=./servers.json ./atlas` |
-| 跑 prod 组（一条参数切换） | `ATLAS_SERVERS_PROFILE=prod ATLAS_SERVERS_CONFIG=./servers.json ./atlas` |
+| Run the dev group (the file's default) | `ATLAS_SERVERS_CONFIG=./servers.json ./atlas` |
+| Run the prod group (switch with a single parameter) | `ATLAS_SERVERS_PROFILE=prod ATLAS_SERVERS_CONFIG=./servers.json ./atlas` |
 
-选择规则（高到低）：
+Selection rules (highest to lowest):
 
-1. `ATLAS_SERVERS_PROFILE` 环境变量 —— 最高优先级；
-2. 文件自身的 `"profile"` 字段；
-3. 名为 `"default"` 的 profile（存在时）；
-4. 都没有 —— **启动报错**，列出全部可选 profile 名。
+1. The `ATLAS_SERVERS_PROFILE` environment variable — highest priority;
+2. The file's own `"profile"` field;
+3. The profile named `"default"` (if present);
+4. None of the above — **fails at startup**, listing all available profile names.
 
-也支持每个环境一个文件（不写 `profiles`），用 `ATLAS_SERVERS_CONFIG` 指向哪个文件就是哪个
-环境；此形态下设置 `ATLAS_SERVERS_PROFILE` 会直接报错（没有可选的东西，不静默忽略）。
+One file per environment is also supported (without writing `profiles`): whichever file
+`ATLAS_SERVERS_CONFIG` points to is that environment. In this form, setting
+`ATLAS_SERVERS_PROFILE` errors out directly (there is nothing to select; it is not silently
+ignored).
 
-## 3. 生效语义与优先级
+## 3. Effective Semantics and Precedence
 
-启动时按「声明集合整体应用」，**配置优先**，落库前先走同一套校验：
+Applied as a whole declaration set at startup; **the config takes precedence**, and the same
+validation runs before anything is persisted:
 
 ```mermaid
 flowchart LR
@@ -120,62 +129,67 @@ flowchart LR
     F & G & H --> I["监听端口<br/>对外服务"]
 ```
 
-- **配置优先于已注册档案**：同一 `server_id` 既存在过（API 注册过或上次声明过）又出现在
-  配置里，配置中的字段（名称 / region / realm / shard / 端点 / 容量等）覆盖旧值。
-- **状态与运行时数据永不被配置改动**：`status`、`players`、`load`、`last_seen_at`、进程
-  启动时间不写——Atlas 重启、换 profile 都不会把在线服务器打回 `starting`。
-- **声明集合是"配置托管"的唯一事实**：从配置中删掉一台服务器，下次启动该记录**释放**回
-  API 托管（`source` 翻回、记录与状态原样保留），之后可以正常走注册 API。删除声明不删数据。
+- **The config takes precedence over already-registered records**: the same `server_id` both exists
+  (registered via the API previously or declared last time) and appears in the config; the
+  config's fields (name / region / realm / shard / endpoint / capacity, etc.) overwrite the old
+  values.
+- **Status and runtime data are never changed by the config**: `status`, `players`, `load`,
+  `last_seen_at`, and the process start time are not written — restarting Atlas or switching
+  profiles will not knock an online server back to `starting`.
+- **The declaration set is the single source of truth for "config-managed"**: remove a server
+  from the config and on the next startup that record is **released** back to API management
+  (`source` flips back; the record and status are preserved as-is), after which the
+  registration API can be used normally again. Deleting a declaration does not delete data.
 
-配置托管期间，各类操作的边界：
+Boundaries of each operation while under config management:
 
-| 操作 | 行为 | 说明 |
+| Operation | Behavior | Notes |
 | --- | --- | --- |
-| 注册 API（同 ID） | ❌ **409** `SERVER_MANAGED_BY_CONFIG` | 档案归配置所有，API 改了下次启动也会被覆盖；错误信息指引改配置 |
-| 心跳 | ✅ 正常 | 运行时数据归游戏服务器；`suspect`/`offline` 的声明服务器心跳即回轮转（配置托管无法重新注册，心跳就是唯一凭证） |
-| 注销 | ✅ 正常 | 标记 `offline`、清运行时；记录保留，下次启动按配置刷新档案 |
-| Admin 生命周期（维护 / 排空 / 禁用） | ✅ 正常 | 运维语义与托管方式无关 |
-| 从配置移除后注册 API | ✅ 恢复 201 | 释放生效后重新成为普通 API 服务器 |
+| Registration API (same ID) | ❌ **409** `SERVER_MANAGED_BY_CONFIG` | The record is owned by the config; API changes are overwritten at the next startup; the error message points you to change the config |
+| Heartbeat | ✅ Normal | Runtime data belongs to the game server; a config-declared server in `suspect`/`offline` returns to rotation as soon as it heartbeats (config management cannot re-register; the heartbeat is the only credential) |
+| Deregistration | ✅ Normal | Marks `offline` and clears runtime; the record is preserved and refreshed from config at the next startup |
+| Admin lifecycle (maintenance / drain / disable) | ✅ Normal | Operations semantics are independent of the management mode |
+| Registration API after removal from config | ✅ Returns 201 | Once released, it becomes an ordinary API server again |
 
-## 4. 校验：启动即报，绝不半生效
+## 4. Validation: Fail at Startup, Never Half-Applied
 
-配置文件的任何问题都会在**监听端口之前**报错退出（`exit 1`，错误里带条目位置与原因），
-不会跳过坏条目继续跑：
+Any problem in the config file causes an error exit **before the listening port** (`exit 1`,
+with the entry location and reason in the error); it will not skip bad entries and keep running:
 
-| 检查 | 错误示例 |
+| Check | Example error |
 | --- | --- |
-| 文件不存在 / JSON 语法错 | `read servers config: no such file` |
-| **未知字段（拼写错）** | `json: unknown field "regoin"` |
-| 同时写了 `profiles` 与 `servers` | `use either "profiles" or "servers", not both` |
-| 重复 `server_id` | `server 1 (dup) duplicates server 0` |
-| 缺 `region` | `server 0 (bad-1): invalid argument: region is required` |
-| 端点缺 `host` / 端口越界 | `endpoint host is required` / `endpoint port must be within [1, 65535]` |
-| `capacity` 为负 | `capacity must be >= 0` |
-| 多 profile 未选择 | `profile not selected — set ATLAS_SERVERS_PROFILE to one of: dev, prod` |
-| 选择的 profile 不存在 | `profile "staging" not found (available: dev, prod)` |
-| 扁平文件却设置了 profile | `declares no profiles; ATLAS_SERVERS_PROFILE="dev" has nothing to select` |
+| File does not exist / JSON syntax error | `read servers config: no such file` |
+| **Unknown field (misspelled)** | `json: unknown field "regoin"` |
+| Both `profiles` and `servers` written | `use either "profiles" or "servers", not both` |
+| Duplicate `server_id` | `server 1 (dup) duplicates server 0` |
+| Missing `region` | `server 0 (bad-1): invalid argument: region is required` |
+| Endpoint missing `host` / port out of range | `endpoint host is required` / `endpoint port must be within [1, 65535]` |
+| `capacity` is negative | `capacity must be >= 0` |
+| Multiple profiles but none selected | `profile not selected — set ATLAS_SERVERS_PROFILE to one of: dev, prod` |
+| Selected profile does not exist | `profile "staging" not found (available: dev, prod)` |
+| Flat file but a profile is set | `declares no profiles; ATLAS_SERVERS_PROFILE="dev" has nothing to select` |
 
-校验规则与注册 API 完全一致（`model.Server.Validate`），配置里过不了的字段，API 里同样
-过不了。
+The validation rules are identical to the registration API (`model.Server.Validate`); a field
+that fails in the config fails the same way in the API.
 
-## 5. 配置项
+## 5. Configuration Items
 
-| 环境变量 | 说明 | 默认 |
+| Environment variable | Description | Default |
 | --- | --- | --- |
-| `ATLAS_SERVERS_CONFIG` | 服务器声明文件路径（JSON）。空 = 功能关闭，行为与未引入本特性完全一致 | `""` |
-| `ATLAS_SERVERS_PROFILE` | 选择激活的 profile，覆盖文件自身 `"profile"` 字段 | `""` |
+| `ATLAS_SERVERS_CONFIG` | Path to the server declaration file (JSON). Empty = feature disabled; behavior is exactly as if this feature did not exist | `""` |
+| `ATLAS_SERVERS_PROFILE` | Selects the active profile, overriding the file's own `"profile"` field | `""` |
 
-文件字段与注册 API 请求体一一对应：
+The file fields correspond one-to-one with the registration API request body:
 
-| 字段 | 必填 | 说明 |
+| Field | Required | Description |
 | --- | --- | --- |
-| `server_id` | ✅ | 全局唯一，即注册 API 的 `server_id` |
-| `region` | ✅ | 区域 |
-| `endpoint.host` / `endpoint.port` | ✅ | 客户端接入地址（公网 / 网关后地址均可） |
-| `name` / `type` / `version` / `platform` | — | 同注册 API |
-| `realm_id` / `shard_id` | — | 隶属 Realm / Shard 的弱引用（不做外键校验，见 [realms-shards.md](realms-shards.md)）；不存在时照常入库 |
-| `capacity` | — | 容量，`>= 0` |
-| `metadata` | — | 任意键值对，随声明透传入库（引擎提示、集群/地域/语言标记等，与注册 API 的 `metadata` 同一语义） |
+| `server_id` | ✅ | Globally unique; the same `server_id` as the registration API |
+| `region` | ✅ | Region |
+| `endpoint.host` / `endpoint.port` | ✅ | Client access address (public address or post-gateway address both work) |
+| `name` / `type` / `version` / `platform` | — | Same as the registration API |
+| `realm_id` / `shard_id` | — | Weak references to the Realm / Shard it belongs to (no foreign-key validation; see [realms-shards.md](realms-shards.md); stored normally even if it does not exist |
+| `capacity` | — | Capacity, `>= 0` |
+| `metadata` | — | Arbitrary key-value pairs, passed through into storage with the declaration (engine hints, cluster/region/language tags, etc.; same semantics as the registration API's `metadata`) |
 
-状态（`starting`/`online`/`maintenance`/…）不可声明——需要预置维护 / 禁用等状态时，启动
-后用 Admin 生命周期接口设置。
+Status (`starting`/`online`/`maintenance`/…) cannot be declared — when states such as maintenance /
+disable need to be pre-set, use the Admin lifecycle interface after startup.

@@ -1,42 +1,42 @@
-[English](scenarios.en.md) | [中文](scenarios.md)
+[English](scenarios.md) | [简体中文](zh/scenarios.md)
 
-# 场景导览
+# Scenario Tour
 
-按游戏运营里最常见的一天，把 Atlas 用一遍。每节 = 场景描述 + 真实界面截图 + 具体操作路径。截图全部来自真实运行的演示集群；想先看整体印象，回[首页走马灯](/)。
+Use Atlas through the most common day of game operations. Each section = scenario description + real UI screenshots + concrete operation paths. All screenshots come from a real running demo cluster; for a first overall impression, go back to the [homepage carousel](/).
 
-## 1. 运营每天先看这一页 {#scenario-overview}
+## 1. The page ops checks first every day {#scenario-overview}
 
-**场景**：早上开服前扫一眼全局——多少服在线、多少玩家、容量水位、状态分布。数字不对劲（在线数掉了、某区域全是 suspect）就是今天的第一件事。
+**Scenario**: a morning glance at the global picture before servers open — how many servers online, how many players, capacity watermark, status distribution. Any number looking off (online count dropped, some region all suspect) becomes today's first task.
 
-![总览页 — 在线服务器/玩家/容量卡片与状态、区域分布图](/screenshots/overview.png)
+![Overview page — online servers/players/capacity cards plus status and region distribution charts](/screenshots/overview.png)
 
-**操作路径**
+**Operation path**
 
-- 管理台：`Overview`（总览）——「在线服务器 / 总容量 / 在线玩家」卡片 + 状态分布、区域分布、近 24 小时玩家趋势。
-- 接口：`GET /v1/admin/stats`（管理口 :8082）——页面上的每个数字都来自这一条真实接口：
+- Dashboard: `Overview` — "online servers / total capacity / online players" cards + status distribution, region distribution, and 24-hour player trend.
+- API: `GET /v1/admin/stats` (admin port :8082) — every number on the page comes from this one real endpoint:
 
 ```bash
 curl -s localhost:8082/v1/admin/stats | jq
 # "online_servers": 8, "total_players": 4628 ← 玩家数由 Redis 心跳视图实时合并
 ```
 
-**延伸**：[架构设计](/architecture) · [性能基准](/benchmarks)
+**Further reading**: [Architecture Design](/architecture) · [Benchmarks](/benchmarks)
 
-## 2. 给服务器打标记 {#scenario-tags}
+## 2. Tagging servers {#scenario-tags}
 
-**场景**：开新服要突出「新服」、大促的服挂「火热」、满了的标「爆满」、要停导入的打「禁止注册」。有些标记给玩家看（角标），有些只给运营看（如内部备注）。**「禁止注册」不只是显示——注册/创角接口会真的拒绝并返回明确错误。**
+**Scenario**: new-server launches highlight "New Server", sale-event servers carry "Hot", full ones get marked "Packed", and ones that should stop taking imports get "No Registration". Some tags face players (badges), some face ops only (like internal notes). **"No Registration" is not just display — the registration / character-creation APIs actually reject with a clear error.**
 
-![服务器列表 — 标记列渲染角标：火热（火爆红）/ 新服（新服绿）/ 爆满（警示黄）](/screenshots/servers.png)
+![Server list — the tag column renders badges: Hot (hot red) / New Server (new-server green) / Packed (warning yellow)](/screenshots/servers.png)
 
-![服务器详情 — 标记管理面板：预设下拉 + 自定义（代码/文案/样式档位/对外开关），标记区分 对外/内部](/screenshots/server-detail-tags.png)
+![Server detail — tag management panel: preset dropdown + custom (code/label/style tier/public toggle), tags split into public/internal](/screenshots/server-detail-tags.png)
 
-**操作路径**（管理台：`Servers` → 点开某台服务器 → 「标记管理」卡片）
+**Operation path** (dashboard: `Servers` → open a server → the "Tag Management" card)
 
-1. 选预设（自带文案与样式档位），或填自定义：标记代码 + 展示文案 + 样式档位（火爆红/新服绿/警示黄/信息蓝/中性）+ 是否对外。
-2. 对外标记立即出现在玩家可见的服务器列表/详情（角标）；内部标记只存在于管理台。
-3. 「禁止注册」生效于 `POST /v1/directory/characters` 与 gRPC 创角；「维护中」标记与服务端维护状态同权，可按 `ATLAS_MAINTENANCE_ENFORCE=block|warn` 配置为拒绝或放行加告警头。
+1. Pick a preset (with its own label and style tier), or fill in custom: tag code + display label + style tier (hot red / new-server green / warning yellow / info blue / neutral) + whether it is public.
+2. Public tags immediately appear in the player-visible server list/details (badges); internal tags exist only in the dashboard.
+3. "No Registration" takes effect on `POST /v1/directory/characters` and gRPC character creation; the "Under Maintenance" tag carries the same weight as the server-side maintenance state, and can be configured via `ATLAS_MAINTENANCE_ENFORCE=block|warn` to reject, or to pass through with a warning header.
 
-等价的接口操作与一次真实走查（打「火热+禁止注册」→ 玩家侧出角标 → 创角被拒 → 摘除恢复）：
+Equivalent API operations and one real walkthrough (apply "Hot + No Registration" → badge appears on the player side → character creation rejected → remove and recover):
 
 ```bash
 # 打标记（管理口 :8082）
@@ -61,37 +61,35 @@ curl -X DELETE localhost:8082/v1/admin/servers/game-1001/tags/no_register
 # 之后同一笔创角 → HTTP 201
 ```
 
-标记由管理台独占维护：游戏服重新注册/心跳**永远不会**覆盖或清掉它们。详见[概念模型 §服务器标记](/concepts#服务器标记)。
+Tags are maintained exclusively by the dashboard: game server re-registration / heartbeats **never** overwrite or clear them. See [Concepts § Server Tags](/concepts#服务器标记).
 
-## 3. 玩家找角色 / 客服查号 {#scenario-characters}
+## 3. Players finding characters / support looking up accounts {#scenario-characters}
 
-**场景**：玩家问「我在 3 区的号叫什么来着」；客服接到申诉要先核实账号下的角色。跨服角色索引一次拉全，按名字/服务器/等级过滤。
+**Scenario**: a player asks "what was my character's name on server 3 again"; support handling an appeal first verifies the characters under an account. The cross-server character index pulls everything in one call, filterable by name/server/level.
 
-![角色搜索 — 按角色名/服务器/等级组合过滤，跨服结果](/screenshots/characters.png)
+![Character search — combined filters by character name/server/level, cross-server results](/screenshots/characters.png)
 
-**操作路径**
+**Operation path**
 
-- 管理台：`Characters`——角色名 / 服务器 / 等级区间组合过滤。
-- 接口：`GET /v1/admin/characters/search?q=名字&server_id=…&min_level=…`（管理口）；玩家侧自己的列表走 `GET /v1/directory/accounts/{id}/characters`（公网）。
-- 角色写入的唯一入口是游戏服的写端点（可走消息总线异步缓冲、at-least-once 幂等落地），见[数据同步](/sync)。
+- Dashboard: `Characters` — combined filtering by character name / server / level range.
+- API: `GET /v1/admin/characters/search?q=名字&server_id=…&min_level=…` (admin port); the player side's own list goes through `GET /v1/directory/accounts/{id}/characters` (public port).
+- The only entry point for character writes is the game server write endpoint (optionally buffered async via the message bus, landing at-least-once and idempotent) — see [Data Sync](/sync).
 
-## 4. 合服 / 转服 {#scenario-migration}
+## 4. Server merge / transfer {#scenario-migration}
 
-**场景**：两台服人少了要合服。按「先复制、后切换、再清理」蓝图由运维编排执行，Atlas 记录迁移并提供失败回滚。
+**Scenario**: two servers have grown thin and need merging. Ops orchestrates it along the "copy first, switch next, clean up last" blueprint; Atlas records the migration and provides failure rollback.
 
-![迁移管理 — 创建迁移、状态流转、失败回滚](/screenshots/migrations.png)
+![Migration management — create migrations, state transitions, failure rollback](/screenshots/migrations.png)
 
-**操作路径**
+**Operation path**
 
-- 管理台：`Migrations`——填源/目标服务器创建迁移，页面实时刷新状态，失败可一键回滚。
-- 接口：`POST /v1/admin/migrations`（body 指定 `source_servers` 数组 / `target_server`），`POST /v1/admin/migrations/{id}/rollback`。
-- 详见[合服 / 转服 / 迁服](/migration)。
+- Dashboard: `Migrations` — fill in source/target servers to create a migration; the page refreshes state in real time and failures can be rolled back in one click.
+- API: `POST /v1/admin/migrations` (body specifies the `source_servers` array / `target_server`), `POST /v1/admin/migrations/{id}/rollback`.
+- Details in [Server Merge / Transfer / Migration](/migration).
 
-## 5. 开服与维护公告 {#scenario-ops}
+## 5. Server opening and maintenance announcements {#scenario-ops}
 
-**场景**：今晚 2 点停服维护——提前建维护窗口，到点自动进维护、结束自动恢复，维护公告同时段自动挂出；紧急故障则一条 API 立刻发全服公告。玩家客户端登录即见。
-
-**操作路径**
+**Scenario**: servers go down for maintenance at 2 AM tonight — create the maintenance window in advance, the server automatically enters maintenance when it starts and automatically recovers when it ends, and the maintenance announcement is posted automatically over the same window; for an emergency fault, one API call immediately publishes a fleet-wide announcement. Player clients see it on login.
 
 ```bash
 # 计划维护窗口（到点自动进维护/恢复；announce 默认 true 会自动挂出覆盖窗口的公告）
@@ -103,25 +101,25 @@ curl -X POST localhost:8082/v1/admin/announcements -H 'Content-Type: application
      -d '{"title":"今晚例行维护","body":"02:00-04:00","level":"info","starts_at":"2026-10-03T01:30:00+08:00","ends_at":"2026-10-03T04:30:00+08:00"}'
 ```
 
-服务器侧的紧急维护/排水/禁用在 `Servers` 页每行操作按钮里（进维护、排水、禁用、启用）——[场景 2](#scenario-tags) 截图里的操作列。详见[公告与计划维护](/operations)。
+Server-side emergency maintenance / drain / disable lives in the per-row action buttons on the `Servers` page (enter maintenance, drain, disable, enable) — the action column in the [Scenario 2](#scenario-tags) screenshot. Details in [Announcements and Planned Maintenance](/operations).
 
-## 6. 半夜掉线谁告诉我 {#scenario-alerts}
+## 6. Who tells me about a midnight disconnection {#scenario-alerts}
 
-**场景**：某台服心跳断了。健康监控按 `suspect → offline` 两段式判死并触发告警，不会把一台卡顿的服务器立刻踢下线，也不会让一台真死的继续吃玩家。
+**Scenario**: a server's heartbeats stop. Health monitoring runs `suspect → offline` two-stage failure detection and fires an alert — it will not instantly kick a lagging server offline, nor let a truly dead one keep receiving players.
 
-**操作路径**：无需人工轮询——配置告警通道后（webhook），事件自动推送；事后在 `GET /v1/admin/audit` 审计流里回放谁在什么时候动了哪台服。详见[服务器生命周期 §健康警报](/lifecycle#_4-1-健康警报-v0-1-15-交付)。
+**Operation path**: no manual polling — once the alert channel is configured (webhook), events push automatically; afterwards replay who touched which server and when in the `GET /v1/admin/audit` audit stream. Details in [Server Lifecycle § Health Alerting](/lifecycle#_4-1-health-alerting-delivered-in-v0-1-15).
 
-## 7. 多区扩展 {#scenario-realms}
+## 7. Multi-region expansion {#scenario-realms}
 
-**场景**：华北、华南各一个大区（Realm），大区内再分片（Shard）横向扩。服务器归属在注册时声明，玩家侧按大区筛选。
+**Scenario**: one realm (Realm) each for North China and South China, sharded (Shard) inside each realm to scale horizontally. Server membership is declared at registration; the player side filters by realm.
 
-**操作路径**：`Realms`/`Shards` 管理在管理口（`POST /v1/admin/realms`、`POST /v1/admin/shards`）；玩家侧 `GET /v1/discovery/servers?realm=realm-cn`。详见[Realm 与 Shard](/realms-shards)。
+**Operation path**: `Realms`/`Shards` management is on the admin port (`POST /v1/admin/realms`, `POST /v1/admin/shards`); the player side uses `GET /v1/discovery/servers?realm=realm-cn`. Details in [Realm and Shard](/realms-shards).
 
-## 8. 跨服配置热更新 {#scenario-crossserver}
+## 8. Cross-server config hot updates {#scenario-crossserver}
 
-**场景**：跨服玩法要开新赛季——运营改一把配置，三种形态的服务器（轮询 / 回调 / 订阅）各自收到信号、拉取、热生效，全程不重启。有人断网、有人拉取失败，旧配置继续跑，恢复后自动补齐。
+**Scenario**: cross-server gameplay opens a new season — ops changes the config once, and servers in all three forms (poll / callback / subscribe) each get the signal, pull, and hot-apply, with no restarts anywhere. If one loses connectivity or another's pull fails, the old config keeps running and catches up automatically after recovery.
 
-**操作路径**：管理台 `跨服配置` 页改完点"发布"，或等价接口（`atlas-crossagent` 是三种模式的完整接收端，`go run ./cmd/atlas-crossagent -h` 看参数）：
+**Operation path**: edit on the dashboard `跨服配置` page and click "Publish", or the equivalent API (`atlas-crossagent` is a full receiver for all three modes; `go run ./cmd/atlas-crossagent -h` shows the flags):
 
 ```bash
 # 发布全文（PUT，替换）→ version 8 → 9
@@ -132,21 +130,21 @@ curl -X PUT localhost:8082/v1/admin/crossserver/config \
 #   "bus":"redis","callbacks":{"targets":1,"delivered":1,"failed":0}}}
 ```
 
-真实走查实录（演示栈，`ATLAS_EVENT_ADAPTER=redis`）：
+Real walkthrough transcript (demo stack, `ATLAS_EVENT_ADAPTER=redis`):
 
-1. **启动拉取**——三台 agent 注册（`poll` / `callback` / `subscribe`），注册响应带 `config_version: 8`，启动拉取直接采用：
+1. **Startup pull** — three agents register (`poll` / `callback` / `subscribe`); the register response carries `config_version: 8`, and the startup pull adopts it directly:
    `CONFIG APPLIED (hot) version=8 hash=b0c7e5cc595bf888 clusters=3 groups=2 features_on=1`
-2. **运行中改配置**——发布 v9（`cross_arena` 开启 + 分组加成员），三台各自热生效：
-   poll（5s 轮询）`config_version: 9`；callback 收到 `POST /notify` 即拉取；subscribe 收到总线 `config.updated` 即拉取。
-3. **拉取失败旧配置续跑**——给 poll 实例开故障注入（`POST /ctl/failpull {"on":true}`）再发布 v10：
-   `{"config_version":9,"pull_failing":true,"pull_failures":3}`——版本不动、进程不退；关注入后下一次轮询自动追上 v10。
-4. **断连补拉**——给 subscribe 实例 `POST /ctl/bus-off`（订阅丢弃），发布 v11（只改匹配域参数，`receivers` 定向为 `["game-1001","game-9001"]`）期间它停在 v10；`POST /ctl/bus-reset` 重建订阅即补拉：`config_version: 11`。
-5. **回调到达**——发布 v12（新增走查分组），Atlas 主动 `POST` 回调 URL（只带版本/信号），agent 日志：
+2. **Config change while running** — publish v9 (`cross_arena` enabled + groups gain members); all three hot-apply on their own:
+   poll (5s interval) `config_version: 9`; callback pulls as soon as it receives `POST /notify`; subscribe pulls as soon as it receives the bus `config.updated`.
+3. **Failed pull, old config keeps running** — enable fault injection on the poll instance (`POST /ctl/failpull {"on":true}`) and publish v10:
+   `{"config_version":9,"pull_failing":true,"pull_failures":3}` — version does not move, process does not exit; after the injection is removed, the next poll automatically catches up to v10.
+4. **Catch-up pull after disconnect** — send the subscribe instance `POST /ctl/bus-off` (subscription dropped); while v11 is published (only matching-domain params changed, `receivers` targeted as `["game-1001","game-9001"]`) it stays on v10; `POST /ctl/bus-reset` rebuilds the subscription and it catches up: `config_version: 11`.
+5. **Callback arrives** — publish v12 (adds a walkthrough group); Atlas proactively `POST`s the callback URL (carrying only version/signal), agent log:
    `callback signal received type=config.updated version=12` →
-   `CONFIG APPLIED (hot) version=12 … groups=3`；发布响应 `callbacks:{targets:2, delivered:2}`。
+   `CONFIG APPLIED (hot) version=12 … groups=3`; publish response `callbacks:{targets:2, delivered:2}`.
 
-语义与边界见[配置中心](/config-center)。
+Semantics and boundaries in [Config Center](/config-center).
 
 ---
 
-以上界面来自 [dashboard/](https://github.com/cuihairu/atlas/tree/main/dashboard)（React + antd）。本地跑起来：`docker compose up -d` 起 Atlas 全栈（atlas、postgres、redis，外加一次性的 schema 迁移任务，共四个 service），`cd dashboard && npm run dev` 起管理台（dev 代理自动分流公网/管理口）。
+The UI above comes from [dashboard/](https://github.com/cuihairu/atlas/tree/main/dashboard) (React + antd). To run it locally: `docker compose up -d` brings up the full Atlas stack (atlas, postgres, redis, plus a one-shot schema migration job — four services in total), and `cd dashboard && npm run dev` starts the dashboard (the dev proxy auto-routes between the public and admin ports).

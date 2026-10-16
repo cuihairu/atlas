@@ -1,15 +1,18 @@
-[English](realms-shards.en.md) | [中文](realms-shards.md)
+[English](realms-shards.md) | [简体中文](zh/realms-shards.md)
 
-# Realm 与 Shard
+# Realm and Shard
 
-**什么场景用**：游戏开到多个大区（华东 / 华南 / 海外）、一个大区里又分多组服（一区 / 二区 /
-体验服）时，需要一层运营档案来回答"这台服属于哪个大区、哪组分服"，并让玩家端按大区或
-分服拉服务器列表。Realm（大区）→ Shard（分服）→ Server（实例）就是这三层。
+**When to use it**: when a game runs in multiple realms (East China / South China / Overseas) and a
+realm is further divided into multiple groups of servers (Zone 1 / Zone 2 / Trial Server), you
+need an operations record layer to answer "which realm and which shard does this server belong
+to", and to let the client pull the server list by realm or shard. Realm (realm) → Shard (shard)
+→ Server (instance) is that three-layer structure.
 
-不需要多区分服运营的游戏**可以完全不用它们**——不写 `realm_id` / `shard_id`，一切照常
-（层级是可选的，见[概念模型](/concepts)§2）。
+Games that do not need multi-shard operations management **can skip it entirely** — just do not
+write `realm_id` / `shard_id` and everything works as usual (the hierarchy is optional; see
+[Concepts Model](/concepts) §2).
 
-## 一屏看懂
+## At a Glance
 
 ```mermaid
 flowchart TB
@@ -29,15 +32,18 @@ flowchart TB
     S3 --> G3
 ```
 
-- **Realm** 归 `region`（地理/接入维度），**Shard** 归 Realm，**Server** 用
-  `realm_id` / `shard_id` 两个弱引用字段挂进去。
-- **弱引用**：注册服务器时可以先写 `realm_id` / `shard_id` 再补建档案（Atlas 不做外键
-  校验）；档案服务于**检索筛选与运营视图**，缺失不影响注册与心跳（平台也未提供
-  realm / shard 的删除端点——Admin 侧仅创建与列表）。
+- **Realm** belongs to `region` (the geographic/access dimension), **Shard** belongs to Realm,
+  and **Server** is attached via the two weak reference fields `realm_id` / `shard_id`.
+- **Weak references**: when registering a server you can write `realm_id` / `shard_id` first and
+  create the records later (Atlas does no foreign-key validation); the records serve **search
+  filtering and operations views** — their absence does not affect registration and heartbeats
+  (the platform also provides no delete endpoint for realm / shard — Admin only offers creation
+  and listing).
 
-## 跑起来什么样
+## What It Looks Like Running
 
-三步：建大区 → 建分服 → 服务器挂进去，然后玩家端按维度拉列表。
+Three steps: create the realm → create the shard → attach the server, then the client pulls the
+list by dimension.
 
 ```bash
 # 1. 建大区（管理端 :8082）
@@ -61,7 +67,7 @@ curl -X POST http://localhost:8081/v1/registry/servers/register \
 # 3b. 已注册的服务器换分服？重注册即更新（幂等，字段覆盖）
 ```
 
-玩家端按维度筛选（:8080）：
+The client filters by dimension (:8080):
 
 ```bash
 curl 'http://localhost:8080/v1/discovery/servers?realm=realm-01'
@@ -71,40 +77,43 @@ curl 'http://localhost:8080/v1/discovery/servers?shard=shard-1001&status=online'
 # 指定分服的在线服务器
 ```
 
-运营侧查档案（:8082）：
+The operations side queries records (:8082):
 
 ```bash
 curl 'http://localhost:8082/v1/admin/realms?limit=50'      # 全部大区（新→旧）
 curl 'http://localhost:8082/v1/admin/shards?realm_id=realm-01'  # 大区下的分服
 ```
 
-## 典型场景
+## Typical Scenarios
 
-### 新大区开服
+### New Realm Server Launch
 
-1. `POST /v1/admin/realms` 建大区档案；
-2. `POST /v1/admin/shards` 建首组分服；
-3. 新服务器配置里写上 `realm_id` / `shard_id`（[配置化声明](/server-config)或注册 API 均可）；
-4. 客户端按 `?realm=` 拉列表，自然只看到新区。
+1. `POST /v1/admin/realms` creates the realm record;
+2. `POST /v1/admin/shards` creates the first shard;
+3. Write `realm_id` / `shard_id` in the new server's config ([config
+   declaration](/server-config) or the registration API both work);
+4. The client pulls the list by `?realm=` and naturally only sees the new zone.
 
-### 分服合并（合服）
+### Shard Merge (Server Merge)
 
-Shard 层面的合并由[合服迁移](/migration)完成：`POST /v1/admin/migrations` 把源服务器角色
-索引原子迁到目标，之后源服务器下线、客户端按同一 `shard` 维度筛选即可无感。
+Shard-level merges are done by [server merge migration](/migration): `POST /v1/admin/migrations`
+atomically migrates the source server's character directory to the target; afterwards the source
+server goes offline, and the client filtering by the same `shard` dimension is seamless.
 
-### 玩家跨服查询带大区语境
+### Player Cross-Server Queries with Realm Context
 
-`GET /v1/directory/accounts/{id}/characters` 返回的角色自带 `server_id`，配合发现列表的
-`realm_id` / `shard_id` 即可在客户端把"角色 → 所在大区/分服"一次渲染出来。
+Characters returned by `GET /v1/directory/accounts/{id}/characters` carry `server_id`; combined
+with the `realm_id` / `shard_id` of the discovery list, the client can render "character →
+realm/shard" in one pass.
 
-## API 速查（:8082）
+## API Cheat Sheet (:8082)
 
-| Method | Path | 说明 |
+| Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/v1/admin/realms` | 建大区；`{id, name, region, status?}`，`status` 缺省 `active`；重 ID → `409 REALM_EXISTS` |
-| `GET` | `/v1/admin/realms?limit=` | 大区列表（`created_at` 倒序，默认 50） |
-| `POST` | `/v1/admin/shards` | 建分服；`{id, name, realm_id, status?}`；大区不存在 → `404 REALM_NOT_FOUND`，重 ID → `409 SHARD_EXISTS` |
-| `GET` | `/v1/admin/shards?realm_id=&limit=` | 分服列表，可按大区过滤 |
+| `POST` | `/v1/admin/realms` | Create a realm; `{id, name, region, status?}`, `status` defaults to `active`; duplicate ID → `409 REALM_EXISTS` |
+| `GET` | `/v1/admin/realms?limit=` | Realm list (sorted by `created_at` descending, default 50) |
+| `POST` | `/v1/admin/shards` | Create a shard; `{id, name, realm_id, status?}`; realm does not exist → `404 REALM_NOT_FOUND`, duplicate ID → `409 SHARD_EXISTS` |
+| `GET` | `/v1/admin/shards?realm_id=&limit=` | Shard list, filterable by realm |
 
-服务器侧只有两个弱引用字段：注册体里的 `realm_id` / `shard_id`（可后补），与发现筛选的
-`?realm=` / `?shard=`。
+The server side has only the two weak reference fields: `realm_id` / `shard_id` in the
+registration body (can be added later), and the `?realm=` / `?shard=` discovery filters.

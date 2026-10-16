@@ -1,18 +1,18 @@
-[English](sdk-go.en.md) | [中文](sdk-go.md)
+[English](sdk-go.md) | [简体中文](zh/sdk-go.md)
 
 # Go SDK
 
-`github.com/cuihairu/atlas/sdk/go/atlas`（v0.1.6 交付）。同一套 API 覆盖 REST 与 gRPC 双传输，示例见 [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go)。
+`github.com/cuihairu/atlas/sdk/go/atlas` (delivered in v0.1.6). The same API surface covers both REST and gRPC transports; for an example see [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go).
 
-## 安装
+## Installation
 
-SDK 目前随主模块分发（同仓库单 module）。游戏服侧引入：
+The SDK is currently distributed with the main module (single module in the same repository). On the game server side, import:
 
 ```go
 import atlas "github.com/cuihairu/atlas/sdk/go/atlas"
 ```
 
-## 创建客户端
+## Creating a client
 
 ```go
 cli, err := atlas.New(atlas.Options{
@@ -33,9 +33,9 @@ cli, err := atlas.New(atlas.Options{
 defer cli.Close()
 ```
 
-## 注册与自动心跳
+## Registration and automatic heartbeat
 
-心跳循环**启动即发一次**（开服立刻可见），之后按固定间隔上报；游戏服只需在负载变化时调用 `Set`：
+The heartbeat loop **sends once as soon as it starts** (visible immediately when the server opens), then reports at a fixed interval; the game server only needs to call `Set` when the load changes:
 
 ```go
 reg, err := cli.Register(ctx, atlas.RegisterRequest{
@@ -53,26 +53,26 @@ loop.OnError(func(err error) { log.Printf("heartbeat: %v", err) })
 loop.Set(playerCount, loadFactor)
 ```
 
-**节奏建议**：判死阈值与上报间隔保持 3:1——默认 `suspect_after=30s` / `offline_after=60s` 时，10s 一跳即可；只要循环在跑就不会被误判离线。循环另暴露 `LastError()`（最近一次失败原因）与 `LastSent()`（上一次发出心跳的时间），可在游戏服监控里直接读。
+**Cadence recommendation**: keep the failure-detection threshold and the reporting interval at 3:1 — with the defaults `suspect_after=30s` / `offline_after=60s`, one beat every 10s is enough; as long as the loop is running it will not be falsely marked offline. The loop also exposes `LastError()` (the reason for the most recent failure) and `LastSent()` (the time the last heartbeat was sent), which can be read directly in game server monitoring.
 
-## 双传输
+## Dual transport
 
 | | REST | gRPC |
 | --- | --- | --- |
-| 地址 | `ATLAS_HTTP_ADDR` / `ATLAS_REGISTRY_ADDR` / `ATLAS_ADMIN_ADDR`（:8080/:8081/:8082，通常经反代合一） | `ATLAS_GRPC_ADDR`（:9090） |
-| 认证 | Bearer 头 | `authorization` metadata |
-| 关联头 | `DefaultHeaders` → HTTP 头 | `DefaultHeaders` → metadata；gRPC 另可对单个调用在 ctx 上附加 metadata（逐调用 id） |
-| 传输安全 | `https://` 基地址 | `GRPCTLS: true` + `GRPCTLSCACert`（私有 CA 束；服务端 `ATLAS_GRPC_TLS_CERT`/`_KEY`，可加 `_CLIENT_CA`） |
-| 错误 | `*atlas.Error{Code: "SERVER_NOT_FOUND", ...}` | `*atlas.Error{Code: "NotFound", ...}`（gRPC 状态名） |
-| 适用 | 运维工具、低频调用 | 游戏服高频心跳、SDK 内部 |
+| Address | `ATLAS_HTTP_ADDR` / `ATLAS_REGISTRY_ADDR` / `ATLAS_ADMIN_ADDR` (:8080/:8081/:8082, usually unified behind a reverse proxy) | `ATLAS_GRPC_ADDR` (:9090) |
+| Authentication | Bearer header | `authorization` metadata |
+| Correlation header | `DefaultHeaders` → HTTP headers | `DefaultHeaders` → metadata; gRPC can additionally attach metadata on the ctx for a single call (per-call id) |
+| Transport security | `https://` base address | `GRPCTLS: true` + `GRPCTLSCACert` (private CA bundle; server side `ATLAS_GRPC_TLS_CERT`/`_KEY`, optionally `_CLIENT_CA`) |
+| Errors | `*atlas.Error{Code: "SERVER_NOT_FOUND", ...}` | `*atlas.Error{Code: "NotFound", ...}` (gRPC status name) |
+| Suitable for | admin tools, low-frequency calls | high-frequency game server heartbeats, SDK internals |
 
-::: warning 错误码差异
-REST 错误码区分 `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND`；gRPC 统一为 `NotFound`。需要区分资源类型时检查 `Error.Message` 或按调用接口判断。
+::: warning Error code differences
+REST error codes distinguish `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND`; gRPC unifies them as `NotFound`. To distinguish the resource type, check `Error.Message` or decide by the calling interface.
 :::
 
-## API 一览
+## API overview
 
-六组方法与 REST 端点一一对应（详见 [API 参考](/api)）：
+The six method groups map one-to-one to REST endpoints (see the [API reference](/api) for details):
 
 ```go
 // Registry
@@ -106,10 +106,10 @@ current := watcher.Current()                     // 当前已应用快照
 applied, idempotent, skipped, failures := watcher.Stats()
 ```
 
-## 可运行示例
+## Runnable example
 
 ```bash
 go run ./examples/go
 ```
 
-完成注册 → 心跳 → 推荐 → 拉取角色 → 收到信号后注销的完整生命周期。
+The complete lifecycle of register → heartbeat → recommend → fetch characters → unregister after receiving a signal.

@@ -1,18 +1,19 @@
-[English](sdk-js.en.md) | [中文](sdk-js.md)
+[English](sdk-js.md) | [简体中文](zh/sdk-js.md)
 
 # JavaScript/TypeScript SDK
 
-`sdk/js/`（v0.1.9 交付）。基于 `fetch` 的 REST 客户端，与 Go / C++ /
-Python SDK 同一 API 面。零运行时依赖，Node.js 18+ 与现代浏览器通用；
-npm 产物 ESM + CJS 双格式，含完整 TypeScript 类型。
+`sdk/js/` (delivered in v0.1.9). A `fetch`-based REST client with the same API
+surface as the Go / C++ / Python SDKs. Zero runtime dependencies, works on
+Node.js 18+ and modern browsers; the npm artifact ships both ESM + CJS formats
+with complete TypeScript types.
 
-## 安装
+## Installation
 
 ```bash
 npm install @cuihairu/atlas-client
 ```
 
-## 快速上手
+## Quick start
 
 ```ts
 import { AtlasClient } from "@cuihairu/atlas-client";
@@ -46,78 +47,78 @@ await client.unregister("game-1001");
 client.close();
 ```
 
-## 客户端选项
+## Client options
 
-`AtlasClientOptions`（全部可选）：
+`AtlasClientOptions` (all optional):
 
-| 选项 | 默认值 | 说明 |
+| Option | Default | Description |
 | --- | --- | --- |
-| `baseUrl` | `http://localhost:8080` | 公网 + Admin 域基址（尾部 `/` 自动去除） |
-| `registryBaseUrl` | 同 `baseUrl` | Registry 独立端口（`:8081`）覆盖；反代合并部署时不用设 |
-| `registryToken` | 空 | Registry 域 Bearer（`ATLAS_REGISTRY_TOKENS` 之一） |
-| `adminApiKey` | 空 | Admin 域 API Key（`ATLAS_ADMIN_API_KEYS` 之一） |
-| `defaultHeaders` | 空 | 每次调用都带的静态头（键原样覆盖；进程级 `X-Request-ID` 关联 id 走这里，见 api.md「请求追踪」） |
-| `timeoutMs` | `10000` | 每次尝试的 `AbortSignal.timeout`；`0` 关闭超时 |
-| `maxRetries` | `3` | 瞬时失败（网络错误 / 超时 / 5xx）重试次数；4xx 不重试 |
-| `baseBackoffMs` | `100` | 首次重试退避上限，逐次翻倍 + 全抖动，封顶 10s |
+| `baseUrl` | `http://localhost:8080` | Base address for the public network + Admin domain (a trailing `/` is stripped automatically) |
+| `registryBaseUrl` | same as `baseUrl` | Override for the standalone Registry port (`:8081`); no need to set it when merged behind a reverse proxy |
+| `registryToken` | empty | Registry domain Bearer (one of `ATLAS_REGISTRY_TOKENS`) |
+| `adminApiKey` | empty | Admin domain API Key (one of `ATLAS_ADMIN_API_KEYS`) |
+| `defaultHeaders` | empty | Static headers sent with every call (keys override as-is; process-level `X-Request-ID` correlation id goes here, see api.md "Request tracing") |
+| `timeoutMs` | `10000` | `AbortSignal.timeout` for each attempt; `0` disables the timeout |
+| `maxRetries` | `3` | Number of retries for transient failures (network errors / timeouts / 5xx); 4xx is not retried |
+| `baseBackoffMs` | `100` | Backoff ceiling for the first retry, doubling each time + full jitter, capped at 10s |
 
-## API 全览
+## Full API overview
 
-### Registry（Service Token，走 `registryBaseUrl`）
+### Registry (Service Token, goes through `registryBaseUrl`)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `register(req)` | `{ serverId, status }` | 幂等注册；`type` 缺省 `"game"`；`realmId` / `shardId` / `metadata` 可选 |
-| `heartbeat(serverId, { players?, load? })` | `{ serverId, status, nextHeartbeatIn }` | `status` 为服务端**当前生效状态**（suspect/offline 时如实返回，别只看 HTTP 200） |
-| `unregister(serverId)` | `{ serverId?, status }` | 主动下线 |
+| `register(req)` | `{ serverId, status }` | Idempotent registration; `type` defaults to `"game"`; `realmId` / `shardId` / `metadata` are optional |
+| `heartbeat(serverId, { players?, load? })` | `{ serverId, status, nextHeartbeatIn }` | `status` is the server's **currently effective status** (returned truthfully when suspect/offline — don't just look at HTTP 200) |
+| `unregister(serverId)` | `{ serverId?, status }` | Take the server offline proactively |
 
-### Discovery（公网）
+### Discovery (public network)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `listServers(filter?)` | `Server[]` | filter：`{ region?, version?, platform?, status?, limit? }` |
-| `getServer(serverId)` | `Server` | 单台详情 |
+| `listServers(filter?)` | `Server[]` | filter: `{ region?, version?, platform?, status?, limit? }` |
+| `getServer(serverId)` | `Server` | Details for a single server |
 
-### Directory（公网读，游戏服务器写）
+### Directory (public read, game server write)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `createCharacter(req)` | `CharacterWriteResult` | 必填 `accountId / serverId / characterId / name`；`level / classId / avatar` 可选 |
+| `createCharacter(req)` | `CharacterWriteResult` | Required: `accountId / serverId / characterId / name`; `level / classId / avatar` optional |
 | `getCharacter(characterId)` | `Character` | |
-| `listCharactersByAccount(accountId)` | `Character[]` | 账号跨服全部角色 |
-| `listCharactersByServer(serverId, limit?, cursor?)` | `CharacterPage` | `limit > 0` 才生效；翻页传上页 `nextCursor` |
-| `updateCharacter(characterId, req)` | `CharacterWriteResult` | 未设字段保持不变（PATCH） |
+| `listCharactersByAccount(accountId)` | `Character[]` | All characters of an account across servers |
+| `listCharactersByServer(serverId, limit?, cursor?)` | `CharacterPage` | Only takes effect when `limit > 0`; pass the previous page's `nextCursor` to page |
+| `updateCharacter(characterId, req)` | `CharacterWriteResult` | Fields not set remain unchanged (PATCH) |
 | `deleteCharacter(characterId)` | `CharacterWriteResult` | |
 
-### Routing（公网）
+### Routing (public network)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `recommend({ accountId?, region?, version?, platform? })` | `{ server, reason }` | `reason` ∈ `lowest_load` / `highest_capacity` / `has_character` / `fallback`；`accountId > 0` 才触发角色粘滞 |
+| `recommend({ accountId?, region?, version?, platform? })` | `{ server, reason }` | `reason` ∈ `lowest_load` / `highest_capacity` / `has_character` / `fallback`; character stickiness is only triggered when `accountId > 0` |
 
-### Admin（API Key，走 `baseUrl`）
+### Admin (API Key, goes through `baseUrl`)
 
-| 方法 | 返回 | 说明 |
+| Method | Returns | Description |
 | --- | --- | --- |
-| `setMaintenance(serverId)` / `setDrain` / `enable` / `disable` | `StatusResult` | 生命周期操作 |
-| `setWeight(serverId, weight)` | `WeightResult` | 灰度路由权重：`0` 中性、`1..1000`；越界 400；`Server` 接口同带 `weight`（缺省 0）、`startedAt`（进程启动时间）、`source`（config=配置文件托管） |
-| `getStats()` | `Stats` | 舰队统计（服务器数按状态/区域/版本分布、总在线、总容量、角色总数） |
-| `searchCharacters(filter)` | `CharacterPage` | filter：`{ name?, serverId?, classId?, minLevel?, maxLevel?, limit?, cursor? }` |
-| `createMigration({ sourceServers, targetServer })` | `Migration` | 合服可多源 |
+| `setMaintenance(serverId)` / `setDrain` / `enable` / `disable` | `StatusResult` | Lifecycle operations |
+| `setWeight(serverId, weight)` | `WeightResult` | Canary routing weight: `0` neutral, `1..1000`; out of range returns 400; the `Server` interface also carries `weight` (default 0), `startedAt` (process start time), `source` (config = managed by config file) |
+| `getStats()` | `Stats` | Fleet statistics (server count by status/region/version, total online, total capacity, total characters) |
+| `searchCharacters(filter)` | `CharacterPage` | filter: `{ name?, serverId?, classId?, minLevel?, maxLevel?, limit?, cursor? }` |
+| `createMigration({ sourceServers, targetServer })` | `Migration` | Server merge can have multiple sources |
 | `getMigration(id)` / `listMigrations(limit?)` | `Migration` / `Migration[]` | |
-| `rollbackMigration(id)` | `Migration` | 一键回退 |
+| `rollbackMigration(id)` | `Migration` | One-click rollback |
 
-### 自动心跳
+### Automatic heartbeat
 
-| 成员 | 说明 |
+| Member | Description |
 | --- | --- |
-| `startHeartbeat(serverId, opts?)` | 立即首发一跳，之后每 `intervalMs`（默认 10000）续报 |
-| `loop.set(players, load)` | 游戏线程更新下一跳载荷（线程安全语义由 JS 单线程模型保证） |
-| `loop.onError` | 每次失败回调 `AtlasError`；循环不停 |
-| `await loop.stop()` | 幂等停止；等待在途心跳落地（最长 10s）后返回，避免下线后迟到心跳复活服务器 |
-| `client.close()` | 空操作（fetch 自管连接池）；**不会**停心跳循环，先 `await loop.stop()` |
+| `startHeartbeat(serverId, opts?)` | Sends one beat immediately, then keeps reporting every `intervalMs` (default 10000) |
+| `loop.set(players, load)` | The game thread updates the payload of the next beat (thread-safety semantics are guaranteed by the JS single-threaded model) |
+| `loop.onError` | Calls back with `AtlasError` on every failure; the loop does not stop |
+| `await loop.stop()` | Idempotent stop; waits for in-flight heartbeats to land (at most 10s) before returning, preventing a late heartbeat after going offline from reviving the server |
+| `client.close()` | No-op (fetch manages the connection pool itself); it does **not** stop the heartbeat loop, call `await loop.stop()` first |
 
-## 场景：玩家登录选服
+## Scenario: player login and server selection
 
 ```mermaid
 sequenceDiagram
@@ -135,9 +136,9 @@ sequenceDiagram
     A-->>C: { character, status: "created" }
 ```
 
-选服界面的筛选用 `listServers({ region, status: "online" })`；维护中的服务器带 `maintenance` 状态标记，建议照常展示"维护中"而不是隐藏。
+For filtering on the server-selection screen use `listServers({ region, status: "online" })`; servers under maintenance carry a `maintenance` status marker, and it is recommended to still show "under maintenance" rather than hiding them.
 
-## 场景：游戏服务器优雅下线
+## Scenario: graceful shutdown of a game server
 
 ```ts
 // 1. 停止接新玩家（SDK 侧通知 Atlas；服务器自己同时关入口）
@@ -148,39 +149,38 @@ await loop.stop();
 await client.unregister("game-1001");
 ```
 
-## 浏览器
+## Browsers
 
-`fetch` / `AbortSignal` / `URL` 全部为平台内置，打包器（Vite / webpack /
-esbuild）直接可用；推荐接入、服务器发现、角色目录等公开端点天然适合
-客户端调用，Registry / Admin 域请勿把令牌下发到浏览器。
+`fetch` / `AbortSignal` / `URL` are all built into the platform, so bundlers (Vite / webpack /
+esbuild) work with it directly; public endpoints such as server recommendation, server discovery, and the character directory are naturally suited to client-side calls — do not ship Registry / Admin domain tokens to the browser.
 
-完整示例见 [`examples/js`](https://github.com/cuihairu/atlas/blob/main/examples/js/main.ts)：
+For the complete example see [`examples/js`](https://github.com/cuihairu/atlas/blob/main/examples/js/main.ts):
 
 ```bash
 cd examples/js && npm install && npm start   # Node 22.18+ 直接运行 TS
 ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 npm start
 ```
 
-## 错误处理
+## Error handling
 
-所有方法失败抛 `AtlasError`：
+All methods throw `AtlasError` on failure:
 
-| 字段 | 说明 |
+| Field | Description |
 | --- | --- |
-| `status` | HTTP 状态码；`0` = 网络错误（重试耗尽后抛出） |
-| `code` | 与 REST 错误码一致（`INVALID_ARGUMENT` / `SERVER_NOT_FOUND` / `RATE_LIMITED` / `STORAGE_UNAVAILABLE` / `NETWORK` …） |
-| `message` | 服务端错误消息或网络错误描述 |
+| `status` | HTTP status code; `0` = network error (thrown after retries are exhausted) |
+| `code` | Matches the REST error codes (`INVALID_ARGUMENT` / `SERVER_NOT_FOUND` / `RATE_LIMITED` / `STORAGE_UNAVAILABLE` / `NETWORK` …) |
+| `message` | Server error message or network error description |
 
-自动心跳循环**不抛错**——失败进 `onError`，循环继续，适合"Atlas 短暂不可达时游戏服务器照常跑"的语义。
+The automatic heartbeat loop **does not throw** — failures go to `onError` and the loop continues, which suits the semantics of "the game server keeps running while Atlas is briefly unreachable".
 
-## 关键语义
+## Key semantics
 
-| 主题 | 说明 |
+| Topic | Description |
 | --- | --- |
-| 重试 | 网络错误 + 超时 + 5xx 自动全抖动指数退避（`maxRetries` 默认 3）；4xx 不重试 |
-| 心跳节奏 | 上报间隔 : 判死阈值 = 1:3（默认 10s / suspect 30s / offline 60s）；示例先同步首发再开循环，规避"注册未在线即推荐"竞态 |
-| 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为 undefined） |
-| 三端口 | `baseUrl` 覆盖公网/Admin；`registryBaseUrl` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
-| 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |
-| 命名 | 传输层 snake_case，SDK 层 camelCase（解析在客户端方法内部完成，无独立导出的转换函数） |
-| 时间字段 | `lastSeenAt` / `createdAt` / `updatedAt` / `lastLoginAt` 解析为 `Date`（缺失为 `undefined`） |
+| Retries | Network errors + timeouts + 5xx are retried automatically with full-jitter exponential backoff (`maxRetries` defaults to 3); 4xx is not retried |
+| Heartbeat cadence | Reporting interval : failure-detection threshold = 1:3 (defaults 10s / suspect 30s / offline 60s); the example sends the first beat synchronously before starting the loop, avoiding the "recommended before registration is online" race |
+| Directory write reply | Synchronous REST returns a flat Character object (the SDK normalizes it to `status="created"/"updated"`); the async adapter returns `{"status":"queued"}` (`character` is undefined) |
+| Three ports | `baseUrl` covers the public network/Admin; `registryBaseUrl` covers the standalone Registry port; when merged behind a reverse proxy, both can have the same value |
+| Empty collections | An empty list from the server may be serialized as `null`; the SDK treats it as `[]` |
+| Naming | snake_case at the transport layer, camelCase at the SDK layer (parsing is done inside the client methods; there is no separately exported conversion function) |
+| Time fields | `lastSeenAt` / `createdAt` / `updatedAt` / `lastLoginAt` are parsed into `Date` (`undefined` when missing) |

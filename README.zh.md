@@ -58,8 +58,8 @@ Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕四个问题�
 >
 > **Atlas NEVER owns**：角色权威数据 / 对局与战斗状态 / 玩家 Session / 数值经济与排行榜 / 账号认证。
 > 上述能力可与 Atlas 集成（调度器读 Discovery 候选集、玩家服务写 Directory 事件），
-> 但**永远不内建**。完整定位与模块边界见 [docs/architecture.md](docs/architecture.md)，
-> 三态状态模型（Desired / Observed / Effective）见 [docs/lifecycle.md](docs/lifecycle.md)。
+> 但**永远不内建**。完整定位与模块边界见 [docs/zh/architecture.md](docs/zh/architecture.md)，
+> 三态状态模型（Desired / Observed / Effective）见 [docs/zh/lifecycle.md](docs/zh/lifecycle.md)。
 
 ## 使用场景
 
@@ -160,9 +160,9 @@ curl -X POST localhost:8081/v1/registry/servers/game-1001/heartbeat -H 'Content-
 curl 'localhost:8080/v1/discovery/servers?status=online'
 ```
 
-常用配置都在 `.env` + compose 环境变量里改：换镜像版本改 `ATLAS_IMAGE`（如裸短 SHA `e3f802d`，升级可控）；数据库密码改 `ATLAS_PG_PASSWORD`（敏感值只放 `.env`，该文件已被 `.gitignore` 排除）；角色写入切消息总线在 compose 的 `atlas.environment` 加 `ATLAS_EVENT_ADAPTER=redis`（复用本栈 Redis，详见 [数据同步](https://github.com/cuihairu/atlas/blob/main/docs/sync.md)）。停止与清理：`docker compose down`（保留数据）/ `docker compose down -v`（连数据卷一起删）。
+常用配置都在 `.env` + compose 环境变量里改：换镜像版本改 `ATLAS_IMAGE`（如裸短 SHA `e3f802d`，升级可控）；数据库密码改 `ATLAS_PG_PASSWORD`（敏感值只放 `.env`，该文件已被 `.gitignore` 排除）；角色写入切消息总线在 compose 的 `atlas.environment` 加 `ATLAS_EVENT_ADAPTER=redis`（复用本栈 Redis，详见 [数据同步](https://github.com/cuihairu/atlas/blob/main/docs/zh/sync.md)）。停止与清理：`docker compose down`（保留数据）/ `docker compose down -v`（连数据卷一起删）。
 
-> 开发场景想从源码构建（不走 GHCR 镜像）用 `deployments/docker/docker-compose.yml`；多副本高可用见 `deploy/docker-compose.ha.yaml` 与[高可用文档](https://github.com/cuihairu/atlas/blob/main/docs/ha.md)；Kubernetes 部署见 `deploy/k8s/README.md`。
+> 开发场景想从源码构建（不走 GHCR 镜像）用 `deployments/docker/docker-compose.yml`；多副本高可用见 `deploy/docker-compose.ha.yaml` 与[高可用文档](https://github.com/cuihairu/atlas/blob/main/docs/zh/ha.md)；Kubernetes 部署见 `deploy/k8s/README.md`。
 
 ---
 
@@ -220,7 +220,7 @@ Atlas 当前暴露 49 个业务端点（默认配置，含审计端点），分�
 | `POST/GET` | `/v1/admin/migrations` · `POST …/rollback` | 迁移记录与回退 |
 | `GET` | `/v1/admin/stats` · `/v1/admin/audit` | 舰队统计与审计日志 |
 
-完整请求/响应示例见 [docs/api.md](docs/api.md)，快速上手见 [docs/api-quickstart.md](docs/api-quickstart.md)。
+完整请求/响应示例见 [docs/zh/api.md](docs/zh/api.md)，快速上手见 [docs/zh/api-quickstart.md](docs/zh/api-quickstart.md)。
 
 ---
 
@@ -284,16 +284,16 @@ Atlas
 └── Events      角色索引事件同步（Redis Streams / Kafka / NATS / RabbitMQ）
 ```
 
-- **[Registry](docs/api.md#registry)** — 服务器启动注册、周期心跳、主动注销
-- **[Discovery](docs/api.md#discovery)** — 按区域 / 大区 / 分片 / 版本 / 状态 / 平台筛选服务器
-- **[Directory](docs/api.md#directory)** — 账号下所有角色的跨服索引
-- **[Routing](docs/api.md#routing)** — 基于负载与容量推荐接入目标（同账号角色粘滞）
-- **[Admin](docs/api.md#admin)** — Realm / Shard 管理、维护窗口与公告联动、迁移、审计日志
-- **[事件同步](docs/sync.md)** — 角色索引经 Redis Streams / Kafka / NATS / RabbitMQ 解耦写入
-- **[六语言 SDK](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#，自动心跳内置
-- **[APISIX 插件](docs/apisix.md)** — 玩家 token 鉴权注入 + 端点组限流
-- **[健康告警](docs/lifecycle.md)** — suspect / offline 占比阈值告警 + webhook 通知
-- **[gRPC](docs/api.md#grpc-api)** — 五服务 23 RPC 双传输（核心面与 REST 同源）
+- **[Registry](docs/zh/api.md#registry)** — 服务器启动注册、周期心跳、主动注销
+- **[Discovery](docs/zh/api.md#discovery)** — 按区域 / 大区 / 分片 / 版本 / 状态 / 平台筛选服务器
+- **[Directory](docs/zh/api.md#directory)** — 账号下所有角色的跨服索引
+- **[Routing](docs/zh/api.md#routing)** — 基于负载与容量推荐接入目标（同账号角色粘滞）
+- **[Admin](docs/zh/api.md#admin)** — Realm / Shard 管理、维护窗口与公告联动、迁移、审计日志
+- **[事件同步](docs/zh/sync.md)** — 角色索引经 Redis Streams / Kafka / NATS / RabbitMQ 解耦写入
+- **[六语言 SDK](docs/zh/sdk-go.md)** — Go / C++ / Python / JS / Java / C#，自动心跳内置
+- **[APISIX 插件](docs/zh/apisix.md)** — 玩家 token 鉴权注入 + 端点组限流
+- **[健康告警](docs/zh/lifecycle.md)** — suspect / offline 占比阈值告警 + webhook 通知
+- **[gRPC](docs/zh/api.md#grpc-api)** — 五服务 23 RPC 双传输（核心面与 REST 同源）
 
 ---
 
@@ -305,7 +305,7 @@ Atlas 保存角色的索引信息（`account_id` / `server_id` / `character_id` 
 
 **2. Region / Realm / Shard 是可选 metadata，不是硬编码层级。**
 
-不同品类（MMORPG / MOBA / SLG）的拓扑差异巨大，Atlas 不强制任何一种层级结构。见 [概念模型](docs/concepts.md)。
+不同品类（MMORPG / MOBA / SLG）的拓扑差异巨大，Atlas 不强制任何一种层级结构。见 [概念模型](docs/zh/concepts.md)。
 
 **3. Discovery 与 Routing 在 API 层分离。**
 
@@ -327,11 +327,11 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 
 **6. 服务器状态是三态：Desired / Observed / Effective。**
 
-运维声明（维护 / 排水 / 禁用）是 Desired，心跳观测是 Observed，对外广告永远是两者的合成 Effective——互不打架，各说各话。详见 [docs/lifecycle.md](docs/lifecycle.md)。
+运维声明（维护 / 排水 / 禁用）是 Desired，心跳观测是 Observed，对外广告永远是两者的合成 Effective——互不打架，各说各话。详见 [docs/zh/lifecycle.md](docs/zh/lifecycle.md)。
 
 **7. `metadata` 是 opaque 元数据，不是业务数据库。**
 
-平台唯一内建的业务语义过滤通道，只承载"分类标签"级静态口径；数值型、动态的业务属性（战力、段位、进度…）归游戏数据库，Atlas 不理解也不假装理解。详见 [docs/concepts.md](docs/concepts.md)。
+平台唯一内建的业务语义过滤通道，只承载"分类标签"级静态口径；数值型、动态的业务属性（战力、段位、进度…）归游戏数据库，Atlas 不理解也不假装理解。详见 [docs/zh/concepts.md](docs/zh/concepts.md)。
 
 ---
 
@@ -339,22 +339,22 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/architecture.md](docs/architecture.md) | 整体架构、组件职责、与 APISIX 的边界 |
-| [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
-| [docs/api.md](docs/api.md) | 五组 REST API + gRPC 的完整定义 |
-| [docs/api-quickstart.md](docs/api-quickstart.md) | API 快速上手指南（curl 示例） |
-| [docs/data-model.md](docs/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
-| [docs/lifecycle.md](docs/lifecycle.md) | 服务器生命周期状态机 |
-| [docs/migration.md](docs/migration.md) | 合服 / 转服 / 迁服 |
-| [docs/sync.md](docs/sync.md) | 游戏服务器到 Atlas 的数据同步 |
-| [docs/apisix.md](docs/apisix.md) | APISIX 接入插件：玩家 token 鉴权注入 + 端点组限流 |
-| [docs/topology.md](docs/topology.md) | 部署拓扑：单机 / 标准生产 / 大规模三档形态 |
-| [docs/ha.md](docs/ha.md) | 高可用：心跳扇入 LB 与存储冗余 |
-| [docs/benchmarks.md](docs/benchmarks.md) | 性能基准与回归警戒线 |
-| [docs/security.md](docs/security.md) | 安全模型：认证、限流、审计 |
-| [docs/security-audit.md](docs/security-audit.md) | 安全审计记录与周期清单 |
-| [docs/sdk-go.md](docs/sdk-go.md) | SDK 文档（六语言：Go / C++ / Python / JS / [Java](docs/sdk-java.md) / [C#](docs/sdk-csharp.md)） |
-| [docs/roadmap.md](docs/roadmap.md) | MVP 范围与演进路线 |
+| [docs/zh/architecture.md](docs/zh/architecture.md) | 整体架构、组件职责、与 APISIX 的边界 |
+| [docs/zh/concepts.md](docs/zh/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
+| [docs/zh/api.md](docs/zh/api.md) | 五组 REST API + gRPC 的完整定义 |
+| [docs/zh/api-quickstart.md](docs/zh/api-quickstart.md) | API 快速上手指南（curl 示例） |
+| [docs/zh/data-model.md](docs/zh/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
+| [docs/zh/lifecycle.md](docs/zh/lifecycle.md) | 服务器生命周期状态机 |
+| [docs/zh/migration.md](docs/zh/migration.md) | 合服 / 转服 / 迁服 |
+| [docs/zh/sync.md](docs/zh/sync.md) | 游戏服务器到 Atlas 的数据同步 |
+| [docs/zh/apisix.md](docs/zh/apisix.md) | APISIX 接入插件：玩家 token 鉴权注入 + 端点组限流 |
+| [docs/zh/topology.md](docs/zh/topology.md) | 部署拓扑：单机 / 标准生产 / 大规模三档形态 |
+| [docs/zh/ha.md](docs/zh/ha.md) | 高可用：心跳扇入 LB 与存储冗余 |
+| [docs/zh/benchmarks.md](docs/zh/benchmarks.md) | 性能基准与回归警戒线 |
+| [docs/zh/security.md](docs/zh/security.md) | 安全模型：认证、限流、审计 |
+| [docs/zh/security-audit.md](docs/zh/security-audit.md) | 安全审计记录与周期清单 |
+| [docs/zh/sdk-go.md](docs/zh/sdk-go.md) | SDK 文档（六语言：Go / C++ / Python / JS / [Java](docs/zh/sdk-java.md) / [C#](docs/zh/sdk-csharp.md)） |
+| [docs/zh/roadmap.md](docs/zh/roadmap.md) | MVP 范围与演进路线 |
 
 ---
 
@@ -370,9 +370,9 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 | [v0.1.3](https://github.com/cuihairu/atlas/releases/tag/v0.1.3) | v0.2 前奏：OpenTelemetry 链路追踪（root+child span 树）、六语言 SDK 巩固（错误信封/心跳排空/关联头）、memory 存储六类倒排索引 + 指令化写队列（tags 过滤三库契约）、dash 存储队列可观测（指标族 + admin 端点 + 管理台卡） |
 | [v0.1.4](https://github.com/cuihairu/atlas/releases/tag/v0.1.4) | 源码二轮走查：角色删除事件幂等化、RabbitMQ 重投退避、routing 诊断 live_runtime、不安全默认启动告警、角色读路径 bench 证据、README 双语化（20 个提交） |
 
-**明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据、匹配/排队/房间、实例与 Zone 分配、玩家 Session、背包/经济/排行榜等游戏业务数据（详见 [docs/roadmap.md](docs/roadmap.md)「明确不做」清单）。
+**明确不做**（设计决定，非待办）：Kubernetes Operator、Service Mesh、复杂调度算法、强绑定网关、角色权威数据、匹配/排队/房间、实例与 Zone 分配、玩家 Session、背包/经济/排行榜等游戏业务数据（详见 [docs/zh/roadmap.md](docs/zh/roadmap.md)「明确不做」清单）。
 
-后续候选方向见 [docs/roadmap.md](docs/roadmap.md)。
+后续候选方向见 [docs/zh/roadmap.md](docs/zh/roadmap.md)。
 
 ---
 

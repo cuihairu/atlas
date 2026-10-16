@@ -1,18 +1,19 @@
-[English](sdk-python.en.md) | [中文](sdk-python.md)
+[English](sdk-python.md) | [简体中文](zh/sdk-python.md)
 
 # Python SDK
 
-`sdk/python/`（v0.1.8 交付）。基于 httpx 的 REST 客户端，与 Go / C++ SDK
-同一 API 面。同步 `AtlasClient` 与异步 `AtlasAsyncClient` 方法同名，仅
-协程之分；依赖仅 `httpx`，Python ≥ 3.9。
+`sdk/python/` (delivered in v0.1.8). An httpx-based REST client with the same
+API surface as the Go / C++ SDKs. The synchronous `AtlasClient` and the
+asynchronous `AtlasAsyncClient` share method names, differing only in
+coroutines; the only dependency is `httpx`, Python ≥ 3.9.
 
-## 安装
+## Installation
 
 ```bash
 pip install atlas-client
 ```
 
-## 快速上手
+## Quick start
 
 ```python
 from atlas_client import (
@@ -47,9 +48,9 @@ client.unregister("game-1001")
 client.close()
 ```
 
-## 异步客户端
+## Async client
 
-与同步版本同一方法面，`await` 即可；支持 `async with`：
+Same method surface as the synchronous version, just `await`; `async with` is supported:
 
 ```python
 from atlas_client import AtlasAsyncClient
@@ -61,22 +62,22 @@ async with AtlasAsyncClient("http://localhost:8080") as client:
     await loop.stop()
 ```
 
-完整示例见 [`examples/python`](https://github.com/cuihairu/atlas/blob/main/examples/python/main.py)：
+For the complete example see [`examples/python`](https://github.com/cuihairu/atlas/blob/main/examples/python/main.py):
 
 ```bash
 ATLAS_ADDR=http://localhost:8080 ATLAS_REGISTRY_ADDR=http://localhost:8081 \
     python3 examples/python/main.py
 ```
 
-## 关键语义
+## Key semantics
 
-| 主题 | 说明 |
+| Topic | Description |
 | --- | --- |
-| 错误处理 | 所有方法失败抛 `AtlasError`（`status` / `code` / `message`），code 与 REST 错误码一致，`status=0` 为网络错误 |
-| 重试 | 网络错误 + 5xx 自动全抖动指数退避（`max_retries` 默认 3）；4xx 不重试 |
-| 心跳节奏 | 上报间隔 : 判死阈值 = 1:3（默认 10s / suspect 30s / offline 60s） |
-| 自动心跳 | 同步版后台线程（`AutoHeartbeat`），异步版 asyncio 任务（`AsyncHeartbeatTask`）；`on_error` 回调上报失败，循环不停 |
-| 目录写回复 | 同步 REST 返回扁平 Character 对象（SDK 归一化为 `status="created"/"updated"`）；异步适配器返回 `{"status":"queued"}`（`character` 为 None） |
-| 三端口 | `base_url` 覆盖公网/Admin；`registry_base_url` 覆盖 Registry 独立端口；反代合并部署时两者同值即可 |
-| 灰度权重 | `set_weight(server_id, weight)`（Admin 域，同步/异步同名）：`0` 中性、`1..1000`，越界抛 `AtlasError(INVALID_ARGUMENT)`；返回 `WeightResult(server_id, weight)`；`Server` 模型同带 `weight`（未设置时为 0）、`started_at`（进程启动时间）、`source`（config=配置文件托管） |
-| 空集合 | 服务端空列表可能序列化为 `null`，SDK 按 `[]` 处理 |
+| Error handling | All methods throw `AtlasError` on failure (`status` / `code` / `message`); code matches the REST error codes, and `status=0` means a network error |
+| Retries | Network errors + 5xx are retried automatically with full-jitter exponential backoff (`max_retries` defaults to 3); 4xx is not retried |
+| Heartbeat cadence | Reporting interval : failure-detection threshold = 1:3 (defaults 10s / suspect 30s / offline 60s) |
+| Automatic heartbeat | A background thread in the synchronous version (`AutoHeartbeat`), an asyncio task in the asynchronous version (`AsyncHeartbeatTask`); the `on_error` callback reports failures, and the loop does not stop |
+| Directory write reply | Synchronous REST returns a flat Character object (the SDK normalizes it to `status="created"/"updated"`); the async adapter returns `{"status":"queued"}` (`character` is None) |
+| Three ports | `base_url` covers the public network/Admin; `registry_base_url` covers the standalone Registry port; when merged behind a reverse proxy, both can have the same value |
+| Canary weight | `set_weight(server_id, weight)` (Admin domain, same name in sync/async): `0` neutral, `1..1000`; out of range throws `AtlasError(INVALID_ARGUMENT)`; returns `WeightResult(server_id, weight)`; the `Server` model also carries `weight` (0 when unset), `started_at` (process start time), `source` (config = managed by config file) |
+| Empty collections | An empty list from the server may be serialized as `null`; the SDK treats it as `[]` |
