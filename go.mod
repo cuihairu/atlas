@@ -8,7 +8,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/nats-io/nats-server/v2 v2.15.0
+	github.com/nats-io/nats-server/v2 v2.15.1
 	github.com/nats-io/nats.go v1.54.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
@@ -37,7 +37,7 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/minio/highwayhash v1.0.4 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nats-io/jwt/v2 v2.8.2 // indirect
