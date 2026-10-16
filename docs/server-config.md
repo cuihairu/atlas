@@ -1,3 +1,5 @@
+[English](server-config.en.md) | [中文](server-config.md)
+
 # 服务器信息配置化
 
 服务器信息（realm / shard / 端点 / 容量）以往只有一条进来的路：游戏服务器调注册 API

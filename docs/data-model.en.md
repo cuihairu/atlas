@@ -66,7 +66,7 @@ CREATE INDEX idx_servers_shard        ON servers (shard_id);
 
 `source` marks profile ownership (migrations/0004): `''` = API registration (default), `config` = config file declaration (`ATLAS_SERVERS_CONFIG`)—the registration API refuses to modify the profile fields of records owned by config (`409 SERVER_MANAGED_BY_CONFIG`); heartbeat and lifecycle operations proceed as usual.
 
-The value domain of `status` is in [lifecycle.md](lifecycle.md):
+The value domain of `status` is in [lifecycle.md](lifecycle.en.md):
 
 | Status | Semantics |
 | --- | --- |
@@ -78,7 +78,7 @@ The value domain of `status` is in [lifecycle.md](lifecycle.md):
 | `offline` | Offline |
 | `disabled` | Operationally disabled |
 
-> **Semantic annotation (three-state model, see [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective))**:
+> **Semantic annotation (three-state model, see [lifecycle.md §0](lifecycle.en.md#_0-状态三态-desired-observed-effectiv)e)**:
 > What this table's `servers.status` persists is the **Effective** state—a composite result; all external views
 > (discovery / recommendation / statistics) read exactly this value, and there is no semantics conflicting with a `status` elsewhere.
 
@@ -114,7 +114,7 @@ CREATE TABLE shards (
 CREATE INDEX idx_shards_realm ON shards (realm_id);
 ```
 
-`realm_id` may be `NULL`, allowing a Shard to attach directly under Region. This is consistent with the "optional hierarchy" principle in [concepts.md](concepts.md).
+`realm_id` may be `NULL`, allowing a Shard to attach directly under Region. This is consistent with the "optional hierarchy" principle in [concepts.md](concepts.en.md).
 
 ---
 
@@ -142,7 +142,7 @@ CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
 ```
 
-**This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#7-character).
+**This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.en.md#7-character.)
 
 The primary key is chosen as the `(account_id, server_id, character_id)` triple because:
 - The same account can have characters on multiple servers
@@ -183,7 +183,7 @@ See [migration.md](migration.md) for details.
 
 | Field | Example | Description |
 | --- | --- | --- |
-| `status` | `online` | The **observed state** reported by heartbeat (Observed side, see [lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective)); the liveness basis is `last_seen_at`, not this field |
+| `status` | `online` | The **observed state** reported by heartbeat (Observed side, see [lifecycle.md §0](lifecycle.en.md#_0-状态三态-desired-observed-effectiv)e); the liveness basis is `last_seen_at`, not this field |
 | `players` | `843` | Current online player count (integer string) |
 | `load` | `0.42` | Load ratio, a `[0, 1]` float string |
 | `last_seen_at` | `2026-01-01T12:00:00Z` | The write time of the most recent heartbeat (RFC3339), the liveness basis |
@@ -283,7 +283,7 @@ The character index is the only table with scale pressure. The sharding infrastr
 - **Migration tool** `cmd/atlas-reshard` (or `sharded.Reshard`): cursor-paginated reads from the source, idempotent upsert writes to the target, supporting single-DB → N-DB and N-shard → M-shard re-splitting;
 - **How to enable** `ATLAS_CHAR_SHARDS` (default 1): with a single physical DB this is logical sharding (validating the routing path); multi-DB physical splitting is supported only by the migration tool (`cmd/atlas-reshard --to-dsn`) and is not wired into the main program (same stance as MySQL).
 
-Physical splitting (a separate PG instance per shard) is a deployment and operations decision; the interface and migration tool are already reserved for the v2.0 target, see [roadmap.md](roadmap.md).
+Physical splitting (a separate PG instance per shard) is a deployment and operations decision; the interface and migration tool are already reserved for the v2.0 target, see [roadmap.md](roadmap.en.md).
 
 ---
 

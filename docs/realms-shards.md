@@ -1,3 +1,5 @@
+[English](realms-shards.en.md) | [中文](realms-shards.md)
+
 # Realm 与 Shard
 
 **什么场景用**：游戏开到多个大区（华东 / 华南 / 海外）、一个大区里又分多组服（一区 / 二区 /

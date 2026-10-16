@@ -1,3 +1,5 @@
+[English](api-quickstart.en.md) | [中文](api-quickstart.md)
+
 # 快速上手
 
 跑通 Atlas 的完整链路：**起服上线 → 玩家选服 → 角色目录 → 运维操作 → 优雅下线**。

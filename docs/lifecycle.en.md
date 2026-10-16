@@ -323,7 +323,7 @@ maintenance. The diagnostic endpoint (`/v1/admin/diagnose/routing`) lays out the
 | List maintenance windows | `GET /v1/admin/maintenance-windows` |
 | Cancel maintenance window | `DELETE /v1/admin/maintenance-windows/{id}` |
 
-See [api.md](api.md) for the complete definition.
+See [api.md](api.en.md) for the complete definition.
 
 ---
 

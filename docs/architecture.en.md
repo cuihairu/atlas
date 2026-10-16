@@ -149,7 +149,7 @@ stateDiagram-v2
     offline --> starting: 重新注册
 ```
 
-See [lifecycle.md](lifecycle.md) for details.
+See [lifecycle.md](lifecycle.en.md) for details.
 
 ### 4.2 Client Query
 
@@ -187,11 +187,11 @@ flowchart LR
     A --> PG
 ```
 
-Atlas only stores projections, not authoritative data. See [sync.md](sync.md) for details.
+Atlas only stores projections, not authoritative data. See [sync.md](sync.en.md) for details.
 
 > The two event types `character.login` / `character.moved` are already defined and can be consumed, but the current version
 > **has no built-in trigger source** (the write endpoints only produce created / updated / deleted), see the
-> note in the event table of [sync.md](sync.md).
+> note in the event table of [sync.md](sync.en.md).
 
 ### 4.4 Status Semantics: Desired / Observed / Effective
 
@@ -205,8 +205,8 @@ As a control plane, Atlas distinguishes three kinds of status for each server, *
 
 Composite rule: **Desired takes precedence over Observed and they are never mutually exclusive**—`disabled` is never overwritten by the automatic state machine,
 and during `maintenance` / `draining` a heartbeat does not pull the status back to `online`. See
-[lifecycle.md §0](lifecycle.md#_0-状态三态-desired-observed-effective) for the complete definition, and
-[data-model.md](data-model.md) for the storage annotation.
+[lifecycle.md §0](lifecycle.en.md#_0-状态三态-desired-observed-effective) for the complete definition, and
+[data-model.md](data-model.en.md) for the storage annotation.
 
 ---
 
@@ -234,7 +234,7 @@ v0.1 adopts the strategy of **PostgreSQL as the source of truth, Redis as cache*
 - Runtime fields in Redis (`load` / `players` / `status`) are allowed to be briefly inconsistent, because they are themselves approximations.
 - Heartbeat timeout is computed by the health monitoring sweep (default every 10s), which computes the age of `last_seen_at` and writes back to PG's `status`; the TTL on the Redis key (120s) is only for key self-cleanup and does not participate in liveness determination.
 
-See [data-model.md](data-model.md) for detailed table structures and key design.
+See [data-model.md](data-model.en.md) for detailed table structures and key design.
 
 ---
 

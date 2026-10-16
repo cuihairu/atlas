@@ -72,7 +72,7 @@ REST error codes distinguish `SERVER_NOT_FOUND` / `CHARACTER_NOT_FOUND`; gRPC un
 
 ## API overview
 
-The six method groups map one-to-one to REST endpoints (see the [API reference](/api) for details):
+The six method groups map one-to-one to REST endpoints (see the [API reference](/api.en) for details):
 
 ```go
 // Registry

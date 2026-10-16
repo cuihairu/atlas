@@ -27,6 +27,8 @@ features:
     details: 运维声明、Atlas 执行——紧急故障一条 API 发公告，计划维护提前建窗口：start_at 到点自动进入维护、end_at 自动恢复，维护公告同时段自动挂出，客户端登录即见。
 ---
 
+[English](index.en.md) | [中文](index.md)
+
 ## 界面速览
 
 管理台（Dashboard）长什么样，一眼看全——自动轮播，也可用两侧箭头、下方圆点或键盘 ←/→ 翻看：

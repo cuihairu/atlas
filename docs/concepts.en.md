@@ -132,7 +132,7 @@ A physical or logical game server process; it is Atlas's **core registration uni
 | `version` | Game version, used for canary and version matching |
 | `platform` | Platform constraint, e.g. `android` / `ios` / `pc` |
 | `endpoint` | Client access address `{host, port}` |
-| `status` | Lifecycle status, see [lifecycle.md](lifecycle.md) |
+| `status` | Lifecycle status, see [lifecycle.md](lifecycle.en.md) |
 | `players` | Current online player count |
 | `capacity` | Maximum capacity |
 | `load` | Load factor, 0.0 ~ 1.0 |
@@ -158,7 +158,7 @@ Three hard rules:
 2. **Only public tags are exposed externally**: the discovery list/detail and recommendation endpoints filter uniformly (view layer only); internal tags (such as operational notes) exist only in the admin dashboard.
 3. **`no_register` is behavior, not just display**: registration control in `registry.CheckRegistration` governs both REST (`POST /v1/directory/characters` → 403 `REGISTRATION_FORBIDDEN`) and gRPC (PermissionDenied). The `maintenance` tag has the same weight as maintenance status: `ATLAS_MAINTENANCE_ENFORCE=block` (default) rejects and returns `SERVER_IN_MAINTENANCE`, `=warn` lets it through but attaches a `Warning: 299` alert header.
 
-A real walkthrough (apply "Hot + Registration Forbidden" → player-side badge → character creation 403 → remove and recover 201) is in [Scenario Tour §2](/scenarios#scenario-tags).
+A real walkthrough (apply "Hot + Registration Forbidden" → player-side badge → character creation 403 → remove and recover 201) is in [Scenario Tour §2](/scenarios.en#scenario-tags).
 
 ---
 
@@ -188,8 +188,8 @@ The form annotation of an account (test account/internal account/channel account
 
 **Control Plane boundary (2026-10-04 positioning ruling):** Atlas answers directory questions,
 not game runtime questions—the positioning statement and the NEVER-owns list are in
-[architecture.md](architecture.md#_1-总览), and the three-state model is in
-[lifecycle.md](lifecycle.md#_0-状态三态-desired-observed-effective).
+[architecture.md](architecture.en.md#_1-总览,) and the three-state model is in
+[lifecycle.md](lifecycle.en.md#_0-状态三态-desired-observed-effective.)
 
 ### The boundary of metadata: opaque metadata, not a business database
 
@@ -279,7 +279,7 @@ These two concepts are **time-interval operational objects**—both have an effe
 
 The two can be used independently or linked: when a window is created (`announce` defaults to true) a warning announcement covering the same period is automatically generated and associated via `announcement_id`. The automatic state machine never overrides operational decisions—a window only moves the servers it placed itself.
 
-Scenarios and drills (full curl flow, timed entry mechanism, boundary rules) are in [operations.md](operations.md); endpoint definitions are in [api.md](api.md).
+Scenarios and drills (full curl flow, timed entry mechanism, boundary rules) are in [operations.md](operations.md); endpoint definitions are in [api.md](api.en.md).
 
 ---
 
@@ -293,4 +293,4 @@ Scenarios and drills (full curl flow, timed entry mechanism, boundary rules) are
 | Recommended access | `/v1/routing/*` | Called by clients |
 | Lifecycle / announcement / maintenance window management | `/v1/admin/*` | Called by operational tools |
 
-See [api.md](api.md) for the complete definition.
+See [api.md](api.en.md) for the complete definition.

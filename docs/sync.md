@@ -1,3 +1,5 @@
+[English](sync.en.md) | [中文](sync.md)
+
 # 数据同步
 
 游戏角色数据如何进入 Atlas 的角色索引。

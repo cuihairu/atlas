@@ -18,7 +18,7 @@
 - [x] 公告与窗口批量编排 — 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）**已在管理台可视化**（2026-10-14 补）：运维页「批量窗口」入口，一份时段贴服务器列表铺多台，错峰间隔 + 仅预览开关，逐台成功/失败结果表（部分成功不静默）；逻辑抽 operationsBatch.tsx 可单测（19 vitest 绿）+ **迁移-窗口联动**已交付（2026-10-14）：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）；`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖）；migration/admin/httpapi 测试绿
 - [x] Kubernetes 部署样例 — 已交付（2026-10-14）：`deploy/k8s/` 目录含 namespace + configmap + postgres StatefulSet + redis Deployment + 迁移 Job + atlas Deployment/Service + README（边界：无 Helm chart、无 Operator，仅基础 Deployment/Service/Job manifest，符合 roadmap「明确不做」清单）
 - [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发；复核 2026-10-16：无多舰队独立迁移集群/独立扩缩容新需求（migration.md §9 口径未变），触发条件未成立，维持挂起
-- [ ] docs 双语扩展第二轮（用户令 2026-10-16，首轮范围仅限 docs/ 根目录）：①docs/ 子目录文档（当前仅 public/ 静态资源，无 md）；②api.en.md 全文译版（原中文 1019 行，首轮按「过长不硬翻」红线只做切换器 + 暂无译版标注）；③.en.md 页在 VitePress nav/sidebar 的入口（走 locales 或手工 nav）。首轮已配齐根目录 30 篇：30 个中文原页补行内切换器 [English]/[中文]，新增 29 篇真实英文译版（26 常规页 + index.en.md 首页 + 审计 2 篇）+ api.en.md 诚实标注桩
+- [ ] docs 双语扩展（用户令 2026-10-16，方案已改为 VitePress locales，本轮仅落配置）：①根目录剩 11 篇中文页待英文对照（benchmarks / config-center / ha / migration / operations / performance / security / security-audit / topology / 审计 2 篇）；②已落地 18 篇 .en.md 孪生译版 + api.en.md「暂无译版」标注桩——若 locales 定为最终方案，孪生文件须提升为根页并把中文原文挪入 docs/zh/，或整批删除，二选一待拍板；③docs/ 子目录文档（当前仅 public/ 静态资源，无 md）；④nav/sidebar 中文标签与 locales 布局对齐
 
 ## Discovery 读路径管线化
 
