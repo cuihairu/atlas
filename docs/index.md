@@ -48,15 +48,6 @@ if (typeof window !== 'undefined') {
     else if (href === '/' || href.startsWith('/en/')) localStorage.setItem(KEY, '/')
   }, true)
 }
-</script>
-
-
-
-## Interface at a Glance
-
-What the dashboard looks like, all in one view — it auto-rotates, and you can also browse with the arrows on both sides, the dots below, or the ←/→ keys:
-
-<script setup>
 const showcaseSlides = [
   { image: '/screenshots/overview.png', title: 'Overview', caption: 'Overview — online servers / players / capacity and status distribution', link: '/scenarios#scenario-overview' },
   { image: '/screenshots/servers.png', title: 'Server List', caption: 'Server List — status, badges (hot/new/full) and capacity watermark', link: '/scenarios#scenario-tags' },
