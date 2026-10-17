@@ -1,4 +1,3 @@
-[English](../security-audit.md) | [简体中文](security-audit.md)
 
 # 安全审计
 

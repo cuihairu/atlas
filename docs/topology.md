@@ -1,4 +1,3 @@
-[English](topology.md) | [简体中文](zh/topology.md)
 
 # Deployment Topology (v0.1.20)
 

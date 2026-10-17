@@ -1,4 +1,3 @@
-[English](api.md) | [简体中文](zh/api.md)
 
 # API Reference — English translation not yet available
 

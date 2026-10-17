@@ -1,4 +1,3 @@
-[English](apisix.md) | [简体中文](zh/apisix.md)
 
 # APISIX Integration Plugins
 

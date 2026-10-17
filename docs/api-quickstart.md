@@ -1,4 +1,3 @@
-[English](api-quickstart.md) | [简体中文](zh/api-quickstart.md)
 
 # Quick Start
 

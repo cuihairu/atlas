@@ -1,4 +1,3 @@
-[English](audit-doc-consistency.md) | [简体中文](zh/审计-文档一致性.md)
 
 # Documentation / Source Consistency Audit (2026-10-08, merged and closed out)
 

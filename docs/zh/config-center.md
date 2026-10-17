@@ -1,4 +1,3 @@
-[English](../config-center.md) | [简体中文](config-center.md)
 
 # 跨服配置中心
 

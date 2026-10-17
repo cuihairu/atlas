@@ -1,4 +1,3 @@
-[English](audit-source-review-round2.md) | [简体中文](zh/审计-源码二轮.md)
 
 # Source Code Review, Round Two (2026-10-09)
 

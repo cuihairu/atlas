@@ -1,4 +1,3 @@
-[English](../apisix.md) | [简体中文](apisix.md)
 
 # APISIX 接入插件
 

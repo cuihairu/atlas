@@ -1,4 +1,3 @@
-[English](../sdk-js.md) | [简体中文](sdk-js.md)
 
 # JavaScript/TypeScript SDK
 

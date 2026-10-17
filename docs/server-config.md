@@ -1,4 +1,3 @@
-[English](server-config.md) | [简体中文](zh/server-config.md)
 
 # Server Information Configuration
 

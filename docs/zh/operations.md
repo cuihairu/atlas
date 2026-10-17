@@ -1,4 +1,3 @@
-[English](../operations.md) | [简体中文](operations.md)
 
 # 公告与计划维护
 

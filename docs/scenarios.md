@@ -1,4 +1,3 @@
-[English](scenarios.md) | [简体中文](zh/scenarios.md)
 
 # Scenario Tour
 

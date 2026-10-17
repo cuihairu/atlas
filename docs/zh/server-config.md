@@ -1,4 +1,3 @@
-[English](../server-config.md) | [简体中文](server-config.md)
 
 # 服务器信息配置化
 

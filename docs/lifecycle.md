@@ -1,4 +1,3 @@
-[English](lifecycle.md) | [简体中文](zh/lifecycle.md)
 
 # Server Lifecycle
 

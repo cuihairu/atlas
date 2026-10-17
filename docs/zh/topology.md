@@ -1,4 +1,3 @@
-[English](../topology.md) | [简体中文](topology.md)
 
 # 部署拓扑（v0.1.20）
 

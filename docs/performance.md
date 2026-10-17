@@ -1,4 +1,3 @@
-[English](performance.md) | [简体中文](zh/performance.md)
 
 # Performance Design
 

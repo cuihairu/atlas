@@ -1,4 +1,3 @@
-[English](../data-model.md) | [简体中文](data-model.md)
 
 # 数据模型
 

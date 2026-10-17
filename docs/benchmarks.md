@@ -1,4 +1,3 @@
-[English](benchmarks.md) | [简体中文](zh/benchmarks.md)
 
 # Benchmarks
 

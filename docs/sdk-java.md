@@ -1,4 +1,3 @@
-[English](sdk-java.md) | [简体中文](zh/sdk-java.md)
 
 # Java SDK
 

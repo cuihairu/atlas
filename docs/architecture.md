@@ -1,4 +1,3 @@
-[English](architecture.md) | [简体中文](zh/architecture.md)
 
 <p align="center">
   <img src="../static/logo.svg" alt="Atlas" width="64" height="64" />

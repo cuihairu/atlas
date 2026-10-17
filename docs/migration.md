@@ -1,4 +1,3 @@
-[English](migration.md) | [简体中文](zh/migration.md)
 
 # Merge / Transfer / Migration
 

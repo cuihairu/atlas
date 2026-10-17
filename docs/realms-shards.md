@@ -1,4 +1,3 @@
-[English](realms-shards.md) | [简体中文](zh/realms-shards.md)
 
 # Realm and Shard
 

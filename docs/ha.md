@@ -1,4 +1,3 @@
-[English](ha.md) | [简体中文](zh/ha.md)
 
 # High Availability (v0.1.19)
 

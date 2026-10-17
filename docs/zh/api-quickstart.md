@@ -1,4 +1,3 @@
-[English](../api-quickstart.md) | [简体中文](api-quickstart.md)
 
 # 快速上手
 

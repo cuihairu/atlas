@@ -1,4 +1,3 @@
-[English](../security.md) | [简体中文](security.md)
 
 # 安全
 

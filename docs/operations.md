@@ -1,4 +1,3 @@
-[English](operations.md) | [简体中文](zh/operations.md)
 
 # Announcements and Planned Maintenance
 

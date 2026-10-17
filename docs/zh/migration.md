@@ -1,4 +1,3 @@
-[English](../migration.md) | [简体中文](migration.md)
 
 # 合服 / 转服 / 迁服
 

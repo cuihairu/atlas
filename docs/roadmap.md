@@ -1,4 +1,3 @@
-[English](roadmap.md) | [简体中文](zh/roadmap.md)
 
 # Roadmap
 

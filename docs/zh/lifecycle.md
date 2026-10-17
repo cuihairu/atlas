@@ -1,4 +1,3 @@
-[English](../lifecycle.md) | [简体中文](lifecycle.md)
 
 # 服务器生命周期
 

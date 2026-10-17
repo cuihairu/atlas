@@ -1,4 +1,3 @@
-[English](../sdk-csharp.md) | [简体中文](sdk-csharp.md)
 
 # C# SDK
 

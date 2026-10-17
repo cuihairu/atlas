@@ -27,7 +27,6 @@ features:
     details: Operations declare, Atlas executes — one API call announces an emergency failure, and planned maintenance creates a window ahead of time — at start_at it automatically enters maintenance, at end_at it automatically recovers, the maintenance announcement is posted automatically for the same period, and clients see it as soon as they log in.
 ---
 
-[English](index.md) | [简体中文](zh/index.md)
 
 ## Interface at a Glance
 

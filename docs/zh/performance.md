@@ -1,4 +1,3 @@
-[English](../performance.md) | [简体中文](performance.md)
 
 # 性能设计
 

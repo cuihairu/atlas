@@ -1,4 +1,3 @@
-[English](concepts.md) | [简体中文](zh/concepts.md)
 
 # Conceptual Model
 

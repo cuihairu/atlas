@@ -1,4 +1,3 @@
-[English](sdk-go.md) | [简体中文](zh/sdk-go.md)
 
 # Go SDK
 

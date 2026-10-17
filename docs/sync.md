@@ -1,4 +1,3 @@
-[English](sync.md) | [简体中文](zh/sync.md)
 
 # Data Sync
 

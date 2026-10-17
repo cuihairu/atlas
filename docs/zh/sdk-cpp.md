@@ -1,4 +1,3 @@
-[English](../sdk-cpp.md) | [简体中文](sdk-cpp.md)
 
 # C++ SDK
 

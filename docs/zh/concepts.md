@@ -1,4 +1,3 @@
-[English](../concepts.md) | [简体中文](concepts.md)
 
 # 概念模型
 

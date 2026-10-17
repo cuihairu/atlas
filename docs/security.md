@@ -1,4 +1,3 @@
-[English](security.md) | [简体中文](zh/security.md)
 
 # Security
 

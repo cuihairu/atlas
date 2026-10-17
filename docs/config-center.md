@@ -1,4 +1,3 @@
-[English](config-center.md) | [简体中文](zh/config-center.md)
 
 # Cross-Server Config Center
 

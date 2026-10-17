@@ -1,4 +1,3 @@
-[English](sdk-python.md) | [简体中文](zh/sdk-python.md)
 
 # Python SDK
 

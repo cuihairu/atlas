@@ -1,4 +1,3 @@
-[English](../sync.md) | [简体中文](sync.md)
 
 # 数据同步
 
