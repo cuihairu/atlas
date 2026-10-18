@@ -442,6 +442,28 @@ func main() {
 		}
 	}
 
+	// Admin TLS / mTLS: mirrors the Registry listener (docs/security.md
+	// §1) — same tlsutil material checks and fail-fast, unset = plaintext
+	// (network isolation assumed), the historical behavior.
+	adminTLSOpts := tlsutil.Options{
+		CertFile:     cfg.AdminTLSCert,
+		KeyFile:      cfg.AdminTLSKey,
+		ClientCAFile: cfg.AdminTLSClientCA,
+	}
+	var adminTLS *tls.Config
+	if adminTLSOpts.Enabled() {
+		adminTLS, err = tlsutil.ServerConfig(adminTLSOpts)
+		if err != nil {
+			logger.Error("invalid admin TLS config", "error", err)
+			os.Exit(1)
+		}
+		if cfg.AdminTLSClientCA != "" {
+			logger.Info("admin mTLS enabled (client certificates required)")
+		} else {
+			logger.Info("admin TLS enabled")
+		}
+	}
+
 	// Admin API audit log (TODO v0.1.17).
 	var auditLog *httpapi.AuditLog
 	if cfg.AuditEnabled {
@@ -668,13 +690,10 @@ func main() {
 			scheme = "tls"
 		}
 		logger.Info("registry API listening", "addr", cfg.RegistryAddr, "scheme", scheme)
-		regLn, err := net.Listen("tcp", cfg.RegistryAddr)
+		regLn, err := newListener(cfg.RegistryAddr, regTLS)
 		if err != nil {
 			logger.Error("registry API listen failed", "error", err)
 			os.Exit(1)
-		}
-		if regTLS != nil {
-			regLn = tls.NewListener(regLn, regTLS)
 		}
 		if err := regSrv.Serve(regLn); err != nil && err != http.ErrServerClosed {
 			logger.Error("registry API error", "error", err)
@@ -682,8 +701,17 @@ func main() {
 		}
 	}()
 	go func() {
-		logger.Info("admin API listening", "addr", cfg.AdminAddr)
-		if err := adminSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		scheme := "http"
+		if adminTLS != nil {
+			scheme = "tls"
+		}
+		logger.Info("admin API listening", "addr", cfg.AdminAddr, "scheme", scheme)
+		adminLn, err := newListener(cfg.AdminAddr, adminTLS)
+		if err != nil {
+			logger.Error("admin API listen failed", "error", err)
+			os.Exit(1)
+		}
+		if err := adminSrv.Serve(adminLn); err != nil && err != http.ErrServerClosed {
 			logger.Error("admin API error", "error", err)
 			os.Exit(1)
 		}
@@ -750,6 +778,21 @@ func main() {
 	}
 
 	logger.Info("Atlas stopped")
+}
+
+// newListener opens the TCP socket for one Atlas listener and wraps it in a
+// TLS terminator when that port has TLS material configured (docs/security.md
+// §1); a nil config keeps the historical plaintext behavior. Registry and
+// Admin share this so the two HTTP ports cannot drift apart again.
+func newListener(addr string, tlsCfg *tls.Config) (net.Listener, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
+		ln = tls.NewListener(ln, tlsCfg)
+	}
+	return ln, nil
 }
 
 // applyPGPoolOptions layers ATLAS_PG_POOL_* tuning on top of the DSN

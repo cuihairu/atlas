@@ -144,6 +144,9 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 		"ATLAS_GRPC_TLS_CERT":         "/g/server.pem",
 		"ATLAS_GRPC_TLS_KEY":          "/g/server.key",
 		"ATLAS_GRPC_TLS_CLIENT_CA":    "/g/ca.pem",
+		"ATLAS_ADMIN_TLS_CERT":        "/a/server.pem",
+		"ATLAS_ADMIN_TLS_KEY":         "/a/server.key",
+		"ATLAS_ADMIN_TLS_CLIENT_CA":   "/a/ca.pem",
 		"ATLAS_ADMIN_ROLES":           "k1:viewer,k2:operator",
 		"ATLAS_AUDIT_ENABLED":         "0",
 		"ATLAS_RATE_LIMITS":           "/v1/admin/=5:10",
@@ -201,6 +204,9 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 	}
 	if cfg.GRPCTLSCert != "/g/server.pem" || cfg.GRPCTLSKey != "/g/server.key" || cfg.GRPCTLSClientCA != "/g/ca.pem" {
 		t.Errorf("grpc TLS = %q %q %q", cfg.GRPCTLSCert, cfg.GRPCTLSKey, cfg.GRPCTLSClientCA)
+	}
+	if cfg.AdminTLSCert != "/a/server.pem" || cfg.AdminTLSKey != "/a/server.key" || cfg.AdminTLSClientCA != "/a/ca.pem" {
+		t.Errorf("admin TLS = %q %q %q", cfg.AdminTLSCert, cfg.AdminTLSKey, cfg.AdminTLSClientCA)
 	}
 	if cfg.RateLimits != "/v1/admin/=5:10" || cfg.RateLimitDefault != "100:200" {
 		t.Errorf("rate limits = %q %q", cfg.RateLimits, cfg.RateLimitDefault)

@@ -20,6 +20,7 @@
       - [x] 生产形状压测/长稳观测（高）：现有基准排除网络、序列化和存储 I/O（`docs/zh/benchmarks.md:4-8,72-79`）。建议 P2：先定代表性部署与负载模型，再测端到端 p95/p99、GC、故障恢复和长稳资源趋势。
       - [x] 验证：`go test ./...` 通过；Dashboard `npm test` 26/26、`npm run build` 通过；Docs `npm run build` 完成（有已知 SSR `getComputedStyle` 日志，不影响退出状态）。
       全部测试通过后 commit + push；英文简短 commit；不 force push、不 bump 版本号。
+- [x] Admin 监听口 TLS（来源：2026-10-18 审核表三 P0，暴露非可信网络前）— 已交付（2026-10-19）：`ATLAS_ADMIN_TLS_CERT` / `ATLAS_ADMIN_TLS_KEY` / `ATLAS_ADMIN_TLS_CLIENT_CA`（config 三字段，默认空 = 明文，既有网络隔离部署零变化）；Admin HTTP 监听镜像 Registry 口同一套 tlsutil 材料校验与 fail-fast，配客户端 CA 升级 mTLS（dashboard / 运维工具须出示客户端证书）；Registry/Admin 两口的 TLS 包裹收敛为同一 `newListener`，杜绝两口漂移；测试：config env 映射 pin + `newListener` 明文 / TLS 握手 / mTLS 拒绝未持证客户端回归（覆盖 TLS 1.3 客户端握手先返回、读写时才见拒绝的已知行为）；docs/security.md §1 中英改为三监听口。
 - [ ] 文档时效性清理（2026-10-18 用户令：很多文档已过时）：
       在本轮审核整改完成之后执行，避免与整改冲突。
       1) 通读 README / docs，找出与当前代码不符的描述（能力、配置项、命令、路径、版本）

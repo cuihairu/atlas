@@ -1,6 +1,18 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"fmt"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -175,4 +187,213 @@ func TestApplyPGPoolOptions(t *testing.T) {
 			t.Errorf("HealthCheckPeriod = %v", pc.HealthCheckPeriod)
 		}
 	})
+}
+
+// genCert signs a self-signed certificate (or CA when isCA) and writes
+// cert/key PEM files into dir under the given prefix, returning the file
+// paths. Mirrors the generator used by internal/tlsutil tests.
+func genCert(t *testing.T, dir, prefix string, isCA bool, parent *tls.Certificate) *tls.Certificate {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: prefix},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  isCA,
+		DNSNames:              []string{"localhost"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+	}
+	if isCA {
+		tmpl.KeyUsage |= x509.KeyUsageCertSign
+	}
+
+	var parentCert *x509.Certificate
+	var parentKey *ecdsa.PrivateKey
+	if parent != nil {
+		parentCert, err = x509.ParseCertificate(parent.Leaf.Raw)
+		if err != nil {
+			t.Fatalf("parse parent: %v", err)
+		}
+		parentKey = parent.PrivateKey.(*ecdsa.PrivateKey)
+	} else {
+		parentCert, parentKey = tmpl, key
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parentCert, &key.PublicKey, parentKey)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parse leaf: %v", err)
+	}
+	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+
+	keyPEM, _ := x509.MarshalECPrivateKey(key)
+	writePEMFile(t, filepath.Join(dir, prefix+".crt.pem"), "CERTIFICATE", der)
+	writePEMFile(t, filepath.Join(dir, prefix+".key.pem"), "EC PRIVATE KEY", keyPEM)
+	if isCA {
+		writePEMFile(t, filepath.Join(dir, prefix+".ca-bundle.pem"), "CERTIFICATE", der)
+	}
+	return cert
+}
+
+func writePEMFile(t *testing.T, path, blockType string, der []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("create %s: %v", path, err)
+	}
+	defer f.Close()
+	if err := pem.Encode(f, &pem.Block{Type: blockType, Bytes: der}); err != nil {
+		t.Fatalf("encode %s: %v", path, err)
+	}
+}
+
+func TestNewListener_PlaintextWhenUnconfigured(t *testing.T) {
+	ln, err := newListener("127.0.0.1:0", nil)
+	if err != nil {
+		t.Fatalf("newListener: %v", err)
+	}
+	defer ln.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		accepted <- c
+	}()
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	peer := <-accepted
+	defer peer.Close()
+	if _, ok := peer.(*tls.Conn); ok {
+		t.Errorf("unconfigured port must accept plaintext TCP, not TLS")
+	}
+}
+
+func TestNewListener_TLSHandshake(t *testing.T) {
+	dir := t.TempDir()
+	cert := genCert(t, dir, "server", false, nil)
+	ln, err := newListener("127.0.0.1:0", &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{*cert},
+	})
+	if err != nil {
+		t.Fatalf("newListener: %v", err)
+	}
+	defer ln.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer conn.Close()
+		tlsConn, ok := conn.(*tls.Conn)
+		if !ok {
+			serverErr <- fmt.Errorf("accepted %T, want *tls.Conn", conn)
+			return
+		}
+		serverErr <- tlsConn.Handshake()
+	}()
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(cert.Leaf)
+	client, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    rootPool,
+		ServerName: "localhost",
+	})
+	if err != nil {
+		t.Fatalf("tls dial: %v", err)
+	}
+	defer client.Close()
+	if err := client.Handshake(); err != nil {
+		t.Fatalf("client handshake: %v", err)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("server handshake: %v", err)
+	}
+}
+
+func TestNewListener_MTLSRejectsClientWithoutCert(t *testing.T) {
+	dir := t.TempDir()
+	ca := genCert(t, dir, "ca", true, nil)
+	caPEM, err := os.ReadFile(filepath.Join(dir, "ca.ca-bundle.pem"))
+	if err != nil {
+		t.Fatalf("read ca bundle: %v", err)
+	}
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caPEM) {
+		t.Fatalf("no valid certs in ca bundle")
+	}
+	serverCert := genCert(t, dir, "server", false, ca)
+	clientCert := genCert(t, dir, "client", false, ca)
+
+	ln, err := newListener("127.0.0.1:0", &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{*serverCert},
+		ClientCAs:    caPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+	})
+	if err != nil {
+		t.Fatalf("newListener: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				conn.Read(make([]byte, 1)) // drives the handshake
+				conn.Close()
+			}()
+		}
+	}()
+
+	// Without a client certificate the handshake must fail. Over TLS 1.3
+	// the client Handshake can return before the server's alert arrives,
+	// so the rejection is observed on the first read/write.
+	if conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+		RootCAs:    caPool,
+		ServerName: "localhost",
+	}); err == nil {
+		conn.Write([]byte("x"))
+		if _, rerr := conn.Read(make([]byte, 1)); rerr == nil {
+			conn.Close()
+			t.Fatalf("expected rejection without client certificate")
+		}
+		conn.Close()
+	}
+
+	// With a certificate signed by the CA the handshake must succeed.
+	conn, err := tls.Dial("tcp", ln.Addr().String(), &tls.Config{
+		RootCAs:      caPool,
+		ServerName:   "localhost",
+		Certificates: []tls.Certificate{*clientCert},
+	})
+	if err != nil {
+		t.Fatalf("tls dial with client cert: %v", err)
+	}
+	conn.Close()
 }

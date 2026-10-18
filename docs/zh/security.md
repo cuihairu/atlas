@@ -3,9 +3,9 @@
 
 v0.1.17 起 Atlas 内建四层防护：Registry mTLS、Admin RBAC、操作审计与限流。mTLS / RBAC / 限流为**可选启用**（未配置即对应防护关闭）；审计默认**开启**（`ATLAS_AUDIT_ENABLED=0` 关闭）。
 
-## 1. TLS / mTLS（Registry :8081 与 gRPC :9090）
+## 1. TLS / mTLS（Registry :8081、gRPC :9090、Admin :8083）
 
-两个面向内网的服务间监听口——REST 注册口与 gRPC 五服务口——共用同一套 TLS 语义，各自独立配置：配置证书后开启 TLS；再配置客户端 CA 即升级为**双向 TLS**——客户端必须出示受信任 CA 签发的证书。
+三个面向内网的监听口——REST 注册口、gRPC 五服务口与 Admin HTTP 口（管理台 + 运维工具）——共用同一套 TLS 语义，各自独立配置：配置证书后开启 TLS；再配置客户端 CA 即升级为**双向 TLS**——客户端必须出示受信任 CA 签发的证书。
 
 ```bash
 # Registry 口
@@ -17,12 +17,17 @@ ATLAS_REGISTRY_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后�
 ATLAS_GRPC_TLS_CERT=/etc/atlas/server.crt.pem
 ATLAS_GRPC_TLS_KEY=/etc/atlas/server.key.pem
 ATLAS_GRPC_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后为 mTLS
+
+# Admin 口
+ATLAS_ADMIN_TLS_CERT=/etc/atlas/server.crt.pem
+ATLAS_ADMIN_TLS_KEY=/etc/atlas/server.key.pem
+ATLAS_ADMIN_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # 可选：配置后为 mTLS
 ```
 
 - 仅配 cert/key：服务器侧 TLS（客户端可校验服务端身份）。
 - 追加 `*_CLIENT_CA`：`RequireAndVerifyClientCert`，未持证书的连接在握手层直接失败。
-- 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。两个口可只开其一。
-- 客户端对接：Go SDK gRPC 传输以 `GRPCTLS: true` + `GRPCTLSCACert`（PEM CA 束）开启；REST 传输照常走 `https://` 基地址。其余语言 SDK 目前仅提供 REST 传输（gRPC 传输为 Go SDK 独有），以 `https://` 基地址接 TLS 即可，不涉及 gRPC 口。
+- 最低 TLS 1.2。证书/CA 材料无效时进程启动即报错退出（fail fast）。任一口可单独开启；Admin 口默认明文（保持既有依赖网络隔离的部署不变）。
+- 客户端对接：Go SDK gRPC 传输以 `GRPCTLS: true` + `GRPCTLSCACert`（PEM CA 束）开启；REST 传输照常走 `https://` 基地址。其余语言 SDK 目前仅提供 REST 传输（gRPC 传输为 Go SDK 独有），以 `https://` 基地址接 TLS 即可，不涉及 gRPC 口。Admin 口对管理台与运维工具同样是 `https://` 基地址；配置了 `ATLAS_ADMIN_TLS_CLIENT_CA` 时，工具的 HTTP 客户端还须出示其信任的客户端证书。
 
 ## 2. Admin RBAC
 

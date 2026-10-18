@@ -6,13 +6,13 @@ RBAC, operation audit and rate limiting. mTLS / RBAC / rate limiting are **opt-i
 (leaving them unconfigured turns the corresponding protection off); auditing is **on
 by default** (disable it with `ATLAS_AUDIT_ENABLED=0`).
 
-## 1. TLS / mTLS (Registry :8081 and gRPC :9090)
+## 1. TLS / mTLS (Registry :8081, gRPC :9090, Admin :8083)
 
-The two internal service-to-service listeners — the REST registration port and the
-five-service gRPC port — share the same TLS semantics but are configured
-independently: supplying a certificate enables TLS; additionally supplying a client CA
-upgrades it to **mutual TLS**, meaning clients must present a certificate issued by a
-trusted CA.
+The three internal listeners — the REST registration port, the five-service gRPC
+port and the Admin HTTP port (dashboard + operator tools) — share the same TLS
+semantics but are configured independently: supplying a certificate enables TLS;
+additionally supplying a client CA upgrades it to **mutual TLS**, meaning clients
+must present a certificate issued by a trusted CA.
 
 ```bash
 # Registry port
@@ -24,18 +24,26 @@ ATLAS_REGISTRY_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # optional: setting i
 ATLAS_GRPC_TLS_CERT=/etc/atlas/server.crt.pem
 ATLAS_GRPC_TLS_KEY=/etc/atlas/server.key.pem
 ATLAS_GRPC_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # optional: setting it enables mTLS
+
+# Admin port
+ATLAS_ADMIN_TLS_CERT=/etc/atlas/server.crt.pem
+ATLAS_ADMIN_TLS_KEY=/etc/atlas/server.key.pem
+ATLAS_ADMIN_TLS_CLIENT_CA=/etc/atlas/client-ca-bundle.pem   # optional: setting it enables mTLS
 ```
 
 - Cert/key only: server-side TLS (the client can verify the server's identity).
 - Adding `*_CLIENT_CA`: `RequireAndVerifyClientCert`, so connections without a
   certificate fail during the handshake.
 - TLS 1.2 minimum. Invalid certificate/CA material makes the process fail at startup
-  (fail fast). Either port can be enabled on its own.
+  (fail fast). Any port can be enabled on its own; the Admin port defaults to plaintext,
+  so operator tools that already assume network isolation keep working unchanged.
 - Client integration: the Go SDK's gRPC transport turns this on with `GRPCTLS: true` +
   `GRPCTLSCACert` (a PEM CA bundle); the REST transport just uses the `https://` base
   address as usual. The other language SDKs currently ship the REST transport only
   (gRPC is Go-SDK-only), so pointing them at an `https://` base address covers TLS
-  without involving the gRPC port.
+  without involving the gRPC port. The Admin port is an `https://` base address to the
+  dashboard and any operator tooling; when `ATLAS_ADMIN_TLS_CLIENT_CA` is set the tool's
+  HTTP client must additionally present a client certificate it trusts.
 
 ## 2. Admin RBAC
 
