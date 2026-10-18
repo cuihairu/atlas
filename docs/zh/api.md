@@ -520,9 +520,9 @@ Admin 操作审计流（`ATLAS_AUDIT_ENABLED`，默认开）。**Query**：`?lim
 }
 ```
 
-- **body**：仅变更类方法（POST/PUT/PATCH/DELETE）带，作为变更记录；截断到 `ATLAS_AUDIT_MAX_BODY`（缺省 4096 字节），非法 JSON 包装为字符串。
+- **body**：仅变更类方法（POST/PUT/PATCH/DELETE）带，作为变更记录；截断到固定 4096 字节（启动时写死，不可配），非法 JSON 包装为字符串。
 - **actor**：`role:key指纹`，mTLS 为 `role:key指纹:证书指纹`，未配 Key 的开发模式为 `role:anonymous`。
-- 读的是**内存环**（`ATLAS_AUDIT_MAX`，缺省 1000 条），重启即丢；REST 与 gRPC 写操作汇流进同一个环，持久化归档以结构化日志为准。语义与链序见 [security.md](security.md#审计)。
+- 读的是**内存环**（固定 1000 条，启动时写死，不可配），重启即丢；REST 与 gRPC 写操作汇流进同一个环，持久化归档以结构化日志为准。语义与链序见 [security.md](security.md#审计)。
 
 ### GET /v1/admin/stats
 
