@@ -21,10 +21,4 @@
       - [x] 验证：`go test ./...` 通过；Dashboard `npm test` 26/26、`npm run build` 通过；Docs `npm run build` 完成（有已知 SSR `getComputedStyle` 日志，不影响退出状态）。
       全部测试通过后 commit + push；英文简短 commit；不 force push、不 bump 版本号。
 - [x] Admin 监听口 TLS（来源：2026-10-18 审核表三 P0，暴露非可信网络前）— 已交付（2026-10-19）：`ATLAS_ADMIN_TLS_CERT` / `ATLAS_ADMIN_TLS_KEY` / `ATLAS_ADMIN_TLS_CLIENT_CA`（config 三字段，默认空 = 明文，既有网络隔离部署零变化）；Admin HTTP 监听镜像 Registry 口同一套 tlsutil 材料校验与 fail-fast，配客户端 CA 升级 mTLS（dashboard / 运维工具须出示客户端证书）；Registry/Admin 两口的 TLS 包裹收敛为同一 `newListener`，杜绝两口漂移；测试：config env 映射 pin + `newListener` 明文 / TLS 握手 / mTLS 拒绝未持证客户端回归（覆盖 TLS 1.3 客户端握手先返回、读写时才见拒绝的已知行为）；docs/security.md §1 中英改为三监听口。
-- [ ] 文档时效性清理（2026-10-18 用户令：很多文档已过时）：
-      在本轮审核整改完成之后执行，避免与整改冲突。
-      1) 通读 README / docs，找出与当前代码不符的描述（能力、配置项、命令、路径、版本）
-      2) 以代码为准修正文档；**禁止为对齐文档去改业务代码**
-      3) 已废弃但仍留在文档里的功能，明确标注「已移除」或删除，不要留成"看起来还能用"
-      4) 命令行示例逐条跑一遍，跑不通的改掉或删掉
-      5) 构建通过后 commit+push，回报改动文件清单
+- [x] 文档时效性清理（2026-10-18 用户令：很多文档已过时）— 已执行（2026-10-19）：全集 diff 四维比对（env 变量 / HTTP 路由 / 路径引用 / release 口径）+ 命令示例实机跑；实锤 1 条并修复（zh/api.md 虚构配置项 `ATLAS_AUDIT_MAX`/`ATLAS_AUDIT_MAX_BODY` → 改为固定值口径，audit.go 实为写死 1000/4096）；命令实测：make build ✅、in-memory 起服 + README curl 三连 + admin stats ✅（本机 8080 被其他项目占，换 127.0.0.1:28080 段）、`go run ./examples/go` 注册+路由推荐 ✅、根级 compose 四 service 与 README 口径一致 ✅（完整起栈受本机端口占用限制，环境问题非文档问题）、`docs && npm run build` EXIT=0；确认无漂移排除项与观察项落档 `docs/zh/审计-文档一致性.md` 2026-10-19 轮（Makefile VERSION=v0.1.1 系版本红线，待用户定版本时处理）— commit 96e449d
