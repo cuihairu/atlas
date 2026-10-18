@@ -179,6 +179,29 @@ event ID derived from partition@offset (`TestHandlerFailureRedeliversWithStableI
 `Directory.ApplyEvent` upsert is idempotent (§6). Delivery limits / backoff / dead-letter
 retention and replay remain future design work.
 
+**Delivery limits and dead letters (design draft, 2026-10-19, not implemented)** — the gaps measured above
+need a bounded-failure design before bus-failure triage stops being "watch the logs". Shape: one common
+delivery cap, adapter-native dead letters, one naming convention (`<topic>.dl` everywhere). Mechanism per
+adapter, grounded in the current code:
+
+| Adapter | Proposed mechanism | Restart safety |
+| --- | --- | --- |
+| redis (cap exists: 5, log-only today) | On exhaustion, `XADD` a copy to `<topic>.dl` (payload + failure reason + source ID) before the final `XACK`; the source entry already stays in the untrimmed stream, so the `.dl` copy is what makes it *visible* | ✅ count lives in the PEL |
+| kafka | Track attempts per event ID (`partition@offset` is stable across redeliveries); at the threshold, republish to `<topic>.dl` and commit the original. segmentio/kafka-go has no server-side counter, so the counter is in-process | ⚠️ restart resets the count — capped per process lifetime, but a dead-lettered message is committed, never re-looped |
+| nats | Bind the durable consumer with an explicit `ConsumerConfig{MaxDeliver, AckWait}` instead of server defaults, and set `RePublish` so the *server* copies exhausted messages to `<subject>.dl` | ✅ server-side |
+| rabbitmq | `Nack(requeue)` never increments the broker's `x-death` counter, so carry an own `x-atlas-retry` header: on failure republish with header+1 and ack the original (keeps the 5s backoff); at the threshold, route via a `atlas.dlx` dead-letter exchange to the `<topic>.dl` queue instead of requeueing | ✅ the header travels with the message |
+
+Decision points (implementation waits on these): (1) default-on or opt-in — redis deployments already live
+with the cap at 5, but flipping kafka/nats/rabbitmq from unbounded to bounded is a delivery-semantics change,
+and the repo already has an unsafe-default startup-warning precedent for exactly this shape; (2) the threshold
+value and backoff curve (flat intervals as today, or exponential via NATS's native `BackOff` schedule);
+(3) dead-letter retention — redis `.dl` streams inherit the main stream's untrimmed behavior, kafka needs a
+topic retention policy, rabbitmq a queue length; (4) the replay entry point — a small CLI tool (`cmd/dlq`)
+versus an admin endpoint; replay is safe either way because `Directory.ApplyEvent` is idempotent (§6).
+Monitoring (§9) lands as `atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}`
+— once a cap exists, an alert on the dead-letter counter is the operational contract that replaces
+"the wedge is the alert".
+
 Therefore the consumer side must be idempotent — the upsert in `Directory.ApplyEvent` is
 naturally idempotent (see §6).
 

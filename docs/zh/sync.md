@@ -153,6 +153,17 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 
 **投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限 / 退避 / 死信保留与重放为后续设计项。
 
+**投递上限与死信（设计稿，2026-10-19，未实现）**——上面实测的缺口需要一套有界失败设计，总线故障排查才能不再等于「盯日志」。形态：一个统一投递上限 + 各适配器原生死信机制 + 统一命名约定（一律 `<topic>.dl`）。逐适配器机制（基于当前代码）：
+
+| 适配器 | 拟用机制 | 重启安全性 |
+| --- | --- | --- |
+| redis（上限已有：5 次，今日仅记日志） | 耗尽时先 `XADD` 一份副本进 `<topic>.dl`（载荷 + 失败原因 + 源 ID）再做最终 `XACK`；源条目本就留在未裁剪的流里，`.dl` 副本解决的是**可见性** | ✅ 计数在 PEL 里 |
+| kafka | 按事件 ID（`partition@offset`，跨重投稳定）记尝试次数，到阈值时重发布到 `<topic>.dl` 并提交原 offset。segmentio/kafka-go 无服务端计数器，计数只能进程内 | ⚠️ 重启清零——上限按进程生命周期计，但死信过的消息已提交、不会再循环 |
+| nats | 不再用服务端默认值，改为显式 `ConsumerConfig{MaxDeliver, AckWait}` 绑定 durable consumer，并设 `RePublish` 让**服务端**把耗尽的消息复制到 `<subject>.dl` | ✅ 服务端 |
+| rabbitmq | `Nack(requeue)` 不会递增 broker 的 `x-death` 计数，改为自带 `x-atlas-retry` 头：失败时带头 +1 重发布并 Ack 原消息（沿用 5s 退避）；到阈值经 `atlas.dlx` 死信交换机进 `<topic>.dl` 队列，不再 requeue | ✅ 头随消息走 |
+
+待拍板点（实现等这些落定）：（1）默认开启还是 opt-in——redis 部署已在上限 5 下运行，但把 kafka/nats/rabbitmq 从无上限改为有上限是投递语义变更，而仓里对这种形状已有「不安全默认启动告警」先例；（2）阈值数值与退避曲线（维持今日的平退避，还是走 NATS 原生 `BackOff` 调度做指数）；（3）死信保留——redis `.dl` 流继承主流的未裁剪行为，kafka 需定 topic 保留策略，rabbitmq 需定队列长度；（4）重放入口——小 CLI 工具（`cmd/dlq`）还是 Admin 端点；两边都安全，`Directory.ApplyEvent` 幂等（§6）。监控（§9）落 `atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}`——上限存在后，死信计数器上的告警就是运维契约，取代「堵塞本身就是告警」。
+
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
 接入只需改一个环境变量，例如：
