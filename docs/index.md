@@ -94,6 +94,6 @@ Atlas sits between game servers and player clients, and three kinds of people ea
 | Realm / Shard | Three-tier operational records: realm → shard → instance, clients pull lists by dimension | [Realm and Shard](/realms-shards) |
 | Announcements and planned maintenance | Announcements become visible automatically within their effective interval; maintenance windows enter maintenance on time and recover automatically at the end | [Announcements and Planned Maintenance](/operations) |
 | Health alerting | When the lost-contact / dead ratio crosses a threshold, latch and fire a webhook + Warn log, without spamming | [Health Alerting](/lifecycle#_4-1-health-alerting-delivered-in-v0-1-15) |
-| Server merge / transfer / migration | Atomic character index migration: copy first, switch next, clean up last, rollback on failure | [Migration](/migration) |
+| Server merge / transfer / migration | Atlas records migration status; game servers move character data and callers update directory entries (no atomic cutover or data rollback) | [Migration](/migration) |
 | Gateway and authentication | Two APISIX plugins: player token validation + identity injection, rate limiting by endpoint group | [APISIX Integration Plugins](/apisix) |
 | High availability | Atlas replicas are stateless, PG / Redis backends are shared, HAProxy fans in heartbeats | [High Availability](/ha) |

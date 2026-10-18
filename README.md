@@ -117,10 +117,11 @@ The data layer pairs **PostgreSQL + Redis**: Redis carries high-frequency runtim
 
 ## Quick Start
 
+> **English** | [中文](README.zh.md)
+
 ```bash
 # Run with in-memory store (no dependencies)
 
-> **English** | [中文](README.zh.md)
 make run
 
 # Run tests

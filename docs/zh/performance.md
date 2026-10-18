@@ -26,7 +26,7 @@ pipe.HSet(ctx, key, fields)      // status/players/load/last_seen
 pipe.Expire(ctx, key, runtimeTTL) // 120s —— 失联自动消失,无清理任务
 ```
 
-一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核约 20 万 QPS（`BenchmarkHeartbeat` ~5.1µs/op；64 台并发扇入 `BenchmarkHeartbeatParallel` ~4.4µs/op，攒批吸收竞争后基本持平）——1 万 QPS 的真实负载用一个核的 5%。成本主要来自 v0.2 指令队列的逐条回执（改前直锁路径 129ns，对照见 §8.5），换来同实体严格 FIFO、幂等防重与可回放。瓶颈从来不在心跳本身，而在 Redis 与网络。
+一次网络往返写完全部字段；TTL 只清理过期的 runtime 键，不代表服务器状态已下线。服务器状态由后台健康巡检依据 `last_seen_at` 年龄推进为 `suspect/offline`（见 [生命周期](/zh/lifecycle)），因此巡检仍是判活所必需。基准：单核约 20 万 QPS（`BenchmarkHeartbeat` ~5.1µs/op；64 台并发扇入 `BenchmarkHeartbeatParallel` ~4.4µs/op，攒批吸收竞争后基本持平）——1 万 QPS 的真实负载用一个核的 5%。成本主要来自 v0.2 指令队列的逐条回执（改前直锁路径 129ns，对照见 §8.5），换来同实体严格 FIFO、幂等防重与可回放。瓶颈从来不在心跳本身，而在 Redis 与网络。
 
 ### 发现 / 选服（读路径之王）
 
@@ -86,14 +86,14 @@ startup / shutdown / 断网 / 滚动重启 / 维护 / 迁移 / 发版时仍然�
 | --- | --- | --- |
 | 游戏服网络分区 | 心跳超龄 suspect → offline，客户端列表不抖动（[lifecycle.md](lifecycle.md) §3-§4） | ✅ 自动化：`internal/health` 巡检演练（OnlineToSuspect / SuspectToOffline / SuspectRecovered）+ discovery 可见性测试 |
 | 游戏服重启 / 心跳延迟 | 重注册幂等恢复；3:1:6 节奏容忍抖动（lifecycle §4.2） | ✅ 自动化：`internal/store/storetest` 重注册契约（suspect/offline 重置表）+ redisstore miniredis 契约 |
-| 重复注册 / 重复迁移 | 注册幂等 upsert；迁移幂等可重放（[migration.md](migration.md) §7） | ✅ 自动化：storetest 幂等 upsert + `internal/admin` 迁移编排 / rollback 用例 |
+| 重复注册 / 重复迁移记录 | 注册幂等 upsert；迁移端点创建状态记录（[migration.md](migration.md) §1） | ✅ 自动化：storetest 幂等 upsert + `internal/admin` 迁移记录 / rollback 用例；不覆盖角色搬迁 |
 | Redis 数据丢失 | 档案在 PG，TTL 自清理，心跳重填（[data-model.md](data-model.md) §6） | ✅ 自动化（2026-10-04）：`internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills`（miniredis FLUSHALL → 缺失即缺席、心跳重填） |
 | PG 短暂不可用 | pgx 池 + 健康检查自动回收死连接（本文 §4） | 服务层故障传播 ✅（discovery 后端降级测试、registry 错误路径）；连接池自愈仍属部署演练（ha.md） |
-| 迁移中途失败 | 先复制、后切换、再清理，源数据常驻（migration §7） | ✅ 自动化：`internal/admin` rollback 流程用例（pending/completed/not-found 三分支） |
+| 迁移中途失败 | Atlas 仅维护迁移状态记录；角色数据搬迁由游戏服负责，Atlas 不提供复制/切换/清理编排（migration §1） | ✅ 自动化：`internal/admin` 只验证状态记录的 rollback 分支；不验证角色数据搬迁 |
 | Atlas 副本宕机 | 无状态多副本 + HAProxy 心跳扇入（[ha.md](ha.md)） | 部署级演练（ha.md，属多副本编排，不进单元套件） |
 
-除部署级两行（PG 连接池自愈、Atlas 副本宕机）外，矩阵已全部变成
-`go test` 可复现的故障用例——从此"正确性不靠人品"。完整基准方法见
+除部署级项目外，矩阵中的已实现行为有 `go test` 覆盖；迁移数据搬迁/切换尚未实现，
+不在自动化保证范围内。完整基准方法见
 [性能基准](/zh/benchmarks)。
 
 ## 8. v0.2 索引与写路径设计（2026-10-08 落地）

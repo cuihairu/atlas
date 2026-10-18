@@ -88,8 +88,9 @@ curl 'http://localhost:8082/v1/admin/shards?realm_id=realm-01'  # 大区下的�
 
 ### 分服合并（合服）
 
-Shard 层面的合并由[合服迁移](/zh/migration)完成：`POST /v1/admin/migrations` 把源服务器角色
-索引原子迁到目标，之后源服务器下线、客户端按同一 `shard` 维度筛选即可无感。
+Shard 层面的合并可用[合服迁移记录](/zh/migration)跟踪：`POST /v1/admin/migrations`
+只创建迁移记录和源服务器维护窗口，不会搬迁角色索引或自动下线源服务器。角色数据搬迁由游戏服执行；
+目录索引需由调用方通过目录 API 更新。当前没有原子切换或迁移编排能力，客户端仍按 `shard` 维度筛选。
 
 ### 玩家跨服查询带大区语境
 

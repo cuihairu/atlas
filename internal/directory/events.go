@@ -82,6 +82,20 @@ func (s *Service) applyCreated(ctx context.Context, e *event.Event) (*model.Char
 	if !e.Timestamp.IsZero() {
 		ch.LastLoginAt = &e.Timestamp
 	}
+	// Created events are delivered at-least-once and may be replayed after
+	// newer login/update events. When both sides carry producer timestamps,
+	// do not let an older create snapshot replace a newer projection. Events
+	// without a timestamp retain the legacy upsert behavior because they do
+	// not provide an ordering signal.
+	if !e.Timestamp.IsZero() {
+		existing, err := s.characters.GetCharacter(ctx, e.AccountID, e.ServerID, e.CharacterID)
+		if err == nil && hasNewerProjectionTimestamp(existing, e.Timestamp) {
+			return existing, nil
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("check created event ordering: %w", err)
+		}
+	}
 
 	if err := s.characters.UpsertCharacter(ctx, ch); err != nil {
 		return nil, fmt.Errorf("create character: %w", err)
@@ -170,11 +184,27 @@ func (s *Service) applyLogin(ctx context.Context, e *event.Event) (*model.Charac
 	if !e.Timestamp.IsZero() {
 		at = e.Timestamp
 	}
+	existing, err := s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+	if err == nil && hasNewerProjectionTimestamp(existing, at) {
+		return existing, nil
+	}
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("check login event ordering: %w", err)
+	}
 	patch := store.CharacterPatch{LastLoginAt: &at}
 	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, e.CharacterID, patch); err != nil {
 		return nil, fmt.Errorf("login character: %w", err)
 	}
 	return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+}
+
+// hasNewerProjectionTimestamp only treats the stored last-login time as an
+// ordering watermark after the row has been changed since creation. A row
+// created from an event without a producer timestamp gets a local fallback
+// time; that fallback must not reject the first timestamped producer event.
+func hasNewerProjectionTimestamp(existing *model.Character, incoming time.Time) bool {
+	return existing != nil && existing.LastLoginAt != nil &&
+		existing.UpdatedAt.After(existing.CreatedAt) && existing.LastLoginAt.After(incoming)
 }
 
 // applyMoved re-homes a character to TargetServerID: upsert at the target

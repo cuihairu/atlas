@@ -254,7 +254,9 @@ DO UPDATE SET
     updated_at = now();
 ```
 
-`ON CONFLICT DO UPDATE` turns a duplicate `character.created` into a harmless upsert.
+`ON CONFLICT DO UPDATE` makes ordinary `character.created` redelivery idempotent. For
+timestamped create/login events, a timestamp older than a projection already changed since
+creation is ignored so `last_login_at` and the row do not move backwards.
 
 ### Out-of-order Handling
 
@@ -265,8 +267,10 @@ Events can arrive out of order (`updated` before `created`). Two handling strate
 | **Version number** | The event carries a monotonically increasing version; lower versions are discarded | Strong consistency requirements |
 | **Eventual consistency** | Do not handle out-of-order; rely on the next event to overwrite | Recommended for MVP |
 
-v0.1 uses **eventual consistency**, because the index fields are only used for list display and a
-brief `level` lag is acceptable.
+v0.1 uses **eventual consistency** for general event ordering, because the index fields are only
+used for list display and a brief `level` lag is acceptable. Timestamped create/login replays have
+a narrow `last_login_at` ordering guard; events without timestamps and other field updates still
+have no source-version or sequence check.
 
 ---
 

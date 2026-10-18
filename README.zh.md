@@ -117,10 +117,11 @@ flowchart TB
 
 ## Quick Start
 
+> [English](README.md) | **中文**
+
 ```bash
 # Run with in-memory store (no dependencies)
 
-> [English](README.md) | **中文**
 make run
 
 # Run tests

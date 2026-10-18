@@ -3,9 +3,12 @@ package health
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	atlasmetrics "github.com/cuihairu/atlas/internal/metrics"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
@@ -251,5 +254,30 @@ func TestMaintenanceWindow_RestoreRaceConsumesWindow(t *testing.T) {
 	}
 	if _, err := mem.GetMaintenanceWindow(ctx, "mwin-1"); err == nil {
 		t.Fatal("window must be consumed after a raced restore, not retried forever")
+	}
+}
+
+func TestSweep_FailedStatusWriteDoesNotCountTransition(t *testing.T) {
+	mem := memory.New()
+	ctx := context.Background()
+	wrapped := &flakyCAS{Store: mem, boom: errors.New("status write failed")}
+	mm := atlasmetrics.New(mem)
+	mon := newTestMonitor(wrapped, 30*time.Second, 60*time.Second).WithMetrics(mm)
+
+	registerServer(t, ctx, mem, "srv-1", model.StatusOnline)
+	recordHeartbeat(t, ctx, mem, "srv-1", 100)
+	heartbeatTime := time.Now()
+	mon.now = func() time.Time { return heartbeatTime.Add(65 * time.Second) }
+	if err := mon.sweep(ctx); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	if got := statusOf(t, ctx, mem, "srv-1"); got != model.StatusOnline {
+		t.Fatalf("status after failed write = %s, want online", got)
+	}
+	response := httptest.NewRecorder()
+	mm.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(response.Body.String(), `atlas_health_transitions_total{from="online",to="offline"}`) {
+		t.Fatalf("failed status write was counted as a health transition:\n%s", response.Body.String())
 	}
 }

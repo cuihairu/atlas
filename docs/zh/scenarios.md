@@ -76,13 +76,14 @@ curl -X DELETE localhost:8082/v1/admin/servers/game-1001/tags/no_register
 
 ## 4. 合服 / 转服 {#scenario-migration}
 
-**场景**：两台服人少了要合服。按「先复制、后切换、再清理」蓝图由运维编排执行，Atlas 记录迁移并提供失败回滚。
+**场景**：两台服人少了要合服。当前 Atlas 只创建迁移状态记录与源服维护窗口；角色数据搬迁由游戏服执行，
+目录索引由调用方更新。Atlas 尚不编排复制、切换、清理，也不提供数据级回滚；迁移 API 的 rollback 只改变记录状态。
 
 ![迁移管理 — 创建迁移、状态流转、失败回滚](/screenshots/migrations.png)
 
 **操作路径**
 
-- 管理台：`Migrations`——填源/目标服务器创建迁移，页面实时刷新状态，失败可一键回滚。
+- 管理台：`Migrations`——填源/目标服务器创建迁移记录；失败时的 rollback 只改变迁移记录状态。
 - 接口：`POST /v1/admin/migrations`（body 指定 `source_servers` 数组 / `target_server`），`POST /v1/admin/migrations/{id}/rollback`。
 - 详见[合服 / 转服 / 迁服](/zh/migration)。
 

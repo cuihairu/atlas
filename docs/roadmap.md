@@ -49,7 +49,7 @@ more complete than plain Game Server Discovery, and it is naturally complementar
 | ✅ gRPC dual transport | 5 services, 23 RPCs, :9090 (core surface shares the source with REST) | v0.1.5 |
 | ✅ Six-language SDKs | Go (dual transport) / C++ / Python (sync and async) / JS/TS / Java / C#, automatic heartbeat built in | v0.1.6 ~ v0.1.11 |
 | ✅ APISIX plugins | atlas-auth player token auth injection + atlas-ratelimit endpoint-group rate limiting | v0.1.13 |
-| ✅ Realm / Shard management | Admin CRUD + three-store implementations + index migration | v0.1.14 |
+| ✅ Realm / Shard management | Admin create/list APIs + three-store implementations (no update/delete APIs) | v0.1.14 |
 | ✅ Health alerting | suspect / offline ratio thresholds + webhook notifications (latching semantics) | v0.1.15 |
 | ✅ Character index sharding | account-hash sharding + cross-shard queries + resharding tool | v0.1.16 |
 | ✅ Security hardening | Registry mTLS, Admin RBAC + audit (certificate fingerprints), token-bucket rate limiting, three-port security domains | v0.1.17 |

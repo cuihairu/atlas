@@ -835,7 +835,7 @@ ok  	github.com/cuihairu/atlas/sdk/go/atlas	0.211s
     58	| ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
     59	| ✅ 质量基建 | service/handler 覆盖率 >80% 目标（CI 报告 + Codecov 上报，未作失败门禁）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
     60	
-    61	能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
+    61	能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](../operations.md)。
    118	## Quick Start
    119	
    120	```bash
@@ -2012,13 +2012,13 @@ Update the arguments and call the tool again.
     28	
     29	一次网络往返写完全部字段；TTL 到期即"下线"，**不需要任何后台清扫协程**。基准：单核约 20 万 QPS（`BenchmarkHeartbeat` ~5.1µs/op；64 台并发扇入 `BenchmarkHeartbeatParallel` ~4.4µs/op，攒批吸收竞争后基本持平）——1 万 QPS 的真实负载用一个核的 5%。成本主要来自 v0.2 指令队列的逐条回执（改前直锁路径 129ns，对照见 §8.5），换来同实体严格 FIFO、幂等防重与可回放。瓶颈从来不在心跳本身，而在 Redis 与网络。
     30	
-    87	| 游戏服网络分区 | 心跳超龄 suspect → offline，客户端列表不抖动（[lifecycle.md](lifecycle.md) §3-§4） | ✅ 自动化：`internal/health` 巡检演练（OnlineToSuspect / SuspectToOffline / SuspectRecovered）+ discovery 可见性测试 |
+    87	| 游戏服网络分区 | 心跳超龄 suspect → offline，客户端列表不抖动（[lifecycle.md](../lifecycle.md) §3-§4） | ✅ 自动化：`internal/health` 巡检演练（OnlineToSuspect / SuspectToOffline / SuspectRecovered）+ discovery 可见性测试 |
     88	| 游戏服重启 / 心跳延迟 | 重注册幂等恢复；3:1:6 节奏容忍抖动（lifecycle §4.2） | ✅ 自动化：`internal/store/storetest` 重注册契约（suspect/offline 重置表）+ redisstore miniredis 契约 |
-    89	| 重复注册 / 重复迁移 | 注册幂等 upsert；迁移幂等可重放（[migration.md](migration.md) §7） | ✅ 自动化：storetest 幂等 upsert + `internal/admin` 迁移编排 / rollback 用例 |
-    90	| Redis 数据丢失 | 档案在 PG，TTL 自清理，心跳重填（[data-model.md](data-model.md) §6） | ✅ 自动化（2026-10-04）：`internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills`（miniredis FLUSHALL → 缺失即缺席、心跳重填） |
+    89	| 重复注册 / 重复迁移 | 注册幂等 upsert；迁移幂等可重放（[migration.md](../migration.md) §7） | ✅ 自动化：storetest 幂等 upsert + `internal/admin` 迁移编排 / rollback 用例 |
+    90	| Redis 数据丢失 | 档案在 PG，TTL 自清理，心跳重填（[data-model.md](../data-model.md) §6） | ✅ 自动化（2026-10-04）：`internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills`（miniredis FLUSHALL → 缺失即缺席、心跳重填） |
     91	| PG 短暂不可用 | pgx 池 + 健康检查自动回收死连接（本文 §4） | 服务层故障传播 ✅（discovery 后端降级测试、registry 错误路径）；连接池自愈仍属部署演练（ha.md） |
     92	| 迁移中途失败 | 先复制、后切换、再清理，源数据常驻（migration §7） | ✅ 自动化：`internal/admin` rollback 流程用例（pending/completed/not-found 三分支） |
-    93	| Atlas 副本宕机 | 无状态多副本 + HAProxy 心跳扇入（[ha.md](ha.md)） | 部署级演练（ha.md，属多副本编排，不进单元套件） |
+    93	| Atlas 副本宕机 | 无状态多副本 + HAProxy 心跳扇入（[ha.md](../ha.md)） | 部署级演练（ha.md，属多副本编排，不进单元套件） |
     94	
     33	pipe.Expire(ctx, key, runtimeTTL) // 120s —— lost contact disappears on its own, no cleanup job
     34	```
@@ -2030,13 +2030,13 @@ Update the arguments and call the tool again.
     40	batching absorbs the contention) — a real 10k QPS load costs 5% of one core. Most of
    164	| Failure scenario | Existing guarantee (doc source) | Verification (automated location) |
    165	| --- | --- | --- |
-   166	| Game server network partition | Heartbeat ages out → suspect → offline, no client-list flicker ([lifecycle.md](lifecycle.md) §3-§4) | ✅ Automated: `internal/health` sweep drills (OnlineToSuspect / SuspectToOffline / SuspectRecovered) + discovery visibility tests |
+   166	| Game server network partition | Heartbeat ages out → suspect → offline, no client-list flicker ([lifecycle.md](../lifecycle.md) §3-§4) | ✅ Automated: `internal/health` sweep drills (OnlineToSuspect / SuspectToOffline / SuspectRecovered) + discovery visibility tests |
    167	| Game server restart / heartbeat delay | Idempotent re-registration recovers; 3:1:6 pacing tolerates jitter (lifecycle §4.2) | ✅ Automated: `internal/store/storetest` re-registration contract (suspect/offline reset table) + redisstore miniredis contract |
-   168	| Duplicate registration / duplicate migration | Registration is an idempotent upsert; migrations are idempotent and replayable ([migration.md](migration.md) §7) | ✅ Automated: storetest idempotent upsert + `internal/admin` migration orchestration / rollback cases |
-   169	| Redis data loss | Profiles live in PG, TTL self-cleans, heartbeats refill ([data-model.md](data-model.md) §6) | ✅ Automated (2026-10-04): `internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills` (miniredis FLUSHALL → missing means absent, heartbeats refill) |
+   168	| Duplicate registration / duplicate migration | Registration is an idempotent upsert; migrations are idempotent and replayable ([migration.md](../migration.md) §7) | ✅ Automated: storetest idempotent upsert + `internal/admin` migration orchestration / rollback cases |
+   169	| Redis data loss | Profiles live in PG, TTL self-cleans, heartbeats refill ([data-model.md](../data-model.md) §6) | ✅ Automated (2026-10-04): `internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills` (miniredis FLUSHALL → missing means absent, heartbeats refill) |
    170	| PG briefly unavailable | pgx pool + health checks automatically recycle dead connections (see §4) | Service-layer failure propagation ✅ (discovery backend degradation test, registry error paths); pool self-healing still belongs to deployment drills (ha.md) |
    171	| Migration fails midway | Copy first, switch over, then clean up; source data stays resident (migration §7) | ✅ Automated: `internal/admin` rollback flow cases (the pending/completed/not-found branches) |
-   172	| Atlas replica goes down | Stateless multi-replica + HAProxy heartbeat fan-in ([ha.md](ha.md)) | Deployment-level drill (ha.md; part of multi-replica orchestration, not in the unit suite) |
+   172	| Atlas replica goes down | Stateless multi-replica + HAProxy heartbeat fan-in ([ha.md](../ha.md)) | Deployment-level drill (ha.md; part of multi-replica orchestration, not in the unit suite) |
    118	## Quick Start
    119	
    120	```bash

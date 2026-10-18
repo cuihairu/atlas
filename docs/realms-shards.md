@@ -95,9 +95,11 @@ curl 'http://localhost:8082/v1/admin/shards?realm_id=realm-01'  # 大区下的�
 
 ### Shard Merge (Server Merge)
 
-Shard-level merges are done by [server merge migration](/migration): `POST /v1/admin/migrations`
-atomically migrates the source server's character directory to the target; afterwards the source
-server goes offline, and the client filtering by the same `shard` dimension is seamless.
+Shard-level merges can be tracked with a [migration record](/migration): `POST /v1/admin/migrations`
+creates only the record and maintenance windows for source servers. It does not move character
+directory entries or take source servers offline. The game servers move character data; callers
+update directory entries through the Directory API. Atomic cutover and migration orchestration are
+not implemented, and clients continue to filter by the `shard` dimension.
 
 ### Player Cross-Server Queries with Realm Context
 

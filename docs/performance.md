@@ -33,8 +33,10 @@ pipe.HSet(ctx, key, fields)      // status/players/load/last_seen
 pipe.Expire(ctx, key, runtimeTTL) // 120s —— lost contact disappears on its own, no cleanup job
 ```
 
-One network round trip writes every field; when the TTL expires the server is
-effectively "offline", and **no background sweeper goroutine is needed at all**.
+One network round trip writes every field. The TTL only removes an expired
+runtime key; it does not mean the server's persisted status is offline. The
+background health sweep remains responsible for moving status to `suspect` or
+`offline` based on `last_seen_at` age (see [lifecycle](/lifecycle)).
 Benchmark: about 200k QPS on one core (`BenchmarkHeartbeat` ~5.1µs/op; 64-server
 concurrent fan-in `BenchmarkHeartbeatParallel` ~4.4µs/op — essentially flat once
 batching absorbs the contention) — a real 10k QPS load costs 5% of one core. Most of
@@ -165,16 +167,15 @@ verification method):
 | --- | --- | --- |
 | Game server network partition | Heartbeat ages out → suspect → offline, no client-list flicker ([lifecycle.md](lifecycle.md) §3-§4) | ✅ Automated: `internal/health` sweep drills (OnlineToSuspect / SuspectToOffline / SuspectRecovered) + discovery visibility tests |
 | Game server restart / heartbeat delay | Idempotent re-registration recovers; 3:1:6 pacing tolerates jitter (lifecycle §4.2) | ✅ Automated: `internal/store/storetest` re-registration contract (suspect/offline reset table) + redisstore miniredis contract |
-| Duplicate registration / duplicate migration | Registration is an idempotent upsert; migrations are idempotent and replayable ([migration.md](migration.md) §7) | ✅ Automated: storetest idempotent upsert + `internal/admin` migration orchestration / rollback cases |
+| Duplicate registration / duplicate migration record | Registration is an idempotent upsert; migration endpoints create status records ([migration.md](migration.md) §1) | ✅ Automated: storetest idempotent upsert + `internal/admin` migration-record / rollback cases; no character relocation |
 | Redis data loss | Profiles live in PG, TTL self-cleans, heartbeats refill ([data-model.md](data-model.md) §6) | ✅ Automated (2026-10-04): `internal/store/redisstore` `TestDataLossFlushAll_HeartbeatRefills` (miniredis FLUSHALL → missing means absent, heartbeats refill) |
 | PG briefly unavailable | pgx pool + health checks automatically recycle dead connections (see §4) | Service-layer failure propagation ✅ (discovery backend degradation test, registry error paths); pool self-healing still belongs to deployment drills (ha.md) |
-| Migration fails midway | Copy first, switch over, then clean up; source data stays resident (migration §7) | ✅ Automated: `internal/admin` rollback flow cases (the pending/completed/not-found branches) |
+| Migration fails midway | Atlas stores migration status only; game servers move character data and Atlas does not orchestrate copy/cutover/cleanup (migration §1) | ✅ Automated: `internal/admin` tests rollback of the status record only; no character-relocation coverage |
 | Atlas replica goes down | Stateless multi-replica + HAProxy heartbeat fan-in ([ha.md](ha.md)) | Deployment-level drill (ha.md; part of multi-replica orchestration, not in the unit suite) |
 
-Apart from the two deployment-level rows (PG pool self-healing, Atlas replica
-downtime), the whole matrix has become `go test`-reproducible fault cases — from now on
-"correctness does not rely on people's good behaviour". See [Benchmarks](/benchmarks)
-for the complete benchmark methodology.
+Implemented behavior in this matrix has `go test` coverage, apart from deployment-level
+drills; character migration/cutover is not implemented and is outside the automated
+guarantees. See [Benchmarks](/benchmarks) for the complete benchmark methodology.
 
 ## 8. v0.2 index and write-path design (landed 2026-10-08)
 
