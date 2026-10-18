@@ -131,6 +131,40 @@ HTTP status following google.rpc convention before being recorded. The actor is 
 mode shows `:anonymous`). Registry / Discovery / Directory / Routing RPCs do not enter
 the audit ring (consistent with REST auditing only `/v1/admin/*`).
 
+**Audit persistence strategy (design draft, 2026-10-19, not implemented)** — today durability is the
+structured log line and nothing else: the ring is an ops view lost on restart. A persistent sink would
+hook the single choke point both transports already funnel through (`AuditLog.Record`). Four strategy
+dimensions, per the review that queued this item:
+
+1. **Retention** — persisted entries are a compliance artifact, so retention becomes a policy window
+   (proposed default 90 days), not the ring size; the 1,000-entry ring stays exactly as it is (recent-view
+   semantics unchanged). Enforcement is store-native (a DELETE sweep for SQL, logrotate-style expiry for
+   files).
+2. **Masking** — the audit surface has no credential-bearing endpoints (RBAC keys enter via env and never
+   via the API), but three payload classes can carry operator-sensitive data: the cross-server config
+   document (`PUT /v1/admin/crossserver/config` — game configs may embed fleet secrets), private tag
+   payloads, and raw query strings. Proposed mechanism: a key-denylist applied at capture time in the
+   middleware (before `Record`, so ring, log and sink all see the same masked body), configurable via env
+   (e.g. `ATLAS_AUDIT_MASK_KEYS`, default `token,secret,password,key`), values replaced with `***` with a
+   hash kept for correlation. The strict-compliance alternative — recording config-center writes as
+   version + body hash only — is a one-endpoint special case, listed here as a choice.
+3. **Failure policy** — the sink must never block an Admin request (explicit constraint from the review).
+   Proposed shape: bounded async queue → sink goroutine; overflow drops oldest and counts it; shutdown
+   drains with a timeout and counts the remainder. Durability is best-effort *and honestly counted* —
+   no backpressure onto the request path, no unbounded memory.
+4. **Backend** — options evaluated: (i) append-only JSONL file, zero new dependencies, rotatable by ops,
+   but grep is the only query; (ii) a SQL table through the existing store/migrations machinery —
+   confirmed writes, queryable, retention by sweep, and prod deployments already run a database Atlas
+   owns; (iii) shipping audit entries onto the event bus — rejected: audit would depend on the health of
+   the same failure domain it is supposed to record (see the delivery-limit design in sync.md §4);
+   (iv) status quo (log pipeline) — already the documented story; the gap is confirmed writes and query.
+   Recommendation: (ii) as `ATLAS_AUDIT_SINK=postgres` with (i) as the store-less fallback, default `off`
+   = today's behavior.
+
+Monitoring lands as `atlas_admin_audit_sink_written_total` / `atlas_admin_audit_sink_dropped_total` /
+a write-latency histogram — an alert on the drop counter is the operational contract. Thresholds, the
+default mask list, and the sink default are decision points; implementation waits on them.
+
 ## 4. Rate limiting (token bucket)
 
 Rules are matched by **path prefix** (longest prefix wins) and buckets are kept per

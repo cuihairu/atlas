@@ -80,6 +80,15 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 
 **双传输**：gRPC（:9090）的 AdminService RPC 记入同一个环——`path` 为全方法名（如 `/atlas.v1.AdminService/Disable`），读 RPC 记 `GET`（无 diff）、写 RPC 记 `POST`（diff 为 protojson 请求，同受 4KB 上限），gRPC status code 按 google.rpc 惯例映射为等价 HTTP 状态入环；actor 同为 `role:key指纹`（校验由 gRPC 认证拦截器完成，未配置 Key 的开发模式显示 `:anonymous`）。Registry / Discovery / Directory / Routing 的 RPC 不进审计环（与 REST 只审计 `/v1/admin/*` 一致）。
 
+**审计持久化策略（设计稿，2026-10-19，未实现）**——今天持久化只有结构化日志行：环是重启即丢的运维视图。持久 sink 挂点只有一处，两条传输本就都汇入 `AuditLog.Record`。四个策略维度（对应立这项的审核要求）：
+
+1. **保留**——持久化后的条目是合规工件，保留期成为策略窗口（拟默认 90 天），不再等于环大小；1000 条环原样保留（近期视图语义不变）。执行交给存储原生机制（SQL 用 DELETE 清扫，文件用 logrotate 式过期）。
+2. **脱敏**——审计面没有承载凭据的端点（RBAC key 经 env 配置、从不过 API），但有三类载荷可能携带运维侧敏感数据：跨服配置文档（`PUT /v1/admin/crossserver/config`——游戏配置可能内嵌舰队密钥）、私有 tag 载荷、原样记录的 query string。拟用机制：key 黑名单在中间件捕获时打码（在 `Record` 之前，环、日志、sink 看到的是同一份已脱敏体），env 可配（如 `ATLAS_AUDIT_MASK_KEYS`，默认 `token,secret,password,key`），值替换为 `***` 并保留哈希以便关联。严格合规替代方案——配置中心写入只记 version + 体哈希、不记体——属单端点特例，列为备选。
+3. **失败策略**——sink 绝不允许阻塞 Admin 请求（审核给的硬约束）。拟用形态：有界异步队列 → sink goroutine；溢出丢最旧并计数；关停时带超时清空、剩余如实计数。持久化是尽力而为**且被如实计数**——不向请求路径回压，不无界占内存。
+4. **后端**——候选评估：（i）追加式 JSONL 文件，零新依赖、运维可轮转，但查询只有 grep；（ii）经既有 store/migrations 机制建 SQL 表——写入可确认、可查询、保留靠清扫，且生产部署本就跑着 Atlas 自己的数据库；（iii）审计条目上事件总线——否决：审计将依赖它本应记录的同一故障域的健康状况（见 sync.md §4 投递上限设计）；（iv）现状（日志管道）——已是文档口径，缺口在可确认写入与可查询。建议：（ii）以 `ATLAS_AUDIT_SINK=postgres` 启用、（i）作无库部署的回退，默认 `off` = 今日行为。
+
+监控落 `atlas_admin_audit_sink_written_total` / `atlas_admin_audit_sink_dropped_total` / 写延迟直方图——丢条计数器上的告警就是运维契约。阈值、默认脱敏清单、sink 默认值均为待拍板点；实现等这些落定。
+
 ## 4. 限流（令牌桶）
 
 按**路径前缀**匹配规则（最长前缀优先）、按**客户端 IP** 分桶，单个失控的服务器打不垮邻居。默认关闭，显式配置后启用：
