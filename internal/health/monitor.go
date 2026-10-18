@@ -138,10 +138,10 @@ func (m *Monitor) sweep(ctx context.Context) error {
 				age := now.Sub(srv.CreatedAt)
 				m.metrics.ObserveHeartbeatLag(age)
 				if age > m.offlineAfter {
-					if err := m.transition(ctx, srv, model.StatusOffline, "no heartbeat since creation (age %v)", age); err == nil {
-						m.alertPermanentOffline(ctx, srv, age)
-					} else {
+					if applied, err := m.transition(ctx, srv, model.StatusOffline, "no heartbeat since creation (age %v)", age); err != nil {
 						m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
+					} else if applied {
+						m.alertPermanentOffline(ctx, srv, age)
 					}
 				}
 			}
@@ -154,27 +154,27 @@ func (m *Monitor) sweep(ctx context.Context) error {
 		switch srv.Status {
 		case model.StatusStarting, model.StatusOnline:
 			if age > m.offlineAfter {
-				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err == nil {
-					m.alertPermanentOffline(ctx, srv, age)
-				} else {
+				if applied, err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err != nil {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
+				} else if applied {
+					m.alertPermanentOffline(ctx, srv, age)
 				}
 			} else if age > m.suspectAfter {
-				if err := m.transition(ctx, srv, model.StatusSuspect, "heartbeat age %v exceeds suspect threshold %v", age, m.suspectAfter); err != nil {
+				if _, err := m.transition(ctx, srv, model.StatusSuspect, "heartbeat age %v exceeds suspect threshold %v", age, m.suspectAfter); err != nil {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
 				}
 			}
 
 		case model.StatusSuspect:
 			if age > m.offlineAfter {
-				if err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err == nil {
-					m.alertPermanentOffline(ctx, srv, age)
-				} else {
+				if applied, err := m.transition(ctx, srv, model.StatusOffline, "heartbeat age %v exceeds offline threshold %v", age, m.offlineAfter); err != nil {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
+				} else if applied {
+					m.alertPermanentOffline(ctx, srv, age)
 				}
 			} else if age <= m.suspectAfter {
 				// Heartbeat recovered.
-				if err := m.transition(ctx, srv, model.StatusOnline, "heartbeat recovered (age %v)", age); err != nil {
+				if _, err := m.transition(ctx, srv, model.StatusOnline, "heartbeat recovered (age %v)", age); err != nil {
 					m.logger.Error("transition failed", "server_id", srv.ID, "error", err)
 				}
 			}
@@ -259,7 +259,21 @@ func (m *Monitor) alertPermanentOffline(ctx context.Context, srv *model.Server, 
 	})
 }
 
-func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus model.ServerStatus, reasonFmt string, args ...any) error {
+// transition moves a server to newStatus through a compare-and-set guard:
+// the sweep decides on a snapshot it listed earlier, and re-registration
+// (or any other writer) can move the server between that read and this
+// write — an unconditional status store would resurrect offline from a
+// heartbeat that no longer exists, clobbering the fresh registration.
+// When the guard misses, the newer writer wins: nothing is logged, counted,
+// or mutated here, and the caller treats it as a no-op (applied=false),
+// not an error. The local copy and the transition counter move only after
+// the store accepted the write, so metrics never report a transition that
+// did not happen.
+func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus model.ServerStatus, reasonFmt string, args ...any) (bool, error) {
+	applied, err := m.store.UpdateServerStatusIf(ctx, srv.ID, srv.Status, newStatus)
+	if err != nil || !applied {
+		return applied, err
+	}
 	m.logger.Warn(fmt.Sprintf(reasonFmt, args...),
 		"server_id", srv.ID,
 		"from", srv.Status,
@@ -267,7 +281,7 @@ func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus m
 	)
 	m.metrics.CountHealthTransition(srv.Status, newStatus)
 	srv.Status = newStatus // keep the in-memory copy fresh for alert counting
-	return m.store.UpdateServerStatus(ctx, srv.ID, newStatus)
+	return true, nil
 }
 
 // applyMaintenanceWindows applies due maintenance windows (TODO v0.1.20):
@@ -275,11 +289,20 @@ func (m *Monitor) transition(ctx context.Context, srv *model.Server, newStatus m
 //   - A window that has ended restores the server's pre-window status — but
 //     only if the server is still in maintenance where the window left it;
 //     an operator's move in the meantime wins. The window is then deleted.
-//   - A window that just opened moves an auto-managed server
-//     (starting/online/suspect) to maintenance and records what to restore.
-//     Servers in operator-owned states (draining/maintenance/disabled) or
-//     offline are left alone; the window is marked applied with an empty
-//     previous status so the monitor does not retry every sweep.
+//   - A window that just opened records the status to restore FIRST, then
+//     moves an auto-managed server (starting/online/suspect) to
+//     maintenance. Persisting the record before touching the server is the
+//     invariant that prevents a stranded maintenance state: whichever
+//     piece fails — the mark write, the transition, or the process itself
+//     in between — the next sweep can always recover, because a recorded
+//     previous status is never lost. Servers in operator-owned states
+//     (draining/maintenance/disabled) or offline are left alone; the
+//     window is marked applied with an empty previous status so the
+//     monitor does not retry the move every sweep.
+//   - A window that is active and applied but whose server was never moved
+//     (the move failed last sweep, or the process crashed between the
+//     record and the move) gets its move retried here, once per sweep,
+//     while the server still holds the recorded previous status.
 func (m *Monitor) applyMaintenanceWindows(ctx context.Context, servers []*model.Server, now time.Time) error {
 	windows, err := m.store.ListMaintenanceWindows(ctx, "", 0)
 	if err != nil {
@@ -300,11 +323,20 @@ func (m *Monitor) applyMaintenanceWindows(ctx context.Context, servers []*model.
 		case !now.Before(w.EndAt):
 			// Window over: restore, then drop the window.
 			if srv != nil && w.PreviousStatus != "" && srv.Status == model.StatusMaintenance {
-				if err := m.transition(ctx, srv, w.PreviousStatus,
-					"maintenance window %s ended, restoring status", w.ID); err != nil {
+				applied, err := m.transition(ctx, srv, w.PreviousStatus,
+					"maintenance window %s ended, restoring status", w.ID)
+				if err != nil {
 					m.logger.Error("failed to exit maintenance window",
 						"window_id", w.ID, "server_id", w.ServerID, "error", err)
 					continue // keep the window so the restore can be retried
+				}
+				if !applied {
+					// The snapshot said maintenance but the live record
+					// moved on (another writer intervened between the
+					// list and the guarded write): their status wins,
+					// so consume the window instead of retrying forever.
+					m.logger.Info("maintenance window restore skipped, server moved on",
+						"window_id", w.ID, "server_id", w.ServerID)
 				}
 			}
 			if err := m.store.DeleteMaintenanceWindow(ctx, w.ID); err != nil {
@@ -312,20 +344,40 @@ func (m *Monitor) applyMaintenanceWindows(ctx context.Context, servers []*model.
 					"window_id", w.ID, "error", err)
 			}
 		case w.Active(now) && w.PreviousStatus == "":
-			// Window open, not applied yet.
+			// Window open, not applied yet. Record first.
 			previous := model.ServerStatus("")
 			if srv != nil && srv.Status.AutoManaged() {
 				previous = srv.Status
-				if err := m.transition(ctx, srv, model.StatusMaintenance,
-					"maintenance window %s started", w.ID); err != nil {
-					m.logger.Error("failed to enter maintenance window",
-						"window_id", w.ID, "server_id", w.ServerID, "error", err)
-					continue // unapplied: retry next sweep
-				}
 			}
 			if err := m.store.MarkMaintenanceWindowApplied(ctx, w.ID, previous); err != nil {
 				m.logger.Error("failed to mark maintenance window applied",
 					"window_id", w.ID, "error", err)
+				continue // the server is untouched: retry the whole entry next sweep
+			}
+			w.PreviousStatus = previous // keep the in-memory copy consistent for this sweep
+			if previous != "" {
+				// The move may fail here (store outage, guarded against a
+				// racing writer) — fine: the window is already marked with
+				// the status to restore, and the pending-entry branch below
+				// retries the move on subsequent sweeps.
+				if _, err := m.transition(ctx, srv, model.StatusMaintenance,
+					"maintenance window %s started", w.ID); err != nil {
+					m.logger.Error("failed to enter maintenance window",
+						"window_id", w.ID, "server_id", w.ServerID, "error", err)
+				}
+			}
+		case w.Active(now):
+			// Window active and recorded, server not moved yet: retry the
+			// move while it still holds the recorded previous status. An
+			// operator-set state (or the already-moved maintenance state)
+			// never matches the guard, so this branch cannot resurrect
+			// anything it should leave alone.
+			if srv != nil && srv.Status == w.PreviousStatus {
+				if _, err := m.transition(ctx, srv, model.StatusMaintenance,
+					"maintenance window %s started", w.ID); err != nil {
+					m.logger.Error("failed to enter maintenance window",
+						"window_id", w.ID, "server_id", w.ServerID, "error", err)
+				}
 			}
 		}
 	}
