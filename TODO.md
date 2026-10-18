@@ -13,11 +13,11 @@
 
 ### 候补
 
-- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0 — 复核 2026-10-18：仍无生产环境验证证据（deploy/ 仅演示材料，docs「生产」仅指引非实证），触发条件未成立，维持挂起
+- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0 — 复核 2026-10-19：仍无生产环境验证证据（deploy/ 仅演示材料，docs「生产」仅指引非实证），触发条件未成立，维持挂起
 - [x] Routing 策略扩展余项（权重 / 灰度白名单）— 权重已交付（2026-10-14）：`weight` 字段 + 三库存储契约 + `POST /v1/admin/servers/{id}/weight` + 推荐排序按有效负载 `load × 100 / weight`（诊断附 `weight`/`effective_load`）；灰度白名单 = 私有 tag 圈组 + 权重放量（已写进 api.md），routing/admin/httpapi/storetest 25+ tests 绿；REST 五 SDK（python 同步异步 / js / java / csharp / cpp）`set_weight` 铺齐（Go SDK 有意排除：端点 REST-only，grpcBackend 无 REST 回退）— commit f46b7cf；`Server` 模型同带 `weight` 读回（五 SDK，缺省 0）— commit 80ba2e7
 - [x] 公告与窗口批量编排 — 批量创建 + 舰队级模板（stagger / dry_run / 部分成功）**已在管理台可视化**（2026-10-14 补）：运维页「批量窗口」入口，一份时段贴服务器列表铺多台，错峰间隔 + 仅预览开关，逐台成功/失败结果表（部分成功不静默）；逻辑抽 operationsBatch.tsx 可单测（19 vitest 绿）+ **迁移-窗口联动**已交付（2026-10-14）：`CreateMigration` 自动在源服务器铺 24h 维护窗口（复用批量窗口 API，fail-closed：窗口铺不上则迁移记录不写；窗口不自动取消，运维可手动 DELETE）；`migration.Service` 持可选 `WindowCreator` 接口（时序归 migration 包，窗口创建由 admin 注入，不反向依赖）；migration/admin/httpapi 测试绿
 - [x] Kubernetes 部署样例 — 已交付（2026-10-14）：`deploy/k8s/` 目录含 namespace + configmap + postgres StatefulSet + redis Deployment + 迁移 Job + atlas Deployment/Service + README（边界：无 Helm chart、无 Operator，仅基础 Deployment/Service/Job manifest，符合 roadmap「明确不做」清单）
-- [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发；复核 2026-10-18：无多舰队独立迁移集群/独立扩缩容新需求（migration.md §9 口径未变），触发条件未成立，维持挂起
+- [ ] Migration Controller 独立模块拆分：多舰队独立迁移集群需求触发 — 🚧 代码模块拆分已交付（internal/migration 独立包 + admin 薄委托，行为零变更，migration/admin 20 tests 绿，见 commit）；拆成独立服务仍需扩缩容需求触发；复核 2026-10-19：无多舰队独立迁移集群/独立扩缩容新需求（migration.md §9 口径未变），触发条件未成立，维持挂起
 - [x] docs 双语扩展（用户令 2026-10-16）— 已交付（2026-10-16）：结构按 VitePress locales 定案，**根 locale = English、中文原文整体迁入 `docs/zh/`**（30 篇），18 篇 `.en.md` 孪生译版提升为根页并去掉 `.en` 后缀（②号「二选一」取「提升为根页」）；①11 篇英文对照本轮补齐：benchmarks / config-center / ha / migration / operations / performance / security / security-audit / topology + audit-source-review-round2，api.md（1019 行）与 audit-doc-consistency（377 行）按硬约束保留「暂无译版」标注桩不硬翻；③docs/ 子目录仅 public/ 静态资源、无 md，无需处理；④nav/sidebar 两 locale 各配中英文案，config.ts 抽 `localize()` 给 zh 侧统一补 `/zh` 前缀（站外绝对地址原样保留），避免逐条手改漏加；每页顶部 `[English] | [简体中文]` 切换器指向对应 locale 同名页；门禁 `pnpm build` 通过（产物 31 根页 + 30 zh 页，lang 属性 en-US / zh-CN 正确，无 `.en.md` 死链、无中文锚点残留）
 
 ## Discovery 读路径管线化
