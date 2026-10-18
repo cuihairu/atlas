@@ -304,3 +304,48 @@ func TestFetchErrorLoggedAndLoopEnds(t *testing.T) {
 		t.Errorf("close: %v", err)
 	}
 }
+
+// TestConsumerDefaultsUnboundedRedelivery pins what a perpetually-failing
+// handler means today: PullSubscribe binds the consumer with JetStream server
+// defaults, MaxDeliver <= 0 = no delivery limit (measured: this server reports -1), and there is no dead-letter
+// target. A poison event (handler always errors) is re-delivered forever and,
+// because a pull consumer delivers one subject strictly in order, it wedges
+// every later event on that subject.
+//
+// This is the measured evidence behind the delivery-limit / backoff / DLQ step
+// recorded in docs/sync.md; the assertion must be updated (not deleted) when a
+// bounded MaxDeliver becomes configurable.
+func TestConsumerDefaultsUnboundedRedelivery(t *testing.T) {
+	a := openAdapter(t)
+
+	var calls atomic.Int32
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, _ *event.Event) error {
+		calls.Add(1)
+		return context.DeadlineExceeded // simulate a handler that never succeeds
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	if err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterUpdated, CharacterID: 9}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if calls.Load() == 0 {
+		t.Fatal("handler should have been called once")
+	}
+
+	info, err := a.js.ConsumerInfo(a.stream, a.durable)
+	if err != nil {
+		t.Fatalf("consumer info: %v", err)
+	}
+	// 0 and -1 both mean "no delivery limit" across nats-server versions.
+	if info.Config.MaxDeliver > 0 {
+		t.Errorf("MaxDeliver = %d, want unbounded redelivery (<= 0)", info.Config.MaxDeliver)
+	}
+	if info.Config.AckWait <= 0 {
+		t.Errorf("AckWait = %v, want the server default", info.Config.AckWait)
+	}
+}

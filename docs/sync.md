@@ -168,6 +168,17 @@ All except `http` are at-least-once delivery, and events whose handling fails ar
   redelivered via `Nack(requeue=true)` — there is no delivery counter to cap retries, and the
   backoff sits on the consumer goroutine, incidentally throttling subsequent deliveries.
 
+**Delivery limits and dead letters (measured 2026-10-19, staged design item)**: of the four
+adapters only redis has a delivery cap (logged as dead letter after 5 deliveries); kafka
+(uncommitted offset = unlimited re-fetch), nats (the durable consumer measures `MaxDeliver=-1` —
+no delivery limit, no dead-letter target, see `TestConsumerDefaultsUnboundedRedelivery`) and
+rabbitmq (no delivery counter) are all uncapped — a permanently failing event redelivers
+forever and, with in-order delivery, wedges every later event on that subject. At-least-once
+semantics and consumer idempotency are pinned by tests: kafka redeliveries stamp a stable
+event ID derived from partition@offset (`TestHandlerFailureRedeliversWithStableID`), and the
+`Directory.ApplyEvent` upsert is idempotent (§6). Delivery limits / backoff / dead-letter
+retention and replay remain future design work.
+
 Therefore the consumer side must be idempotent — the upsert in `Directory.ApplyEvent` is
 naturally idempotent (see §6).
 

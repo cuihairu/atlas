@@ -151,6 +151,8 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 - **nats**：失败消息不 Ack，超过 AckWait（默认 30s）由 durable consumer 重投。
 - **rabbitmq**：失败消息先按 `requeueBackoff`（默认 5s）退避、再 `Nack(requeue=true)` 重投——无 delivery counter 可用来封顶重试，退避挡在消费者 goroutine 上，顺带节流后续投递。
 
+**投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限 / 退避 / 死信保留与重放为后续设计项。
+
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
 接入只需改一个环境变量，例如：

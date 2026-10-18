@@ -410,3 +410,50 @@ func TestPublishWriterError(t *testing.T) {
 		t.Errorf("writer got %d messages after failure, want 0", w.count())
 	}
 }
+
+// TestHandlerFailureRedeliversWithStableID verifies the once-delivered,
+// idempotently-replayable contract across a redelivery: after the handler
+// fails the offset stays uncommitted, the broker re-delivers the same
+// partition/offset, and the adapter stamps the same event ID — so the retry
+// lands on an idempotent apply (docs/sync.md delivery-semantics step).
+func TestHandlerFailureRedeliversWithStableID(t *testing.T) {
+	a, _, r := newTestAdapter(t)
+
+	var mu sync.Mutex
+	var ids []string
+	calls := 0
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		mu.Lock()
+		ids = append(ids, e.ID)
+		mu.Unlock()
+		calls++
+		if calls == 1 {
+			return errors.New("apply failed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 9})
+	msg := kafka.Message{Topic: event.TopicCharacters, Partition: 0, Offset: 7, Value: payload}
+	r.push(msg)
+
+	time.Sleep(200 * time.Millisecond)
+	if r.commitCount() != 0 {
+		t.Fatalf("commits = %d, want 0 after handler failure", r.commitCount())
+	}
+
+	// The broker re-delivers the uncommitted offset.
+	r.push(msg)
+	time.Sleep(200 * time.Millisecond)
+
+	if r.commitCount() != 1 {
+		t.Fatalf("commits = %d, want 1 after the retry succeeds", r.commitCount())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ids) != 2 || ids[0] != ids[1] || ids[0] != "0@7" {
+		t.Fatalf("event IDs across redelivery = %v, want [0@7 0@7]", ids)
+	}
+}
