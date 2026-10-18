@@ -228,6 +228,15 @@ func (s *Store) UpdateServerStatus(ctx context.Context, id string, status model.
 	return nil
 }
 
+func (s *Store) UpdateServerStatusIf(ctx context.Context, id string, fromStatus, toStatus model.ServerStatus) (bool, error) {
+	const q = `UPDATE servers SET status = $1, updated_at = $2 WHERE id = $3 AND status = $4`
+	tag, err := s.pool.Exec(ctx, q, string(toStatus), time.Now(), id, string(fromStatus))
+	if err != nil {
+		return false, fmt.Errorf("cas server status %s: %w", id, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
 	if tags == nil {
 		tags = []model.ServerTag{}

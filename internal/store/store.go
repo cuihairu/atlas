@@ -95,6 +95,18 @@ type ServerStore interface {
 	// UpdateServerStatus changes the status field of a server.
 	UpdateServerStatus(ctx context.Context, id string, status model.ServerStatus) error
 
+	// UpdateServerStatusIf transitions a server's status only when the
+	// server still holds fromStatus — a compare-and-set guard against stale
+	// writers. The health sweep decides on a snapshot it listed earlier;
+	// re-registration can move the server between the read and the write,
+	// and an unconditional status write would clobber the newer status with
+	// an offline derived from a heartbeat that no longer exists.
+	// Returns applied=false with a nil error when the transition did not
+	// happen: the server is gone (a reclaimed temporary registration) or no
+	// longer holds fromStatus. Both mean "someone else decided"; callers
+	// must neither retry nor count the transition.
+	UpdateServerStatusIf(ctx context.Context, id string, fromStatus, toStatus model.ServerStatus) (applied bool, err error)
+
 	// UpdateServerTags replaces a server's tag list. Tags are admin-owned
 	// configuration: the register upsert must not touch them. Returns
 	// ErrNotFound when the server does not exist.

@@ -48,6 +48,10 @@ func (t *trackedStore) UpdateServerStatus(ctx context.Context, id string, status
 	return t.sv.UpdateServerStatus(ctx, id, status)
 }
 
+func (t *trackedStore) UpdateServerStatusIf(ctx context.Context, id string, fromStatus, toStatus model.ServerStatus) (bool, error) {
+	return t.sv.UpdateServerStatusIf(ctx, id, fromStatus, toStatus)
+}
+
 func (t *trackedStore) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
 	return t.sv.UpdateServerTags(ctx, id, tags)
 }
@@ -99,6 +103,18 @@ func (t *trackedServers) UpdateServerStatus(ctx context.Context, id string, stat
 	}
 	t.idx.UpdateStatus(id, status)
 	return nil
+}
+
+// UpdateServerStatusIf feeds the index only when the compare-and-set
+// landed: applied=false means another writer decided the status, and that
+// writer's own (tracked) write is what the index must keep mirroring.
+func (t *trackedServers) UpdateServerStatusIf(ctx context.Context, id string, fromStatus, toStatus model.ServerStatus) (bool, error) {
+	applied, err := t.ServerStore.UpdateServerStatusIf(ctx, id, fromStatus, toStatus)
+	if err != nil || !applied {
+		return applied, err
+	}
+	t.idx.UpdateStatus(id, toStatus)
+	return true, nil
 }
 
 func (t *trackedServers) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {

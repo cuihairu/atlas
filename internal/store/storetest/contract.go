@@ -69,6 +69,7 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 
 	t.Run("RealmsShards", func(t *testing.T) { realmsShards(t, ctx, s) })
 	t.Run("Servers", func(t *testing.T) { servers(t, ctx, s) })
+	t.Run("StatusCAS", func(t *testing.T) { statusCAS(t, ctx, s) })
 	t.Run("Characters", func(t *testing.T) { characters(t, ctx, s) })
 	t.Run("Migrations", func(t *testing.T) { migrations(t, ctx, s) })
 	t.Run("Maintenance", func(t *testing.T) { maintenance(t, ctx, s) })
@@ -77,6 +78,62 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 	t.Run("CrossServerConfig", func(t *testing.T) { crossServerConfig(t, ctx, s) })
 	t.Run("Weight", func(t *testing.T) { weight(t, ctx, s) })
 	t.Run("RegKind", func(t *testing.T) { regKind(t, ctx, s) })
+}
+
+// statusCAS pins the compare-and-set status write: the transition lands
+// only when the server still holds the expected status, and both a stale
+// precondition and a missing server report applied=false with a nil
+// error — from the caller's side "someone else decided" is a result, not
+// a failure (the health sweep leans on this so a stale snapshot can never
+// overwrite a concurrent writer like re-registration).
+func statusCAS(t *testing.T, ctx context.Context, s Core) {
+	srv := &model.Server{
+		ID: id("cas"), Name: "srv-cas", Type: "game", Region: id("region"),
+		Version: "1.0.0", Platform: "android",
+		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 100,
+		Status:   model.StatusOnline,
+	}
+	if err := s.RegisterServer(ctx, srv); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Guard holds: the transition lands.
+	applied, err := s.UpdateServerStatusIf(ctx, srv.ID, model.StatusOnline, model.StatusDraining)
+	if err != nil {
+		t.Fatalf("cas online→draining: %v", err)
+	}
+	if !applied {
+		t.Fatal("cas online→draining = not applied, want applied")
+	}
+	if got, err := s.GetServer(ctx, srv.ID); err != nil {
+		t.Fatalf("get: %v", err)
+	} else if got.Status != model.StatusDraining {
+		t.Errorf("status after cas = %q, want draining", got.Status)
+	}
+
+	// Stale precondition: the writer lost the race; nothing changes.
+	applied, err = s.UpdateServerStatusIf(ctx, srv.ID, model.StatusOnline, model.StatusOffline)
+	if err != nil {
+		t.Fatalf("cas with stale precondition: %v", err)
+	}
+	if applied {
+		t.Error("cas with stale precondition = applied, want skipped")
+	}
+	if got, err := s.GetServer(ctx, srv.ID); err != nil {
+		t.Fatalf("get: %v", err)
+	} else if got.Status != model.StatusDraining {
+		t.Errorf("status after skipped cas = %q, want draining (untouched)", got.Status)
+	}
+
+	// Missing server (reclaimed temporary registration): result, not error.
+	applied, err = s.UpdateServerStatusIf(ctx, id("cas-ghost"), model.StatusOnline, model.StatusOffline)
+	if err != nil {
+		t.Fatalf("cas on missing = %v, want nil error", err)
+	}
+	if applied {
+		t.Error("cas on missing = applied, want skipped")
+	}
 }
 
 // weight covers the operator-set routing weight: set, read back, preserve

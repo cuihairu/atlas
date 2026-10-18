@@ -206,6 +206,20 @@ func (s *Store) UpdateServerStatus(ctx context.Context, id string, status model.
 	return s.submit(ctx, ins).err
 }
 
+func (s *Store) UpdateServerStatusIf(ctx context.Context, id string, fromStatus, toStatus model.ServerStatus) (bool, error) {
+	ins := &instruction{
+		kind:        opUpdateServerStatusIf,
+		target:      id,
+		status:      toStatus,
+		statusAt:    time.Now(),
+		fromStatus:  fromStatus,
+		baseVersion: s.watermark.Load(),
+		out:         make(chan instructionResult, 1),
+	}
+	res := s.submit(ctx, ins)
+	return res.matched, res.err
+}
+
 func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
 	// Replace, never mutate in place: readers hold shallow copies of the
 	// struct and would otherwise race on the shared backing array. The
@@ -312,6 +326,26 @@ func (s *Store) applyUpdateServerStatus(ins *instruction) error {
 	s.srvIdx.remove(ins.target, old)
 	s.srvIdx.add(ins.target, projectServer(srv))
 	return nil
+}
+
+// applyUpdateServerStatusIf is the compare-and-set twin: the transition
+// only lands when the server still holds fromStatus. Missing server and
+// stale precondition both report matched=false with no error — from the
+// caller's side "someone else decided" is a result, not a failure.
+func (s *Store) applyUpdateServerStatusIf(ins *instruction) (bool, error) {
+	srv, ok := s.servers[ins.target]
+	if !ok {
+		return false, nil
+	}
+	if srv.Status != ins.fromStatus {
+		return false, nil
+	}
+	old := projectServer(srv)
+	srv.Status = ins.status
+	srv.UpdatedAt = ins.statusAt
+	s.srvIdx.remove(ins.target, old)
+	s.srvIdx.add(ins.target, projectServer(srv))
+	return true, nil
 }
 
 func (s *Store) applyUpdateServerTags(ins *instruction) error {

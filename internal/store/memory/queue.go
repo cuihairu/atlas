@@ -32,9 +32,10 @@ import (
 // monotonic watermark. base_version is stamped at enqueue; at apply, a
 // mismatch means later instructions already landed — the current kind set
 // is overwrite-commutative per entity, so it resolves by re-applying over
-// current state (重算/幂等覆盖). A future compare-and-set kind would
-// reject with errVersionConflict instead. An idempotency key deduplicates
-// retries through a bounded LRU.
+// current state (重算/幂等覆盖). A compare-and-set kind instead carries its
+// precondition in the payload (opUpdateServerStatusIf guards on the
+// current status) and simply reports not-applied when the world moved. An
+// idempotency key deduplicates retries through a bounded LRU.
 //
 // Replay & dry-run (拍板④): applied instructions land in a bounded capture
 // ring (payloads deep-copied); ReplayInto rebuilds a fresh store from it
@@ -56,11 +57,11 @@ const (
 	flushRing  = 16   // recent flush records exposed via QueueStats
 )
 
-// errVersionConflict is reserved for future compare-and-set kinds: a
+// errVersionConflict is reserved for watermark-based compare-and-set: a
 // base_version mismatch on a non-commutative operation must reject instead
-// of re-apply. Every current kind is overwrite-commutative, so the mismatch
-// path is 重算 (re-apply over current state) and this error is never
-// returned today.
+// of re-apply. No kind carries that semantic today (the status CAS guards
+// on the current status, not the watermark), so the mismatch path stays
+// 重算 (re-apply over current state) and this error is never returned.
 var errVersionConflict = errors.New("memory: base_version mismatch (instruction stream moved on)")
 
 // opKind enumerates every instruction the queue understands. Each kind
@@ -71,6 +72,7 @@ type opKind uint8
 const (
 	opRegisterServer opKind = iota
 	opUpdateServerStatus
+	opUpdateServerStatusIf // compare-and-set; never merged
 	opUpdateServerTags
 	opUpdateServerWeight
 	opDeleteServer
@@ -88,6 +90,8 @@ func (k opKind) String() string {
 		return "register_server"
 	case opUpdateServerStatus:
 		return "update_server_status"
+	case opUpdateServerStatusIf:
+		return "update_server_status_if"
 	case opUpdateServerTags:
 		return "update_server_tags"
 	case opUpdateServerWeight:
@@ -116,9 +120,12 @@ func (k opKind) hot() bool { return k == opHeartbeat }
 // mergeable declares same-kind same-target coalescing inside a batch.
 // Only last-writer-wins kinds qualify; anything whose result depends on
 // applying every step (character patches) or on ordering against deletes
-// must not. Kinds with a caller copyback (register, character upsert) are
-// excluded too: a coalesced instruction would report the successor's state
-// to its own caller.
+// must not. opUpdateServerStatusIf is a compare-and-set: the compare
+// depends on the state each instruction queued against, so coalescing it
+// would report the successor's outcome to the earlier caller. Kinds with a
+// caller copyback (register, character upsert) are excluded too: a
+// coalesced instruction would report the successor's state to its own
+// caller.
 func (k opKind) mergeable() bool {
 	switch k {
 	case opHeartbeat, opUpdateServerStatus, opUpdateServerTags, opUpdateServerWeight:
@@ -135,16 +142,17 @@ type instruction struct {
 	target    string // server ID, charKey, or runtime ID — the lane key
 	hb        model.Heartbeat
 	runtime   *model.Runtime
-	server    *model.Server
-	status    model.ServerStatus
-	statusAt  time.Time
-	tags      []model.ServerTag
-	tagsAt    time.Time
-	weight    int
-	weightAt  time.Time
-	char      *model.Character
-	charPatch *store.CharacterPatch
-	charUpAt  time.Time
+	server     *model.Server
+	status     model.ServerStatus
+	statusAt   time.Time
+	fromStatus model.ServerStatus // compare-and-set precondition (opUpdateServerStatusIf)
+	tags       []model.ServerTag
+	tagsAt     time.Time
+	weight     int
+	weightAt   time.Time
+	char       *model.Character
+	charPatch  *store.CharacterPatch
+	charUpAt   time.Time
 
 	baseVersion uint64 // watermark snapshot taken at enqueue
 	idemKey     string // empty = always apply
@@ -161,6 +169,7 @@ type instruction struct {
 type instructionResult struct {
 	err       error
 	appliedAt uint64 // watermark after the batch committed
+	matched   bool   // compare-and-set kinds: the precondition held and the write happened
 }
 
 // captureEntry is the deep-copied, replayable form of an applied
@@ -170,11 +179,12 @@ type captureEntry struct {
 	kind   opKind
 	target string
 
-	server    *model.Server
-	status    model.ServerStatus
-	statusAt  time.Time
-	tags      []model.ServerTag
-	tagsAt    time.Time
+	server     *model.Server
+	status     model.ServerStatus
+	statusAt   time.Time
+	fromStatus model.ServerStatus
+	tags       []model.ServerTag
+	tagsAt     time.Time
 	weight    int
 	weightAt  time.Time
 	hb        model.Heartbeat
@@ -191,10 +201,11 @@ func (e captureEntry) instruction() *instruction {
 		target:   e.target,
 		hb:       e.hb,
 		runtime:  e.runtime,
-		server:   e.server,
-		status:   e.status,
-		statusAt: e.statusAt,
-		tags:     e.tags,
+		server:     e.server,
+		status:     e.status,
+		statusAt:   e.statusAt,
+		fromStatus: e.fromStatus,
+		tags:       e.tags,
 		tagsAt:   e.tagsAt,
 		weight:   e.weight,
 		weightAt: e.weightAt,
@@ -395,9 +406,9 @@ func (s *Store) applyBatchN(batch []*instruction) {
 		}
 		// base_version semantics (拍板③): current kinds are
 		// overwrite-commutative under single-writer lanes, so a watermark
-		// mismatch resolves by re-applying over current state. A future
-		// CAS kind would compare ins.baseVersion here and reject with
-		// errVersionConflict instead.
+		// mismatch resolves by re-applying over current state. The one
+		// compare-and-set kind carries its own precondition (fromStatus)
+		// and guards the transition itself, so it needs no watermark check.
 		res := s.applyOne(ins)
 		if ins.idemKey != "" && res.err == nil {
 			s.rememberIdempotent(ins.idemKey, res.appliedAt)
@@ -436,11 +447,14 @@ func (s *Store) signal(ins *instruction, res instructionResult) {
 func (s *Store) applyOne(ins *instruction) instructionResult {
 	at := s.watermark.Add(1)
 	var err error
+	var matched bool
 	switch ins.kind {
 	case opRegisterServer:
 		err = s.applyRegisterServer(ins)
 	case opUpdateServerStatus:
 		err = s.applyUpdateServerStatus(ins)
+	case opUpdateServerStatusIf:
+		matched, err = s.applyUpdateServerStatusIf(ins)
 	case opUpdateServerTags:
 		err = s.applyUpdateServerTags(ins)
 	case opUpdateServerWeight:
@@ -461,7 +475,7 @@ func (s *Store) applyOne(ins *instruction) instructionResult {
 	if err != nil {
 		return instructionResult{err: err, appliedAt: at}
 	}
-	return instructionResult{appliedAt: at}
+	return instructionResult{matched: matched, appliedAt: at}
 }
 
 // recordFlush appends a flush record for the status surface.
@@ -501,11 +515,12 @@ func (s *Store) rememberIdempotent(key string, at uint64) {
 // captureAppend deep-copies the payload into the replay ring (bounded).
 func (s *Store) captureAppend(ins *instruction) {
 	e := captureEntry{
-		kind:     ins.kind,
-		target:   ins.target,
-		status:   ins.status,
-		statusAt: ins.statusAt,
-		tagsAt:   ins.tagsAt,
+		kind:       ins.kind,
+		target:     ins.target,
+		status:     ins.status,
+		statusAt:   ins.statusAt,
+		fromStatus: ins.fromStatus,
+		tagsAt:     ins.tagsAt,
 		weight:   ins.weight,
 		weightAt: ins.weightAt,
 		hb:       ins.hb,
