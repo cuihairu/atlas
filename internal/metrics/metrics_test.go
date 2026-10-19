@@ -176,3 +176,40 @@ func TestEventDeliveryCounters(t *testing.T) {
 	nilMetrics.ObserveRedelivery("kafka")
 	nilMetrics.ObserveDeadLetter("nats", "atlas.characters")
 }
+
+// TestAdminAuditCounters pins the audit sink counters (the observability
+// contract for ATLAS_AUDIT_SINK: the drop counter is the alert that the
+// archive is incomplete) and the nil-receiver safety the audit wiring relies
+// on (a nil *Metrics satisfies audit.Observer).
+func TestAdminAuditCounters(t *testing.T) {
+	m, _ := newTestMetrics(t)
+	m.ObserveAuditWritten()
+	m.ObserveAuditWritten()
+	m.ObserveAuditDropped()
+	m.ObserveAuditWrite(10 * time.Millisecond)
+	m.ObserveAuditRetention(7)
+	out := scrape(t, m)
+	for _, want := range []string{
+		`atlas_admin_audit_sink_written_total 2`,
+		`atlas_admin_audit_sink_dropped_total 1`,
+		`atlas_admin_audit_retention_deleted_total 7`,
+		`atlas_admin_audit_sink_write_seconds_bucket{le="0.01"} 1`,
+	} {
+		if !hasLine(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+
+	// Zero deletions must not move the counter (the sweep runs hourly).
+	m.ObserveAuditRetention(0)
+	out = scrape(t, m)
+	if !hasLine(out, `atlas_admin_audit_retention_deleted_total 7`) {
+		t.Errorf("zero-deletion sweep moved the counter:\n%s", out)
+	}
+
+	var nilMetrics *Metrics
+	nilMetrics.ObserveAuditWritten()
+	nilMetrics.ObserveAuditDropped()
+	nilMetrics.ObserveAuditWrite(time.Second)
+	nilMetrics.ObserveAuditRetention(3)
+}

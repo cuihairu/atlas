@@ -177,8 +177,7 @@ forever and, with in-order delivery, wedges every later event on that subject. A
 semantics and consumer idempotency are pinned by tests: kafka redeliveries stamp a stable
 event ID derived from partition@offset (`TestHandlerFailureRedeliversWithStableID`), and the
 `Directory.ApplyEvent` upsert is idempotent (§6). The delivery cap below closes the
-unbounded-redelivery gap; dead-letter retention and the replay entry point remain future
-design work.
+unbounded-redelivery gap; retention and replay are decided further down this section.
 
 **Delivery limits and dead letters (delivered 2026-10-19, `ATLAS_EVENT_MAX_DELIVERY`)**: the measured gaps
 are closed by an opt-in delivery cap. Unset (0) keeps the historical behavior exactly — no cap on
@@ -200,9 +199,23 @@ handler invocation) and `atlas_event_dead_letters_total{adapter,topic}` — an a
 counter is the operational contract that replaces "the wedge is the alert". Pinned per adapter by
 `TestDeliveryCapDeadLettersAfterThreshold` (kafka/nats/rabbitmq) and
 `TestDeadLetterCopiesToMirrorStreamWhenCapConfigured` (redis, plus the absence of the mirror without the
-option). Still future design work, awaiting a decision: dead-letter retention (the `.dl` channels inherit
-each store's default retention) and the replay entry point (a CLI tool versus an admin endpoint — safe
-either way, `Directory.ApplyEvent` is idempotent, §6).
+option).
+
+**Decisions (2026-10-19, the two open points from the delivery-cap work)**:
+
+1. **Dead-letter retention: keep the store's own retention, no second policy.** Each `.dl` channel is a
+   first-class stream / topic / queue in the same broker the operator already tunes — redis stream
+   trimming, kafka topic retention, nats stream `MaxAge`, rabbitmq queue limits are the existing knobs,
+   and a parallel `ATLAS_…_DL_RETENTION` would multiply config surface across four adapters to answer a
+   need no deployment has raised (the drop counter, not age, is the operational risk). Rejected: an
+   explicit per-adapter retention env — revisited if an operator asks for a fleet-wide cap.
+2. **Replay entry point: a CLI tool, not an admin endpoint.** Replay is incident response, not a
+   request-path operation: the incident may have taken the admin API itself down, replay is bulk (all
+   dead letters of a topic), and it belongs in ops tooling with broker credentials — not behind the
+   Admin RBAC surface. Rejected: a `POST /v1/admin/…/replay` endpoint — wider admin attack surface for a
+   rare bulk operation. Semantics when built (`cmd/dlq`): read the `.dl` channel oldest-first, re-publish
+   the original payload to the source topic, delete the copy only after a confirmed publish;
+   `Directory.ApplyEvent` is an upsert, so re-delivery is idempotent (§6).
 
 Therefore the consumer side must be idempotent — the upsert in `Directory.ApplyEvent` is
 naturally idempotent (see §6).

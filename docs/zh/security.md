@@ -74,20 +74,18 @@ ATLAS_ADMIN_ROLES=key-read:viewer,key-write:operator,key-full:admin
 }
 ```
 
-审计位于认证**之内**（拿到解析后的 actor）、限流**之内**——链路为 limiter → 认证（审计中间件在其内）→ 业务，被限流拒绝的请求到不了认证、也就不进审计环；审计环不落盘，持久化交给日志采集管道（结构化日志行）。
+审计位于认证**之内**（拿到解析后的 actor）、限流**之内**——链路为 limiter → 认证（审计中间件在其内）→ 业务，被限流拒绝的请求到不了认证、也就不进审计环；审计环本身不落盘，环之外的持久化看下面的可选审计 sink（`ATLAS_AUDIT_SINK`）。
 
-管理台「操作审计」页直接读这个环（`/audit` 路由）：写操作逐条展示变更体、读操作标出无变更体，状态码按 2xx / 4xx / 5xx 分色，改条数即改 `limit`。页面底部如实标注这是内存环、重启即丢——排查近期谁动了什么够用，合规归档仍以结构化日志为准。
+管理台「操作审计」页直接读这个环（`/audit` 路由）：写操作逐条展示变更体、读操作标出无变更体，状态码按 2xx / 4xx / 5xx 分色，改条数即改 `limit`。页面底部如实标注这是内存环、重启即丢——排查近期谁动了什么够用，更长的时间轴看上面的审计 sink。
 
 **双传输**：gRPC（:9090）的 AdminService RPC 记入同一个环——`path` 为全方法名（如 `/atlas.v1.AdminService/Disable`），读 RPC 记 `GET`（无 diff）、写 RPC 记 `POST`（diff 为 protojson 请求，同受 4KB 上限），gRPC status code 按 google.rpc 惯例映射为等价 HTTP 状态入环；actor 同为 `role:key指纹`（校验由 gRPC 认证拦截器完成，未配置 Key 的开发模式显示 `:anonymous`）。Registry / Discovery / Directory / Routing 的 RPC 不进审计环（与 REST 只审计 `/v1/admin/*` 一致）。
 
-**审计持久化策略（设计稿，2026-10-19，未实现）**——今天持久化只有结构化日志行：环是重启即丢的运维视图。持久 sink 挂点只有一处，两条传输本就都汇入 `AuditLog.Record`。四个策略维度（对应立这项的审核要求）：
+**审计持久化（2026-10-19 已落地）**——上面的策略已实现（`internal/audit`）：持久 sink 挂在两条传输本就共用的唯一汇点（`AuditLog.Record`）上，REST 中间件与 gRPC `UnaryAudit` 拦截器零改动、也不会漂移。默认关闭（`ATLAS_AUDIT_SINK` 留空/`off` = 今日仅环行为）；`postgres` 每条记录一行写入 `audit_log` 表（schema 见 `migrations/0009_audit_log.sql`；sink 打开时会自行重发 DDL，没跑过 migration 的部署也能拿到表），`jsonl` 向 `ATLAS_AUDIT_SINK_PATH` 逐行追加紧凑 JSON 对象、每行 fsync——写进去的行就是已确认写入。
 
-1. **保留**——持久化后的条目是合规工件，保留期成为策略窗口（拟默认 90 天），不再等于环大小；1000 条环原样保留（近期视图语义不变）。执行交给存储原生机制（SQL 用 DELETE 清扫，文件用 logrotate 式过期）。
-2. **脱敏**——审计面没有承载凭据的端点（RBAC key 经 env 配置、从不过 API），但有三类载荷可能携带运维侧敏感数据：跨服配置文档（`PUT /v1/admin/crossserver/config`——游戏配置可能内嵌舰队密钥）、私有 tag 载荷、原样记录的 query string。拟用机制：key 黑名单在中间件捕获时打码（在 `Record` 之前，环、日志、sink 看到的是同一份已脱敏体），env 可配（如 `ATLAS_AUDIT_MASK_KEYS`，默认 `token,secret,password,key`），值替换为 `***` 并保留哈希以便关联。严格合规替代方案——配置中心写入只记 version + 体哈希、不记体——属单端点特例，列为备选。
-3. **失败策略**——sink 绝不允许阻塞 Admin 请求（审核给的硬约束）。拟用形态：有界异步队列 → sink goroutine；溢出丢最旧并计数；关停时带超时清空、剩余如实计数。持久化是尽力而为**且被如实计数**——不向请求路径回压，不无界占内存。
-4. **后端**——候选评估：（i）追加式 JSONL 文件，零新依赖、运维可轮转，但查询只有 grep；（ii）经既有 store/migrations 机制建 SQL 表——写入可确认、可查询、保留靠清扫，且生产部署本就跑着 Atlas 自己的数据库；（iii）审计条目上事件总线——否决：审计将依赖它本应记录的同一故障域的健康状况（见 sync.md §4 投递上限设计）；（iv）现状（日志管道）——已是文档口径，缺口在可确认写入与可查询。建议：（ii）以 `ATLAS_AUDIT_SINK=postgres` 启用、（i）作无库部署的回退，默认 `off` = 今日行为。
-
-监控落 `atlas_admin_audit_sink_written_total` / `atlas_admin_audit_sink_dropped_total` / 写延迟直方图——丢条计数器上的告警就是运维契约。阈值、默认脱敏清单、sink 默认值均为待拍板点；实现等这些落定。
+- **先脱敏**：`Record` 在环、日志、sink 看到之前先把变更体与 query 打码，三个视图天然一致。黑名单来自 `ATLAS_AUDIT_MASK_KEYS`（默认 `token,secret,password,key`，大小写不敏感、任意嵌套深度命中）；被点名的值替换为 `***:<该值 SHA-256 前 12 位十六进制>`——与 actor 同一套指纹风格，同值可跨条关联、原值不可还原。非 JSON 体原样穿过（本就按字符串包裹）。
+- **绝不阻塞 Admin 请求**：条目经有界异步队列（`ATLAS_AUDIT_QUEUE_SIZE`，默认 1000）交给单个 worker goroutine。溢出丢**最旧**的排队条目——事故复盘要的是最近的记录——且每次丢弃都被计数，绝无静默吞掉。sink 写失败重试一次，仍失败按丢弃计数。关停时在关库之前带 5 秒超时清空队列，没走完的如实计数。
+- **保留期**：`ATLAS_AUDIT_RETENTION`（默认 `2160h` = 90 天，`0` = 永不过期）驱动每小时一次的 `DELETE ... WHERE recorded_at < now() - 窗口` 清扫，走 `recorded_at` 索引。1000 条环的近期视图语义原样保留。`jsonl` sink 不适用保留期（轮转是运维的事——两者同时配置时启动打 Warn）。
+- **监控**：`atlas_admin_audit_sink_written_total`、`atlas_admin_audit_sink_dropped_total`、`atlas_admin_audit_retention_deleted_total` 与写延迟直方图 `atlas_admin_audit_sink_write_seconds`。丢条计数器上的告警就是运维契约——它是「档案里没有的」的如实计数。
 
 ## 4. 限流（令牌桶）
 
@@ -116,6 +114,11 @@ ATLAS_RATE_LIMIT_DEFAULT="1000:2000"   # 未命中前缀的兜底规则
 | `ATLAS_GRPC_TLS_CLIENT_CA` | （空） | gRPC 客户端 CA，配置即 mTLS |
 | `ATLAS_ADMIN_ROLES` | （空） | Admin RBAC `key:role` 列表 |
 | `ATLAS_AUDIT_ENABLED` | `1` | Admin 操作审计 |
+| `ATLAS_AUDIT_SINK` | （空） | 审计持久 sink：`postgres`、`jsonl`，留空/`off` = 仅环 |
+| `ATLAS_AUDIT_SINK_PATH` | （空） | JSONL sink 文件路径（`jsonl` 必填） |
+| `ATLAS_AUDIT_RETENTION` | `2160h`（90 天） | SQL sink 保留窗口；`0` 永不过期 |
+| `ATLAS_AUDIT_MASK_KEYS` | `token,secret,password,key` | 记录前脱敏的 body/query 键 |
+| `ATLAS_AUDIT_QUEUE_SIZE` | `1000` | 有界审计写队列（溢出丢最旧条目） |
 | `ATLAS_RATE_LIMITS` | （空） | 按前缀的限流规则 |
 | `ATLAS_RATE_LIMIT_DEFAULT` | （空） | 限流兜底规则 |
 | `ATLAS_CORS_ORIGINS` | （空） | 跨域白名单（逗号分隔，公网/管理口生效）；空 = 不产生 CORS 头，`*` 仅供开发 |

@@ -151,7 +151,7 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 - **nats**：失败消息不 Ack，超过 AckWait（默认 30s）由 durable consumer 重投。
 - **rabbitmq**：失败消息先按 `requeueBackoff`（默认 5s）退避、再 `Nack(requeue=true)` 重投——无 delivery counter 可用来封顶重试，退避挡在消费者 goroutine 上，顺带节流后续投递。
 
-**投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限由下文的 opt-in 机制收口；死信保留与重放入口仍是后续设计项。
+**投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限由下文的 opt-in 机制收口；死信保留与重放入口的拍板见本节下文。
 
 **投递上限与死信（2026-10-19 已落地，`ATLAS_EVENT_MAX_DELIVERY`）**：上面实测的缺口由一套 opt-in 投递上限收口。未设置（0）时行为与历史完全一致——kafka/nats/rabbitmq 无上限，redis 沿用内建 5 次上限、死信仅记日志。设为 N 时，一条事件失败满 N 次处理即死信：副本写入 `<topic>.dl`、原消息确认，永久失败的事件不再堵住同 subject 的后续事件。死信写入失败时事件保持未确认/未提交——下一次投递重试副本；绝不为了完成死信写入而丢弃事件。
 
@@ -162,7 +162,12 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 | nats | 按流 sequence 进程内计数；流的 subject 列表在打开时加入 `<subject>.dl`（已存在的流会做调和，滚动重启切到该选项即可生效）；到上限时副本发布、原消息 Ack | 同样的进程生命周期注意点 |
 | rabbitmq | 按消息 ID 进程内计数；`<topic>.dl` durable 队列随 topic 一并声明；到上限时副本发布、原消息 Ack（不再 requeue） | 同样的进程生命周期注意点 |
 
-计数器进入 §9 的词汇表：`atlas_event_redeliveries_total{adapter}`（每次失败的处理调用 +1）与 `atlas_event_dead_letters_total{adapter,topic}`——死信计数器上的告警就是运维契约，取代「堵塞本身就是告警」。逐适配器由 `TestDeliveryCapDeadLettersAfterThreshold`（kafka/nats/rabbitmq）与 `TestDeadLetterCopiesToMirrorStreamWhenCapConfigured`（redis，另固定了未配选项时不建镜像流）钉住。仍是后续设计项、待拍板：死信保留（`.dl` 通道继承各存储的默认保留策略）与重放入口（小 CLI 工具还是 Admin 端点——两边都安全，`Directory.ApplyEvent` 幂等，§6）。
+计数器进入 §9 的词汇表：`atlas_event_redeliveries_total{adapter}`（每次失败的处理调用 +1）与 `atlas_event_dead_letters_total{adapter,topic}`——死信计数器上的告警就是运维契约，取代「堵塞本身就是告警」。逐适配器由 `TestDeliveryCapDeadLettersAfterThreshold`（kafka/nats/rabbitmq）与 `TestDeadLetterCopiesToMirrorStreamWhenCapConfigured`（redis，另固定了未配选项时不建镜像流）钉住。
+
+**两项拍板（2026-10-19，投递上限工作遗留的两个待定点）**：
+
+1. **死信保留：沿用存储自身保留策略，不加第二套机制。** 每个 `.dl` 通道都是运维本就在调优的同一 broker 里的一等公民——redis 流裁剪、kafka topic 保留、nats 流 `MaxAge`、rabbitmq 队列上限是既有旋钮；再平行加一套 `ATLAS_…_DL_RETENTION` 会把四个适配器的配置面翻倍，去回答一个尚无部署提出的需求（运维风险在丢弃计数、不在条目年龄）。被否选项：逐适配器显式保留 env——如有运维提出舰队级统一上限再议。
+2. **重放入口：CLI 工具，不走 Admin 端点。** 重放是事故响应动作，不是请求路径上的操作：事故可能恰好打掉的就是 Admin API 本身；重放天然是批量的（一个 topic 的全部死信），应带着 broker 凭据在运维工具里跑，而不是挂在 Admin RBAC 面后面。被否选项：`POST /v1/admin/…/replay` 端点——为低频批量操作加宽 Admin 攻击面。落地时的语义（`cmd/dlq`）：按最旧优先读 `.dl` 通道，把原始载荷重新发布到源 topic，确认发布成功后才删副本；`Directory.ApplyEvent` 是 upsert，重投幂等（§6）。
 
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 

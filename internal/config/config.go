@@ -207,6 +207,34 @@ type Config struct {
 	// Env: ATLAS_AUDIT_ENABLED, default true.
 	AuditEnabled bool
 
+	// AuditSink persists every recorded audit entry beyond the in-memory ring:
+	// "postgres" (an audit_log table in ATLAS_DATABASE_URL — confirmed writes,
+	// queryable, retention by sweep), "jsonl" (one JSON object per line in
+	// AuditSinkPath, the store-less fallback) or "" / "off" (ring + log only,
+	// the historical behavior).
+	// Env: ATLAS_AUDIT_SINK, default "".
+	AuditSink string
+
+	// AuditSinkPath is the JSONL file the "jsonl" sink appends to.
+	// Env: ATLAS_AUDIT_SINK_PATH, default "".
+	AuditSinkPath string
+
+	// AuditRetention is how long the postgres sink keeps entries before its
+	// hourly sweep expires them. 0 keeps them forever. The JSONL sink is
+	// rotated by ops, so the window does not apply to it.
+	// Env: ATLAS_AUDIT_RETENTION (Go duration), default 2160h (90 days).
+	AuditRetention time.Duration
+
+	// AuditMaskKeys is the comma-separated denylist of JSON / query keys whose
+	// values are redacted at capture time (before ring, log and sink).
+	// Env: ATLAS_AUDIT_MASK_KEYS, default "token,secret,password,key".
+	AuditMaskKeys string
+
+	// AuditQueueSize bounds the async queue between the request path and the
+	// audit sink; overflow drops the oldest entry and counts it.
+	// Env: ATLAS_AUDIT_QUEUE_SIZE, default 1000.
+	AuditQueueSize int
+
 	// RateLimits configures per-endpoint token buckets as
 	// "prefix=rps[:burst]" pairs (semicolon-separated), matched by longest
 	// prefix, bucketed per client IP. Empty disables rate limiting.
@@ -320,12 +348,33 @@ func Load() Config {
 		AdminTLSClientCA:    os.Getenv("ATLAS_ADMIN_TLS_CLIENT_CA"),
 		AdminRoles:          os.Getenv("ATLAS_ADMIN_ROLES"),
 		AuditEnabled:        os.Getenv("ATLAS_AUDIT_ENABLED") != "0",
+		AuditSink:           envOr("ATLAS_AUDIT_SINK", ""),
+		AuditSinkPath:       os.Getenv("ATLAS_AUDIT_SINK_PATH"),
+		AuditRetention:      90 * 24 * time.Hour,
+		AuditMaskKeys:       envOr("ATLAS_AUDIT_MASK_KEYS", "token,secret,password,key"),
 		RateLimits:          os.Getenv("ATLAS_RATE_LIMITS"),
 		RateLimitDefault:    os.Getenv("ATLAS_RATE_LIMIT_DEFAULT"),
 		OTLPEndpoint:        os.Getenv("ATLAS_OTLP_ENDPOINT"),
 		TraceSampleRatio:    1.0,
 	}
 
+	if v := os.Getenv("ATLAS_AUDIT_SINK"); v == "" || v == "off" {
+		// Sink off = today's behavior (ring + log only): zero the field so
+		// the wiring reads one value.
+		cfg.AuditSink = ""
+	} else if v == "postgres" || v == "jsonl" {
+		cfg.AuditSink = v
+	}
+	if v := os.Getenv("ATLAS_AUDIT_RETENTION"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			cfg.AuditRetention = d
+		}
+	}
+	if v := os.Getenv("ATLAS_AUDIT_QUEUE_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.AuditQueueSize = n
+		}
+	}
 	if v := os.Getenv("ATLAS_EVENT_MAX_DELIVERY"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			cfg.EventMaxDelivery = n

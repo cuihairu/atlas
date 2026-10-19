@@ -13,6 +13,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/cuihairu/atlas/internal/audit"
 )
 
 // AuditEntry is one recorded Admin API operation.
@@ -34,6 +36,9 @@ type AuditLog struct {
 	mu      sync.Mutex
 	ring    []AuditEntry
 	maxBody int
+
+	masker *audit.Masker
+	sink   *audit.Dispatcher
 }
 
 // NewAuditLog creates an audit log holding the most recent max entries
@@ -47,6 +52,21 @@ func NewAuditLog(max, maxBody int, logger *slog.Logger) *AuditLog {
 		maxBody = 4096
 	}
 	return &AuditLog{logger: logger, max: max, maxBody: maxBody}
+}
+
+// WithMasker redacts denylisted keys in the captured body and query string
+// before an entry is recorded, so the ring, the structured log and any sink
+// all see the same masked payload. A nil masker disables masking.
+func (a *AuditLog) WithMasker(m *audit.Masker) *AuditLog {
+	a.masker = m
+	return a
+}
+
+// WithSink enqueues every recorded entry to a persistent audit sink. The
+// dispatcher owns the async boundary, so recording never waits on a write.
+func (a *AuditLog) WithSink(d *audit.Dispatcher) *AuditLog {
+	a.sink = d
+	return a
 }
 
 // auditStatusWriter captures the response status for the audit entry.
@@ -104,11 +124,17 @@ func (a *AuditLog) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Record appends an entry to the ring and mirrors it to the structured log.
-// Transport-neutral: the REST middleware and the gRPC UnaryAudit
-// interceptor both funnel through here, so ops tooling sees one ring and
-// one log vocabulary regardless of how the operation arrived.
+// Record appends an entry to the ring, mirrors it to the structured log and
+// enqueues it to the audit sink when one is attached. Transport-neutral: the
+// REST middleware and the gRPC UnaryAudit interceptor both funnel through
+// here, so ops tooling sees one ring and one log vocabulary regardless of
+// how the operation arrived — and masking applies to both.
 func (a *AuditLog) Record(e AuditEntry) {
+	if len(e.Body) > 0 {
+		e.Body = a.masker.MaskBody(e.Body)
+	}
+	e.Query = a.masker.MaskQuery(e.Query)
+
 	a.mu.Lock()
 	a.ring = append(a.ring, e)
 	if len(a.ring) > a.max {
@@ -125,6 +151,23 @@ func (a *AuditLog) Record(e AuditEntry) {
 		"body", string(e.Body),
 		"time", e.Time.Format(time.RFC3339Nano),
 	)
+
+	if a.sink != nil {
+		a.sink.Submit(audit.Entry{
+			Time: e.Time, Actor: e.Actor, Method: e.Method, Path: e.Path,
+			Query: e.Query, Status: e.Status, Body: string(e.Body),
+		})
+	}
+}
+
+// Drain flushes a pending audit sink before the process exits; without a
+// sink it is a no-op. The returned count is the entries dropped by a
+// timed-out flush.
+func (a *AuditLog) Drain(timeout time.Duration) int64 {
+	if a.sink == nil {
+		return 0
+	}
+	return a.sink.Drain(timeout)
 }
 
 // MaxBody reports the per-entry payload bound the log enforces.

@@ -130,6 +130,11 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 		"ATLAS_REGISTRY_IP_WHITELIST": "192.168.0.0/16",
 		"ATLAS_EVENT_ADAPTER":         "redis",
 		"ATLAS_EVENT_MAX_DELIVERY":    "7",
+		"ATLAS_AUDIT_SINK":            "jsonl",
+		"ATLAS_AUDIT_SINK_PATH":       "/var/log/atlas/audit.jsonl",
+		"ATLAS_AUDIT_RETENTION":       "720h",
+		"ATLAS_AUDIT_MASK_KEYS":       "token,secret",
+		"ATLAS_AUDIT_QUEUE_SIZE":      "256",
 		"ATLAS_KAFKA_BROKERS":         "b1:9092,b2:9092",
 		"ATLAS_NATS_URL":              "nats://n:4222",
 		"ATLAS_RABBITMQ_URL":          "amqp://q:5672/",
@@ -187,6 +192,18 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 	}
 	if cfg.EventMaxDelivery != 7 {
 		t.Errorf("EventMaxDelivery = %d, want 7 (ATLAS_EVENT_MAX_DELIVERY)", cfg.EventMaxDelivery)
+	}
+	if cfg.AuditSink != "jsonl" || cfg.AuditSinkPath != "/var/log/atlas/audit.jsonl" {
+		t.Errorf("audit sink = %q %q", cfg.AuditSink, cfg.AuditSinkPath)
+	}
+	if cfg.AuditRetention != 720*time.Hour {
+		t.Errorf("AuditRetention = %v, want 720h", cfg.AuditRetention)
+	}
+	if cfg.AuditMaskKeys != "token,secret" {
+		t.Errorf("AuditMaskKeys = %q", cfg.AuditMaskKeys)
+	}
+	if cfg.AuditQueueSize != 256 {
+		t.Errorf("AuditQueueSize = %d, want 256", cfg.AuditQueueSize)
 	}
 	if cfg.PublicURL != "https://atlas.example" {
 		t.Errorf("PublicURL = %q", cfg.PublicURL)
@@ -295,5 +312,44 @@ func TestEnvOr(t *testing.T) {
 	}
 	if got := envOr("ATLAS_TEST_ENVOR_MISSING", "fallback"); got != "fallback" {
 		t.Errorf("envOr missing = %q, want fallback", got)
+	}
+}
+
+func TestLoad_AuditSinkDefaults(t *testing.T) {
+	// Unset: sink off (today's behavior), 90-day retention window, the
+	// documented default mask list, library-default queue.
+	cfg := Load()
+	if cfg.AuditSink != "" {
+		t.Errorf("AuditSink default = %q, want \"\" (off)", cfg.AuditSink)
+	}
+	if cfg.AuditRetention != 90*24*time.Hour {
+		t.Errorf("AuditRetention default = %v, want 90d", cfg.AuditRetention)
+	}
+	if cfg.AuditMaskKeys != "token,secret,password,key" {
+		t.Errorf("AuditMaskKeys default = %q", cfg.AuditMaskKeys)
+	}
+	if cfg.AuditQueueSize != 0 {
+		t.Errorf("AuditQueueSize default = %d, want 0 (library default)", cfg.AuditQueueSize)
+	}
+
+	// "off" normalizes to "" so the wiring reads one value.
+	setenv(t, map[string]string{"ATLAS_AUDIT_SINK": "off"})
+	if cfg := Load(); cfg.AuditSink != "" {
+		t.Errorf("AuditSink off = %q, want \"\"", cfg.AuditSink)
+	}
+
+	// Invalid values keep the defaults rather than poisoning startup.
+	setenv(t, map[string]string{
+		"ATLAS_AUDIT_RETENTION":  "soon",
+		"ATLAS_AUDIT_QUEUE_SIZE": "-5",
+	})
+	if cfg := Load(); cfg.AuditRetention != 90*24*time.Hour || cfg.AuditQueueSize != 0 {
+		t.Errorf("invalid audit envs landed: retention=%v queue=%d", cfg.AuditRetention, cfg.AuditQueueSize)
+	}
+
+	// A zero window is accepted: it means "never expire" and must survive.
+	setenv(t, map[string]string{"ATLAS_AUDIT_RETENTION": "0"})
+	if cfg := Load(); cfg.AuditRetention != 0 {
+		t.Errorf("AuditRetention 0 = %v, want 0 (never expire)", cfg.AuditRetention)
 	}
 }

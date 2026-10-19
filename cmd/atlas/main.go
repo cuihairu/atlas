@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/cuihairu/atlas/internal/audit"
 	atlasgrpc "github.com/cuihairu/atlas/internal/grpc"
 
 	"github.com/cuihairu/atlas/internal/admin"
@@ -103,6 +104,7 @@ func main() {
 		annStore       store.AnnouncementStore
 		crossCfgStore  store.CrossServerConfigStore
 		pingCloser     func()
+		pgPool         *pgxpool.Pool
 	)
 
 	ctx := context.Background()
@@ -146,6 +148,7 @@ func main() {
 			os.Exit(1)
 		}
 		pg := pgStore.New(pool)
+		pgPool = pool
 		serverStore = pg
 		charStore = pg
 		migrationStore = pg
@@ -494,6 +497,51 @@ func main() {
 		handler = handler.WithAudit(auditLog)
 	}
 
+	// Audit persistence (docs/security.md §3): when a sink is configured the
+	// recorded entries also land in PostgreSQL or an append-only JSONL file,
+	// behind a bounded async queue that never blocks an Admin request.
+	var auditSink audit.Sink
+	if cfg.AuditEnabled {
+		switch cfg.AuditSink {
+		case "postgres":
+			if pgPool == nil {
+				logger.Error("audit sink postgres requires ATLAS_STORE=postgres")
+				os.Exit(1)
+			}
+			s, err := audit.NewSQLSink(context.Background(), pgPool)
+			if err != nil {
+				logger.Error("audit sink postgres", "error", err)
+				os.Exit(1)
+			}
+			auditSink = s
+			logger.Info("audit sink postgres enabled", "retention", cfg.AuditRetention)
+		case "jsonl":
+			if cfg.AuditSinkPath == "" {
+				logger.Error("audit sink jsonl requires ATLAS_AUDIT_SINK_PATH")
+				os.Exit(1)
+			}
+			s, err := audit.NewJSONLSink(cfg.AuditSinkPath)
+			if err != nil {
+				logger.Error("audit sink jsonl", "error", err)
+				os.Exit(1)
+			}
+			auditSink = s
+			if cfg.AuditRetention > 0 {
+				logger.Warn("audit retention window does not apply to the jsonl sink; rotate the file externally")
+			}
+			logger.Info("audit sink jsonl enabled", "path", cfg.AuditSinkPath)
+		case "":
+			// Off: today's ring-only behavior.
+		default:
+			logger.Error("unknown audit sink (expected 'postgres' or 'jsonl')", "sink", cfg.AuditSink)
+			os.Exit(1)
+		}
+		if auditSink != nil {
+			disp := audit.NewDispatcher(auditSink, cfg.AuditQueueSize, cfg.AuditRetention, prom, logger)
+			auditLog = auditLog.WithMasker(audit.NewMasker(strings.Split(cfg.AuditMaskKeys, ","))).WithSink(disp)
+		}
+	}
+
 	// Rate limiting (TODO v0.1.17): opt-in via ATLAS_RATE_LIMITS or
 	// ATLAS_RATE_LIMIT_DEFAULT.
 	var limiter *httpapi.RateLimiter
@@ -786,6 +834,20 @@ func main() {
 	evtAdapter.Close()
 	if evtRdb != nil {
 		evtRdb.Close()
+	}
+
+	// Flush pending audit entries before the stores close, then close the
+	// sink file/handles. Entries still queued at timeout are counted as
+	// dropped (atlas_admin_audit_sink_dropped_total).
+	if auditLog != nil {
+		if n := auditLog.Drain(5 * time.Second); n > 0 {
+			logger.Warn("audit sink drain", "dropped", n)
+		}
+	}
+	if auditSink != nil {
+		if err := auditSink.Close(); err != nil {
+			logger.Warn("audit sink close", "error", err)
+		}
 	}
 
 	// Close stores.

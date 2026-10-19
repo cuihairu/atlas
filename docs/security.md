@@ -112,15 +112,15 @@ ring buffer (1,000 entries by default), and the most recent entries are served t
 Audit sits **inside** authentication (it has the resolved actor) and **inside** rate
 limiting — the chain is limiter → authn (with the audit middleware inside it) →
 business logic, so a request rejected by the limiter never reaches authn and therefore
-never enters the ring. The ring is not persisted to disk; durability is the log
-collection pipeline's job (the structured log lines).
+never enters the ring. The ring itself is not persisted; durability beyond the log
+lines is the optional audit sink below (`ATLAS_AUDIT_SINK`).
 
 The dashboard's "Operation Audit" page reads this ring directly (`/audit` route): it
 shows the change body for each write operation, marks read operations as having none,
 colours status codes by 2xx / 4xx / 5xx, and changing the entry count just changes
 `limit`. The bottom of the page states plainly that this is an in-memory ring that is
-lost on restart — good enough for investigating who changed what recently, while
-compliance archiving should still rely on the structured log.
+lost on restart — good enough for investigating who changed what recently, while a
+longer horizon is the audit sink above.
 
 **Both transports**: AdminService RPCs on gRPC (:9090) are recorded in the same ring —
 `path` is the fully-qualified method name (e.g. `/atlas.v1.AdminService/Disable`), read
@@ -131,39 +131,39 @@ HTTP status following google.rpc convention before being recorded. The actor is 
 mode shows `:anonymous`). Registry / Discovery / Directory / Routing RPCs do not enter
 the audit ring (consistent with REST auditing only `/v1/admin/*`).
 
-**Audit persistence strategy (design draft, 2026-10-19, not implemented)** — today durability is the
-structured log line and nothing else: the ring is an ops view lost on restart. A persistent sink would
-hook the single choke point both transports already funnel through (`AuditLog.Record`). Four strategy
-dimensions, per the review that queued this item:
+**Audit persistence (delivered 2026-10-19)** — the strategy above is now implemented
+(`internal/audit`): a persistent sink hangs off the single choke point both transports
+already funnel through (`AuditLog.Record`), so the REST middleware and the gRPC
+`UnaryAudit` interceptor need no changes and cannot drift. Off by default
+(`ATLAS_AUDIT_SINK` empty/`off` = today's ring-only behavior); `postgres` writes one
+row per entry into `audit_log` (schema in `migrations/0009_audit_log.sql`; the sink
+re-issues the DDL on open, so a deployment that never ran the migration still gets the
+table), `jsonl` appends one compact JSON object per line to `ATLAS_AUDIT_SINK_PATH`
+with an fsync per line, so a written line is a confirmed write.
 
-1. **Retention** — persisted entries are a compliance artifact, so retention becomes a policy window
-   (proposed default 90 days), not the ring size; the 1,000-entry ring stays exactly as it is (recent-view
-   semantics unchanged). Enforcement is store-native (a DELETE sweep for SQL, logrotate-style expiry for
-   files).
-2. **Masking** — the audit surface has no credential-bearing endpoints (RBAC keys enter via env and never
-   via the API), but three payload classes can carry operator-sensitive data: the cross-server config
-   document (`PUT /v1/admin/crossserver/config` — game configs may embed fleet secrets), private tag
-   payloads, and raw query strings. Proposed mechanism: a key-denylist applied at capture time in the
-   middleware (before `Record`, so ring, log and sink all see the same masked body), configurable via env
-   (e.g. `ATLAS_AUDIT_MASK_KEYS`, default `token,secret,password,key`), values replaced with `***` with a
-   hash kept for correlation. The strict-compliance alternative — recording config-center writes as
-   version + body hash only — is a one-endpoint special case, listed here as a choice.
-3. **Failure policy** — the sink must never block an Admin request (explicit constraint from the review).
-   Proposed shape: bounded async queue → sink goroutine; overflow drops oldest and counts it; shutdown
-   drains with a timeout and counts the remainder. Durability is best-effort *and honestly counted* —
-   no backpressure onto the request path, no unbounded memory.
-4. **Backend** — options evaluated: (i) append-only JSONL file, zero new dependencies, rotatable by ops,
-   but grep is the only query; (ii) a SQL table through the existing store/migrations machinery —
-   confirmed writes, queryable, retention by sweep, and prod deployments already run a database Atlas
-   owns; (iii) shipping audit entries onto the event bus — rejected: audit would depend on the health of
-   the same failure domain it is supposed to record (see the delivery-limit design in sync.md §4);
-   (iv) status quo (log pipeline) — already the documented story; the gap is confirmed writes and query.
-   Recommendation: (ii) as `ATLAS_AUDIT_SINK=postgres` with (i) as the store-less fallback, default `off`
-   = today's behavior.
-
-Monitoring lands as `atlas_admin_audit_sink_written_total` / `atlas_admin_audit_sink_dropped_total` /
-a write-latency histogram — an alert on the drop counter is the operational contract. Thresholds, the
-default mask list, and the sink default are decision points; implementation waits on them.
+- **Masking first**: `Record` masks the captured body and query string *before* the
+  ring, the log line and the sink see them, so all three views agree. The denylist is
+  `ATLAS_AUDIT_MASK_KEYS` (default `token,secret,password,key`, case-insensitive,
+  matched at any nesting depth); a denied value becomes `***:<12 hex of its SHA-256>` —
+  the same fingerprint style as the actor, so equal values correlate across entries
+  while the original stays unrecoverable. Non-JSON bodies pass through unchanged
+  (they are already wrapped strings).
+- **Never blocks an Admin request**: entries cross a bounded async queue
+  (`ATLAS_AUDIT_QUEUE_SIZE`, default 1000) to one worker goroutine. Overflow drops the
+  *oldest* queued entry — a recent record is what an incident review wants — and every
+  drop is counted, never silently absorbed. A failed sink write is retried once, then
+  counted as dropped. Shutdown drains the queue with a 5s timeout (before the stores
+  close) and counts what did not make it.
+- **Retention**: `ATLAS_AUDIT_RETENTION` (default `2160h` = 90 days, `0` = never
+  expire) drives an hourly `DELETE ... WHERE recorded_at < now() - window` sweep on the
+  `recorded_at` index. The 1,000-entry ring keeps its recent-view semantics, unchanged.
+  On the `jsonl` sink retention does not apply (rotation is ops' job — a Warn is logged
+  at startup when both are set).
+- **Monitoring**: `atlas_admin_audit_sink_written_total`,
+  `atlas_admin_audit_sink_dropped_total`,
+  `atlas_admin_audit_retention_deleted_total` and the write-latency histogram
+  `atlas_admin_audit_sink_write_seconds`. An alert on the drop counter is the
+  operational contract — it is the honest count of what the archive does not hold.
 
 ## 4. Rate limiting (token bucket)
 
@@ -204,6 +204,11 @@ cannot escape the bucket by switching transports.
 | `ATLAS_GRPC_TLS_CLIENT_CA` | (empty) | gRPC client CA; setting it enables mTLS |
 | `ATLAS_ADMIN_ROLES` | (empty) | Admin RBAC `key:role` list |
 | `ATLAS_AUDIT_ENABLED` | `1` | Admin operation audit |
+| `ATLAS_AUDIT_SINK` | (empty) | Persistent audit sink: `postgres`, `jsonl`, or empty/`off` (ring only) |
+| `ATLAS_AUDIT_SINK_PATH` | (empty) | JSONL sink file path (required for `jsonl`) |
+| `ATLAS_AUDIT_RETENTION` | `2160h` (90d) | SQL sink retention window; `0` never expires |
+| `ATLAS_AUDIT_MASK_KEYS` | `token,secret,password,key` | Body/query keys redacted before recording |
+| `ATLAS_AUDIT_QUEUE_SIZE` | `1000` | Bounded audit write queue (overflow drops the oldest entry) |
 | `ATLAS_RATE_LIMITS` | (empty) | Per-prefix rate limit rules |
 | `ATLAS_RATE_LIMIT_DEFAULT` | (empty) | Rate limit fallback rule |
 | `ATLAS_CORS_ORIGINS` | (empty) | CORS allowlist (comma-separated, applies to the public/admin ports); empty means no CORS headers are emitted, `*` is for development only |

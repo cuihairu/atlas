@@ -51,6 +51,16 @@ type Metrics struct {
 	// because the delivery cap was reached; a rising count is the alert that
 	// replaces "the wedge is the alert".
 	EventDeadLetters *prometheus.CounterVec
+	// AdminAuditWritten counts audit entries the sink persisted.
+	AdminAuditWritten prometheus.Counter
+	// AdminAuditDropped counts audit entries lost to a full sink queue, a
+	// failed sink write or a timed-out shutdown flush — the alert that the
+	// archive is incomplete.
+	AdminAuditDropped prometheus.Counter
+	// AdminAuditRetention counts entries expired by the retention sweep.
+	AdminAuditRetention prometheus.Counter
+	// AdminAuditWriteSeconds observes how long a sink write takes.
+	AdminAuditWriteSeconds prometheus.Histogram
 }
 
 // New builds the metric set. The store backs the scrape-time gauges.
@@ -94,6 +104,23 @@ func New(s store.Store) *Metrics {
 			Name: "atlas_event_dead_letters_total",
 			Help: "Events moved to a dead-letter destination after the delivery cap, by adapter and topic.",
 		}, []string{"adapter", "topic"}),
+		AdminAuditWritten: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "atlas_admin_audit_sink_written_total",
+			Help: "Admin audit entries persisted by the configured sink.",
+		}),
+		AdminAuditDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "atlas_admin_audit_sink_dropped_total",
+			Help: "Admin audit entries lost to a full sink queue, a failed sink write or a timed-out shutdown flush.",
+		}),
+		AdminAuditRetention: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "atlas_admin_audit_retention_deleted_total",
+			Help: "Admin audit entries expired by the retention sweep.",
+		}),
+		AdminAuditWriteSeconds: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "atlas_admin_audit_sink_write_seconds",
+			Help:    "Latency of one audit sink write.",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		}),
 	}
 
 	reg.MustRegister(
@@ -105,6 +132,10 @@ func New(s store.Store) *Metrics {
 		m.RegistryWrites,
 		m.EventRedeliveries,
 		m.EventDeadLetters,
+		m.AdminAuditWritten,
+		m.AdminAuditDropped,
+		m.AdminAuditRetention,
+		m.AdminAuditWriteSeconds,
 		newStoreCollector(s),
 	)
 	// Queue collector: only for stores implementing QueueStatusProvider (memory store).
@@ -140,6 +171,33 @@ func (m *Metrics) ObserveRedelivery(adapter string) {
 func (m *Metrics) ObserveDeadLetter(adapter, topic string) {
 	if m != nil {
 		m.EventDeadLetters.WithLabelValues(adapter, topic).Inc()
+	}
+}
+
+// The four ObserveAudit* methods implement audit.Observer on *Metrics:
+// nil-safe, so an AuditLog wired without metrics stays free.
+
+func (m *Metrics) ObserveAuditWrite(d time.Duration) {
+	if m != nil {
+		m.AdminAuditWriteSeconds.Observe(d.Seconds())
+	}
+}
+
+func (m *Metrics) ObserveAuditWritten() {
+	if m != nil {
+		m.AdminAuditWritten.Inc()
+	}
+}
+
+func (m *Metrics) ObserveAuditDropped() {
+	if m != nil {
+		m.AdminAuditDropped.Inc()
+	}
+}
+
+func (m *Metrics) ObserveAuditRetention(n int64) {
+	if m != nil && n > 0 {
+		m.AdminAuditRetention.Add(float64(n))
 	}
 }
 
