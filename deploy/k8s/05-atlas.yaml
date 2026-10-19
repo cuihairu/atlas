@@ -17,6 +17,13 @@ spec:
       labels:
         app.kubernetes.io/name: atlas
         app.kubernetes.io/component: app
+      # Prometheus scrape annotations (production checklist item "Configure
+      # monitoring scrape"). Honored by the standard kubernetes-pods job;
+      # stacks that use ServiceMonitor write their own monitor instead.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8082"
+        prometheus.io/path: /metrics
     spec:
       # Wait for postgres + redis to be ready before starting atlas.
       initContainers:
