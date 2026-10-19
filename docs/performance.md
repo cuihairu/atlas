@@ -518,3 +518,25 @@ a JSON report (`go test -race ./cmd/loadgen/`). Smoke-verified locally 2026-10-1
 100 servers, 90s, 100 read rps, storm every 30s — all five streams live, zero errors,
 read mix within 1% of 5:3:2. Local numbers are not acceptance evidence; §9 acceptance
 stays defined by the criteria above, run on the designated machine.
+
+**Integration smoke on the representative topology (2026-10-20, not acceptance evidence)**:
+the HA stack behind this section was repaired and exercised for real — as shipped it could
+not be brought up at all: `build: ..` pointed at a Dockerfile that does not exist at the
+repo root (now the explicit `build: {context: .., dockerfile: deployments/docker/Dockerfile}`
+pair the compose in `deployments/docker/` uses), there was no one-shot `migrate` service
+even though Atlas never auto-migrates a fresh PostgreSQL (now wired like the root compose,
+`service_completed_successfully` before both replicas), and the image pins drifted behind
+the other two surfaces (postgres 16→17, redis 7→8, matching `deploy/k8s/` and the root
+compose). Then the §9 drill was folded in for real: 100-server fleet at 100 read rps plus
+char writes and an admin trickle through HAProxy, with `atlas2` killed mid-run at t≈80s of
+a 150s window — heartbeat p95 held at 28ms with a p99/max blip to 300/603ms as HAProxy
+drained the dead backend, and no flow lost a call; registration, storm, list, recommend,
+character write and ops all came back clean. The stack also carries a real lesson for the
+driver itself, since that run produced exactly one `read-detail` 404: the read stream had
+started racing the boot herd, so a client asked for a server that had not registered yet.
+`cmd/loadgen` now parks its rate loops behind a fleet-ready gate (closed once every
+virtual server has registered, bounded by the run ctx so a fleet that cannot boot still
+tears down), which is what real clients do — reads address a fleet that already exists.
+Post-fix rerun: 100 servers, 60s, all eight flows at zero errors. Numbers here are local
+lab evidence that the harness and the topology agree; §9 acceptance still means the ≥24h
+run on the designated machine.

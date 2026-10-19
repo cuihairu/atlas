@@ -15,8 +15,12 @@ version: "3.9"
 
 x-atlas-common: &atlas-common
   image: ghcr.io/cuihairu/atlas:latest
-  build: ..
+  build:
+    context: ..
+    dockerfile: deployments/docker/Dockerfile
   depends_on:
+    migrate:
+      condition: service_completed_successfully
     postgres-primary:
       condition: service_healthy
     redis-master:
@@ -40,6 +44,25 @@ x-atlas-common: &atlas-common
     ATLAS_REDIS_POOL_SIZE: "32"
 
 services:
+  # Schema bootstrap: the distroless Atlas image ships no shell/psql, so the
+  # one-shot migrate service applies migrations/ against the primary before
+  # either replica starts. Same pattern as deployments/docker/docker-compose.yml.
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres-primary
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: atlas
+      PGDATABASE: atlas
+    volumes:
+      - ../migrations:/migrations:ro
+    # shell vars need $$f — a bare $f is interpolated by compose itself.
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
+
   atlas1:
     <<: *atlas-common
     environment:
@@ -73,7 +96,7 @@ services:
 
   # ── PostgreSQL: primary + streaming replica ───────────────────────────
   postgres-primary:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: atlas
       POSTGRES_PASSWORD: atlas
@@ -96,7 +119,7 @@ services:
       retries: 10
 
   postgres-replica:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: atlas
       POSTGRES_PASSWORD: atlas
@@ -114,17 +137,17 @@ services:
 
   # ── Redis: master + replica + 3 Sentinels ─────────────────────────────
   redis-master:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --appendonly yes
 
   redis-replica:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-server --appendonly yes --replicaof redis-master 6379
     depends_on:
       - redis-master
 
   redis-sentinel-1:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-sentinel /etc/redis/sentinel.conf
     volumes:
       - ./redis/sentinel-1.conf:/etc/redis/sentinel.conf
@@ -133,7 +156,7 @@ services:
       - redis-replica
 
   redis-sentinel-2:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-sentinel /etc/redis/sentinel.conf
     volumes:
       - ./redis/sentinel-2.conf:/etc/redis/sentinel.conf
@@ -142,7 +165,7 @@ services:
       - redis-replica
 
   redis-sentinel-3:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: redis-sentinel /etc/redis/sentinel.conf
     volumes:
       - ./redis/sentinel-3.conf:/etc/redis/sentinel.conf

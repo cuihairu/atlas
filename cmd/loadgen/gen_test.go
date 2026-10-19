@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -15,21 +16,50 @@ import (
 // fakeAtlas implements just the endpoint shapes the SDK decodes, and counts
 // hits per path so tests can assert every load stream actually fired.
 type fakeAtlas struct {
-	mu    sync.Mutex
-	hits  map[string]int
-	delay time.Duration
+	mu            sync.Mutex
+	hits          map[string]int
+	delay         time.Duration
+	registerDelay time.Duration
+	registered    map[string]bool
 }
 
-func newFakeAtlas() *fakeAtlas { return &fakeAtlas{hits: map[string]int{}} }
+func newFakeAtlas() *fakeAtlas {
+	return &fakeAtlas{hits: map[string]int{}, registered: map[string]bool{}}
+}
 
 func (f *fakeAtlas) handler(w http.ResponseWriter, r *http.Request) {
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
+	if r.URL.Path == "/v1/registry/servers/register" && f.registerDelay > 0 {
+		// Model a boot herd that takes real time, widening the window in
+		// which ungated reads would race registration.
+		time.Sleep(f.registerDelay)
+	}
 	f.mu.Lock()
 	f.hits[r.URL.Path]++
+	// Track registrations so detail reads behave like real Atlas: an id
+	// that has not registered yet is a genuine 404.
+	if r.URL.Path == "/v1/registry/servers/register" && r.Method == http.MethodPost {
+		var body struct {
+			ServerID string `json:"server_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.ServerID != "" {
+			f.registered[body.ServerID] = true
+		}
+	}
+	known := true
+	if id, ok := strings.CutPrefix(r.URL.Path, "/v1/discovery/servers/"); ok && id != "" && !strings.Contains(id, "/") {
+		known = f.registered[id]
+	}
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
+	if !known {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"code":"SERVER_NOT_FOUND"}`)
+		return
+	}
 	// SDK list calls unmarshal into slices; everything else into objects.
 	if r.URL.Path == "/v1/discovery/servers" {
 		fmt.Fprint(w, `{"servers":[]}`)
@@ -147,6 +177,37 @@ func TestEngineStormReregistersWholeFleet(t *testing.T) {
 	}
 	if err := totalErrors(e); err != 0 {
 		t.Errorf("stream errors = %d, want 0\n%v", err, lastErrors(e))
+	}
+}
+
+// TestEngineReadsWaitForFleetBoot pins the harness behaviour found missing in
+// the 2026-10-20 HA smoke: read/char/ops streams must not start until the
+// whole fleet has registered, or reads race boot and surface honest-looking
+// SERVER_NOT_FOUND noise in the report.
+func TestEngineReadsWaitForFleetBoot(t *testing.T) {
+	cfg := Config{
+		Servers:     10,
+		Duration:    400 * time.Millisecond,
+		Heartbeat:   100 * time.Millisecond,
+		ReadRPS:     2000, // reads would certainly outrun boot without the gate
+		MaxInFlight: 64,
+		Seed:        5,
+	}
+	e, fake := newTestEngine(t, cfg, "")
+	fake.registerDelay = 30 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Duration)
+	e.Run(ctx)
+	cancel()
+
+	if err := totalErrors(e); err != 0 {
+		t.Fatalf("stream errors = %d, want 0 (reads must wait for fleet boot)\n%v", err, lastErrors(e))
+	}
+	if got := fake.count("/v1/registry/servers/register"); got < cfg.Servers {
+		t.Errorf("register hits = %d, want >= %d", got, cfg.Servers)
+	}
+	if e.flows[flowReadDetail].Count() == 0 {
+		t.Error("read-detail never fired after fleet gate opened")
 	}
 }
 

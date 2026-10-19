@@ -77,15 +77,16 @@ type Config struct {
 
 // Engine runs the load model and accumulates per-flow latency streams.
 type Engine struct {
-	cfg     Config
-	fleet   *atlas.Client // public + registry bases
-	admin   *atlas.Client // admin base, nil when AdminURL is empty
-	flows   map[string]*stream
-	servers []fleetServer
-	sem     chan struct{}
-	rng     *rand.Rand
-	charSeq int64 // monotonically increasing character/account ids
-	mu      sync.Mutex
+	cfg        Config
+	fleet      *atlas.Client // public + registry bases
+	admin      *atlas.Client // admin base, nil when AdminURL is empty
+	flows      map[string]*stream
+	servers    []fleetServer
+	sem        chan struct{}
+	fleetReady chan struct{}
+	rng        *rand.Rand
+	charSeq    int64 // monotonically increasing character/account ids
+	mu         sync.Mutex
 }
 
 // NewEngine validates cfg and builds the SDK clients. Retries are disabled
@@ -148,8 +149,9 @@ func NewEngine(cfg Config) (*Engine, error) {
 			flowCharWrite:     newStream(flowCharWrite, reservoirCap),
 			flowOps:           newStream(flowOps, reservoirCap),
 		},
-		sem: make(chan struct{}, cfg.MaxInFlight),
-		rng: rand.New(rand.NewPCG(cfg.Seed, 0)),
+		sem:        make(chan struct{}, cfg.MaxInFlight),
+		fleetReady: make(chan struct{}),
+		rng:        rand.New(rand.NewPCG(cfg.Seed, 0)),
 	}
 	e.servers = e.buildFleet()
 	return e, nil
@@ -196,22 +198,46 @@ func (e *Engine) buildFleet() []fleetServer {
 }
 
 // Run drives all configured streams until ctx is done, then returns the
-// report. It blocks; call from one goroutine.
+// report. It blocks; call from one goroutine. The read/char/ops/storm rate
+// loops stay parked until the whole fleet has registered (HA smoke
+// 2026-10-20: ungated reads raced the boot herd and produced honest-looking
+// SERVER_NOT_FOUND noise that belongs to the harness, not the system).
 func (e *Engine) Run(ctx context.Context) *report {
 	start := time.Now()
 	var wg sync.WaitGroup
 
+	var boot sync.WaitGroup
+	boot.Add(len(e.servers))
+	go func() {
+		boot.Wait()
+		close(e.fleetReady)
+	}()
+	fleetLoop := func(idx int) {
+		defer wg.Done()
+		e.fleetLoop(ctx, idx, &boot)
+	}
 	for i := range e.servers {
 		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			e.fleetLoop(ctx, idx)
-		}(i)
+		go fleetLoop(i)
+	}
+
+	// gate parks a rate loop until the fleet is up (or the run is torn
+	// down — a fleet that cannot boot must not wedge the harness).
+	gate := func() bool {
+		select {
+		case <-e.fleetReady:
+			return true
+		case <-ctx.Done():
+			return false
+		}
 	}
 	if e.cfg.ReadRPS > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !gate() {
+				return
+			}
 			e.rateLoop(ctx, time.Duration(float64(time.Second)/e.cfg.ReadRPS), func() { e.readTick(ctx) })
 		}()
 	}
@@ -219,6 +245,9 @@ func (e *Engine) Run(ctx context.Context) *report {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !gate() {
+				return
+			}
 			e.rateLoop(ctx, time.Duration(float64(time.Second)/e.cfg.CharRPS), func() { e.charTick(ctx) })
 		}()
 	}
@@ -226,6 +255,9 @@ func (e *Engine) Run(ctx context.Context) *report {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !gate() {
+				return
+			}
 			e.rateLoop(ctx, e.cfg.OpsEvery, func() { e.opsTick(ctx) })
 		}()
 	}
@@ -233,6 +265,9 @@ func (e *Engine) Run(ctx context.Context) *report {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !gate() {
+				return
+			}
 			e.rateLoop(ctx, e.cfg.StormEvery, func() { e.storm(ctx) })
 		}()
 	}
@@ -244,12 +279,13 @@ func (e *Engine) Run(ctx context.Context) *report {
 
 // fleetLoop registers one virtual server, then heartbeats it on its own
 // cadence — the same shape as sdk StartHeartbeat (immediate beat, then tick).
-func (e *Engine) fleetLoop(ctx context.Context, idx int) {
+func (e *Engine) fleetLoop(ctx context.Context, idx int, boot *sync.WaitGroup) {
 	svc := e.servers[idx]
 	e.call(flowRegister, func() error {
 		_, err := e.fleet.Register(ctx, svc.req)
 		return err
 	})
+	boot.Done()
 	e.heartbeat(ctx, svc, time.Now())
 	t := time.NewTicker(svc.beat)
 	defer t.Stop()

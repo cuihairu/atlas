@@ -354,3 +354,18 @@ collector 已显式注册其上——GC 暂停、goroutine 数、`go_memstats_*`
 JSON 报告（`go test -race ./cmd/loadgen/`）。2026-10-19 本机冒烟：100 台服 90s、
 读 100 rps、风暴每 30s——五股流全活、零错误、读混合与 5:3:2 偏差 <1%。本机数值
 不作为验收证据；§9 验收仍以上述口径为准，在指定机器上跑。
+
+**代表性拓扑集成冒烟（2026-10-20，不作验收证据）**：本节依赖的 HA 栈被修好并真跑了一遍——
+它原本根本起不来：`build: ..` 指向仓根一个并不存在的 Dockerfile（现改为 `deployments/
+docker/` 那套 compose 用的显式 `build: {context: .., dockerfile: deployments/docker/
+Dockerfile}` 组合），且完全没有一次性 `migrate` 服务，而 Atlas 从不自动给全新
+PostgreSQL 建表（现照根级 compose 接法，`service_completed_successfully` 先于两个副本），
+镜像 pin 也比另外两个部署面落后了一版（postgres 16→17、redis 7→8，与 `deploy/k8s/` 和
+根 compose 对齐）。随后把 §9 演练真实折入：100 台服经 HAProxy 以 100 rps 读 + 角色写 +
+admin 滴流压 150s，在 t≈80s 杀掉 `atlas2`——heartbeat p95 稳在 28ms，p99/max 抖动到
+300/603ms（HAProxy 排空死后端），各股流无一掉单，注册/风暴/列表/推荐/角色写/运维全清。
+这次跑还暴露了驱动器自己的真问题：唯一 1 个 `read-detail` 404 来自读流抢先于启动蜂群
+（客户端去问一台还没注册的服），`cmd/loadgen` 现在把速率循环挂在 fleet-ready 门禁之后
+（全部虚拟服注册完成即放行，且受 run ctx 有界约束——舰队起不来也能正常收尾），这正是真
+实客户端的行为：读的是已存在的舰队。修完复跑：100 台服 60s，八股流零错误。这些数值是本
+机「驱动器与拓扑对得上」的证据；§9 验收仍指指定机器上的 ≥24h 跑。
