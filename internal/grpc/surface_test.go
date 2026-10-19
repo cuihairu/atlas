@@ -7,44 +7,63 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/grpc"
+
 	pb "github.com/cuihairu/atlas/api/pb"
+	"github.com/cuihairu/atlas/internal/admin"
+	"github.com/cuihairu/atlas/internal/directory"
+	"github.com/cuihairu/atlas/internal/discovery"
+	httpadapter "github.com/cuihairu/atlas/internal/event/http"
+	"github.com/cuihairu/atlas/internal/registry"
+	"github.com/cuihairu/atlas/internal/routing"
+	"github.com/cuihairu/atlas/internal/store/memory"
 )
 
-// TestServiceSurfacePinned freezes the gRPC contract surface: every service
-// and method in the compiled-in proto descriptor — the exact contract the
-// server serves — must be listed here verbatim, so adding, renaming or
-// removing an RPC, or flipping one to streaming, fails this test until the
-// inventory is updated on purpose. (Server embeds the five generated service
-// implementations, so a registered surface that drifted from the descriptor
-// would not compile.) This is the mechanical half of the v1.0 API-freeze
-// preparation (TODO.md "API stabilization and v1.0"); the freeze decision
-// itself stays with the user.
+// TestServiceSurfacePinned freezes the gRPC contract surface from both
+// sources that must agree: what RegisterServices actually mounts on a grpc
+// server (GetServiceInfo — a dropped Register*Server call shows up here) and
+// what the compiled-in proto descriptor declares (a proto edit shows up
+// here). Both must equal the inventory below verbatim, so adding, renaming
+// or removing an RPC, flipping one to streaming, or silently un-registering
+// a service fails this test until the inventory is updated on purpose. This
+// is the mechanical half of the v1.0 API-freeze preparation (TODO.md "API
+// stabilization and v1.0"); the freeze decision itself stays with the user.
 func TestServiceSurfacePinned(t *testing.T) {
+	mem := memory.New()
+	srv := New(
+		registry.New(mem, mem, testLogger()),
+		discovery.New(mem, mem),
+		directory.New(mem),
+		routing.New(mem, mem, mem, mem),
+		admin.New(mem),
+		httpadapter.New(),
+	)
+	g := grpc.NewServer()
+	srv.RegisterServices(g)
+
+	registered := make([]string, 0, 24)
+	for name, info := range g.GetServiceInfo() {
+		for _, m := range info.Methods {
+			registered = append(registered, name+"/"+m.Name+streamMark(m.IsClientStream, m.IsServerStream))
+		}
+	}
+	sort.Strings(registered)
+
 	fd := pb.File_api_proto_atlas_proto
 	if fd == nil {
 		t.Fatal("atlas proto descriptor not registered")
 	}
-
-	got := make([]string, 0, 24)
+	declared := make([]string, 0, 24)
 	services := fd.Services()
 	for i := 0; i < services.Len(); i++ {
 		svc := services.Get(i)
 		methods := svc.Methods()
 		for j := 0; j < methods.Len(); j++ {
 			m := methods.Get(j)
-			entry := string(svc.FullName()) + "/" + string(m.Name())
-			switch {
-			case m.IsStreamingClient() && m.IsStreamingServer():
-				entry += " (bidi-stream)"
-			case m.IsStreamingClient():
-				entry += " (client-stream)"
-			case m.IsStreamingServer():
-				entry += " (server-stream)"
-			}
-			got = append(got, entry)
+			declared = append(declared, string(svc.FullName())+"/"+string(m.Name())+streamMark(m.IsStreamingClient(), m.IsStreamingServer()))
 		}
 	}
-	sort.Strings(got)
+	sort.Strings(declared)
 
 	want := []string{
 		"atlas.v1.AdminService/CreateMigration",
@@ -71,10 +90,28 @@ func TestServiceSurfacePinned(t *testing.T) {
 		"atlas.v1.RegistryService/Unregister",
 		"atlas.v1.RoutingService/Recommend",
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("gRPC surface changed:\n  added:   %v\n  removed: %v\nupdate the pinned inventory in this test on purpose (v1.0 freeze guardrail)",
-			missing(want, got), missing(got, want))
+	if !reflect.DeepEqual(registered, want) {
+		t.Fatalf("registered gRPC surface changed:\n  added:   %v\n  removed: %v\nupdate the pinned inventory in this test on purpose (v1.0 freeze guardrail)",
+			missing(want, registered), missing(registered, want))
 	}
+	if !reflect.DeepEqual(declared, want) {
+		t.Fatalf("proto descriptor surface changed:\n  added:   %v\n  removed: %v\nupdate the pinned inventory in this test on purpose (v1.0 freeze guardrail)",
+			missing(want, declared), missing(declared, want))
+	}
+}
+
+// streamMark annotates a surface entry when a method is streaming, so
+// flipping an RPC to streaming also breaks the pin.
+func streamMark(clientStream, serverStream bool) string {
+	switch {
+	case clientStream && serverStream:
+		return " (bidi-stream)"
+	case clientStream:
+		return " (client-stream)"
+	case serverStream:
+		return " (server-stream)"
+	}
+	return ""
 }
 
 // missing returns the entries of a that do not appear in b.
