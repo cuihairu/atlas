@@ -237,6 +237,25 @@ func main() {
 	defer fleetCancel()
 	go fleet.RunReconciler(fleetCtx, fleetIdx, serverStore, runtimeStore, 30*time.Second)
 
+	// Create composite store for health checks / ping / close. Hoisted above
+	// the event adapter so its Options can carry the Prometheus delivery
+	// counters (redeliveries / dead letters).
+	composite := &compositeStore{
+		ServerStore:            serverStore,
+		CharacterStore:         charStore,
+		RuntimeStore:           runtimeStore,
+		MigrationStore:         migrationStore,
+		StatsStore:             statsStore,
+		RealmStore:             realmStore,
+		ShardStore:             shardStore,
+		MaintenanceWindowStore: mainWinStore,
+		AnnouncementStore:      annStore,
+		CrossServerConfigStore: crossCfgStore,
+	}
+
+	// Prometheus instrumentation (TODO v0.1.3).
+	prom := metrics.New(composite)
+
 	// Create services.
 	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
 	regSvc := registry.New(serverStore, runtimeStore, logger).WithMaintenanceEnforce(cfg.MaintenanceEnforce)
@@ -256,11 +275,17 @@ func main() {
 			logger.Error("failed to ping Redis for event adapter", "error", err)
 			os.Exit(1)
 		}
-		evtAdapter = redisEvent.New(evtRdb, redisEvent.Options{Logger: logger})
+		evtAdapter = redisEvent.New(evtRdb, redisEvent.Options{
+			Logger:          logger,
+			MaxDelivery:     cfg.EventMaxDelivery,
+			DeliveryMetrics: prom,
+		})
 	case "kafka":
 		ka, err := kafkaEvent.Open(ctx, kafkaEvent.Options{
-			Brokers: strings.Split(cfg.KafkaBrokers, ","),
-			Logger:  logger,
+			Brokers:         strings.Split(cfg.KafkaBrokers, ","),
+			Logger:          logger,
+			MaxDelivery:     cfg.EventMaxDelivery,
+			DeliveryMetrics: prom,
 		})
 		if err != nil {
 			logger.Error("failed to connect Kafka for event adapter", "error", err)
@@ -268,14 +293,24 @@ func main() {
 		}
 		evtAdapter = ka
 	case "nats":
-		na, err := natsEvent.Open(natsEvent.Options{URL: cfg.NATSURL, Logger: logger})
+		na, err := natsEvent.Open(natsEvent.Options{
+			URL:             cfg.NATSURL,
+			Logger:          logger,
+			MaxDelivery:     cfg.EventMaxDelivery,
+			DeliveryMetrics: prom,
+		})
 		if err != nil {
 			logger.Error("failed to connect NATS for event adapter", "error", err)
 			os.Exit(1)
 		}
 		evtAdapter = na
 	case "rabbitmq":
-		ra, err := rabbitEvent.Open(rabbitEvent.Options{URL: cfg.RabbitURL, Logger: logger})
+		ra, err := rabbitEvent.Open(rabbitEvent.Options{
+			URL:             cfg.RabbitURL,
+			Logger:          logger,
+			MaxDelivery:     cfg.EventMaxDelivery,
+			DeliveryMetrics: prom,
+		})
 		if err != nil {
 			logger.Error("failed to connect RabbitMQ for event adapter", "error", err)
 			os.Exit(1)
@@ -292,6 +327,10 @@ func main() {
 	// event the process handles is counted exactly once.
 	evtCounting := event.WrapCounting(evtAdapter)
 	evtAdapter = evtCounting
+	if cfg.EventMaxDelivery > 0 {
+		logger.Info("event delivery cap enabled",
+			"max_delivery", cfg.EventMaxDelivery, "adapter", cfg.EventAdapter)
+	}
 
 	// Lightweight series sampler (概览负载时间视图 / 消息总线曲线 / 服务器
 	// 热力图): 15s samples, ≥24h retention (the 24h heatmap window needs it;
@@ -354,20 +393,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create composite store for health checks / ping / close.
-	composite := &compositeStore{
-		ServerStore:            serverStore,
-		CharacterStore:         charStore,
-		RuntimeStore:           runtimeStore,
-		MigrationStore:         migrationStore,
-		StatsStore:             statsStore,
-		RealmStore:             realmStore,
-		ShardStore:             shardStore,
-		MaintenanceWindowStore: mainWinStore,
-		AnnouncementStore:      annStore,
-		CrossServerConfigStore: crossCfgStore,
-	}
-
 	// Cross-server config center (docs/config-center.md): hosts the versioned
 	// coordination config and signals changes over the same event adapter
 	// (subscribe mode) plus callback POSTs (callback mode).
@@ -375,8 +400,6 @@ func main() {
 
 	admSvc := admin.New(composite)
 
-	// Prometheus instrumentation (TODO v0.1.3).
-	prom := metrics.New(composite)
 	discSvc.WithMetrics(prom)
 	dirSvc.WithMetrics(prom)
 	regSvc.WithMetrics(prom)

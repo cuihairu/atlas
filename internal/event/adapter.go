@@ -47,6 +47,14 @@ const (
 	TopicConfig = "atlas.config"
 )
 
+// DeadLetterTopic is the dead-letter destination for a topic
+// (docs/sync.md §4): a sibling channel in the same store that the main
+// consumer never reads, so a dead letter is visible without being
+// re-delivered.
+func DeadLetterTopic(topic string) string {
+	return topic + ".dl"
+}
+
 // ErrNoSubscriber is returned by adapters when an event is published to a
 // topic nobody subscribed to.
 var ErrNoSubscriber = errors.New("event: no subscriber for topic")

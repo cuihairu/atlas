@@ -25,6 +25,7 @@ type fakeChannel struct {
 	boundKey  string
 	qos       int
 	published []amqp.Publishing
+	publishKeys []string
 	publishID string
 
 	deliveries  chan amqp.Delivery
@@ -92,8 +93,8 @@ func (c *fakeChannel) PublishWithContext(_ context.Context, _, key string, _, _ 
 		return c.errPublish
 	}
 	c.published = append(c.published, msg)
+	c.publishKeys = append(c.publishKeys, key)
 	c.publishID = msg.MessageId
-	_ = key
 	return nil
 }
 
@@ -444,5 +445,65 @@ func TestAckFailureLogged(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "event: ack failed") {
 		t.Fatalf("ack failure never logged, buffer = %q", buf.String())
+	}
+}
+
+// TestDeliveryCapDeadLettersAfterThreshold pins the opt-in cap
+// (ATLAS_EVENT_MAX_DELIVERY): after MaxDelivery failed deliveries of the
+// same message the copy goes to the "<topic>.dl" queue and the original is
+// acked — no more Nack(requeue) loops; without the option every failure
+// requeues (pinned by the requeue-backoff test).
+func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
+	a, ch := newTestAdapter(t)
+	a.maxDelivery = 2
+
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		return errors.New("apply failed")
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	// The dead-letter destination is declared up front, like the main queue.
+	declared := false
+	ch.mu.Lock()
+	for _, d := range ch.declared {
+		if d == "queue:"+event.DeadLetterTopic(event.TopicCharacters) {
+			declared = true
+		}
+	}
+	ch.mu.Unlock()
+	if !declared {
+		t.Fatal("dead-letter queue was not declared with the topic")
+	}
+
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 9})
+	delivery := amqp.Delivery{MessageId: "m1", Type: string(event.EventCharacterUpdated), Body: payload}
+	ch.deliveries <- delivery // first delivery — requeued
+	ch.deliveries <- delivery // redelivery — hits the cap
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		published, acked, nacked := ch.stats()
+		if published == 1 && acked == 1 && nacked == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	published, acked, nacked := ch.stats()
+	if published != 1 {
+		t.Fatalf("published = %d, want 1 (the dead-letter copy)", published)
+	}
+	if acked != 1 || nacked != 1 {
+		t.Fatalf("acked = %d nacked = %d, want 1/1 (first failure requeues, cap acks)", acked, nacked)
+	}
+	ch.mu.Lock()
+	key := ch.publishKeys[0]
+	body := string(ch.published[0].Body)
+	ch.mu.Unlock()
+	if key != event.DeadLetterTopic(event.TopicCharacters) {
+		t.Fatalf("dead-letter routing key = %q, want atlas.characters.dl", key)
+	}
+	if body != string(payload) {
+		t.Fatalf("dead-letter body = %s, want the original %s", body, payload)
 	}
 }

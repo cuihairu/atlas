@@ -44,6 +44,13 @@ type Metrics struct {
 	// slower heartbeat write shows up here long before players feel it
 	// (stale runtime → phantom suspect/offline sweeps).
 	RegistryWrites *prometheus.HistogramVec
+	// EventRedeliveries counts failed event handler invocations by adapter —
+	// one increment means one retry the adapter is about to schedule.
+	EventRedeliveries *prometheus.CounterVec
+	// EventDeadLetters counts events copied to a dead-letter destination
+	// because the delivery cap was reached; a rising count is the alert that
+	// replaces "the wedge is the alert".
+	EventDeadLetters *prometheus.CounterVec
 }
 
 // New builds the metric set. The store backs the scrape-time gauges.
@@ -79,6 +86,14 @@ func New(s store.Store) *Metrics {
 			Help:    "Registry write-path latency by operation (register/heartbeat/unregister); the heartbeat line is the fleet's hottest write.",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 		}, []string{"op"}),
+		EventRedeliveries: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "atlas_event_redeliveries_total",
+			Help: "Failed event handler invocations (a retry is about to be scheduled), by adapter.",
+		}, []string{"adapter"}),
+		EventDeadLetters: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "atlas_event_dead_letters_total",
+			Help: "Events moved to a dead-letter destination after the delivery cap, by adapter and topic.",
+		}, []string{"adapter", "topic"}),
 	}
 
 	reg.MustRegister(
@@ -88,6 +103,8 @@ func New(s store.Store) *Metrics {
 		m.HealthTransitions,
 		m.DirectoryWrites,
 		m.RegistryWrites,
+		m.EventRedeliveries,
+		m.EventDeadLetters,
 		newStoreCollector(s),
 	)
 	// Queue collector: only for stores implementing QueueStatusProvider (memory store).
@@ -106,6 +123,23 @@ func (m *Metrics) Handler() http.Handler {
 func (m *Metrics) ObserveHeartbeatLag(age time.Duration) {
 	if m != nil {
 		m.HeartbeatLag.Observe(age.Seconds())
+	}
+}
+
+// ObserveRedelivery records one failed event handler invocation. Nil-safe,
+// so adapters can hold a *Metrics without checking it first (they satisfy
+// event.DeliveryMetrics).
+func (m *Metrics) ObserveRedelivery(adapter string) {
+	if m != nil {
+		m.EventRedeliveries.WithLabelValues(adapter).Inc()
+	}
+}
+
+// ObserveDeadLetter records one event moved to its dead-letter destination.
+// Nil-safe like ObserveRedelivery.
+func (m *Metrics) ObserveDeadLetter(adapter, topic string) {
+	if m != nil {
+		m.EventDeadLetters.WithLabelValues(adapter, topic).Inc()
 	}
 }
 

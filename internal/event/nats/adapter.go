@@ -42,6 +42,17 @@ type Options struct {
 	Durable string
 	// Fetch is the pull-fetch wait interval (default 5s).
 	Fetch time.Duration
+	// MaxDelivery caps failed-delivery attempts per message before it is
+	// republished to "<subject>.dl" and acked (docs/sync.md §4). 0 = no cap:
+	// the message stays unacked and the durable consumer redelivers it
+	// forever (the server default MaxDeliver measures -1) — the historical
+	// behavior. The counter is in-process; a restart resets it, so the cap
+	// is per process lifetime, but a dead-lettered message is acked and
+	// never re-delivered.
+	MaxDelivery int
+	// DeliveryMetrics counts failed deliveries and dead letters (nil = a
+	// no-op).
+	DeliveryMetrics event.DeliveryMetrics
 	// Logger receives consume failures (default slog.Default()).
 	Logger *slog.Logger
 }
@@ -55,6 +66,10 @@ type Adapter struct {
 	fetch   time.Duration
 	logger  *slog.Logger
 	owns    bool
+
+	maxDelivery int
+	metrics     event.DeliveryMetrics
+	attempts    *event.AttemptTracker
 
 	mu      sync.Mutex
 	cancels []context.CancelFunc
@@ -79,10 +94,19 @@ func Open(opts Options) (*Adapter, error) {
 	}
 	a := New(conn, js, opts)
 	a.owns = true
+	// The dead-letter subject must be covered by the stream or JetStream
+	// rejects publishes to it ("no responders"): extend the subject list on
+	// creation, or reconcile an existing stream (a rolling restart onto the
+	// new option leaves the old subject list behind).
+	dl := event.DeadLetterTopic(event.TopicCharacters)
 	if _, err := js.StreamInfo(a.stream); errors.Is(err, nats.ErrStreamNotFound) {
+		subjects := []string{event.TopicCharacters}
+		if a.maxDelivery > 0 {
+			subjects = append(subjects, dl)
+		}
 		if _, err := js.AddStream(&nats.StreamConfig{
 			Name:      a.stream,
-			Subjects:  []string{event.TopicCharacters},
+			Subjects:  subjects,
 			Retention: nats.LimitsPolicy,
 		}); err != nil {
 			conn.Close()
@@ -91,6 +115,15 @@ func Open(opts Options) (*Adapter, error) {
 	} else if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("event: nats stream info: %w", err)
+	} else if a.maxDelivery > 0 {
+		if info, err := js.StreamInfo(a.stream); err == nil && !containsString(info.Config.Subjects, dl) {
+			cfg := info.Config
+			cfg.Subjects = append(cfg.Subjects, dl)
+			if _, err := js.UpdateStream(&cfg); err != nil {
+				conn.Close()
+				return nil, fmt.Errorf("event: nats update stream for dead letter: %w", err)
+			}
+		}
 	}
 	return a, nil
 }
@@ -99,12 +132,15 @@ func Open(opts Options) (*Adapter, error) {
 // Close only when created through Open.
 func New(conn *nats.Conn, js nats.JetStreamContext, opts Options) *Adapter {
 	a := &Adapter{
-		conn:    conn,
-		js:      js,
-		stream:  opts.Stream,
-		durable: opts.Durable,
-		fetch:   opts.Fetch,
-		logger:  opts.Logger,
+		conn:        conn,
+		js:          js,
+		stream:      opts.Stream,
+		durable:     opts.Durable,
+		fetch:       opts.Fetch,
+		logger:      opts.Logger,
+		maxDelivery: opts.MaxDelivery,
+		metrics:     event.MetricsOrNop(opts.DeliveryMetrics),
+		attempts:    event.NewAttemptTracker(),
 	}
 	if a.stream == "" {
 		a.stream = DefaultStream
@@ -225,9 +261,45 @@ func (a *Adapter) handle(ctx context.Context, h event.Handler, msg *nats.Msg) {
 		a.logger.Error("event: handler failed, left unacked",
 			"subject", msg.Subject, "stream_seq", seq,
 			"type", string(e.Type), "error", err)
+		a.metrics.ObserveRedelivery(a.Name())
+		if a.maxDelivery > 0 {
+			if n := a.attempts.Failed(e.ID); n >= a.maxDelivery {
+				a.deadLetter(msg, seq, n)
+			}
+		}
 		return
 	}
+	a.attempts.Reset(e.ID)
 	if err := msg.Ack(); err != nil {
 		a.logger.Error("event: ack failed", "subject", msg.Subject, "stream_seq", seq, "error", err)
 	}
+}
+
+// deadLetter copies an exhausted message to "<subject>.dl" and acks the
+// original, ending its redelivery chain (docs/sync.md §4). A failed copy
+// leaves the original unacked, so the consumer redelivers and the next
+// attempt retries the copy — the message is never dropped to make a
+// dead-letter write succeed.
+func (a *Adapter) deadLetter(msg *nats.Msg, seq uint64, n int) {
+	if _, err := a.js.Publish(event.DeadLetterTopic(msg.Subject), msg.Data); err != nil {
+		a.logger.Error("event: dead-letter publish failed",
+			"subject", msg.Subject, "stream_seq", seq, "error", err)
+		return
+	}
+	a.metrics.ObserveDeadLetter(a.Name(), msg.Subject)
+	a.attempts.Reset(fmt.Sprintf("%d", seq))
+	a.logger.Error("event: dead-lettered after failed deliveries",
+		"subject", msg.Subject, "stream_seq", seq, "deliveries", n)
+	if err := msg.Ack(); err != nil {
+		a.logger.Error("event: dead-letter ack failed", "subject", msg.Subject, "stream_seq", seq, "error", err)
+	}
+}
+
+func containsString(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

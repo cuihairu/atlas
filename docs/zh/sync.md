@@ -151,18 +151,18 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 - **nats**：失败消息不 Ack，超过 AckWait（默认 30s）由 durable consumer 重投。
 - **rabbitmq**：失败消息先按 `requeueBackoff`（默认 5s）退避、再 `Nack(requeue=true)` 重投——无 delivery counter 可用来封顶重试，退避挡在消费者 goroutine 上，顺带节流后续投递。
 
-**投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限 / 退避 / 死信保留与重放为后续设计项。
+**投递上限与死信（2026-10-19 实测口径，分阶段设计项）**：四适配器中仅 redis 有投递上限（5 次后记日志死信）；kafka（offset 不提交即无限重取）与 nats（durable consumer `MaxDeliver=-1` 实测无投递上限、无死信目标，见 `TestConsumerDefaultsUnboundedRedelivery`）以及 rabbitmq（无 delivery counter）均无上限——一条永久失败的事件会无限重投，并因按序投递堵住同 subject 的后续事件。至少一次语义与消费端幂等已由测试固定：kafka 重投时事件 ID 由 `partition@offset` 决定、跨重投稳定（`TestHandlerFailureRedeliversWithStableID`），`Directory.ApplyEvent` upsert 幂等（§6）。投递上限由下文的 opt-in 机制收口；死信保留与重放入口仍是后续设计项。
 
-**投递上限与死信（设计稿，2026-10-19，未实现）**——上面实测的缺口需要一套有界失败设计，总线故障排查才能不再等于「盯日志」。形态：一个统一投递上限 + 各适配器原生死信机制 + 统一命名约定（一律 `<topic>.dl`）。逐适配器机制（基于当前代码）：
+**投递上限与死信（2026-10-19 已落地，`ATLAS_EVENT_MAX_DELIVERY`）**：上面实测的缺口由一套 opt-in 投递上限收口。未设置（0）时行为与历史完全一致——kafka/nats/rabbitmq 无上限，redis 沿用内建 5 次上限、死信仅记日志。设为 N 时，一条事件失败满 N 次处理即死信：副本写入 `<topic>.dl`、原消息确认，永久失败的事件不再堵住同 subject 的后续事件。死信写入失败时事件保持未确认/未提交——下一次投递重试副本；绝不为了完成死信写入而丢弃事件。
 
-| 适配器 | 拟用机制 | 重启安全性 |
+| 适配器 | 已落地机制 | 注意点 |
 | --- | --- | --- |
-| redis（上限已有：5 次，今日仅记日志） | 耗尽时先 `XADD` 一份副本进 `<topic>.dl`（载荷 + 失败原因 + 源 ID）再做最终 `XACK`；源条目本就留在未裁剪的流里，`.dl` 副本解决的是**可见性** | ✅ 计数在 PEL 里 |
-| kafka | 按事件 ID（`partition@offset`，跨重投稳定）记尝试次数，到阈值时重发布到 `<topic>.dl` 并提交原 offset。segmentio/kafka-go 无服务端计数器，计数只能进程内 | ⚠️ 重启清零——上限按进程生命周期计，但死信过的消息已提交、不会再循环 |
-| nats | 不再用服务端默认值，改为显式 `ConsumerConfig{MaxDeliver, AckWait}` 绑定 durable consumer，并设 `RePublish` 让**服务端**把耗尽的消息复制到 `<subject>.dl` | ✅ 服务端 |
-| rabbitmq | `Nack(requeue)` 不会递增 broker 的 `x-death` 计数，改为自带 `x-atlas-retry` 头：失败时带头 +1 重发布并 Ack 原消息（沿用 5s 退避）；到阈值经 `atlas.dlx` 死信交换机进 `<topic>.dl` 队列，不再 requeue | ✅ 头随消息走 |
+| redis | 该选项覆盖内建阈值；耗尽条目在 ack 前镜像进 `<topic>.dl`（带 `source_id` / `deliveries` 溯源字段） | 镜像本身 opt-in——默认上限仍只记日志 |
+| kafka | 按 `partition@offset` 进程内计数；到上限时副本写入 `<topic>.dl` 并提交原 offset | 计数重启清零——上限按进程生命周期计，但死信过的记录已提交、不会再循环 |
+| nats | 按流 sequence 进程内计数；流的 subject 列表在打开时加入 `<subject>.dl`（已存在的流会做调和，滚动重启切到该选项即可生效）；到上限时副本发布、原消息 Ack | 同样的进程生命周期注意点 |
+| rabbitmq | 按消息 ID 进程内计数；`<topic>.dl` durable 队列随 topic 一并声明；到上限时副本发布、原消息 Ack（不再 requeue） | 同样的进程生命周期注意点 |
 
-待拍板点（实现等这些落定）：（1）默认开启还是 opt-in——redis 部署已在上限 5 下运行，但把 kafka/nats/rabbitmq 从无上限改为有上限是投递语义变更，而仓里对这种形状已有「不安全默认启动告警」先例；（2）阈值数值与退避曲线（维持今日的平退避，还是走 NATS 原生 `BackOff` 调度做指数）；（3）死信保留——redis `.dl` 流继承主流的未裁剪行为，kafka 需定 topic 保留策略，rabbitmq 需定队列长度；（4）重放入口——小 CLI 工具（`cmd/dlq`）还是 Admin 端点；两边都安全，`Directory.ApplyEvent` 幂等（§6）。监控（§9）落 `atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}`——上限存在后，死信计数器上的告警就是运维契约，取代「堵塞本身就是告警」。
+计数器进入 §9 的词汇表：`atlas_event_redeliveries_total{adapter}`（每次失败的处理调用 +1）与 `atlas_event_dead_letters_total{adapter,topic}`——死信计数器上的告警就是运维契约，取代「堵塞本身就是告警」。逐适配器由 `TestDeliveryCapDeadLettersAfterThreshold`（kafka/nats/rabbitmq）与 `TestDeadLetterCopiesToMirrorStreamWhenCapConfigured`（redis，另固定了未配选项时不建镜像流）钉住。仍是后续设计项、待拍板：死信保留（`.dl` 通道继承各存储的默认保留策略）与重放入口（小 CLI 工具还是 Admin 端点——两边都安全，`Directory.ApplyEvent` 幂等，§6）。
 
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 
@@ -298,7 +298,7 @@ flowchart LR
 
 ## 9. 监控
 
-事件同步写路径有专属指标 `atlas_directory_write_duration_seconds{op}`：op 为投影事件名（如 `character.created` 经 `eventWriteOp` 归一为 `created`；service-API 写为 `create`/`update`/`delete`，见 internal/directory/events.go:27 与 internal/directory/directory.go:38）。重投递与死信（redis 的 PEL 超限、kafka 的 offset 不提交）仍见各适配器的结构化日志。服务整体健康用 `/metrics`（:8082）上的真实指标观测：
+事件同步写路径有专属指标 `atlas_directory_write_duration_seconds{op}`：op 为投影事件名（如 `character.created` 经 `eventWriteOp` 归一为 `created`；service-API 写为 `create`/`update`/`delete`，见 internal/directory/events.go:27 与 internal/directory/directory.go:38）。重投递与死信计入 `atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}`（§4 的投递上限），并同步出现在各适配器的结构化日志。服务整体健康用 `/metrics`（:8082）上的真实指标观测：
 
 | 指标 | 含义 |
 | --- | --- |

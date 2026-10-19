@@ -347,6 +347,11 @@ func TestDeadLetterAfterMaxRedelivery(t *testing.T) {
 	if p := pendingCount(t, a); p != 0 {
 		t.Fatalf("pending after dead-letter = %d, want 0 (entry must not be replayed)", p)
 	}
+	// Without Options.MaxDelivery the dead letter stays log-only — no
+	// mirror stream is created (that visibility copy is opt-in).
+	if mr.Exists(event.DeadLetterTopic(event.TopicCharacters)) {
+		t.Fatal("dead-letter mirror stream created without Options.MaxDelivery")
+	}
 }
 
 func TestBrokerErrors(t *testing.T) {
@@ -391,5 +396,59 @@ func TestBrokerErrors(t *testing.T) {
 	})
 	if err := c.Close(); err != nil {
 		t.Errorf("close: %v", err)
+	}
+}
+
+// TestDeadLetterCopiesToMirrorStreamWhenCapConfigured pins the opt-in
+// visibility copy (Options.MaxDelivery > 0): the exhausted entry is
+// mirrored into "<topic>.dl" with provenance before the ack, so dead
+// letters are queryable without XRange-ing the main stream — and a failed
+// mirror write leaves the entry pending for the next sweep instead of
+// losing it (docs/sync.md §4).
+func TestDeadLetterCopiesToMirrorStreamWhenCapConfigured(t *testing.T) {
+	a, mr := newTestAdapter(t, Options{Block: 30 * time.Millisecond, MaxDelivery: 2})
+	ctx := context.Background()
+
+	handler := func(_ context.Context, e *event.Event) error {
+		return errors.New("poison handler")
+	}
+	if err := a.Subscribe(ctx, event.TopicCharacters, handler); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	in := &event.Event{Type: event.EventCharacterCreated, AccountID: 1, CharacterID: 501}
+	if err := a.Publish(ctx, in); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	waitFor(t, "failed delivery pending", func() bool { return pendingCount(t, a) == 1 })
+
+	if err := a.client.Do(ctx, "XCLAIM", event.TopicCharacters, a.group,
+		"dead-claimed", "0", in.ID, "RETRYCOUNT", "2").Err(); err != nil {
+		t.Fatalf("xclaim: %v", err)
+	}
+
+	if err := a.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	mr.SetTime(time.Now().Add(31 * time.Second))
+	sweeper := New(redis.NewClient(&redis.Options{Addr: mr.Addr()}), Options{MaxDelivery: 2})
+	defer sweeper.Close()
+	sweeper.claimStale(ctx, event.TopicCharacters, handler)
+
+	if p := pendingCount(t, a); p != 0 {
+		t.Fatalf("pending after dead-letter = %d, want 0", p)
+	}
+	entries, err := sweeper.client.XRange(ctx, event.DeadLetterTopic(event.TopicCharacters), "-", "+").Result()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("dead-letter mirror entries = %d, want 1 (err %v)", len(entries), err)
+	}
+	v := entries[0].Values
+	if v["source_id"] != in.ID {
+		t.Fatalf("mirror source_id = %v, want the entry ID %s", v["source_id"], in.ID)
+	}
+	data, _ := v["data"].(string)
+	if !strings.Contains(data, `"character_id":501`) {
+		t.Fatalf("mirror data = %q, want the original payload", data)
 	}
 }

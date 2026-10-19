@@ -129,6 +129,7 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 		"ATLAS_REGISTRY_TOKENS":       "t1,t2",
 		"ATLAS_REGISTRY_IP_WHITELIST": "192.168.0.0/16",
 		"ATLAS_EVENT_ADAPTER":         "redis",
+		"ATLAS_EVENT_MAX_DELIVERY":    "7",
 		"ATLAS_KAFKA_BROKERS":         "b1:9092,b2:9092",
 		"ATLAS_NATS_URL":              "nats://n:4222",
 		"ATLAS_RABBITMQ_URL":          "amqp://q:5672/",
@@ -183,6 +184,9 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 	if cfg.EventAdapter != "redis" || cfg.KafkaBrokers != "b1:9092,b2:9092" ||
 		cfg.NATSURL != "nats://n:4222" || cfg.RabbitURL != "amqp://q:5672/" {
 		t.Errorf("event transport = %q %q %q %q", cfg.EventAdapter, cfg.KafkaBrokers, cfg.NATSURL, cfg.RabbitURL)
+	}
+	if cfg.EventMaxDelivery != 7 {
+		t.Errorf("EventMaxDelivery = %d, want 7 (ATLAS_EVENT_MAX_DELIVERY)", cfg.EventMaxDelivery)
 	}
 	if cfg.PublicURL != "https://atlas.example" {
 		t.Errorf("PublicURL = %q", cfg.PublicURL)

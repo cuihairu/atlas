@@ -52,6 +52,16 @@ type Options struct {
 	Group string
 	// Block is the fetch wait interval (default 5s).
 	Block time.Duration
+	// MaxDelivery caps failed-delivery attempts per record before it is
+	// copied to "<topic>.dl" and committed (docs/sync.md §4). 0 = no cap:
+	// the offset stays uncommitted and the broker redelivers forever — the
+	// historical behavior. The counter is in-process; a restart resets it,
+	// so the cap is per process lifetime, but a dead-lettered record is
+	// committed and never re-loops.
+	MaxDelivery int
+	// DeliveryMetrics counts failed deliveries and dead letters (nil = a
+	// no-op).
+	DeliveryMetrics event.DeliveryMetrics
 	// Logger receives consume failures (default slog.Default()).
 	Logger *slog.Logger
 }
@@ -63,6 +73,10 @@ type Adapter struct {
 	group  string
 	block  time.Duration
 	logger *slog.Logger
+
+	maxDelivery int
+	metrics     event.DeliveryMetrics
+	attempts    *event.AttemptTracker
 
 	mu      sync.Mutex
 	cancels []context.CancelFunc
@@ -99,11 +113,14 @@ func Open(ctx context.Context, opts Options) (*Adapter, error) {
 // both (pass fake implementations in tests).
 func New(w Writer, r Reader, opts Options) *Adapter {
 	return &Adapter{
-		writer: w,
-		reader: r,
-		group:  groupOf(opts),
-		block:  blockOf(opts),
-		logger: loggerOf(opts),
+		writer:      w,
+		reader:      r,
+		group:       groupOf(opts),
+		block:       blockOf(opts),
+		logger:      loggerOf(opts),
+		maxDelivery: opts.MaxDelivery,
+		metrics:     event.MetricsOrNop(opts.DeliveryMetrics),
+		attempts:    event.NewAttemptTracker(),
 	}
 }
 
@@ -218,8 +235,36 @@ func (a *Adapter) handle(ctx context.Context, h event.Handler, msg kafka.Message
 		a.logger.Error("event: handler failed, offset not committed",
 			"topic", msg.Topic, "partition", msg.Partition, "offset", msg.Offset,
 			"type", string(e.Type), "error", err)
+		a.metrics.ObserveRedelivery(a.Name())
+		if a.maxDelivery > 0 {
+			if n := a.attempts.Failed(e.ID); n >= a.maxDelivery {
+				a.deadLetter(ctx, msg, n)
+			}
+		}
 		return
 	}
+	a.attempts.Reset(e.ID)
+	a.commit(ctx, msg)
+}
+
+// deadLetter copies a record to "<topic>.dl" and commits the original
+// offset, ending its redelivery chain (docs/sync.md §4). A failed copy
+// leaves the original uncommitted, so the broker redelivers and the next
+// attempt retries the copy — the event is never dropped to make a
+// dead-letter write succeed.
+func (a *Adapter) deadLetter(ctx context.Context, msg kafka.Message, n int) {
+	if err := a.writer.WriteMessages(ctx, kafka.Message{
+		Topic: event.DeadLetterTopic(msg.Topic),
+		Value: msg.Value,
+	}); err != nil {
+		a.logger.Error("event: dead-letter write failed",
+			"topic", msg.Topic, "offset", msg.Offset, "error", err)
+		return
+	}
+	a.metrics.ObserveDeadLetter(a.Name(), msg.Topic)
+	a.attempts.Reset(fmt.Sprintf("%d@%d", msg.Partition, msg.Offset))
+	a.logger.Error("event: dead-lettered after failed deliveries",
+		"topic", msg.Topic, "offset", msg.Offset, "deliveries", n)
 	a.commit(ctx, msg)
 }
 

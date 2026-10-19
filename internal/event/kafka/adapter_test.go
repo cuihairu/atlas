@@ -457,3 +457,65 @@ func TestHandlerFailureRedeliversWithStableID(t *testing.T) {
 		t.Fatalf("event IDs across redelivery = %v, want [0@7 0@7]", ids)
 	}
 }
+
+// TestDeliveryCapDeadLettersAfterThreshold pins the opt-in cap
+// (ATLAS_EVENT_MAX_DELIVERY): after MaxDelivery failed handler invocations
+// the record is copied to "<topic>.dl" and the original offset is committed,
+// ending the redelivery chain — without the option the offset stays
+// uncommitted and the broker re-fetches forever (pinned by the stable-ID
+// test above).
+func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
+	a, w, r := newTestAdapter(t)
+	a.maxDelivery = 2
+
+	var mu sync.Mutex
+	seen := map[string]int{}
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[e.ID]++
+		if e.ID == "0@7" {
+			return errors.New("apply failed")
+		}
+		return nil // the dead-letter copy is a fresh record and applies fine
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 9})
+	msg := kafka.Message{Topic: event.TopicCharacters, Partition: 0, Offset: 7, Value: payload}
+	r.push(msg) // first delivery — fails, one attempt banked
+	time.Sleep(200 * time.Millisecond)
+	r.push(msg) // second delivery — fails, hits the cap
+	time.Sleep(200 * time.Millisecond)
+
+	w.mu.Lock()
+	var dl *kafka.Message
+	for i := range w.written {
+		if w.written[i].Topic == event.DeadLetterTopic(event.TopicCharacters) {
+			dl = &w.written[i]
+		}
+	}
+	w.mu.Unlock()
+	if dl == nil {
+		t.Fatal("no dead-letter copy written to atlas.characters.dl")
+	}
+	if string(dl.Value) != string(payload) {
+		t.Fatalf("dead-letter payload = %s, want the original %s", dl.Value, payload)
+	}
+	// The original is committed (ending its chain) and the copy, fed back by
+	// the fake writer→reader pair, applies and commits too.
+	if n := r.commitCount(); n != 2 {
+		t.Fatalf("commits = %d, want 2 (original + dead-letter copy)", n)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	// The fake writer stamps its own offsets, so the copy lands at "0@0" —
+	// what matters is that it is a fresh record, distinct from "0@7".
+	if seen["0@0"] == 0 {
+		t.Fatalf("dead-letter copy never consumed (seen = %v)", seen)
+	}
+	if seen["0@7"] != 2 {
+		t.Fatalf("original deliveries = %d, want exactly 2 (cap stops the chain)", seen["0@7"])
+	}
+}

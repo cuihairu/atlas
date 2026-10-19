@@ -155,3 +155,24 @@ func hasLine(out, want string) bool {
 	}
 	return false
 }
+
+// TestEventDeliveryCounters pins the event delivery-limit counters (the
+// observability contract for ATLAS_EVENT_MAX_DELIVERY) and the nil-receiver
+// safety the adapters rely on.
+func TestEventDeliveryCounters(t *testing.T) {
+	m, _ := newTestMetrics(t)
+	m.ObserveRedelivery("kafka")
+	m.ObserveRedelivery("kafka")
+	m.ObserveDeadLetter("nats", "atlas.characters")
+	out := scrape(t, m)
+	if !hasLine(out, `atlas_event_redeliveries_total{adapter="kafka"} 2`) {
+		t.Errorf("missing atlas_event_redeliveries_total line:\n%s", out)
+	}
+	if !hasLine(out, `atlas_event_dead_letters_total{adapter="nats",topic="atlas.characters"} 1`) {
+		t.Errorf("missing atlas_event_dead_letters_total line:\n%s", out)
+	}
+
+	var nilMetrics *Metrics
+	nilMetrics.ObserveRedelivery("kafka")
+	nilMetrics.ObserveDeadLetter("nats", "atlas.characters")
+}

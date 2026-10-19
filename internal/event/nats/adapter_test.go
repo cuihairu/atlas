@@ -349,3 +349,66 @@ func TestConsumerDefaultsUnboundedRedelivery(t *testing.T) {
 		t.Errorf("AckWait = %v, want the server default", info.Config.AckWait)
 	}
 }
+
+// TestDeliveryCapDeadLettersAfterThreshold pins the opt-in cap
+// (ATLAS_EVENT_MAX_DELIVERY) on a real JetStream server: after the failed
+// delivery the message is republished to "<subject>.dl" and acked, ending
+// the chain the server default (MaxDeliver -1) would otherwise keep forever
+// (pinned by TestConsumerDefaultsUnboundedRedelivery). The cap is set at
+// Open so the stream is created covering the dead-letter subject — a
+// publish to an uncovered subject is rejected by JetStream outright.
+func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
+	a, err := Open(Options{URL: startServer(t).ClientURL(), MaxDelivery: 1})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+
+	var calls atomic.Int32
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		calls.Add(1)
+		return context.DeadlineExceeded
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	if err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterUpdated, CharacterID: 9}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	dlSubject := event.DeadLetterTopic(event.TopicCharacters)
+	info, err := a.js.StreamInfo(a.stream)
+	if err != nil {
+		t.Fatalf("stream info: %v", err)
+	}
+	covered := false
+	for _, s := range info.Config.Subjects {
+		if s == dlSubject {
+			covered = true
+		}
+	}
+	if !covered {
+		t.Fatalf("stream subjects %v miss the dead-letter subject %s", info.Config.Subjects, dlSubject)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if ci, err := a.js.ConsumerInfo(a.stream, a.durable); err == nil &&
+			ci.NumAckPending == 0 && ci.NumPending == 0 && calls.Load() >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("handler calls = %d, want exactly 1 (the cap ends the chain; a second delivery needs AckWait)", n)
+	}
+	if ci, err := a.js.ConsumerInfo(a.stream, a.durable); err != nil || ci.NumAckPending != 0 || ci.NumPending != 0 {
+		t.Fatalf("consumer still holds the message after the cap: %+v, %v", ci, err)
+	}
+	raw, err := a.js.GetLastMsg(a.stream, dlSubject)
+	if err != nil {
+		t.Fatalf("dead letter not stored on %s: %v", dlSubject, err)
+	}
+	if !strings.Contains(string(raw.Data), `"character_id":9`) {
+		t.Fatalf("dead-letter payload = %s, want the original event", raw.Data)
+	}
+}

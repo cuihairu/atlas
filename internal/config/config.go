@@ -102,6 +102,15 @@ type Config struct {
 	// Env: ATLAS_RABBITMQ_URL, default "amqp://localhost:5672/".
 	RabbitURL string
 
+	// EventMaxDelivery caps failed-event redeliveries (docs/sync.md §4):
+	// after this many failed handler invocations an event is copied to its
+	// dead-letter destination ("<topic>.dl") and acknowledged, so a
+	// permanently failing event cannot wedge the topic. 0 (unset) keeps the
+	// historical behavior — no cap on kafka/nats/rabbitmq; redis keeps its
+	// own 5-delivery cap (log-only dead letter).
+	// Env: ATLAS_EVENT_MAX_DELIVERY, default 0.
+	EventMaxDelivery int
+
 	// PublicURL is the externally reachable base URL of the public API
 	// (e.g. "http://atlas.internal:8080"). The config center echoes
 	// PublicURL + /v1/crossserver/config in callback notifications so
@@ -317,6 +326,11 @@ func Load() Config {
 		TraceSampleRatio:    1.0,
 	}
 
+	if v := os.Getenv("ATLAS_EVENT_MAX_DELIVERY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.EventMaxDelivery = n
+		}
+	}
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
 			cfg.SuspectAfter = d

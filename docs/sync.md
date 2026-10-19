@@ -176,31 +176,33 @@ rabbitmq (no delivery counter) are all uncapped — a permanently failing event 
 forever and, with in-order delivery, wedges every later event on that subject. At-least-once
 semantics and consumer idempotency are pinned by tests: kafka redeliveries stamp a stable
 event ID derived from partition@offset (`TestHandlerFailureRedeliversWithStableID`), and the
-`Directory.ApplyEvent` upsert is idempotent (§6). Delivery limits / backoff / dead-letter
-retention and replay remain future design work.
+`Directory.ApplyEvent` upsert is idempotent (§6). The delivery cap below closes the
+unbounded-redelivery gap; dead-letter retention and the replay entry point remain future
+design work.
 
-**Delivery limits and dead letters (design draft, 2026-10-19, not implemented)** — the gaps measured above
-need a bounded-failure design before bus-failure triage stops being "watch the logs". Shape: one common
-delivery cap, adapter-native dead letters, one naming convention (`<topic>.dl` everywhere). Mechanism per
-adapter, grounded in the current code:
+**Delivery limits and dead letters (delivered 2026-10-19, `ATLAS_EVENT_MAX_DELIVERY`)**: the measured gaps
+are closed by an opt-in delivery cap. Unset (0) keeps the historical behavior exactly — no cap on
+kafka/nats/rabbitmq, and redis keeps its built-in 5-delivery cap whose dead letter is log-only. Set to N,
+an event that has failed N handler invocations is dead-lettered: a copy goes to `<topic>.dl` and the
+original is acknowledged, so a permanently failing event can no longer wedge every later event on the
+subject. A failed dead-letter write leaves the event unacked/uncommitted — the next delivery retries the
+copy; events are never dropped to make a dead-letter write succeed.
 
-| Adapter | Proposed mechanism | Restart safety |
+| Adapter | Shipped mechanism | Caveat |
 | --- | --- | --- |
-| redis (cap exists: 5, log-only today) | On exhaustion, `XADD` a copy to `<topic>.dl` (payload + failure reason + source ID) before the final `XACK`; the source entry already stays in the untrimmed stream, so the `.dl` copy is what makes it *visible* | ✅ count lives in the PEL |
-| kafka | Track attempts per event ID (`partition@offset` is stable across redeliveries); at the threshold, republish to `<topic>.dl` and commit the original. segmentio/kafka-go has no server-side counter, so the counter is in-process | ⚠️ restart resets the count — capped per process lifetime, but a dead-lettered message is committed, never re-looped |
-| nats | Bind the durable consumer with an explicit `ConsumerConfig{MaxDeliver, AckWait}` instead of server defaults, and set `RePublish` so the *server* copies exhausted messages to `<subject>.dl` | ✅ server-side |
-| rabbitmq | `Nack(requeue)` never increments the broker's `x-death` counter, so carry an own `x-atlas-retry` header: on failure republish with header+1 and ack the original (keeps the 5s backoff); at the threshold, route via a `atlas.dlx` dead-letter exchange to the `<topic>.dl` queue instead of requeueing | ✅ the header travels with the message |
+| redis | The option overrides the built-in threshold; the exhausted entry is mirrored into `<topic>.dl` (with `source_id` / `deliveries` provenance) before the ack | the mirror is opt-in — the default cap stays log-only |
+| kafka | In-process attempt counter per `partition@offset`; at the cap the copy is written to `<topic>.dl` and the original offset committed | the counter resets on restart — the cap is per process lifetime, but a dead-lettered record is committed and never re-loops |
+| nats | In-process attempt counter per stream sequence; the stream's subject list gains `<subject>.dl` at open (an existing stream is reconciled, so a rolling restart onto the option works); at the cap the copy is published and the original acked | same per-process-lifetime caveat |
+| rabbitmq | In-process attempt counter per message ID; the `<topic>.dl` durable queue is declared with the topic; at the cap the copy is published and the original acked (no requeue) | same per-process-lifetime caveat |
 
-Decision points (implementation waits on these): (1) default-on or opt-in — redis deployments already live
-with the cap at 5, but flipping kafka/nats/rabbitmq from unbounded to bounded is a delivery-semantics change,
-and the repo already has an unsafe-default startup-warning precedent for exactly this shape; (2) the threshold
-value and backoff curve (flat intervals as today, or exponential via NATS's native `BackOff` schedule);
-(3) dead-letter retention — redis `.dl` streams inherit the main stream's untrimmed behavior, kafka needs a
-topic retention policy, rabbitmq a queue length; (4) the replay entry point — a small CLI tool (`cmd/dlq`)
-versus an admin endpoint; replay is safe either way because `Directory.ApplyEvent` is idempotent (§6).
-Monitoring (§9) lands as `atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}`
-— once a cap exists, an alert on the dead-letter counter is the operational contract that replaces
-"the wedge is the alert".
+Counters land in §9's vocabulary: `atlas_event_redeliveries_total{adapter}` (one increment per failed
+handler invocation) and `atlas_event_dead_letters_total{adapter,topic}` — an alert on the dead-letter
+counter is the operational contract that replaces "the wedge is the alert". Pinned per adapter by
+`TestDeliveryCapDeadLettersAfterThreshold` (kafka/nats/rabbitmq) and
+`TestDeadLetterCopiesToMirrorStreamWhenCapConfigured` (redis, plus the absence of the mirror without the
+option). Still future design work, awaiting a decision: dead-letter retention (the `.dl` channels inherit
+each store's default retention) and the replay entry point (a CLI tool versus an admin endpoint — safe
+either way, `Directory.ApplyEvent` is idempotent, §6).
 
 Therefore the consumer side must be idempotent — the upsert in `Directory.ApplyEvent` is
 naturally idempotent (see §6).
@@ -352,8 +354,9 @@ Until it lands, **do not** assume Atlas will actively notify game servers.
 The event sync write path has a dedicated metric `atlas_directory_write_duration_seconds{op}`: op is
 the projection event name (e.g. `character.created` normalized to `created` via `eventWriteOp`;
 service-API writes appear as `create`/`update`/`delete`; see internal/directory/events.go:27 and
-internal/directory/directory.go:38). Redeliveries and dead letters (redis's PEL overflow, kafka's
-uncommitted offsets) are still visible in each adapter's structured logs. For overall service
+internal/directory/directory.go:38). Redeliveries and dead letters are counted in
+`atlas_event_redeliveries_total{adapter}` / `atlas_event_dead_letters_total{adapter,topic}` (§4's
+delivery cap) and mirrored in each adapter's structured logs. For overall service
 health use the real metrics on `/metrics` (:8082):
 
 | Metric | Meaning |

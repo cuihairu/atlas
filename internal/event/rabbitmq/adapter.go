@@ -69,6 +69,16 @@ type Options struct {
 	RequeueBackoff time.Duration
 	// Logger receives consume failures (default slog.Default()).
 	Logger *slog.Logger
+	// MaxDelivery caps failed-delivery attempts per message before it is
+	// republished to "<topic>.dl" and the original is acked (docs/sync.md
+	// §4). 0 = no cap: Nack(requeue) loops forever with the 5s backoff —
+	// the historical behavior. The count is tracked in-process; a restart
+	// resets it, so the cap is per process lifetime, but a dead-lettered
+	// message is acked and never requeueed.
+	MaxDelivery int
+	// DeliveryMetrics counts failed deliveries and dead letters (nil = a
+	// no-op).
+	DeliveryMetrics event.DeliveryMetrics
 }
 
 // Adapter delivers events over RabbitMQ.
@@ -80,6 +90,10 @@ type Adapter struct {
 	backoff  time.Duration
 	logger   *slog.Logger
 	owns     bool
+
+	maxDelivery int
+	metrics     event.DeliveryMetrics
+	attempts    *event.AttemptTracker
 
 	mu      sync.Mutex
 	cancels []context.CancelFunc
@@ -115,12 +129,15 @@ func Open(opts Options) (*Adapter, error) {
 // fake implementation in tests).
 func New(ch Channel, opts Options) *Adapter {
 	a := &Adapter{
-		ch:       ch,
-		exchange: opts.Exchange,
-		consumer: opts.Consumer,
-		qos:      opts.Qos,
-		backoff:  opts.RequeueBackoff,
-		logger:   opts.Logger,
+		ch:          ch,
+		exchange:    opts.Exchange,
+		consumer:    opts.Consumer,
+		qos:         opts.Qos,
+		backoff:     opts.RequeueBackoff,
+		logger:      opts.Logger,
+		maxDelivery: opts.MaxDelivery,
+		metrics:     event.MetricsOrNop(opts.DeliveryMetrics),
+		attempts:    event.NewAttemptTracker(),
 	}
 	if a.exchange == "" {
 		a.exchange = DefaultExchange
@@ -183,6 +200,17 @@ func (a *Adapter) Subscribe(ctx context.Context, topic string, h event.Handler) 
 	if err := a.ch.QueueBind(topic, topic, a.exchange, false, nil); err != nil {
 		return fmt.Errorf("event: amqp bind queue: %w", err)
 	}
+	if a.maxDelivery > 0 {
+		// Dead-letter destination for the cap: a sibling queue on the same
+		// exchange, never consumed by Atlas.
+		dl := event.DeadLetterTopic(topic)
+		if _, err := a.ch.QueueDeclare(dl, true, false, false, false, nil); err != nil {
+			return fmt.Errorf("event: amqp declare dead-letter queue: %w", err)
+		}
+		if err := a.ch.QueueBind(dl, dl, a.exchange, false, nil); err != nil {
+			return fmt.Errorf("event: amqp bind dead-letter queue: %w", err)
+		}
+	}
 	if err := a.ch.Qos(a.qos, 0, false); err != nil {
 		return fmt.Errorf("event: amqp qos: %w", err)
 	}
@@ -196,7 +224,7 @@ func (a *Adapter) Subscribe(ctx context.Context, topic string, h event.Handler) 
 	a.cancels = append(a.cancels, cancel)
 	a.mu.Unlock()
 	a.wg.Add(1)
-	go a.consume(runCtx, deliveries, h)
+	go a.consume(runCtx, topic, deliveries, h)
 	return nil
 }
 
@@ -217,7 +245,7 @@ func (a *Adapter) Close() error {
 	return a.ch.Close()
 }
 
-func (a *Adapter) consume(ctx context.Context, deliveries <-chan amqp.Delivery, h event.Handler) {
+func (a *Adapter) consume(ctx context.Context, topic string, deliveries <-chan amqp.Delivery, h event.Handler) {
 	defer a.wg.Done()
 	for {
 		select {
@@ -227,12 +255,12 @@ func (a *Adapter) consume(ctx context.Context, deliveries <-chan amqp.Delivery, 
 			if !ok {
 				return // channel closed by the broker/shutdown
 			}
-			a.handle(ctx, h, msg)
+			a.handle(ctx, topic, h, msg)
 		}
 	}
 }
 
-func (a *Adapter) handle(ctx context.Context, h event.Handler, msg amqp.Delivery) {
+func (a *Adapter) handle(ctx context.Context, topic string, h event.Handler, msg amqp.Delivery) {
 	var e event.Event
 	if err := json.Unmarshal(msg.Body, &e); err != nil {
 		// Poison payload: it can never succeed, so ack it and move on.
@@ -247,6 +275,11 @@ func (a *Adapter) handle(ctx context.Context, h event.Handler, msg amqp.Delivery
 		a.logger.Error("event: handler failed, requeueing",
 			"exchange", a.exchange, "message_id", msg.MessageId,
 			"type", string(e.Type), "error", err)
+		a.metrics.ObserveRedelivery(a.Name())
+		if a.maxDelivery > 0 && a.attempts.Failed(e.ID) >= a.maxDelivery {
+			a.deadLetter(ctx, topic, msg)
+			return
+		}
 		// Back off before the requeue: rabbitmq has no delivery counter to
 		// cap retries against, and Nack(requeue) on the same connection
 		// hands the message straight back — without a pause a persistently
@@ -257,9 +290,39 @@ func (a *Adapter) handle(ctx context.Context, h event.Handler, msg amqp.Delivery
 		_ = a.ch.Nack(msg.DeliveryTag, false, true)
 		return
 	}
+	a.attempts.Reset(e.ID)
 	if err := a.ch.Ack(msg.DeliveryTag, false); err != nil {
 		a.logger.Error("event: ack failed", "exchange", a.exchange, "message_id", msg.MessageId, "error", err)
 	}
+}
+
+// deadLetter copies an exhausted message to "<topic>.dl" and acks the
+// original, ending its requeue chain (docs/sync.md §4). A failed copy
+// falls through to the plain requeue path so the broker redelivers and the
+// next attempt retries the copy — the message is never dropped to make a
+// dead-letter write succeed.
+func (a *Adapter) deadLetter(ctx context.Context, topic string, msg amqp.Delivery) {
+	if err := a.ch.PublishWithContext(ctx, a.exchange, event.DeadLetterTopic(topic), false, false, amqp.Publishing{
+		MessageId:    msg.MessageId,
+		ContentType:  "application/json",
+		DeliveryMode: amqp.Persistent,
+		Timestamp:    time.Now(),
+		Type:         msg.Type,
+		Body:         msg.Body,
+		Headers:      msg.Headers,
+	}); err != nil {
+		a.logger.Error("event: dead-letter publish failed",
+			"exchange", a.exchange, "message_id", msg.MessageId, "error", err)
+		// Requeue as usual: the cap attempt is retried on the next delivery.
+		time.Sleep(a.backoff)
+		_ = a.ch.Nack(msg.DeliveryTag, false, true)
+		return
+	}
+	a.metrics.ObserveDeadLetter(a.Name(), topic)
+	a.attempts.Reset(msg.MessageId)
+	a.logger.Error("event: dead-lettered after failed deliveries",
+		"exchange", a.exchange, "message_id", msg.MessageId)
+	_ = a.ch.Ack(msg.DeliveryTag, false)
 }
 
 // newMessageID returns a random 16-byte hex ID for publish tracing.

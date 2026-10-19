@@ -43,6 +43,15 @@ type Options struct {
 	Consumer string
 	// Block is the XREADGROUP blocking interval (default 5s).
 	Block time.Duration
+	// MaxDelivery caps failed-delivery attempts per entry before it is
+	// dead-lettered (docs/sync.md §4). 0 keeps the built-in cap (5), whose
+	// dead letter is log-only — the historical behavior. >0 both overrides
+	// the threshold and mirrors exhausted entries into "<topic>.dl" so they
+	// are visible without XRange-ing the main stream.
+	MaxDelivery int
+	// DeliveryMetrics counts failed deliveries and dead letters (nil = a
+	// no-op).
+	DeliveryMetrics event.DeliveryMetrics
 	// Logger receives consume failures (default slog.Default()).
 	Logger *slog.Logger
 }
@@ -54,6 +63,10 @@ type Adapter struct {
 	consumer string
 	block    time.Duration
 	logger   *slog.Logger
+
+	maxDelivery int
+	dlEnabled   bool
+	metrics     event.DeliveryMetrics
 
 	mu      sync.Mutex
 	cancels []context.CancelFunc
@@ -70,6 +83,13 @@ func New(client redis.UniversalClient, opts Options) *Adapter {
 		consumer: opts.Consumer,
 		block:    opts.Block,
 		logger:   opts.Logger,
+		metrics:  event.MetricsOrNop(opts.DeliveryMetrics),
+	}
+	if opts.MaxDelivery > 0 {
+		a.maxDelivery = opts.MaxDelivery
+		a.dlEnabled = true
+	} else {
+		a.maxDelivery = maxRedelivery
 	}
 	if a.group == "" {
 		a.group = DefaultGroup
@@ -219,8 +239,10 @@ func (a *Adapter) claimStale(ctx context.Context, topic string, h event.Handler)
 	}
 }
 
-// deadLetter acks pending entries that exhausted maxRedelivery so a
-// permanently failing event cannot loop forever.
+// deadLetter acks pending entries that exhausted the delivery cap so a
+// permanently failing event cannot loop forever. With Options.MaxDelivery
+// set the exhausted entry is first mirrored into "<topic>.dl" so the dead
+// letter is visible without XRange-ing the main stream (docs/sync.md §4).
 func (a *Adapter) deadLetter(ctx context.Context, topic string) {
 	pending, err := a.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: topic,
@@ -234,13 +256,49 @@ func (a *Adapter) deadLetter(ctx context.Context, topic string) {
 		return
 	}
 	for _, p := range pending {
-		if p.RetryCount < maxRedelivery {
+		if p.RetryCount < int64(a.maxDelivery) {
 			continue
 		}
+		if a.dlEnabled && !a.copyToDeadLetter(ctx, topic, p.ID, p.RetryCount) {
+			// Leave it pending: the next sweep retries the copy instead of
+			// losing the event to a failed dead-letter write.
+			continue
+		}
+		a.metrics.ObserveDeadLetter(a.Name(), topic)
 		a.logger.Error("event: dead-letter after max redelivery",
 			"topic", topic, "id", p.ID, "deliveries", p.RetryCount)
 		a.client.XAck(ctx, topic, a.group, p.ID)
 	}
+}
+
+// copyToDeadLetter mirrors one stream entry into "<topic>.dl", keeping its
+// source ID and delivery count for provenance. It reports false instead of
+// losing the entry when the copy cannot be written (and a missing source is
+// harmless: the entry was trimmed away, so there is nothing to mirror).
+func (a *Adapter) copyToDeadLetter(ctx context.Context, topic, id string, deliveries int64) bool {
+	entries, err := a.client.XRange(ctx, topic, id, id).Result()
+	if err != nil {
+		a.logger.Error("event: dead-letter source read failed",
+			"topic", topic, "id", id, "error", err)
+		return false
+	}
+	if len(entries) == 0 {
+		return false
+	}
+	vals := entries[0].Values
+	if vals == nil {
+		vals = map[string]any{}
+	}
+	vals["source_id"] = id
+	vals["deliveries"] = deliveries
+	if err := a.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: event.DeadLetterTopic(topic),
+		Values: vals,
+	}).Err(); err != nil {
+		a.logger.Error("event: dead-letter write failed", "topic", topic, "id", id, "error", err)
+		return false
+	}
+	return true
 }
 
 func (a *Adapter) handle(ctx context.Context, topic string, h event.Handler, msg redis.XMessage) {
@@ -257,6 +315,7 @@ func (a *Adapter) handle(ctx context.Context, topic string, h event.Handler, msg
 	if err := h(ctx, &e); err != nil {
 		a.logger.Error("event: handler failed, left pending",
 			"topic", topic, "id", msg.ID, "type", string(e.Type), "error", err)
+		a.metrics.ObserveRedelivery(a.Name())
 		return
 	}
 	if err := a.client.XAck(ctx, topic, a.group, msg.ID).Err(); err != nil {
