@@ -350,6 +350,27 @@ independent of any concrete storage implementation), and `internal/admin` keeps 
 thin delegation (`admin.CreateMigrationRequest` is a type alias of the migration-side
 DTO, so the REST/gRPC contracts are unchanged).
 
+**Split decision (decided 2026-10-19, patrol branch-1 delegation for design/requirement
+class)**: the package-level split is the terminal state — no standalone migration
+service, and no re-merge into `internal/admin`. The trigger stays "a genuine need for
+independent scaling per fleet", but it is now a recorded trigger condition in
+docs/roadmap.md rather than an open question in the ledger.
+
+Why: a standalone service would add a deployment, migration and monitoring surface of its
+own, and would turn the §9.1 migration/window linkage from an in-process call into
+cross-service coordination — that linkage is fail-closed on purpose (if the windows cannot
+be laid down, the migration record is not written), so splitting it replaces a simple
+error return with a distributed partial-failure surface, and no demand anywhere in the
+deployment evidence would pay for it. Deferring costs nothing: the orchestration state
+machine already carries its own narrow Store interface with zero storage dependencies, so
+splitting later is mechanical work, not a rewrite.
+
+Rejected options: (a) split into a standalone service now — nothing requires it, and it
+pays the cross-service coordination cost ahead of any scaling need; (b) merge
+`internal/migration` back into `internal/admin` — this reverses the code-level hygiene
+split of 2026-10-14 and re-violates the §9 baseline that orchestration and index
+projection must never be mashed into one package, with no benefit.
+
 ### 9.1 Migration-Window Linkage
 
 Creating a migration automatically stages a maintenance window on the source servers,
