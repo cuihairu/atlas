@@ -74,6 +74,11 @@ type Adapter struct {
 	block  time.Duration
 	logger *slog.Logger
 
+	// newDLReader builds a group reader scoped to a dead-letter topic for
+	// ReplayDeadLetters. Open sets it; adapters built with New cannot replay
+	// and say so instead of no-oping.
+	newDLReader func(topic string) Reader
+
 	maxDelivery int
 	metrics     event.DeliveryMetrics
 	attempts    *event.AttemptTracker
@@ -106,7 +111,11 @@ func Open(ctx context.Context, opts Options) (*Adapter, error) {
 		MaxWait:     blockOf(opts),
 		StartOffset: kafka.FirstOffset,
 	})
-	return New(w, r, opts), nil
+	a := New(w, r, opts)
+	a.newDLReader = func(topic string) Reader {
+		return readDL(brokers, a.group, a.block, topic)
+	}
+	return a, nil
 }
 
 // New wraps pre-built client halves. The adapter owns them: Close closes

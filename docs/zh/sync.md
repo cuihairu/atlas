@@ -167,7 +167,7 @@ Atlas Core 只依赖这个接口，不依赖具体实现。换 Message Bus 不�
 **两项拍板（2026-10-19，投递上限工作遗留的两个待定点）**：
 
 1. **死信保留：沿用存储自身保留策略，不加第二套机制。** 每个 `.dl` 通道都是运维本就在调优的同一 broker 里的一等公民——redis 流裁剪、kafka topic 保留、nats 流 `MaxAge`、rabbitmq 队列上限是既有旋钮；再平行加一套 `ATLAS_…_DL_RETENTION` 会把四个适配器的配置面翻倍，去回答一个尚无部署提出的需求（运维风险在丢弃计数、不在条目年龄）。被否选项：逐适配器显式保留 env——如有运维提出舰队级统一上限再议。
-2. **重放入口：CLI 工具，不走 Admin 端点。** 重放是事故响应动作，不是请求路径上的操作：事故可能恰好打掉的就是 Admin API 本身；重放天然是批量的（一个 topic 的全部死信），应带着 broker 凭据在运维工具里跑，而不是挂在 Admin RBAC 面后面。被否选项：`POST /v1/admin/…/replay` 端点——为低频批量操作加宽 Admin 攻击面。落地时的语义（`cmd/dlq`）：按最旧优先读 `.dl` 通道，把原始载荷重新发布到源 topic，确认发布成功后才删副本；`Directory.ApplyEvent` 是 upsert，重投幂等（§6）。
+2. **重放入口：CLI 工具，不走 Admin 端点。** 重放是事故响应动作，不是请求路径上的操作：事故可能恰好打掉的就是 Admin API 本身；重放天然是批量的（一个 topic 的全部死信），应带着 broker 凭据在运维工具里跑，而不是挂在 Admin RBAC 面后面。被否选项：`POST /v1/admin/…/replay` 端点——为低频批量操作加宽 Admin 攻击面。已交付为 `cmd/dlq`（2026-10-19）：按最旧优先读 `.dl` 通道，把每条副本作为一条全新的规范事件重新发布到源 topic，确认发布成功后才移除；`Directory.ApplyEvent` 是 upsert，故重跑造成的重复重投无害（§6）。移除动作对存储各自诚实：redis `XDEL` 条目、kafka 提交该 `.dl` offset（Kafka 不能删记录，记录随 topic 保留期过期）、nats 删除流消息、rabbitmq Ack 投递。副本解码失败按存储原生标识（流条目 ID、`partition@offset`、流 sequence、delivery tag）报告并留在原处不动。参数：`-adapter`（缺省 `ATLAS_EVENT_ADAPTER`；`http` 明确拒绝——它没有死信通道）、`-topic`（可重复 + 逗号分隔，缺省两个 topic）、`-limit`（限制单次批量）、`-dry-run`（只计数与解码，不改任何东西）。它读与 atlas server 同一套 `ATLAS_*` 环境变量，当某轮处理留下副本时退出码非 0。
 
 因此消费端必须幂等——`Directory.ApplyEvent` 的 upsert 天然幂等（见 §6）。
 

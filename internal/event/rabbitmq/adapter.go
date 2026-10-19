@@ -35,6 +35,9 @@ const (
 	DefaultExchange = "atlas"
 	// defaultQos is the consumer prefetch count.
 	defaultQos = 16
+	// defaultDrainWait is how long ReplayDeadLetters waits for the next
+	// dead-letter delivery before declaring the channel drained.
+	defaultDrainWait = 250 * time.Millisecond
 )
 
 // Channel is the subset of *amqp091.Channel the adapter needs. Injecting
@@ -90,6 +93,10 @@ type Adapter struct {
 	backoff  time.Duration
 	logger   *slog.Logger
 	owns     bool
+
+	// drainWait bounds how long ReplayDeadLetters idles before declaring the
+	// dead-letter channel drained (tests shorten it).
+	drainWait time.Duration
 
 	maxDelivery int
 	metrics     event.DeliveryMetrics
@@ -154,6 +161,9 @@ func New(ch Channel, opts Options) *Adapter {
 	}
 	if a.logger == nil {
 		a.logger = slog.Default()
+	}
+	if a.drainWait <= 0 {
+		a.drainWait = defaultDrainWait
 	}
 	return a
 }

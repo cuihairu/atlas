@@ -213,9 +213,17 @@ option).
    request-path operation: the incident may have taken the admin API itself down, replay is bulk (all
    dead letters of a topic), and it belongs in ops tooling with broker credentials — not behind the
    Admin RBAC surface. Rejected: a `POST /v1/admin/…/replay` endpoint — wider admin attack surface for a
-   rare bulk operation. Semantics when built (`cmd/dlq`): read the `.dl` channel oldest-first, re-publish
-   the original payload to the source topic, delete the copy only after a confirmed publish;
-   `Directory.ApplyEvent` is an upsert, so re-delivery is idempotent (§6).
+   rare bulk operation. Delivered as `cmd/dlq` (2026-10-19): read the `.dl` channel oldest-first,
+   re-publish each copy as a fresh canonical event, remove it only after a confirmed publish;
+   `Directory.ApplyEvent` is an upsert, so a re-run that re-applies is harmless (§6). Removal is honest
+   about the store: Redis XDELs the entry, Kafka commits the `.dl` offset (Kafka cannot delete records —
+   the record ages out with topic retention), NATS deletes the stream message, RabbitMQ acks the
+   delivery. A copy that does not decode is reported by its store-native identifier (stream entry ID,
+   `partition@offset`, stream sequence, delivery tag) and left in place. Flags: `-adapter` (default
+   `ATLAS_EVENT_ADAPTER`; `http` is refused — it has no dead-letter channel), `-topic` (repeatable and
+   comma-separated, default both Atlas topics), `-limit` (caps one pass), `-dry-run` (count and decode,
+   change nothing). It reads the same `ATLAS_*` environment as the server, and exits non-zero when a pass
+   left copies behind.
 
 Therefore the consumer side must be idempotent — the upsert in `Directory.ApplyEvent` is
 naturally idempotent (see §6).
