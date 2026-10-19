@@ -81,6 +81,28 @@ func TestInProcessCollectors(t *testing.T) {
 	}
 }
 
+// TestGoAndProcessCollectors proves the private registry also exposes the
+// standard Go and process collectors: long-run soak observation (performance.md
+// §9) needs GC pause, goroutine and RSS trends, and no Atlas collector of its
+// own can supply them.
+func TestGoAndProcessCollectors(t *testing.T) {
+	m, _ := newTestMetrics(t)
+
+	out := scrape(t, m)
+	for _, want := range []string{
+		"go_goroutines ",
+		"go_gc_duration_seconds_count ",
+		"go_memstats_alloc_bytes ",
+		"process_resident_memory_bytes ",
+		"process_open_fds ",
+		"process_cpu_seconds_total ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("scrape exports no %q line; the standard collectors must be registered", want)
+		}
+	}
+}
+
 func TestRequestCounterMiddleware(t *testing.T) {
 	m, _ := newTestMetrics(t)
 	handler := RequestCounter(m.AdminRequests)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -327,11 +327,12 @@ p95/p99、GC 行为、多小时运行对内存与文件描述符的影响（2026
 心跳零丢失）与 PG 短断（连接池自愈、错误传播而非挂死）；浸泡 ≥24h（中档规模点），
 通过条件是平台不是峰值——堆内存平稳无单调增长、goroutine 与 fd 计数稳定。
 
-**实跑前必须先补的已知缺口**：`/metrics` 服务的是自定义 registry
-（`internal/metrics/metrics.go` 的 `prometheus.NewRegistry()`），只注册了 Atlas 自有
-collector——没有 Go/process collector，今天不导出 `go_gc_duration_seconds`、goroutine
-数与 RSS。要观测 GC 与长稳趋势，须在该 registry 上注册标准 `prometheus/collectors`
-Go + process collector（一行改动，无新依赖）。
+**运行期遥测（2026-10-19 已交付）**：`/metrics` 是自定义 registry
+（`internal/metrics/metrics.go` 的 `prometheus.NewRegistry()`），Go 与 process 标准
+collector 已显式注册其上——GC 暂停、goroutine 数、`go_memstats_*`、RSS
+（`process_resident_memory_bytes`）、fd 数与 CPU 从同一个抓取点出，无新依赖、热路径
+零插桩（metrics 测试断言这些序列存在）。本节仓内前置到此全部就绪；仍被卡住的只剩
+实跑本身——下面点名的部署与负载驱动器。
 
 **实跑等的是排期不是设计**：（1）指定机器——24h 浸泡带 PG + Redis + HAProxy 压不到
 共享演示机上；（2）负载驱动器选型——k6 / vegeta / ghz，或基于 `sdk/go` 的 Go 驱动

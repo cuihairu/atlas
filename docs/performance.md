@@ -484,12 +484,13 @@ then become guardrails (same philosophy as the pinned baselines in [Benchmarks](
 - Soak: ≥24h at the mid scale point. The pass condition is plateaus, not peaks —
   steady-state heap with no monotonic growth, stable goroutine and fd counts.
 
-**Known gap the run must close first**: `/metrics` serves a custom registry
-(`prometheus.NewRegistry()` in `internal/metrics/metrics.go`) that registers only Atlas's
-own collectors — no Go/process collectors, so `go_gc_duration_seconds`, goroutine count
-and RSS are not exported today. Observing GC and soak trends at all requires registering
-the standard `prometheus/collectors` Go + process collectors on that registry (one-line
-change, no new dependency).
+**Runtime telemetry (delivered 2026-10-19)**: `/metrics` is a custom registry
+(`prometheus.NewRegistry()` in `internal/metrics/metrics.go`), so the standard Go and
+process collectors are registered on it explicitly — GC pause, goroutine count,
+`go_memstats_*`, RSS (`process_resident_memory_bytes`), open fds and CPU come off the
+same scrape, no new dependency and no instrumentation on the hot paths (metrics tests
+assert the series exist). That closes the last in-repo prerequisite of this section; what
+remains blocked is the run itself — the deployment and the load driver named below.
 
 **The run waits on** (scheduling, not design): (1) a designated machine — a 24h soak with
 PG + Redis + HAProxy cannot land on shared demo infrastructure; (2) load-driver choice —

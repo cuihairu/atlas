@@ -1,11 +1,15 @@
 // Package metrics wires Atlas's Prometheus instrumentation (TODO v0.1.3).
 //
-// Two kinds of collectors live on one private registry:
+// Three kinds of collectors live on one private registry:
 //
 //   - Scrape-time gauges (server counts by status, character total) are
 //     computed from the store on every scrape — no write-path overhead.
 //   - In-process counters/histogram (discovery requests, admin requests,
 //     heartbeat lag, health transitions) are observed at their hot spots.
+//   - The standard Go and process collectors (go_gc_duration_seconds,
+//     goroutines, RSS, open fds) are registered passively — long-run soak
+//     observation (performance.md §9) reads GC and memory trends from the
+//     same scrape, with no instrumentation in the hot paths.
 package metrics
 
 import (
@@ -18,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/cuihairu/atlas/internal/model"
@@ -137,6 +142,8 @@ func New(s store.Store) *Metrics {
 		m.AdminAuditRetention,
 		m.AdminAuditWriteSeconds,
 		newStoreCollector(s),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 	// Queue collector: only for stores implementing QueueStatusProvider (memory store).
 	if qsp, ok := s.(store.QueueStatusProvider); ok {
