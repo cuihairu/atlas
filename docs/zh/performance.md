@@ -291,3 +291,49 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 指标语义以本节与 `QueueStats` 字段注释为准；契约测试钉住三面：metrics 抓取
 序列（metrics/queue_test.go）、admin 端点 200/503 双路径
 （httpapi/coverage_test.go）、队列侧字段由 queue_test.go 既有断言覆盖。
+
+## 9. 生产形状压测与长稳观测（设计稿，2026-10-19，实跑未动）
+
+本节以上与 [基准](/zh/benchmarks) 全部测的是服务层：memory store、单进程、分钟级
+运行，不含网络 / TLS / JSON / 存储 I/O。今天没有任何测量回答部署侧问题——端到端
+p95/p99、GC 行为、多小时运行对内存与文件描述符的影响（2026-10-18 审核表三 P2 点名
+的缺口）。本节补的是缺失的前半件事——代表性部署、负载模型与验收口径——让「跑」
+变成排期决定而不是重新设计。本节没有任何实测主张；实跑发生之前，[基准](/zh/benchmarks)
+仍是唯一基线。
+
+**代表性部署**：用仓里现成的 HA 拓扑，不另搭台——`deploy/docker-compose.ha.yaml`：
+2 个无状态 Atlas 副本挂 HAProxy（公口 :8080、registry 心跳扇入 :8081）、PostgreSQL
+主从、Redis Sentinel ×3；事件适配器固定 redis streams，让最新的有界投递路径（投递
+上限 + `.dl` 死信，见[数据同步](/zh/sync) §4）一并受测。各 broker 适配器足迹差异太
+大，不放进同一次跑；其余适配器算后续项。
+
+**负载模型**——比例固定、绝对值随舰队规模缩放；规模点 100 / 1,000 / 5,000 与
+[基准](/zh/benchmarks) §3 估算表对齐，端到端数字可直接对照服务层上界：
+
+| 流量 | 形状 |
+| --- | --- |
+| 心跳 | N 台 × SDK 缺省节拍（六个 SDK 均内置自动心跳）——持续写路径下限 |
+| 注册风暴 | 滚动重启波：一部分舰队在一个 suspect 窗口内（缺省 30s，`ATLAS_SUSPECT_AFTER`）重注册 |
+| 读 | 舰队规模发现列表 + 单服详情 + 接入推荐（账号粘性），按网关现实比例混合 |
+| 角色事件 | created / login 按舰队规模固定比例——驱动投影写路径与 §8 倒排索引更新 |
+| 运维滴流 | 窗口 / 公告 / 审计 sink 低频写入，够让审计派发器与每小时保留清扫可见即可 |
+
+**验收口径**——「通过」的形状；数值由首跑钉定、之后转为警戒线（与
+[基准](/zh/benchmarks) §2 钉定基线同一哲学）：持续负载下按端点分类（心跳 / 注册 /
+列表 / 详情 / 推荐）的 p95/p99——写路径在 `:8082` 已有时长直方图
+（`atlas_registry_write_duration_seconds{op}`、`atlas_directory_write_duration_seconds`），
+读路径从已落地链路的 OTel span 取分位，或补一枚读侧直方图（属跑前准备，非重设计）；
+跑动中折入 §7 留在部署级的两条演练——HAProxy 下杀一个 Atlas 副本（故障转移时长、
+心跳零丢失）与 PG 短断（连接池自愈、错误传播而非挂死）；浸泡 ≥24h（中档规模点），
+通过条件是平台不是峰值——堆内存平稳无单调增长、goroutine 与 fd 计数稳定。
+
+**实跑前必须先补的已知缺口**：`/metrics` 服务的是自定义 registry
+（`internal/metrics/metrics.go` 的 `prometheus.NewRegistry()`），只注册了 Atlas 自有
+collector——没有 Go/process collector，今天不导出 `go_gc_duration_seconds`、goroutine
+数与 RSS。要观测 GC 与长稳趋势，须在该 registry 上注册标准 `prometheus/collectors`
+Go + process collector（一行改动，无新依赖）。
+
+**实跑等的是排期不是设计**：（1）指定机器——24h 浸泡带 PG + Redis + HAProxy 压不到
+共享演示机上；（2）负载驱动器选型——k6 / vegeta / ghz，或基于 `sdk/go` 的 Go 驱动
+（倾向走真实 SDK，让它的心跳节拍成为被测系统的一部分）；（3）验收数值是首跑的
+产出物，不是前置条件。

@@ -96,3 +96,7 @@ before/after comparison against the old direct-lock path see Performance Design 
   stay unchanged** — judge regressions by allocation count, or wait for an idle machine.
 - Heartbeat / registration numbers come from fresh writes with unique IDs; idempotent
   re-registration is listed separately.
+- End-to-end percentile latency, GC behavior and soak are deliberately outside this
+  method — the production-shaped plan (deployment, load model, acceptance criteria)
+  lives in [Performance](/performance) §9 (design draft; execution gated on a designated
+  deployment).

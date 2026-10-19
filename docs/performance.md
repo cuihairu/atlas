@@ -438,3 +438,61 @@ Metric semantics are defined by this section and the `QueueStats` field comments
 contract tests pin all three surfaces: metrics scrape series (metrics/queue_test.go),
 both the 200 and 503 admin endpoint paths (httpapi/coverage_test.go), and the queue-side
 fields covered by the existing assertions in queue_test.go.
+
+## 9. Production-shaped load and soak (design draft, 2026-10-19, not executed)
+
+Everything above and all of [Benchmarks](/benchmarks) measures the service layer: memory
+store, one process, minutes-long runs, no network / TLS / JSON / storage I/O. Nothing
+measured today answers the deployment question — end-to-end p95/p99, GC behavior, and
+what a multi-hour run does to memory and file descriptors (the gap named by the
+2026-10-18 review, Table 3, P2). This section fixes the missing first half — the
+representative deployment, the load model and the acceptance criteria — so that running
+it becomes a scheduling decision instead of a design exercise. Nothing here is a measured
+claim; [Benchmarks](/benchmarks) stays the only baseline until a run exists.
+
+**Representative deployment.** The run uses the HA topology the repo already ships, not a
+bespoke rig: `deploy/docker-compose.ha.yaml` — 2 stateless Atlas replicas behind HAProxy
+(public :8080, registry heartbeat fan-in :8081), PostgreSQL primary + replica, Redis
+Sentinel ×3; event adapter fixed to redis streams so the newest bounded-delivery path
+(delivery cap + `.dl` dead letters, [Data Sync](/sync) §4) is exercised. Broker adapters
+differ too much in footprint to compare inside one run; other adapters are follow-ups,
+not part of the first pass.
+
+**Load model** — ratios fixed, absolute values scale with fleet size; scale points
+100 / 1,000 / 5,000 servers match the estimate table in [Benchmarks](/benchmarks) §3 so
+end-to-end numbers can be read against the service-layer bound:
+
+| Stream | Shape |
+| --- | --- |
+| Heartbeats | N servers × SDK default cadence (all six SDKs ship automatic heartbeat) — the sustained write floor |
+| Registration storms | a rolling-restart wave: a slice of the fleet re-registers inside one suspect window (30s default, `ATLAS_SUSPECT_AFTER`) |
+| Reads | discovery list at fleet scale + single-server detail + routing recommendation (account-sticky) at gateway-realistic mix |
+| Character events | created / login at a fixed ratio to fleet size — drives the projection write path and the §8 inverted-index update |
+| Ops trickle | windows / announcements / audit-sink writes at a low rate, enough to keep the audit dispatcher and hourly retention sweep observable |
+
+**Acceptance criteria** — the shape of "pass"; numbers get pinned by the first run and
+then become guardrails (same philosophy as the pinned baselines in [Benchmarks](/benchmarks) §2):
+
+- p95/p99 per endpoint class (heartbeat, register, list, detail, routing) under sustained
+  load. Write paths already expose duration histograms on `:8082`
+  (`atlas_registry_write_duration_seconds{op}`, `atlas_directory_write_duration_seconds`);
+  read paths get percentiles from the OTel spans of the landed tracing phase, or one
+  added read-side histogram — run prep, not a redesign.
+- Fault recovery mid-run folds in the two drills §7 leaves at deployment level: kill one
+  Atlas replica under HAProxy (failover time, no lost heartbeats) and a brief PG outage
+  (pool self-healing, error propagation instead of hangs).
+- Soak: ≥24h at the mid scale point. The pass condition is plateaus, not peaks —
+  steady-state heap with no monotonic growth, stable goroutine and fd counts.
+
+**Known gap the run must close first**: `/metrics` serves a custom registry
+(`prometheus.NewRegistry()` in `internal/metrics/metrics.go`) that registers only Atlas's
+own collectors — no Go/process collectors, so `go_gc_duration_seconds`, goroutine count
+and RSS are not exported today. Observing GC and soak trends at all requires registering
+the standard `prometheus/collectors` Go + process collectors on that registry (one-line
+change, no new dependency).
+
+**The run waits on** (scheduling, not design): (1) a designated machine — a 24h soak with
+PG + Redis + HAProxy cannot land on shared demo infrastructure; (2) load-driver choice —
+k6 / vegeta / ghz, or a Go driver on `sdk/go` (preference: through the real SDK, so its
+heartbeat pacing is part of the measured system); (3) acceptance numbers are outputs of
+the first run, not preconditions.
