@@ -497,3 +497,24 @@ PG + Redis + HAProxy cannot land on shared demo infrastructure; (2) load-driver 
 k6 / vegeta / ghz, or a Go driver on `sdk/go` (preference: through the real SDK, so its
 heartbeat pacing is part of the measured system); (3) acceptance numbers are outputs of
 the first run, not preconditions.
+
+**Driver decision (decided 2026-10-19, patrol-branch delegation)**: the load driver is
+the in-repo Go harness `cmd/loadgen`, driving everything through `sdk/go` — the same
+client path real integrators use, so the SDK's serialization and heartbeat pacing are
+part of the measured system. The §9 model is *cadence-shaped* (N servers each on their
+own beat), and that is the deciding argument: RPS-shaped tools cannot express "1,000
+servers heartbeating at SDK cadence" without standing the model on its head. Rejected:
+k6 (RPS-shaped, separate runtime to install on the soak machine), vegeta (HTTP-only —
+no gRPC leg), ghz (gRPC-only — no REST majority).
+
+**Harness (delivered 2026-10-19)**: `cmd/loadgen` implements the five §9 streams —
+fleet register + heartbeat with per-server jitter and drifting players, a 5:3:2
+list/detail/recommend read mix at an aggregate rate, character writes into the
+directory index, an admin stats trickle, and a rolling-restart storm that re-registers
+the whole fleet inside one suspect window (`3 × heartbeat`, capped at 30s). Retries are
+off (one honest attempt per measurement); in-flight saturation is reported as skips,
+never silently retried away; per-flow p50/p95/p99 + last-error land in a text table and
+a JSON report (`go test -race ./cmd/loadgen/`). Smoke-verified locally 2026-10-19:
+100 servers, 90s, 100 read rps, storm every 30s — all five streams live, zero errors,
+read mix within 1% of 5:3:2. Local numbers are not acceptance evidence; §9 acceptance
+stays defined by the criteria above, run on the designated machine.
