@@ -489,14 +489,15 @@ then become guardrails (same philosophy as the pinned baselines in [Benchmarks](
 process collectors are registered on it explicitly — GC pause, goroutine count,
 `go_memstats_*`, RSS (`process_resident_memory_bytes`), open fds and CPU come off the
 same scrape, no new dependency and no instrumentation on the hot paths (metrics tests
-assert the series exist). That closes the last in-repo prerequisite of this section; what
-remains blocked is the run itself — the deployment and the load driver named below.
+assert the series exist). That closes the last in-repo prerequisite of this section — the
+representative deployment and the load driver named below are delivered too, so only the
+run itself is blocked.
 
-**The run waits on** (scheduling, not design): (1) a designated machine — a 24h soak with
-PG + Redis + HAProxy cannot land on shared demo infrastructure; (2) load-driver choice —
-k6 / vegeta / ghz, or a Go driver on `sdk/go` (preference: through the real SDK, so its
-heartbeat pacing is part of the measured system); (3) acceptance numbers are outputs of
-the first run, not preconditions.
+**The run waits on** scheduling only: (1) a designated machine — a 24h soak with PG +
+Redis + HAProxy cannot land on shared demo infrastructure; (2) acceptance numbers are
+outputs of the first run, not preconditions. The load-driver choice that used to be open
+here was decided and delivered 2026-10-19 as `cmd/loadgen` on `sdk/go` (see "Driver
+decision" below).
 
 **Driver decision (decided 2026-10-19, patrol-branch delegation)**: the load driver is
 the in-repo Go harness `cmd/loadgen`, driving everything through `sdk/go` — the same
