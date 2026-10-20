@@ -250,6 +250,40 @@ func TestEngineAdmissionControlSkipsNotErrors(t *testing.T) {
 	}
 }
 
+// TestEngineBootRetriesThroughAdmissionSkips pins the 1k-scale lesson from
+// the 2026-10-20 local run: at fleet sizes above the in-flight cap the boot
+// herd saturates the semaphore, and a skipped boot register must be retried
+// by the virtual server — otherwise the fleet never fully exists and its
+// heartbeats 404 against a registry that never learned the id.
+func TestEngineBootRetriesThroughAdmissionSkips(t *testing.T) {
+	cfg := Config{
+		Servers:     40,
+		Duration:    2 * time.Second,
+		Heartbeat:   100 * time.Millisecond,
+		ReadRPS:     50,
+		MaxInFlight: 2, // deliberately far below the fleet size
+		Seed:        9,
+	}
+	e, fake := newTestEngine(t, cfg, "")
+	fake.registerDelay = 20 * time.Millisecond
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Duration)
+	e.Run(ctx)
+	cancel()
+
+	if got := fake.count("/v1/registry/servers/register"); got < cfg.Servers {
+		t.Errorf("register hits = %d, want >= %d (every server must eventually register)", got, cfg.Servers)
+	}
+	if err := totalErrors(e); err != 0 {
+		t.Errorf("stream errors = %d, want 0 (no phantom heartbeats against unregistered ids)\n%v", err, lastErrors(e))
+	}
+	// The fleet-ready gate must open once the whole fleet is registered, not
+	// at teardown: reads parked on the gate only fire after boot completes.
+	if got := e.flows[flowReadDetail].Count(); got == 0 {
+		t.Error("read-detail never fired (fleet-ready gate did not open at boot)")
+	}
+}
+
 func TestPickReadKindMatchesMixWeights(t *testing.T) {
 	rng := rand.New(rand.NewPCG(42, 0))
 	const n = 200000

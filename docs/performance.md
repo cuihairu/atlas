@@ -557,3 +557,22 @@ Atlas action: both replicas kept `RestartCount=0`, the surviving replica was nev
 restarted, and every flow resumed on its own once the stopped service reported healthy.
 (Operator-visible side note: `compose start` re-runs the one-shot migrate service; the
 migrations are idempotent and it exits 0, so this is harmless.)
+
+**Mid-scale local pass (2026-10-20, 1,000 servers, not acceptance evidence)**: the first
+1k-shaped run found a real harness defect, not a system one — a 1,000-way boot herd
+saturates the 256-slot default in-flight cap, and a boot register that lost the
+admission-control race was never retried, so 744 virtual servers never existed while
+their heartbeats and detail reads 404'd for the whole run (register 256/1,000, heartbeat
+5,336 errors, read-detail 3,462). Real game servers retry registration until the registry
+accepts them, so now the boot register retries through skips with jittered backoff
+(25–75ms, ctx-bounded), and the fleet-ready gate still opens the moment the last server
+is truly registered — an intermediate `defer` version accidentally moved the gate to
+teardown and was caught by the existing admission-control pin before any rerun. Post-fix
+rerun (1,000 servers, 300s, 200 read rps, 20 char rps, ops 5s, storm 60s, seed 42,
+replica-kill folded at t≈150s): all 1,000 registers land (7,144 admission skips absorbed
+by retry), **zero errors across all eight flows including the drill window**, heartbeat
+p50/p95 1/7ms, list 2/5ms, detail 1/3ms, recommend 4/8ms, char-write 3/8ms; the
+replica-kill window shows up only as heartbeat p99 83ms / max 4.1s and list max 355ms,
+with `RestartCount=0` on both replicas. The 5k point and the ≥24h soak stay on the
+designated machine; everything here is local lab evidence that the harness now holds its
+shape at the middle scale point.

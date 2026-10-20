@@ -277,14 +277,29 @@ func (e *Engine) Run(ctx context.Context) *report {
 	return e.report(time.Since(start))
 }
 
-// fleetLoop registers one virtual server, then heartbeats it on its own
-// cadence — the same shape as sdk StartHeartbeat (immediate beat, then tick).
+// fleetLoop registers one virtual server — retrying through admission-control
+// skips until the registry has accepted it (a game server that cannot get an
+// in-flight slot at boot keeps trying; it does not spend the run heartbeating
+// against a registry that never learned its id) — then heartbeats on its own
+// cadence, the same shape as sdk StartHeartbeat (immediate beat, then tick).
 func (e *Engine) fleetLoop(ctx context.Context, idx int, boot *sync.WaitGroup) {
 	svc := e.servers[idx]
-	e.call(flowRegister, func() error {
-		_, err := e.fleet.Register(ctx, svc.req)
-		return err
-	})
+	for {
+		if !e.call(flowRegister, func() error {
+			_, err := e.fleet.Register(ctx, svc.req)
+			return err
+		}) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			boot.Done() // torn down mid-boot: still leave the boot set
+			return
+		case <-time.After(e.bootBackoff()):
+		}
+	}
+	// Signal readiness here, right after registration — not via defer, or the
+	// fleet-ready gate would only open at teardown and reads would never run.
 	boot.Done()
 	e.heartbeat(ctx, svc, time.Now())
 	t := time.NewTicker(svc.beat)
@@ -297,6 +312,15 @@ func (e *Engine) fleetLoop(ctx context.Context, idx int, boot *sync.WaitGroup) {
 			e.heartbeat(ctx, svc, now)
 		}
 	}
+}
+
+// bootBackoff is the per-server retry delay after a skipped boot register;
+// jittered so a saturated semaphore does not re-sync the whole herd onto one
+// tick.
+func (e *Engine) bootBackoff() time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return time.Duration(25+e.rng.Int64N(50)) * time.Millisecond
 }
 
 func (e *Engine) heartbeat(ctx context.Context, svc fleetServer, now time.Time) {
@@ -424,30 +448,34 @@ func (e *Engine) storm(ctx context.Context) {
 	}
 }
 
-// call runs one measured request through the in-flight cap. When the cap is
-// saturated the call is skipped and counted — an honest overload signal, not
-// an error and not a silent retry. Calls still in flight when the run ctx is
-// cancelled are shutdown noise, counted as skips too: they never measured a
-// full attempt, so counting them as errors would pollute the run's verdict.
-func (e *Engine) call(flow string, fn func() error) {
+// call runs one measured request through the in-flight cap and reports
+// whether the attempt was skipped for saturation (true) — the retryable case;
+// the boot register loop is the only retrying caller, rate-loop skips stay
+// counted as honest overload signals. When the cap is saturated the call is
+// skipped and counted — not an error and not a silent retry. Calls still in
+// flight when the run ctx is cancelled are shutdown noise, counted as skips
+// too: they never measured a full attempt, so counting them as errors would
+// pollute the run's verdict.
+func (e *Engine) call(flow string, fn func() error) (skipped bool) {
 	select {
 	case e.sem <- struct{}{}:
 	default:
 		e.flows[flow].Skip()
-		return
+		return true
 	}
 	defer func() { <-e.sem }()
 	start := time.Now()
 	err := fn()
 	if err != nil && ctxClosed(err) {
 		e.flows[flow].Skip()
-		return
+		return false
 	}
 	if err != nil {
 		e.flows[flow].Err(err)
-		return
+		return false
 	}
 	e.flows[flow].Record(time.Since(start))
+	return false
 }
 
 // ctxClosed reports whether err is just the run being torn down.
