@@ -395,3 +395,17 @@ p50/p95 1/7ms、list 2/5ms、detail 1/3ms、recommend 4/8ms、角色写 3/8ms；
 体现为心跳 p99 83ms / max 4.1s 与 list max 355ms，两副本 `RestartCount=0`。5k 规模点与
 ≥24h 浸泡仍在指定机器上做；本段全部是本机实验证据，证明 harness 在中间规模点上站得
 住形状。
+
+**5k 本机实跑与第二个 harness 修复（2026-10-20，非验收证据）**：最大规模点上，跑动先撞到
+的是 harness 自己的第二道扩展极限而非系统的——读流由单 goroutine 发出，吞吐被 1/延迟封顶：
+500 rps 目标在 5k 只交付 ~70 rps（读流现走 worker 池，`-read-workers`，默认 16——测试先行，
+`TestEngineReadRateDeliveredUnderLatency` 在加池前红）。同开发机三次 5k 跑，seed 全固定：
+(a) 单发基线：折入 atlas1 杀副本（与 1k 轮合起来两副本都覆盖到），八股流零错误、
+`RestartCount=0`；(b) 16 worker + `pg-outage`（断 20s、7s 恢复）中途折入：全部错误都落在
+注入窗口内——心跳 1,700 ≈ 持久化路径速率 × 窗口、读 756、角色写 89、一整波 storm 部分折损
+——随后各股流自行恢复，正是 §9 对该演练要求的「错误传播而非挂死」形状；读交付 217/500
+rps，本机 CPU 明显饱和（读 in-flight 翻三倍后心跳 p50 6→47ms）；(c) 32 worker、无演练：
+读交付 446/500 rps（89%），心跳 510/s 下 p50 11ms，除拆场瞬间自关 transport 的一条解码
+错误外零错误。这些跑动里每次 boot 的注册重试吸收 16–40 万次准入 skip（5000 台始终全部
+落地）。本机数值仍只是方向性的——盒子比服务先饱和——验收跑在指定机器上按速率计划调
+`-read-workers`。

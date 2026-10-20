@@ -66,6 +66,7 @@ type Config struct {
 	Duration    time.Duration // 0 in main = run until interrupt
 	Heartbeat   time.Duration // fleet beat; 0 = SDK default 10s
 	ReadRPS     float64       // aggregate read rate across the 5:3:2 mix
+	ReadWorkers int           // concurrent read issuers; reads are fleet-scaled, one goroutine tops out at 1/latency (0 = 16)
 	CharRPS     float64       // character write rate
 	OpsEvery    time.Duration // admin stats interval (needs AdminURL)
 	StormEvery  time.Duration // rolling-restart drill interval
@@ -110,6 +111,9 @@ func NewEngine(cfg Config) (*Engine, error) {
 	}
 	if cfg.MaxInFlight <= 0 {
 		cfg.MaxInFlight = 256
+	}
+	if cfg.ReadWorkers <= 0 {
+		cfg.ReadWorkers = 16
 	}
 
 	httpClient := &http.Client{Timeout: cfg.Timeout}
@@ -232,14 +236,23 @@ func (e *Engine) Run(ctx context.Context) *report {
 		}
 	}
 	if e.cfg.ReadRPS > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if !gate() {
-				return
-			}
-			e.rateLoop(ctx, time.Duration(float64(time.Second)/e.cfg.ReadRPS), func() { e.readTick(ctx) })
-		}()
+		// One issuer per worker: the read stream models many independent
+		// gateway/player clients, not one synchronous client — a single
+		// goroutine can only issue 1/latency reads per second and would
+		// undershoot a fleet-scaled target (5k run 2026-10-20: 500 rps
+		// target, ~70 delivered). Each worker takes ReadRPS/ReadWorkers.
+		w := e.cfg.ReadWorkers
+		iv := time.Duration(float64(time.Second) * float64(w) / e.cfg.ReadRPS)
+		for i := 0; i < w; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if !gate() {
+					return
+				}
+				e.rateLoop(ctx, iv, func() { e.readTick(ctx) })
+			}()
+		}
 	}
 	if e.cfg.CharRPS > 0 {
 		wg.Add(1)

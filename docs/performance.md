@@ -576,3 +576,23 @@ replica-kill window shows up only as heartbeat p99 83ms / max 4.1s and list max 
 with `RestartCount=0` on both replicas. The 5k point and the ≥24h soak stay on the
 designated machine; everything here is local lab evidence that the harness now holds its
 shape at the middle scale point.
+
+**5k local pass and a second harness fix (2026-10-20, not acceptance evidence)**: at the
+largest scale point the runs found the harness's own second scaling limit before the
+system's — the read stream was issued by a single goroutine, which tops out at 1/latency:
+a 500-rps target delivered ~70 rps at 5k (reads now run through a worker pool,
+`-read-workers`, default 16 — tests-first, `TestEngineReadRateDeliveredUnderLatency` was
+red at 70% undershoot before the pool). Three 5k runs on the dev box, all seeds fixed:
+(a) single-issuer baseline: all eight flows zero errors with `replica-kill` on atlas1
+folded in (coverage of both replicas across runs), `RestartCount=0`; (b) 16 workers plus
+`pg-outage` (20s down, 7s recovery) folded mid-run: every error lands inside the injected
+window — heartbeat 1,700 ≈ persist-path rate × window, reads 756, char-writes 89,
+one storm wave partially lost to the window — then every flow resumes on its own, exactly
+the error-propagation-not-hangs shape §9 asks of the drill; reads delivered 217 of 500
+rps with the box visibly CPU-saturated (heartbeat p50 6→47ms once read in-flight
+tripled); (c) 32 workers, no drill: 446 of 500 rps delivered (89%), heartbeat 510/s at
+p50 11ms, zero errors apart from one teardown-instant decode error when the run's own
+transport closes. Register retries absorbed 160–400k admission skips per boot across
+these runs (all 5,000 always landed). Local numbers stay directional — the box saturates
+before the service does — and the acceptance run sizes `-read-workers` to its rate plan
+on the designated machine.

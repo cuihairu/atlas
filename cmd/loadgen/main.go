@@ -33,6 +33,7 @@ func main() {
 	flag.DurationVar(&cfg.Duration, "duration", 0, "run length (0 = until interrupt)")
 	flag.DurationVar(&cfg.Heartbeat, "heartbeat", 10*time.Second, "fleet heartbeat cadence (SDK default 10s)")
 	flag.Float64Var(&cfg.ReadRPS, "read-rps", 0, "aggregate read rate over the list/detail/recommend mix")
+	flag.IntVar(&cfg.ReadWorkers, "read-workers", 16, "concurrent read issuers (reads are fleet-scaled; raise with -read-rps)")
 	flag.Float64Var(&cfg.CharRPS, "char-rps", 0, "character write rate")
 	flag.DurationVar(&cfg.OpsEvery, "ops-every", 0, "admin stats trickle interval (needs -admin)")
 	flag.DurationVar(&cfg.StormEvery, "storm-every", 0, "rolling-restart drill interval (re-registers the fleet in one suspect window)")

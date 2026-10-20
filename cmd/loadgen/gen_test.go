@@ -118,7 +118,7 @@ func TestEngineDrivesAllStreams(t *testing.T) {
 		ReadRPS:     60,
 		CharRPS:     10,
 		OpsEvery:    100 * time.Millisecond,
-		MaxInFlight: 8,
+		MaxInFlight: 16, // read workers fire in phase; no saturation wanted here
 		Seed:        7,
 	}
 	e, fake := newTestEngine(t, cfg, "")
@@ -281,6 +281,40 @@ func TestEngineBootRetriesThroughAdmissionSkips(t *testing.T) {
 	// at teardown: reads parked on the gate only fire after boot completes.
 	if got := e.flows[flowReadDetail].Count(); got == 0 {
 		t.Error("read-detail never fired (fleet-ready gate did not open at boot)")
+	}
+}
+
+// TestEngineReadRateDeliveredUnderLatency pins the 5k-scale lesson from the
+// 2026-10-20 local run: the read stream is fleet-scaled, so its rate must be
+// delivered under realistic per-call latency — a single issuing goroutine
+// tops out at 1/latency and undershoots the target 7x at the 5k point.
+func TestEngineReadRateDeliveredUnderLatency(t *testing.T) {
+	cfg := Config{
+		Servers:     10,
+		Duration:    1 * time.Second,
+		Heartbeat:   200 * time.Millisecond,
+		ReadRPS:     200,
+		ReadWorkers: 16,
+		MaxInFlight: 256,
+		Seed:        13,
+	}
+	e, fake := newTestEngine(t, cfg, "")
+	fake.delay = 10 * time.Millisecond // every read takes 10ms server-side
+
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.Duration)
+	rep := e.Run(ctx)
+	cancel()
+
+	var reads int64
+	for _, f := range []string{flowReadList, flowReadDetail, flowReadRecommend} {
+		reads += e.flows[f].Count()
+	}
+	if reads < 140 {
+		t.Errorf("read total = %d over %.1fs, want >= 140 (70%% of the 200 rps target under 10ms latency)",
+			reads, rep.Elapsed)
+	}
+	if err := totalErrors(e); err != 0 {
+		t.Errorf("stream errors = %d, want 0\n%v", err, lastErrors(e))
 	}
 }
 
