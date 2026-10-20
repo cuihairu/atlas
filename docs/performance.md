@@ -540,3 +540,20 @@ tears down), which is what real clients do — reads address a fleet that alread
 Post-fix rerun: 100 servers, 60s, all eight flows at zero errors. Numbers here are local
 lab evidence that the harness and the topology agree; §9 acceptance still means the ≥24h
 run on the designated machine.
+
+**Drill runner (delivered 2026-10-20)**: `deploy/perf/drills.sh` automates the two
+deployment-level drills §7 leaves out of the unit suite, so the 24h soak folds them in
+without hand-typed docker commands mid-run — `replica-kill` (stop one Atlas replica,
+wait, bring it back; `--service atlas1|atlas2` for coverage of both across a long run)
+and `pg-outage` (stop the PostgreSQL primary, wait, bring it back). Both log ISO
+timestamps at window open/close so a loadgen report can be correlated against the
+injected window, and both fail loudly if the service does not come back healthy.
+Live-verified against the repaired HA stack in a 300s / 100-server / 100-read-rps run
+with both drills folded in (replica down 30s at t≈60s, PG down 20s at t≈180s):
+perturbation is visible exactly inside the windows — heartbeat 500s ≈ observed rate ×
+21s outage window, character-write errors ≈ rate × 16s, reads blipped ≈ 0.7s total
+(served from Redis), storm/register/ops never errored — and recovery needed no manual
+Atlas action: both replicas kept `RestartCount=0`, the surviving replica was never
+restarted, and every flow resumed on its own once the stopped service reported healthy.
+(Operator-visible side note: `compose start` re-runs the one-shot migrate service; the
+migrations are idempotent and it exits 0, so this is harmless.)
