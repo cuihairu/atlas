@@ -11,8 +11,6 @@
 #   admin    :8082 (HAProxy, sticky)
 #   stats    :8404/stats (HAProxy)
 
-version: "3.9"
-
 x-atlas-common: &atlas-common
   image: ghcr.io/cuihairu/atlas:latest
   build:
