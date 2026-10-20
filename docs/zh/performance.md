@@ -292,7 +292,7 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 序列（metrics/queue_test.go）、admin 端点 200/503 双路径
 （httpapi/coverage_test.go）、队列侧字段由 queue_test.go 既有断言覆盖。
 
-## 9. 生产形状压测与长稳观测（设计稿 2026-10-19；仓内三件套已交付、本机冒烟与演练实测通过；验收实跑待指定机器与排期）
+## 9. 生产形状压测与长稳观测（设计稿 2026-10-19；驱动器、演练执行器与 plateau 判读器已交付并本机实测；验收实跑待指定机器与排期）
 
 本节以上与 [基准](/zh/benchmarks) 全部测的是服务层：memory store、单进程、分钟级
 运行，不含网络 / TLS / JSON / 存储 I/O。今天没有任何测量回答部署侧问题——端到端
@@ -408,3 +408,33 @@ rps，本机 CPU 明显饱和（读 in-flight 翻三倍后心跳 p50 6→47ms）
 错误外零错误。这些跑动里每次 boot 的注册重试吸收 16–40 万次准入 skip（5000 台始终全部
 落地）。本机数值仍只是方向性的——盒子比服务先饱和——验收跑在指定机器上按速率计划调
 `-read-workers`。
+
+**Plateau 判读器（2026-10-20 已交付）**：`cmd/soakcheck` 把 §9 的「看 plateau 不看峰值」
+变成机械判读——和演练交给 `deploy/perf/drills.sh` 是同一个动作。在它之前，判一次 24h 浸泡
+等于盯一天的三条 Prometheus 曲线。它按固定间隔采每个副本的 `:8082/metrics`
+（`--interval 60s --duration 24h`），窗口开/关打 ISO 时间戳，好让 loadgen 报告与演练窗口
+对齐同一把钟。只留 §9 的三条序列（`go_memstats_heap_inuse_bytes`、`go_goroutines`、
+`process_open_fds`），判读逐副本逐指标进行。判据把本次跑的后 1/4 与前 1/4 比——默认 ±20%，
+`--drift` 可调——双向都算：正漂移是泄漏，负漂移是重启或崩溃（任何判读跨不过去的形状）。
+极值不参与判定，所以 GC 抖动与滚动重启风暴看不见，这正是「看 plateau 不看峰值」的意思；
+采样少于 8 点时判读报 "insufficient samples" 而不是放行。退出码 0/1/2（全过 / 有指标不 plateau
+或点太少判不动 / 一个副本都没答上），可以跟 loadgen 一起摆进 runbook 或门禁。`--out` 把
+采样落成 TSV，`--sample` 离线重判同一份文件，机器走了判读仍然可复核。
+
+实测把三件事逼进了工具本身，而不是绕过：
+
+- **要给每个副本单独发布 admin 口。** 现网拓扑里 `:8082` 走 HAProxy 且有 sticky，一个 URL
+  出不来两条序列——判读表要的是逐副本各一条（本机用 18082/28082 验证）。
+- **`--warmup` 丢弃每个序列的前 N 点。** 舰队经 sticky HAProxy 注册时先压到一个副本上：
+  实测 100 台那跑里 atlas2 第一点是 111 goroutine，其后十六点是 21–23。冷判这一个点就让
+  整轮失败（前 1/4 漂移 −44.1%）——而且判得对：判定窗口开在 boot 蜂群里，就没有稳态可判。
+  同一份记录加 `--warmup 1`：六条序列全 plateau，退出 0。
+- **下降不等于重启。** 上面那次 FAIL 是 boot 瞬态而不是崩溃（两副本 `RestartCount=0`），
+  所以判读文案把几种成因都写出来，不断言是哪一种。
+
+2026-10-20 在修好的 HA 栈上实测（非验收证据）：170s、10s 间隔，负载为 100 台 / 100 read
+rps / 1 char rps / 10s 一次的运维滴流——102 点、每副本每指标 17 点，八股流零错误
+（register 100、heartbeat 1,758、list 8,428、detail 5,082、recommend 3,450、char-write
+169、ops 16），两副本 `RestartCount=0`。冷判在 boot 瞬态那条序列上 FAIL；加 warm-up 后
+PASS：atlas1 / atlas2 的 heap 漂移 +4.2% / +5.1%、goroutine −2.5% / +1.1%、fd +0.4% /
++0.0%。指定机器上的 24h 跑仍是验收事件本身；这里只是判读机器的最后一件到位并跑过。

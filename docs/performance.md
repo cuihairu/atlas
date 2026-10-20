@@ -439,7 +439,7 @@ contract tests pin all three surfaces: metrics scrape series (metrics/queue_test
 both the 200 and 503 admin endpoint paths (httpapi/coverage_test.go), and the queue-side
 fields covered by the existing assertions in queue_test.go.
 
-## 9. Production-shaped load and soak (design 2026-10-19; harness delivered and locally smoke-verified; acceptance run pending a machine and a schedule)
+## 9. Production-shaped load and soak (design 2026-10-19; harness, drills and plateau checker delivered and locally verified; acceptance run pending a machine and a schedule)
 
 Everything above and all of [Benchmarks](/benchmarks) measures the service layer: memory
 store, one process, minutes-long runs, no network / TLS / JSON / storage I/O. Nothing
@@ -597,3 +597,43 @@ transport closes. Register retries absorbed 160–400k admission skips per boot 
 these runs (all 5,000 always landed). Local numbers stay directional — the box saturates
 before the service does — and the acceptance run sizes `-read-workers` to its rate plan
 on the designated machine.
+
+**Plateau checker (delivered 2026-10-20)**: `cmd/soakcheck` turns §9's "plateaus, not
+peaks" clause into a mechanical verdict — the same move the drills got with
+`deploy/perf/drills.sh`. Before it, judging a 24h soak meant eyeballing three Prometheus
+series for a day. It samples each replica's `:8082/metrics` on a fixed interval
+(`--interval 60s --duration 24h`) and prints the window as ISO timestamps at open and
+close, so a loadgen report and a drill window line up against the same clock. Only the
+three §9 series are kept (`go_memstats_heap_inuse_bytes`, `go_goroutines`,
+`process_open_fds`), and the verdict is per replica per metric. The gate compares the
+trailing quarter of the run against the leading quarter — ±20% by default, `--drift` — in
+both directions: positive drift is a leak, negative drift is a restart or a crash that no
+verdict can be trusted across. Extremes decide nothing, so GC waves and a rolling-restart
+storm stay invisible, which is what "plateaus, not peaks" means; under 8 samples the
+verdict reports "insufficient samples" instead of passing. Exit codes are 0/1/2 (all pass /
+a series failed or is too thin to judge / nothing answered), so it can sit in a runbook or
+a gate next to loadgen. `--out` records the samples as TSV and `--sample` re-verdicts that
+file offline, so a soak's verdict stays auditable after the machine goes away.
+
+Three things the live pass forced, all into the tool rather than around it:
+
+- **Publish each replica's admin port.** As shipped, `:8082` is HAProxy-fronted and
+  sticky, so one URL cannot produce two series — the verdict table needs one per replica.
+- **`--warmup` drops the first N samples per series.** A fleet registering through sticky
+  HAProxy lands on one replica first: in the live 100-server run atlas2's first sample was
+  111 goroutines and the next sixteen were 21–23. Cold, that single point fails the run
+  (−44.1% drift on the leading quarter) — and correctly so, because a run whose judged
+  window opens inside the boot herd has no steady state to bless. `--warmup 1` over the
+  same recorded samples: all six series plateau, exit 0.
+- **A drop is not automatically a restart.** The live FAIL came from the boot transient
+  above, not a crash (`RestartCount=0` on both replicas), so the note names the causes
+  rather than asserting one.
+
+Live-verified 2026-10-20 against the repaired HA stack, not acceptance evidence: 170s at a
+10s interval under 100 servers / 100 read rps / 1 char rps / an ops trickle every 10s —
+102 points, 17 per replica per metric, all eight flows at zero errors (register 100,
+heartbeat 1,758, list 8,428, detail 5,082, recommend 3,450, char-write 169, ops 16), both
+replicas `RestartCount=0`. Cold verdict FAIL on the boot-transient series; warmed verdict
+PASS, with heap +4.2% / +5.1%, goroutines −2.5% / +1.1% and open fds +0.4% / +0.0% across
+atlas1 / atlas2. The 24h run on the designated machine still stands as the acceptance
+event; this only means the last piece of judging machinery is built and exercised.
