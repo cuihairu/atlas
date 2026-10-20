@@ -292,7 +292,7 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 序列（metrics/queue_test.go）、admin 端点 200/503 双路径
 （httpapi/coverage_test.go）、队列侧字段由 queue_test.go 既有断言覆盖。
 
-## 9. 生产形状压测与长稳观测（设计稿，2026-10-19，实跑未动）
+## 9. 生产形状压测与长稳观测（设计稿 2026-10-19；仓内三件套已交付、本机冒烟与演练实测通过；验收实跑待指定机器与排期）
 
 本节以上与 [基准](/zh/benchmarks) 全部测的是服务层：memory store、单进程、分钟级
 运行，不含网络 / TLS / JSON / 存储 I/O。今天没有任何测量回答部署侧问题——端到端

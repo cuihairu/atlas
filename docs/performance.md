@@ -439,7 +439,7 @@ contract tests pin all three surfaces: metrics scrape series (metrics/queue_test
 both the 200 and 503 admin endpoint paths (httpapi/coverage_test.go), and the queue-side
 fields covered by the existing assertions in queue_test.go.
 
-## 9. Production-shaped load and soak (design draft, 2026-10-19, not executed)
+## 9. Production-shaped load and soak (design 2026-10-19; harness delivered and locally smoke-verified; acceptance run pending a machine and a schedule)
 
 Everything above and all of [Benchmarks](/benchmarks) measures the service layer: memory
 store, one process, minutes-long runs, no network / TLS / JSON / storage I/O. Nothing
