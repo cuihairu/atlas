@@ -169,7 +169,7 @@ Common configuration lives in `.env` plus compose environment variables: to chan
 
 ## API Quick Reference
 
-Atlas exposes 49 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
+Atlas exposes 50 business endpoints (default configuration, audit endpoints included) in six groups (plus the `/healthz` / `/readyz` / `/metrics` system endpoints):
 
 ### Registry (server registration)
 
