@@ -48,6 +48,16 @@ func main() {
 	flag.Var(&urls, "metrics", "metrics URL, repeated or space-separated (one per replica)")
 	flag.Parse()
 
+	// A sample file does not record the interval it was taken at, so replaying
+	// it against the default 60s would invent a coverage gap out of thin air:
+	// coverage is only judged on a replay when -interval was actually given.
+	intervalSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "interval" {
+			intervalSet = true
+		}
+	})
+
 	if *sample != "" {
 		f, err := os.Open(*sample)
 		if err != nil {
@@ -60,7 +70,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "soakcheck: read sample file: %v\n", err)
 			os.Exit(2)
 		}
-		os.Exit(verdict(samples, *drift, *warmup, "", ""))
+		replayInterval := time.Duration(0)
+		if intervalSet {
+			replayInterval = *interval
+		}
+		os.Exit(verdict(samples, *drift, *warmup, replayInterval, "", ""))
 	}
 
 	if len(urls) == 0 {
@@ -97,7 +111,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	os.Exit(verdict(samples, *drift, *warmup, start.Format(time.RFC3339), time.Now().Format(time.RFC3339)))
+	os.Exit(verdict(samples, *drift, *warmup, *interval, start.Format(time.RFC3339), time.Now().Format(time.RFC3339)))
 }
 
 // scrape ticks until ctx is done, taking one scrape of every URL per tick.
@@ -149,7 +163,7 @@ func fetch(client *http.Client, u string) (map[string]float64, error) {
 // verdict runs the plateau check over every series and returns the process
 // code: 0 all pass, 1 any series fails the plateau or is too thin to judge,
 // 2 no samples at all (nothing was reachable).
-func verdict(samples []Sample, drift float64, warmup int, winStart, winEnd string) int {
+func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, winStart, winEnd string) int {
 	if winStart != "" {
 		fmt.Fprintf(os.Stdout, "window %s .. %s\n", winStart, winEnd)
 	}
@@ -166,6 +180,7 @@ func verdict(samples []Sample, drift float64, warmup int, winStart, winEnd strin
 	var vs []Verdict
 	for _, s := range series {
 		v := Check(s.Source, s.Metric, s.Points, drift)
+		v, _ = AssessCoverage(v, interval, s.Points)
 		if !v.OK {
 			pass = false
 		}

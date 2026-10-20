@@ -50,8 +50,19 @@ type Verdict struct {
 	Drift     float64 // (LastMean-FirstMean)/FirstMean; +creep, -restart-shaped drop
 
 	Plateau bool // within the tolerance
-	OK      bool // Plateau and enough samples to judge
+	OK      bool // Plateau, covered, and enough samples to judge
 	Note    string
+
+	Expected int // ticks the interval predicts over this span; 0 = not assessed
+}
+
+// Coverage is the run-validity half of a soak verdict: a plateau judged over a
+// window the checker could not observe is not evidence, so missing ticks fail
+// the verdict the same way a leak does.
+type Coverage struct {
+	Expected int
+	Missing  int
+	Note     string
 }
 
 const minSamples = 8 // quarters need at least 8 points to mean anything
@@ -102,6 +113,36 @@ func Check(src, metric string, pts []Point, drift float64) Verdict {
 	// A verdict is only trustworthy with enough samples to compare quarters.
 	v.OK = v.Plateau
 	return v
+}
+
+// AssessCoverage checks that the series actually covers the window the plateau
+// verdict was taken over: interval ticks predict the expected count, and a hole
+// bigger than the tolerance means part of the soak was never observed. One tick
+// of tolerance absorbs a run that ended between ticks, and the floor rises to
+// 5% for long runs where the last scrape can legitimately slip past the window.
+func AssessCoverage(v Verdict, interval time.Duration, pts []Point) (Verdict, Coverage) {
+	if interval <= 0 || len(pts) < 2 {
+		return v, Coverage{}
+	}
+	expected := 1 + int(pts[len(pts)-1].At.Sub(pts[0].At)/interval)
+	if expected < 1 {
+		expected = 1
+	}
+	missing := expected - len(pts)
+	v.Expected = expected
+	if missing < 0 {
+		missing = 0
+	}
+	tol := expected / 20
+	if tol < 1 {
+		tol = 1
+	}
+	if missing > tol {
+		v.Plateau = false
+		v.OK = false
+		v.Note = fmt.Sprintf("coverage gap: %d of %d ticks missing", missing, expected)
+	}
+	return v, Coverage{Expected: expected, Missing: missing, Note: v.Note}
 }
 
 func vals(pts []Point) []float64 {
@@ -222,13 +263,22 @@ func TrimLeading(series []Series, n int) []Series {
 func RenderText(vs []Verdict) string {
 	var b strings.Builder
 	b.WriteString("soakcheck plateau verdict\n")
-	fmt.Fprintf(&b, "%-28s %-28s %6s %14s %14s %8s  %s\n",
-		"source", "metric", "samples", "min", "max", "drift", "verdict")
+	fmt.Fprintf(&b, "%-28s %-28s %7s %14s %14s %8s  %s\n",
+		"source", "metric", "ticks", "min", "max", "drift", "verdict")
 	for _, v := range vs {
-		fmt.Fprintf(&b, "%-28s %-28s %6d %14s %14s %+7.1f%%  %s\n",
-			v.Source, v.Metric, v.Samples, trim(v.Min), trim(v.Max), v.Drift*100, v.Note)
+		fmt.Fprintf(&b, "%-28s %-28s %7s %14s %14s %+7.1f%%  %s\n",
+			v.Source, v.Metric, counts(v), trim(v.Min), trim(v.Max), v.Drift*100, v.Note)
 	}
 	return b.String()
+}
+
+// counts shows how many of the predicted ticks were actually observed, so a
+// partially-blind window is visible at a glance instead of hidden in a mean.
+func counts(v Verdict) string {
+	if v.Expected > 0 {
+		return fmt.Sprintf("%d/%d", v.Samples, v.Expected)
+	}
+	return fmt.Sprintf("%d", v.Samples)
 }
 
 // trim keeps a magnitude readable without losing the order of growth.

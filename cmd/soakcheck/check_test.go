@@ -102,6 +102,81 @@ func TestTrimLeadingShorterThanWarmup(t *testing.T) {
 	}
 }
 
+// every builds n points spaced by step apart.
+func every(step time.Duration, n int, f func(int) float64) []Point {
+	out := make([]Point, n)
+	for i := range out {
+		out[i] = Point{At: time.Unix(0, int64(time.Duration(i)*step)), Value: f(i)}
+	}
+	return out
+}
+
+func TestCoveragePassesWhenComplete(t *testing.T) {
+	v := Check("a", "go_goroutines", every(time.Minute, 20, func(int) float64 { return 100 }), 0.20)
+	got, cov := AssessCoverage(v, time.Minute, every(time.Minute, 20, func(int) float64 { return 100 }))
+	if got.Expected != 20 || cov.Missing != 0 {
+		t.Fatalf("expected %d missing %d, want 20 and 0", got.Expected, cov.Missing)
+	}
+	if !got.Plateau || !got.OK {
+		t.Fatalf("a fully covered plateau must stand: %+v", got)
+	}
+}
+
+func TestCoverageGapFails(t *testing.T) {
+	// 20 points three minutes apart on a one-minute scrape: two of every three
+	// minutes of the soak were never observed.
+	pts := every(3*time.Minute, 20, func(int) float64 { return 100 })
+	got, cov := AssessCoverage(Check("a", "go_goroutines", pts, 0.20), time.Minute, pts)
+	if cov.Expected != 58 || cov.Missing != 38 {
+		t.Fatalf("expected %d missing %d, want 58 and 38", cov.Expected, cov.Missing)
+	}
+	if got.Plateau || got.OK {
+		t.Fatalf("a hole that big must fail the verdict: %+v", got)
+	}
+	if got.Note != "coverage gap: 38 of 58 ticks missing" {
+		t.Fatalf("note = %q", got.Note)
+	}
+}
+
+func TestCoverageToleranceAbsorbsOneLateTick(t *testing.T) {
+	// A run that ends between ticks creates no hole: 17 ticks of a 160s span is
+	// a complete 17-tick window.
+	pts := every(10*time.Second, 17, func(int) float64 { return 100 })
+	if got, cov := AssessCoverage(Check("a", "go_goroutines", pts, 0.20), 10*time.Second, pts); cov.Expected != 17 || cov.Missing != 0 || !got.OK {
+		t.Fatalf("a truncated tail is not blindness: expected %d missing %d %+v", cov.Expected, cov.Missing, got)
+	}
+	// One late scrape is what the tolerance is for: 18 predicted ticks, 17 seen.
+	late := every(10*time.Second, 16, func(int) float64 { return 100 })
+	late = append(late, Point{At: time.Unix(0, int64(175*time.Second)), Value: 100})
+	got, cov := AssessCoverage(Check("a", "go_goroutines", late, 0.20), 10*time.Second, late)
+	if cov.Expected != 18 || cov.Missing != 1 {
+		t.Fatalf("expected %d missing %d, want 18 and 1", cov.Expected, cov.Missing)
+	}
+	if !got.Plateau || !got.OK {
+		t.Fatalf("one tick of tolerance must not fail the run: %+v", got)
+	}
+}
+
+func TestCoverageSkippedWithoutAnInterval(t *testing.T) {
+	pts := every(time.Minute, 20, func(int) float64 { return 100 })
+	got := Check("a", "go_goroutines", pts, 0.20)
+	if _, out := AssessCoverage(got, 0, pts); out.Expected != 0 {
+		t.Fatalf("no interval means no coverage claim: %+v", out)
+	}
+	if _, out := AssessCoverage(got, time.Minute, pts[:1]); out.Expected != 0 {
+		t.Fatalf("one point cannot span a window: %+v", out)
+	}
+}
+
+func TestCountsShowsCoverage(t *testing.T) {
+	if got := counts(Verdict{Samples: 17, Expected: 18}); got != "17/18" {
+		t.Fatalf("counts with coverage = %q", got)
+	}
+	if got := counts(Verdict{Samples: 17}); got != "17" {
+		t.Fatalf("counts without coverage = %q", got)
+	}
+}
+
 func TestWobbleWithinTolerancePasses(t *testing.T) {
 	// A 15% band around the base level is drift, not creep: ±8% of the mean.
 	pts := mk(16, func(i int) float64 {

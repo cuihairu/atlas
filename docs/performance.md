@@ -615,7 +615,7 @@ a series failed or is too thin to judge / nothing answered), so it can sit in a 
 a gate next to loadgen. `--out` records the samples as TSV and `--sample` re-verdicts that
 file offline, so a soak's verdict stays auditable after the machine goes away.
 
-Three things the live pass forced, all into the tool rather than around it:
+Four things the live pass forced, all into the tool rather than around it:
 
 - **Publish each replica's admin port.** As shipped, `:8082` is HAProxy-fronted and
   sticky, so one URL cannot produce two series — the verdict table needs one per replica.
@@ -627,7 +627,14 @@ Three things the live pass forced, all into the tool rather than around it:
   same recorded samples: all six series plateau, exit 0.
 - **A drop is not automatically a restart.** The live FAIL came from the boot transient
   above, not a crash (`RestartCount=0` on both replicas), so the note names the causes
-  rather than asserting one.
+- **Coverage is judged too, not only the mean.** A soak with a multi-hour
+  observation hole used to score identically to a clean run — the quarter means just
+  average a gap away. The tick column now shows observed over predicted (`16/16`), and a
+  hole beyond tolerance (one tick for a short run, 5% for a long one, plus one for a
+  scrape that slips past the window) fails the verdict with
+  `coverage gap: N of M ticks missing`. Replay does not invent one: a recorded file
+  carries no interval, so `--sample` only judges coverage when `--interval` is given, and
+  shows raw counts otherwise.
 
 Live-verified 2026-10-20 against the repaired HA stack, not acceptance evidence: 170s at a
 10s interval under 100 servers / 100 read rps / 1 char rps / an ops trickle every 10s —
