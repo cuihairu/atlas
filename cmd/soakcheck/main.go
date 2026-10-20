@@ -8,9 +8,12 @@
 // only when every series passes.
 //
 //	go build ./cmd/soakcheck
-//	./soakcheck --metrics http://atlas1:8082/metrics http://atlas2:8082/metrics \
-//	          --interval 60s --duration 24h --out soak.tsv
+//	./soakcheck --interval 60s --duration 24h --out soak.tsv \
+//	          --metrics http://atlas1:8082/metrics http://atlas2:8082/metrics
 //	./soakcheck --sample soak.tsv          # re-verify offline, no machine needed
+//
+// --metrics takes a list, so pass it last: Go's flag package stops parsing at
+// the first bare token, and anything after a second URL is silently positional.
 //
 // Samples written with --out are replayable, so a soak's verdict can be
 // audited after the fact without re-running the machine.
@@ -20,6 +23,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,8 +49,18 @@ func main() {
 	warmup := flag.Int("warmup", 0, "drop the first N samples per series before judging (keeps the boot herd out of the plateau window)")
 	out := flag.String("out", "", "append sampled series here as TSV, replayable via --sample")
 	sample := flag.String("sample", "", "re-verify a sample file instead of scraping")
-	flag.Var(&urls, "metrics", "metrics URL, repeated or space-separated (one per replica)")
+	flag.Var(&urls, "metrics", "metrics URL, repeated or space-separated (one per replica; pass this flag last)")
 	flag.Parse()
+
+	// A bare token ends flag parsing, so anything after it is positional. That
+	// is the failure shape that once cost a soak: --metrics URL1 URL2 --interval
+	// left --interval unparsed and the run went on the 60s default, ignoring the
+	// --duration 24h that never reached the flag set. Refuse it instead.
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "soakcheck: unexpected arguments: %v\n", flag.Args())
+		fmt.Fprintln(os.Stderr, "soakcheck: flags after a bare value are not parsed; put --metrics last")
+		os.Exit(2)
+	}
 
 	// A sample file does not record the interval it was taken at, so replaying
 	// it against the default 60s would invent a coverage gap out of thin air:
@@ -96,9 +110,7 @@ func main() {
 	start := time.Now()
 	fmt.Fprintf(os.Stderr, "soakcheck: %s scraping %s every %s (tolerated drift %.0f%%)\n",
 		start.Format(time.RFC3339), urls, *interval, *drift*100)
-	samples := scrape(ctx, urls, *interval, *timeout)
-	fmt.Fprintf(os.Stderr, "soakcheck: %s sampled %d points over %s\n",
-		time.Now().Format(time.RFC3339), len(samples), time.Since(start).Round(time.Second))
+	var record io.Writer
 	if *out != "" {
 		f, err := os.OpenFile(*out, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 		if err != nil {
@@ -106,18 +118,20 @@ func main() {
 			os.Exit(2)
 		}
 		defer f.Close()
-		if err := WriteSamples(f, samples); err != nil {
-			fmt.Fprintf(os.Stderr, "soakcheck: write output: %v\n", err)
-			os.Exit(2)
-		}
+		record = f
 	}
+	samples := scrape(ctx, urls, *interval, *timeout, record)
+	fmt.Fprintf(os.Stderr, "soakcheck: %s sampled %d points over %s\n",
+		time.Now().Format(time.RFC3339), len(samples), time.Since(start).Round(time.Second))
 	os.Exit(verdict(samples, *drift, *warmup, *interval, start.Format(time.RFC3339), time.Now().Format(time.RFC3339)))
 }
 
 // scrape ticks until ctx is done, taking one scrape of every URL per tick.
 // Scrapes fail soft: a replica that stops answering yields gaps, and a gap is
-// exactly the restart shape the verdict is meant to surface.
-func scrape(ctx context.Context, urls []string, iv, timeout time.Duration) []Sample {
+// exactly the restart shape the verdict is meant to surface. Each tick is
+// appended to record (when non-nil) as it happens, so a soak killed at hour 20
+// of 24 keeps its 20 hours of samples — the record never waits for the run.
+func scrape(ctx context.Context, urls []string, iv, timeout time.Duration, record io.Writer) []Sample {
 	client := &http.Client{Timeout: timeout}
 	if iv <= 0 {
 		iv = time.Second
@@ -125,14 +139,20 @@ func scrape(ctx context.Context, urls []string, iv, timeout time.Duration) []Sam
 	var out []Sample
 	take := func() {
 		now := time.Now()
+		var tick []Sample
 		for _, u := range urls {
 			m, err := fetch(client, u)
 			if err != nil {
 				continue
 			}
 			for k, v := range m {
-				out = append(out, Sample{At: now, Source: u, Metric: k, Value: v})
+				s := Sample{At: now, Source: u, Metric: k, Value: v}
+				out = append(out, s)
+				tick = append(tick, s)
 			}
+		}
+		if record != nil && len(tick) > 0 {
+			_ = WriteSamples(record, tick)
 		}
 	}
 	take()

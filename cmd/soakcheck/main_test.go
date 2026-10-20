@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,7 +50,8 @@ func TestScrapeCollectsEveryWantedSeriesFromEveryReplica(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
-	samples := scrape(ctx, []string{a.URL + "/metrics", b.URL + "/metrics"}, 20*time.Millisecond, 2*time.Second)
+	var rec bytes.Buffer
+	samples := scrape(ctx, []string{a.URL + "/metrics", b.URL + "/metrics"}, 20*time.Millisecond, 2*time.Second, &rec)
 
 	if hits[0] < 3 || hits[1] < 3 {
 		t.Fatalf("replica A scraped %d times, replica B %d times; want at least three each", hits[0], hits[1])
@@ -84,6 +89,20 @@ func TestScrapeCollectsEveryWantedSeriesFromEveryReplica(t *testing.T) {
 	if n := len(samples); n != 3*(hits[0]+hits[1]) {
 		t.Fatalf("sampled %d points from %d scrapes; want 3 plateau series per scrape", n, hits[0]+hits[1])
 	}
+	// The record lands per tick, not at teardown: whatever the verdict saw is
+	// already on disk, so killing a 24h soak keeps its hours.
+	fromDisk, err := ReadSamples(bytes.NewReader(rec.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fromDisk) != len(samples) {
+		t.Fatalf("record holds %d samples, verdict saw %d", len(fromDisk), len(samples))
+	}
+	for i, s := range samples {
+		if fromDisk[i].Source != s.Source || fromDisk[i].Metric != s.Metric || fromDisk[i].Value != s.Value {
+			t.Fatalf("record row %d = %+v, want %+v", i, fromDisk[i], s)
+		}
+	}
 }
 
 func TestFetchRejectsNon200(t *testing.T) {
@@ -93,6 +112,34 @@ func TestFetchRejectsNon200(t *testing.T) {
 	defer srv.Close()
 	if _, err := fetch(srv.Client(), srv.URL); err == nil {
 		t.Fatal("a non-200 response must surface as an error, so the verdict shows the gap")
+	}
+}
+
+// The exact invocation shape soak.sh once produced — a bare second URL after
+// --metrics — must be refused, not silently misparsed: the flag package stops
+// at the bare token, --interval/--duration land unparsed as positionals, and
+// the run drifts on defaults (60s interval, run-until-interrupt) forever.
+func TestSoakcheckRejectsStrayArguments(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go not on PATH")
+	}
+	bin := filepath.Join(t.TempDir(), "soakcheck-test")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin,
+		"--metrics", "http://127.0.0.1:9/metrics", "http://127.0.0.1:9/metrics",
+		"--interval", "10s").CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("stray arguments ran until the timeout instead of refusing:\n%s", out)
+	}
+	if err == nil {
+		t.Fatalf("stray arguments accepted:\n%s", out)
+	}
+	if !strings.Contains(string(out), "unexpected arguments") {
+		t.Errorf("refusal does not name the stray arguments:\n%s", out)
 	}
 }
 

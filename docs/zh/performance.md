@@ -443,3 +443,26 @@ rps / 1 char rps / 10s 一次的运维滴流——102 点、每副本每指标 1
 169、ops 16），两副本 `RestartCount=0`。冷判在 boot 瞬态那条序列上 FAIL；加 warm-up 后
 PASS：atlas1 / atlas2 的 heap 漂移 +4.2% / +5.1%、goroutine −2.5% / +1.1%、fd +0.4% /
 +0.0%。指定机器上的 24h 跑仍是验收事件本身；这里只是判读机器的最后一件到位并跑过。
+
+**一键编排器（2026-10-21 已交付）**：`deploy/perf/soak.sh` 把三件套接成一次跑——loadgen
+压 §9 的形状，soakcheck 记 plateau 序列，drills.sh 把两个部署级故障折进同一窗口：窗口的
+1/3 杀 atlas1、1/2 断 postgres、2/3 杀 atlas2。`--scale 100|1k|5k` 把每个 §9 规模点钉死在
+本机跑过的形状上（read/char rps、ops 节奏、read workers、soakcheck warm-up）；`--plan`
+先打印日程与完整命令，不动任何东西。脚本不管栈的生死：preflight 要求 compose 项目里两个
+副本 healthy、每条 `--metrics` URL 都答话，跑完栈保持原样。进程以 soakcheck 的判读退出，
+判读从落盘的 TSV 回放。
+
+实测把两件事逼进了编排器本身：
+
+- **TSV 逐 tick 落盘，不等收尾。** 24h 浸泡在第 20 小时被杀，留下的就是那 20 小时：
+  soakcheck 每 tick 当场追加进 `--out`，被打断也会对已记录窗口给出判读。两侧都有测试钉住——
+  落盘文件与判读看到的逐行一致，plan 里 soakcheck 行以 `--metrics` 结尾。
+- **`--metrics` 必须收尾，soakcheck 对其余排布直接拒绝。** Go 的 flag 包在第一个裸 token
+  处停止解析，`--metrics URL1 URL2 --interval 10s` 曾一次按 60s 默认值跑、`--duration`
+  根本没被读到——静默误判。编排器第一次实机烟测就撞上它并挂死到强杀；现在 soakcheck 以
+  退出码 2 点名多余参数（用同一参数形状做了测试钉），soak.sh 把列表作为单个带引号的词传入。
+
+2026-10-21 在 HA 栈上实测（仍非验收证据）：120s 无演练烟测退出 0，六条序列 8/8 tick 全
+plateau；120s 演练烟测按日程折入全部三个故障窗口并诚实退出 1——故障窗口表现为覆盖空洞
+（每序列 `2 of 8 ticks missing`），fd 的 min/max 里看得见重启形状，这正是带了注入故障的
+浸泡该说的话。指定机器上的 24h 验收跑仍是 §9 的事件本身。

@@ -97,7 +97,7 @@ jobs:
       - name: Test with coverage
         run: |
           go test ./internal/... -coverprofile=coverage.raw -count=1 -coverpkg=./internal/...
-          go test ./cmd/... ./sdk/... ./api/... ./examples/... -count=1
+          go test ./cmd/... ./sdk/... ./api/... ./examples/... ./deploy/... -count=1
           awk 'NR==1 {next} {
             if (!($1 in stmt)) {order[++n]=$1; stmt[$1]=$2; cnt[$1]=0}
             if ($3+0 > cnt[$1]) cnt[$1]=$3

@@ -644,3 +644,33 @@ replicas `RestartCount=0`. Cold verdict FAIL on the boot-transient series; warme
 PASS, with heap +4.2% / +5.1%, goroutines −2.5% / +1.1% and open fds +0.4% / +0.0% across
 atlas1 / atlas2. The 24h run on the designated machine still stands as the acceptance
 event; this only means the last piece of judging machinery is built and exercised.
+
+**One-command runner (delivered 2026-10-21)**: `deploy/perf/soak.sh` wires the three pieces
+into a single run — loadgen drives the §9 shape, soakcheck records the plateau series, and
+drills.sh folds both deployment-level faults into the same window at 1/3 (replica-kill
+atlas1), 1/2 (pg-outage) and 2/3 (replica-kill atlas2). `--scale 100|1k|5k` pins each §9
+size point to the shape the local runs used (read/char rps, ops cadence, read workers,
+soakcheck warm-up); `--plan` prints the schedule and the exact commands without touching
+anything. The script never manages the stack lifecycle: preflight requires both replicas
+healthy in the compose project and every `--metrics` URL answering, and it leaves the stack
+as it found it. The process exits with soakcheck's verdict, replayed from the recorded TSV.
+
+The live pass forced two things into the runner itself:
+
+- **The TSV is written per tick, not at teardown.** A 24h soak killed at hour 20 keeps its
+  20 hours: soakcheck appends each tick to `--out` as it happens, and an interrupt still
+  produces the verdict for whatever window landed. Tests pin both sides — the recorded file
+  matches what the verdict saw, and the plan's soakcheck line ends with `--metrics`.
+- **`--metrics` must end the command, and soakcheck refuses anything else.** Go's flag
+  package stops parsing at the first bare token, so `--metrics URL1 URL2 --interval 10s`
+  once ran on the 60s default with `--duration` never read — a silent misjudge. The first
+  live smoke of the runner hit exactly this and hung until killed; soakcheck now exits 2
+  naming the stray arguments (test-pinned with the same invocation shape), and soak.sh
+  passes the list as one quoted word.
+
+Live-verified 2026-10-21 against the HA stack, still not acceptance evidence: a 120s
+no-drills smoke exited 0 with all six series 8/8 ticks and plateaus across the board; a
+120s drills smoke folded in all three fault windows on schedule and exited 1 honestly —
+the fault windows read as coverage gaps (`2 of 8 ticks missing` per series) with the
+restart shape visible in the fd min/max, which is precisely what a soak with injected
+faults should say. The 24h acceptance run on the designated machine remains the §9 event.
