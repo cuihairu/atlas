@@ -1,4 +1,4 @@
-.PHONY: build run test lint docker docker-compose docs docs-dev docs-build clean
+.PHONY: build run test lint docker docker-compose docs docs-dev docs-build clean perf-runner-smoke
 
 VERSION := v0.1.1
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -46,3 +46,7 @@ docs-build: docs
 
 clean:
 	rm -rf bin/ docs/node_modules/ docs/.vitepress/dist/ docs/.vitepress/cache/
+
+# Workstation-sized proof that the §9 runner, topology and report pipeline work.
+perf-runner-smoke:
+	./deploy/perf/run.sh --scale smoke

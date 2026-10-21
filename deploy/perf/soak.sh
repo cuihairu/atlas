@@ -45,6 +45,7 @@ LOADGEN=""
 SOAKCHECK=""
 SEED="1"
 PLAN=false
+SMOKE=""
 
 usage() {
   cat <<'EOF'
@@ -54,6 +55,10 @@ usage: soak.sh [--scale 100|1k|5k] [--duration 24h] [--interval 60s] [--drift 0.
                [--project atlas-ha] [--public URL] [--registry URL] [--admin URL]
                [--file PATH] [--out DIR] [--loadgen PATH] [--soakcheck PATH]
                [--seed 1] [--plan]
+
+The runner-only --override-smoke accepts exactly "servers=N read-rps=N" and is
+not a general escape hatch; run.sh uses it only for the 100 preset with a 75%
+smoke drift tolerance and three warm-up ticks.
 
   --scale     size preset; sets the §9 shape (read/char rps, ops cadence, read
               workers, soakcheck warm-up default):
@@ -98,6 +103,7 @@ while [ $# -gt 0 ]; do
     --soakcheck) SOAKCHECK="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     --plan) PLAN=true; shift ;;
+    --override-smoke) SMOKE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -126,6 +132,18 @@ case "$SCALE" in
   *) echo "unknown --scale $SCALE (use 100, 1k or 5k)" >&2; exit 2 ;;
 esac
 [ -n "$WARMUP" ] || WARMUP="$PRESET_WARMUP"
+
+if [ -n "$SMOKE" ]; then
+  if [ "$SCALE" != "100" ] || [ "$DRILLS_MODE" != "none" ] || [ "$WARMUP" != "3" ] || [ "$DRIFT" != "0.75" ] \
+    || [[ ! "$SMOKE" =~ ^servers\=[1-9][0-9]*\ read-rps\=[1-9][0-9]*$ ]]; then
+    echo "--override-smoke is reserved for run.sh's 100-preset workstation gate" >&2
+    exit 2
+  fi
+  SERVERS="${SMOKE#servers=}"
+  SERVERS="${SERVERS%% *}"
+  READ_RPS="${SMOKE#*read-rps=}"
+  WORKERS=3
+fi
 
 case "$DRILLS_MODE" in
   both|replica-kill|pg-outage|none) ;;

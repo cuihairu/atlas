@@ -112,3 +112,52 @@ func TestSoakRejectsBadArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestRunnerPlanUsesTheShippedTopology(t *testing.T) {
+	bash(t)
+	out, err := exec.Command("bash", script(t, "run.sh"), "--plan").CombinedOutput()
+	if err != nil {
+		t.Fatalf("run.sh --plan: %v\n%s", err, out)
+	}
+	plan := string(out)
+	for _, needle := range []string{
+		"docker-compose.ha.yaml",
+		"scale        smoke",
+		"soak preset  100",
+		"public http://127.0.0.1:38080 / registry http://127.0.0.1:38081 / admin http://127.0.0.1:38882",
+		"-servers 3",
+		"-read-rps 5",
+		"--duration 60s",
+		"loadgen.json",
+		"endpoints.json",
+		"summary.json",
+	} {
+		if !strings.Contains(plan, needle) {
+			t.Errorf("runner plan missing %q:\n%s", needle, plan)
+		}
+	}
+}
+
+func TestRunnerProtectsAcceptanceScales(t *testing.T) {
+	bash(t)
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k").CombinedOutput(); err == nil {
+		t.Error("acceptance scale accepted without --duration (want exit 2)")
+	}
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "9k").CombinedOutput(); err == nil {
+		t.Error("unknown scale accepted (want exit 2)")
+	}
+}
+
+func TestRunnerVerdictContract(t *testing.T) {
+	files := map[string]string{
+		"endpoints.txt": "class               count errors p95_ms p99_ms flows\nregister                1     0     10     20 register\n",
+		"verdict.txt":   "soakcheck plateau verdict\nhttp://atlas1 go_goroutines 2/2 1 1 +0.0% plateau\nhttp://atlas1 go_memstats_heap_inuse_bytes 2/2 1 2 +100.0% monotonic growth above tolerance\nverdict: PASS — every series holds a plateau\n",
+	}
+	verdict := files["verdict.txt"]
+	if strings.Count(verdict, "go_memstats_heap_inuse_bytes") == 0 {
+		t.Fatal("contract fixture must include the ungated heap series")
+	}
+	if !strings.Contains(verdict, "verdict: PASS") {
+		t.Fatal("contract fixture must exercise the runner-level PASS rewrite")
+	}
+}

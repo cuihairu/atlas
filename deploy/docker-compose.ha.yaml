@@ -5,7 +5,7 @@
 #
 #   docker compose -f deploy/docker-compose.ha.yaml up -d
 #
-# Endpoints after startup:
+# Endpoints after startup (host-side numbers are overridable):
 #   public   :8080 (HAProxy → atlas1/atlas2)
 #   registry :8081 (HAProxy → atlas1/atlas2, heartbeat fan-in)
 #   admin    :8082 (HAProxy, sticky)
@@ -69,6 +69,8 @@ services:
       ATLAS_REGISTRY_ADDR: ":8081"
       ATLAS_ADMIN_ADDR: ":8082"
     hostname: atlas1
+    ports:
+      - "${ATLAS_HA_ATLAS1_ADMIN_PORT:-18082}:8082"
 
   atlas2:
     <<: *atlas-common
@@ -78,15 +80,17 @@ services:
       ATLAS_REGISTRY_ADDR: ":8081"
       ATLAS_ADMIN_ADDR: ":8082"
     hostname: atlas2
+    ports:
+      - "${ATLAS_HA_ATLAS2_ADMIN_PORT:-28082}:8082"
 
   haproxy:
     image: haproxy:2.9-alpine
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports:
-      - "8080:8080"
-      - "8081:8081"
-      - "8082:8082"
+      - "${ATLAS_HA_PUBLIC_PORT:-8080}:8080"
+      - "${ATLAS_HA_REGISTRY_PORT:-8081}:8081"
+      - "${ATLAS_HA_ADMIN_PORT:-8082}:8082"
       - "8404:8404"
     depends_on:
       - atlas1
