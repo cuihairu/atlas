@@ -28,7 +28,7 @@ than wall-clock time.
 allocs/op and QPS columns are pinned values from a 2026-10-13 re-measurement
 (min-of-5, idle machine; allocation counts are deterministic and unaffected by machine
 load). The write-path numbers include the per-item receipt cost of the v0.2 command
-queue (landed 2026-10-08, see [Performance Design](/performance#8-2)); for the
+queue (landed 2026-10-08, see [Performance Design](/performance#_8-2-the-command-based-write-queue)); for the
 before/after comparison against the old direct-lock path see Performance Design §8.5:
 
 | Benchmark | Scenario | ns/op | B/op | allocs/op | Single-core QPS |

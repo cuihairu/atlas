@@ -141,7 +141,7 @@ CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
 ```
 
-**This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#7-character.)
+**This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#_7-character)
 
 The primary key is chosen as the `(account_id, server_id, character_id)` triple because:
 - The same account can have characters on multiple servers

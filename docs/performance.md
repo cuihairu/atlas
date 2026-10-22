@@ -393,7 +393,7 @@ re-measured 2026-10-13) still leaves roughly two orders of magnitude of headroom
 
 Historical cross-validation: the same-shape numbers from the old-commit worktree method
 (running the same bench file across two trees, before and after) are in the
-[audit document appendix A](zh/审计-文档一致性.md) (N=2000 dataset: region 2.36x,
+[audit document appendix A](zh/audit-doc-consistency.md) (N=2000 dataset: region 2.36x,
 characters by account 14.6x, character ID point lookup 282x), consistent in magnitude
 with this table — by-account 14.6x falls between this table's 1k tier (5.1x) and 10k tier
 (185x), and the two methods independently reproduce each other.

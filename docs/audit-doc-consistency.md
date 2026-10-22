@@ -2,7 +2,7 @@
 # Documentation / Source Consistency Audit (2026-10-08, merged and closed out)
 
 > This is a marker page, not a translation. The full audit report is the Chinese
-> original at [审计-文档一致性.md](zh/审计-文档一致性.md) (377 lines).
+> original at [审计-文档一致性.md](zh/audit-doc-consistency.md) (377 lines).
 
 ## Why there is no English version yet
 

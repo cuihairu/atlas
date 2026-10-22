@@ -187,8 +187,8 @@ The form annotation of an account (test account/internal account/channel account
 
 **Control Plane boundary (2026-10-04 positioning ruling):** Atlas answers directory questions,
 not game runtime questions—the positioning statement and the NEVER-owns list are in
-[architecture.md](architecture.md#_1-overview,) and the three-state model is in
-[lifecycle.md](lifecycle.md#_0-three-states-desired-observed-effective.)
+[architecture.md](architecture.md#_1-overview) and the three-state model is in
+[lifecycle.md](lifecycle.md#_0-three-states-desired-observed-effective)
 
 ### The boundary of metadata: opaque metadata, not a business database
 

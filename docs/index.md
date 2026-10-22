@@ -28,31 +28,13 @@ features:
 ---
 
 <script setup lang="ts">
-// 首次进入按浏览器语言选择文档语言（vitepress 无此能力，GitHub Pages 亦不支持 _redirects）
-// 优先级：localStorage 手动选择 > navigator.language > 保持当前 locale
-import { onBeforeMount } from 'vue'
-const KEY = 'atlas-lang-picked'
-// GitHub Pages 部署在子路径（/atlas/），用 vitepress base 归一化
-const BASE = '/atlas/'
-const root = BASE
-const zhPrefix = BASE + 'zh/'
-onBeforeMount(() => {
-  if (typeof window === 'undefined') return
-  const p = window.location.pathname
-  if (p !== root && p !== root.slice(0, -1)) return
-  const picked = localStorage.getItem(KEY)
-  if (picked) { if (picked !== p) window.location.replace(picked); return }
-  const langs = (navigator.languages?.length ? navigator.languages : [navigator.language]).map(l => l.toLowerCase())
-  if (langs.some(l => l.startsWith('zh'))) window.location.replace(zhPrefix)
-})
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', (e) => {
-    const a = (e.target as HTMLElement)?.closest?.('a') as HTMLAnchorElement | null
-    const href = a?.getAttribute('href') || ''
-    if (href.startsWith(zhPrefix) || href.startsWith('zh/')) localStorage.setItem(KEY, zhPrefix)
-    else if (href === root || href === root.slice(0, -1) || href.startsWith(BASE + 'en/')) localStorage.setItem(KEY, root)
-  }, true)
-}
+const showcaseSlides = [
+  { image: '/screenshots/overview.png', title: 'Overview', caption: 'Overview — online servers / players / capacity and status at a glance', link: '/scenarios#scenario-overview' },
+  { image: '/screenshots/servers.png', title: 'Server List', caption: 'Server list — status, tags (hot / new / full) and capacity watermark', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/server-detail-tags.png', title: 'Server Detail', caption: 'Server detail — tag management (public / internal) and live metrics', link: '/scenarios#scenario-tags' },
+  { image: '/screenshots/characters.png', title: 'Character Search', caption: 'Character search — cross-server character index, filter by name / server / level', link: '/scenarios#scenario-characters' },
+  { image: '/screenshots/migrations.png', title: 'Migrations', caption: 'Migration management — merge / transfer orchestration and rollback', link: '/scenarios#scenario-migration' },
+]
 </script>
 
 <ShowcaseCarousel :slides="showcaseSlides" />

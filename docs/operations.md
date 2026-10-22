@@ -37,7 +37,7 @@ Admin publishes ──▶ Announcement (global or server-scoped) ──▶ playe
                         └─ only appears in Discovery responses while starts_at ≤ now < ends_at
 ```
 
-Fields (the complete definition is in [api.md](api.md#post-v1-admin-announcements)):
+Fields (the complete definition is in api.md):
 
 | Field | Required | Description |
 | --- | --- | --- |
@@ -333,7 +333,7 @@ shipped yet; it remains on the candidate-directions list.
 
 Admin endpoints require `Authorization: Bearer <ADMIN_API_KEY>` (`ATLAS_ADMIN_API_KEYS`;
 if unset in development mode they are open); Discovery endpoints are public read-only.
-For the complete error codes and field constraints see [api.md](api.md#admin).
+For the complete error codes and field constraints see api.md.
 
 ---
 

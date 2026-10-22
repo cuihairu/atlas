@@ -23,7 +23,7 @@ QPS ≈ `1e9 / ns_per_op`（单 goroutine）；`-benchmem` 的 allocs/op 反映�
 
 2026-10，Linux / amd64 / i9-10880H（14 逻辑核），Go 1.27。ns/op、B/op、allocs/op
 与 QPS 列为 2026-10-13 复测钉值（min-of-5，空载；分配数确定，不受机器负载影响）。
-写路径数字含 v0.2 指令队列（2026-10-08 落地，见 [性能设计](/zh/performance#8-2)）的
+写路径数字含 v0.2 指令队列（2026-10-08 落地，见 [性能设计](/zh/performance#_8-2-指令化写队列)）的
 逐条回执成本——改前直锁路径对照见性能设计 §8.5：
 
 | 基准 | 场景 | ns/op | B/op | allocs/op | 单核 QPS |

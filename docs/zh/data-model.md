@@ -141,7 +141,7 @@ CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
 ```
 
-**这是投影表，不是权威数据表。** 完整角色数据在游戏服务器的角色数据库中。见 [concepts.md §7](concepts.md#7-character)。
+**这是投影表，不是权威数据表。** 完整角色数据在游戏服务器的角色数据库中。见 [concepts.md §7](concepts.md#_7-character)。
 
 主键选 `(account_id, server_id, character_id)` 三元组，因为：
 - 同一账号可在多个服务器有角色

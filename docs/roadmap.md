@@ -15,7 +15,7 @@ flowchart TB
 ```
 
 The positioning statement and the NEVER-owns boundaries (character authoritative data / match state / player sessions /
-numeric economy / account authentication) are on the first screen of [architecture.md](architecture.md#_1-overview;) this positioning is
+numeric economy / account authentication) are on the first screen of [architecture.md](architecture.md#_1-overview) this positioning is
 more complete than plain Game Server Discovery, and it is naturally complementary to game server frameworks and account systems.
 
 ---
@@ -75,7 +75,7 @@ How to use each capability and in which scenarios — see the [README usage scen
 ```
 
 These are not "not yet done" — they are **design decisions**: Atlas is a control-plane directory service, and every item above has a more appropriate home.
-They can integrate with Atlas (a scheduler reads Discovery candidate sets, player services write Directory events), but they are **not built in** — the litmus test is the positioning statement in [architecture.md](architecture.md#_1-overview.)
+They can integrate with Atlas (a scheduler reads Discovery candidate sets, player services write Directory events), but they are **not built in** — the litmus test is the positioning statement in [architecture.md](architecture.md#_1-overview)
 
 ---
 
@@ -129,7 +129,7 @@ Before any new feature is approved, answer "is this a directory problem or a run
 - Runtime problems (admit or not / how to match / where to place instances / what is in the inventory) — **not built in**; just provide the integration point with Atlas.
 
 This discipline is the live litmus test behind the "Explicitly Not Doing" list, keeping Atlas from bloating into a game platform backend.
-The positioning statement is in [architecture.md](architecture.md#_1-overview;) module boundaries in [migration.md](migration.md) §9.
+The positioning statement is in [architecture.md](architecture.md#_1-overview) module boundaries in [migration.md](migration.md) §9.
 
 ---
 
