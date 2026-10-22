@@ -79,9 +79,9 @@ jobs:
       ATLAS_TEST_REDIS_URL: redis://localhost:6379/15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
 
@@ -119,7 +119,7 @@ jobs:
             go tool cover -func=coverage.out | tail -1
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage
           path: coverage.out
@@ -128,7 +128,7 @@ jobs:
       # 覆盖率上传 Codecov —— 公共仓库免注册 tokenless 方案（无 token，
       # 覆盖率口径由根目录 codecov.yml 驱动）。
       # 上传失败不阻断门禁（fail_ci_if_error: false），Codecov 侧限流/故障不应挡代码合入。
-      - uses: codecov/codecov-action@v7
+      - uses: codecov/codecov-action@v7.1.1
         with:
           files: coverage.out
           # 受保护分支（main）强制要求 token：tokenless 上传会被 Codecov
