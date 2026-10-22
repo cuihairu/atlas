@@ -2,7 +2,7 @@ module github.com/cuihairu/atlas
 
 go 1.27
 
-toolchain go1.27.2
+toolchain go1.27.3
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
