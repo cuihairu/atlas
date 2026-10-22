@@ -19,5 +19,12 @@
   },
   "comments": {
     "mermaid": "Pinned to ^11: vitepress-plugin-mermaid@2.0.17 declares peer mermaid 10 || 11, so ^12 breaks npm ci (ERESOLVE). Dependabot ignores mermaid major bumps in .github/dependabot.yml."
+  },
+  "pnpm": {
+    "overrides": {
+      "vite@<6.4.4": "6.4.4",
+      "katex@<0.18.2": "0.18.2",
+      "esbuild@<0.25.0": "0.25.0"
+    }
   }
 }
