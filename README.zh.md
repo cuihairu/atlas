@@ -4,10 +4,7 @@
 
 <h1 align="center">Atlas</h1>
 <p align="center">
-  <a href="https://github.com/cuihairu/atlas/releases"><img src="https://img.shields.io/github/v/release/cuihairu/atlas" alt="Release" /></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://cuihairu.github.io/atlas/"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a>
-  <a href="https://codecov.io/gh/cuihairu/atlas"><img src="https://codecov.io/gh/cuihairu/atlas/graph/badge.svg" alt="Codecov" /></a>
+<a href="https://github.com/cuihairu/atlas/releases"><img src="https://img.shields.io/github/v/release/cuihairu/atlas" alt="Release" /></a> <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a> <a href="https://cuihairu.github.io/atlas/"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a> <a href="https://codecov.io/gh/cuihairu/atlas"><img src="https://codecov.io/gh/cuihairu/atlas/graph/badge.svg" alt="Codecov" /></a>
 </p>
 <p align="center">
   <strong>Atlas — Game Infrastructure Directory / Control Plane for Online Games</strong><br/>
