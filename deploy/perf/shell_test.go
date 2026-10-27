@@ -115,7 +115,11 @@ func TestSoakRejectsBadArguments(t *testing.T) {
 
 func TestRunnerPlanUsesTheShippedTopology(t *testing.T) {
 	bash(t)
-	out, err := exec.Command("bash", script(t, "run.sh"), "--plan").CombinedOutput()
+	// Runner tests must pass --out into a temp dir: with the default --out
+	// every plan leaves a directory in deploy/perf/results/, which is the
+	// §9 evidence archive, not a test scratch space.
+	out, err := exec.Command("bash", script(t, "run.sh"), "--plan",
+		"--out", t.TempDir()).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run.sh --plan: %v\n%s", err, out)
 	}
@@ -142,7 +146,8 @@ func TestRunnerProtectsAcceptanceScales(t *testing.T) {
 	bash(t)
 	for _, scale := range []string{"100", "1k", "5k"} {
 		out, err := exec.Command("bash", script(t, "run.sh"),
-			"--plan", "--scale", scale, "--duration", "60s").CombinedOutput()
+			"--plan", "--scale", scale, "--duration", "60s",
+			"--out", t.TempDir()).CombinedOutput()
 		if err != nil {
 			t.Errorf("acceptance scale %s plan failed: %v\n%s", scale, err, out)
 		}
@@ -152,10 +157,12 @@ func TestRunnerProtectsAcceptanceScales(t *testing.T) {
 			t.Errorf("scale %s plan does not carry the preset:\n%s", scale, out)
 		}
 	}
-	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k").CombinedOutput(); err == nil {
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k",
+		"--out", t.TempDir()).CombinedOutput(); err == nil {
 		t.Error("acceptance scale accepted without --duration (want exit 2)")
 	}
-	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "9k").CombinedOutput(); err == nil {
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "9k",
+		"--out", t.TempDir()).CombinedOutput(); err == nil {
 		t.Error("unknown scale accepted (want exit 2)")
 	}
 }
