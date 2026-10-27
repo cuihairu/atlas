@@ -138,10 +138,14 @@ compose() {
   env "${COMPOSE_ENV[@]}" docker compose -f "$COMPOSE_FILE" -p "$PROJECT" "$@"
 }
 
+# PIPESTATUS is only valid on the statement directly after the pipeline, so the
+# capture sits immediately after the tee: read past a function return — or after
+# even a bare `[` test — it yields 0, and the smoke gate would exit 0 on FAIL.
 run_soakcheck_verdict() {
   set +e
   "$OUT/soakcheck" --sample "$OUT/soak.tsv" --interval 5s --drift "$RUN_DRIFT" \
     --warmup "$RUN_WARMUP" 2>&1 | tee "$OUT/verdict.txt"
+  smoke_verdict_rc=${PIPESTATUS[0]}
   set -e
 }
 
@@ -267,9 +271,6 @@ soak_rc=${PIPESTATUS[0]}
 set -e
 
 run_soakcheck_verdict
-if [ "$SCALE" = smoke ]; then
-  smoke_verdict_rc=${PIPESTATUS[0]}
-fi
 
 set +e
 python3 - "$OUT" <<'PY'

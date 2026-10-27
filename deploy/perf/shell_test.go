@@ -173,3 +173,26 @@ func TestRunnerVerdictContract(t *testing.T) {
 		t.Fatal("contract fixture must exercise the runner-level PASS rewrite")
 	}
 }
+
+func TestRunnerCapturesTheVerdictRcOnThePipelineLine(t *testing.T) {
+	bash(t)
+	src, err := os.ReadFile(script(t, "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(src), "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "smoke_verdict_rc=${PIPESTATUS[0]}") {
+			continue
+		}
+		// PIPESTATUS survives only until the next statement runs. The capture
+		// must sit directly after the soakcheck|tee pipeline: moved past the
+		// function return (or any command, even a `[` test) it reads 0 and the
+		// smoke gate exits 0 on every FAIL verdict.
+		if i == 0 || !strings.Contains(lines[i-1], `tee "$OUT/verdict.txt"`) {
+			t.Errorf("verdict rc capture is not on the statement after the pipeline (line %d):\n%s", i+1, line)
+		}
+		return
+	}
+	t.Error("run.sh never captures the soakcheck exit code")
+}
