@@ -1,0 +1,95 @@
+{
+  "started_at": "2026-10-27T13:05:17.549358763+08:00",
+  "elapsed_sec": 180.002370448,
+  "servers": 1000,
+  "streams": [
+    {
+      "name": "register",
+      "count": 1000,
+      "errors": 0,
+      "skipped": 5990,
+      "p50_ms": 89,
+      "p95_ms": 251,
+      "p99_ms": 287,
+      "max_ms": 354,
+      "rps": 5.5554823945437155
+    },
+    {
+      "name": "heartbeat",
+      "count": 18476,
+      "errors": 0,
+      "skipped": 6,
+      "p50_ms": 1,
+      "p95_ms": 28,
+      "p99_ms": 66,
+      "max_ms": 144,
+      "rps": 102.6430927215897
+    },
+    {
+      "name": "storm-register",
+      "count": 0,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0,
+      "rps": 0
+    },
+    {
+      "name": "read-list",
+      "count": 17871,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 6,
+      "p95_ms": 12,
+      "p99_ms": 21,
+      "max_ms": 83,
+      "rps": 99.28202587289074
+    },
+    {
+      "name": "read-detail",
+      "count": 10745,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 4,
+      "p95_ms": 9,
+      "p99_ms": 15,
+      "max_ms": 72,
+      "rps": 59.69365832937223
+    },
+    {
+      "name": "read-recommend",
+      "count": 7240,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 8,
+      "p95_ms": 15,
+      "p99_ms": 23,
+      "max_ms": 74,
+      "rps": 40.221692536496505
+    },
+    {
+      "name": "char-write",
+      "count": 3584,
+      "errors": 0,
+      "skipped": 1,
+      "p50_ms": 3,
+      "p95_ms": 9,
+      "p99_ms": 15,
+      "max_ms": 102,
+      "rps": 19.910848902044677
+    },
+    {
+      "name": "ops-stats",
+      "count": 35,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 124,
+      "p95_ms": 175,
+      "p99_ms": 441,
+      "max_ms": 441,
+      "rps": 0.19444188380903005
+    }
+  ]
+}
