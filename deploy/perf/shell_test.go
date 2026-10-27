@@ -140,6 +140,18 @@ func TestRunnerPlanUsesTheShippedTopology(t *testing.T) {
 
 func TestRunnerProtectsAcceptanceScales(t *testing.T) {
 	bash(t)
+	for _, scale := range []string{"100", "1k", "5k"} {
+		out, err := exec.Command("bash", script(t, "run.sh"),
+			"--plan", "--scale", scale, "--duration", "60s").CombinedOutput()
+		if err != nil {
+			t.Errorf("acceptance scale %s plan failed: %v\n%s", scale, err, out)
+		}
+		// The scale must reach soak.sh: with RUN_SCALE unset the run aborts
+		// under set -u, and with a wrong value the fleet size silently lies.
+		if !strings.Contains(string(out), "soak preset  "+scale) {
+			t.Errorf("scale %s plan does not carry the preset:\n%s", scale, out)
+		}
+	}
 	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k").CombinedOutput(); err == nil {
 		t.Error("acceptance scale accepted without --duration (want exit 2)")
 	}

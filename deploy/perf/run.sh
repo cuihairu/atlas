@@ -19,6 +19,7 @@ COMPOSE_FILE="$HERE/../docker-compose.ha.yaml"
 SOAK="$HERE/soak.sh"
 PROJECT="${ATLAS_PERF_PROJECT:-atlas-perf-runner}"
 SCALE="smoke"
+RUN_SCALE=""
 DURATION=""
 DRILLS="none"
 SEED="1"
@@ -79,6 +80,7 @@ case "$SCALE" in
     DURATION="${DURATION:-60s}"
     ;;
   100|1k|5k)
+    RUN_SCALE="$SCALE"
     [ -n "$DURATION" ] || { echo "--duration is required for --scale $SCALE" >&2; exit 2; }
     ;;
   *) echo "unknown --scale $SCALE (use smoke, 100, 1k or 5k)" >&2; exit 2 ;;
