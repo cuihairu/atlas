@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-10-27T05:08:17.698043+00:00",
+  "scale": "perf-1k-20261027T130504",
+  "verdict": "verdict: PASS \u2014 every series holds a plateau",
+  "endpoint_classes": {
+    "register": {
+      "count": 1000,
+      "errors": 0,
+      "skipped": 5990,
+      "p50_ms": 89,
+      "p95_ms": 251,
+      "p99_ms": 287,
+      "rps": 5.5554823945437155
+    },
+    "heartbeat": {
+      "count": 18476,
+      "errors": 0,
+      "skipped": 6,
+      "p50_ms": 1,
+      "p95_ms": 28,
+      "p99_ms": 66,
+      "rps": 102.6430927215897
+    },
+    "storm-register": {
+      "count": 0,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "rps": 0
+    },
+    "read-list": {
+      "count": 17871,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 6,
+      "p95_ms": 12,
+      "p99_ms": 21,
+      "rps": 99.28202587289074
+    },
+    "read-detail": {
+      "count": 10745,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 4,
+      "p95_ms": 9,
+      "p99_ms": 15,
+      "rps": 59.69365832937223
+    },
+    "read-recommend": {
+      "count": 7240,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 8,
+      "p95_ms": 15,
+      "p99_ms": 23,
+      "rps": 40.221692536496505
+    },
+    "char-write": {
+      "count": 3584,
+      "errors": 0,
+      "skipped": 1,
+      "p50_ms": 3,
+      "p95_ms": 9,
+      "p99_ms": 15,
+      "rps": 19.910848902044677
+    },
+    "ops-stats": {
+      "count": 35,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 124,
+      "p95_ms": 175,
+      "p99_ms": 441,
+      "rps": 0.19444188380903005
+    }
+  },
+  "error_budget": {
+    "total_errors": 0,
+    "total_skipped": 5997
+  },
+  "ok": false
+}

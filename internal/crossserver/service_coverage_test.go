@@ -135,8 +135,9 @@ func TestReceiversDegradeToAllOnStoreError(t *testing.T) {
 }
 
 // pagingServers hands out pre-baked pages in order, so the pager itself
-// can be driven across a page boundary (the memory store caps ListServers
-// at 200 — that contract mismatch is tracked separately in TODO.md).
+// can be driven across a page boundary. Every store caps ListServers at
+// the shared store.ListServersMaxLimit (200), so the pager must iterate
+// more than one page to see the full fleet (contract pinned in storetest).
 type pagingServers struct {
 	store.ServerStore
 	pages [][]*model.Server

@@ -115,7 +115,11 @@ func TestSoakRejectsBadArguments(t *testing.T) {
 
 func TestRunnerPlanUsesTheShippedTopology(t *testing.T) {
 	bash(t)
-	out, err := exec.Command("bash", script(t, "run.sh"), "--plan").CombinedOutput()
+	// Runner tests must pass --out into a temp dir: with the default --out
+	// every plan leaves a directory in deploy/perf/results/, which is the
+	// §9 evidence archive, not a test scratch space.
+	out, err := exec.Command("bash", script(t, "run.sh"), "--plan",
+		"--out", t.TempDir()).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run.sh --plan: %v\n%s", err, out)
 	}
@@ -140,10 +144,25 @@ func TestRunnerPlanUsesTheShippedTopology(t *testing.T) {
 
 func TestRunnerProtectsAcceptanceScales(t *testing.T) {
 	bash(t)
-	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k").CombinedOutput(); err == nil {
+	for _, scale := range []string{"100", "1k", "5k"} {
+		out, err := exec.Command("bash", script(t, "run.sh"),
+			"--plan", "--scale", scale, "--duration", "60s",
+			"--out", t.TempDir()).CombinedOutput()
+		if err != nil {
+			t.Errorf("acceptance scale %s plan failed: %v\n%s", scale, err, out)
+		}
+		// The scale must reach soak.sh: with RUN_SCALE unset the run aborts
+		// under set -u, and with a wrong value the fleet size silently lies.
+		if !strings.Contains(string(out), "soak preset  "+scale) {
+			t.Errorf("scale %s plan does not carry the preset:\n%s", scale, out)
+		}
+	}
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "1k",
+		"--out", t.TempDir()).CombinedOutput(); err == nil {
 		t.Error("acceptance scale accepted without --duration (want exit 2)")
 	}
-	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "9k").CombinedOutput(); err == nil {
+	if _, err := exec.Command("bash", script(t, "run.sh"), "--plan", "--scale", "9k",
+		"--out", t.TempDir()).CombinedOutput(); err == nil {
 		t.Error("unknown scale accepted (want exit 2)")
 	}
 }
@@ -160,4 +179,27 @@ func TestRunnerVerdictContract(t *testing.T) {
 	if !strings.Contains(verdict, "verdict: PASS") {
 		t.Fatal("contract fixture must exercise the runner-level PASS rewrite")
 	}
+}
+
+func TestRunnerCapturesTheVerdictRcOnThePipelineLine(t *testing.T) {
+	bash(t)
+	src, err := os.ReadFile(script(t, "run.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(src), "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "smoke_verdict_rc=${PIPESTATUS[0]}") {
+			continue
+		}
+		// PIPESTATUS survives only until the next statement runs. The capture
+		// must sit directly after the soakcheck|tee pipeline: moved past the
+		// function return (or any command, even a `[` test) it reads 0 and the
+		// smoke gate exits 0 on every FAIL verdict.
+		if i == 0 || !strings.Contains(lines[i-1], `tee "$OUT/verdict.txt"`) {
+			t.Errorf("verdict rc capture is not on the statement after the pipeline (line %d):\n%s", i+1, line)
+		}
+		return
+	}
+	t.Error("run.sh never captures the soakcheck exit code")
 }

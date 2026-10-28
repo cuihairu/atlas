@@ -439,7 +439,7 @@ contract tests pin all three surfaces: metrics scrape series (metrics/queue_test
 both the 200 and 503 admin endpoint paths (httpapi/coverage_test.go), and the queue-side
 fields covered by the existing assertions in queue_test.go.
 
-## 9. Production-shaped load and soak (design 2026-10-19; harness, drills and plateau checker delivered and locally verified; acceptance run pending a machine and a schedule)
+## 9. Production-shaped load and soak (design final 2026-10-27; harness, drills and plateau checker delivered and locally verified; acceptance run pending a machine and a schedule)
 
 Everything above and all of [Benchmarks](/benchmarks) measures the service layer: memory
 store, one process, minutes-long runs, no network / TLS / JSON / storage I/O. Nothing
@@ -470,14 +470,31 @@ end-to-end numbers can be read against the service-layer bound:
 | Character events | created / login at a fixed ratio to fleet size — drives the projection write path and the §8 inverted-index update |
 | Ops trickle | windows / announcements / audit-sink writes at a low rate, enough to keep the audit dispatcher and hourly retention sweep observable |
 
+**Scale points** — the absolute values scale with the fleet; `deploy/perf/soak.sh --scale`
+pins each §9 point, and `deploy/perf/run.sh --scale` is the one-command acceptance entry:
+
+| Scale | Servers | Read mix (5:3:2 list/detail/recommend) | Character writes | Ops trickle | Read workers | Soak-check warm-up |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 100 | 100 rps | 1 rps | every 10s | 16 | 2 samples |
+| 1k | 1,000 | 200 rps | 20 rps | every 5s | 16 | 4 samples |
+| 5k | 5,000 | 500 rps | 50 rps | every 5s | 32 | 6 samples |
+
+The acceptance invocation is `run.sh --scale <100|1k|5k> --duration 24h --drills both`;
+`--scale smoke` is the workstation gate only.
+
 **Acceptance criteria** — the shape of "pass"; numbers get pinned by the first run and
 then become guardrails (same philosophy as the pinned baselines in [Benchmarks](/benchmarks) §2):
 
-- p95/p99 per endpoint class (heartbeat, register, list, detail, routing) under sustained
-  load. Write paths already expose duration histograms on `:8082`
-  (`atlas_registry_write_duration_seconds{op}`, `atlas_directory_write_duration_seconds`);
-  read paths get percentiles from the OTel spans of the landed tracing phase, or one
-  added read-side histogram — run prep, not a redesign.
+- p95/p99 per endpoint class under sustained load. `cmd/loadgen` records the eight
+  flows — `register`, `heartbeat`, `storm-register`, `read-list`, `read-detail`,
+  `read-recommend`, `char-write`, `ops-stats` — into `loadgen.json`; the runner
+  aggregates them into `endpoints.json` / `endpoints.txt` as five classes
+  (`register`, `heartbeat`, `read`, `character-write`, `admin`) and
+  `summary.json` / `summary.txt` keeps every flow with p50/p95/p99, count, errors
+  and skipped. The per-class report is the acceptance evidence; the duration
+  histograms already on `:8082` (`atlas_registry_write_duration_seconds{op}`,
+  `atlas_directory_write_duration_seconds`) and the OTel spans remain the internal
+  attribution trail, not the gate.
 - Fault recovery mid-run folds in the two drills §7 leaves at deployment level: kill one
   Atlas replica under HAProxy (failover time, no lost heartbeats) and a brief PG outage
   (pool self-healing, error propagation instead of hangs).

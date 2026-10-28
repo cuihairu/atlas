@@ -19,6 +19,7 @@ COMPOSE_FILE="$HERE/../docker-compose.ha.yaml"
 SOAK="$HERE/soak.sh"
 PROJECT="${ATLAS_PERF_PROJECT:-atlas-perf-runner}"
 SCALE="smoke"
+RUN_SCALE=""
 DURATION=""
 DRILLS="none"
 SEED="1"
@@ -79,6 +80,7 @@ case "$SCALE" in
     DURATION="${DURATION:-60s}"
     ;;
   100|1k|5k)
+    RUN_SCALE="$SCALE"
     [ -n "$DURATION" ] || { echo "--duration is required for --scale $SCALE" >&2; exit 2; }
     ;;
   *) echo "unknown --scale $SCALE (use smoke, 100, 1k or 5k)" >&2; exit 2 ;;
@@ -136,10 +138,14 @@ compose() {
   env "${COMPOSE_ENV[@]}" docker compose -f "$COMPOSE_FILE" -p "$PROJECT" "$@"
 }
 
+# PIPESTATUS is only valid on the statement directly after the pipeline, so the
+# capture sits immediately after the tee: read past a function return — or after
+# even a bare `[` test — it yields 0, and the smoke gate would exit 0 on FAIL.
 run_soakcheck_verdict() {
   set +e
   "$OUT/soakcheck" --sample "$OUT/soak.tsv" --interval 5s --drift "$RUN_DRIFT" \
     --warmup "$RUN_WARMUP" 2>&1 | tee "$OUT/verdict.txt"
+  smoke_verdict_rc=${PIPESTATUS[0]}
   set -e
 }
 
@@ -265,9 +271,6 @@ soak_rc=${PIPESTATUS[0]}
 set -e
 
 run_soakcheck_verdict
-if [ "$SCALE" = smoke ]; then
-  smoke_verdict_rc=${PIPESTATUS[0]}
-fi
 
 set +e
 python3 - "$OUT" <<'PY'

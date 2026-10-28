@@ -292,7 +292,7 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
 序列（metrics/queue_test.go）、admin 端点 200/503 双路径
 （httpapi/coverage_test.go）、队列侧字段由 queue_test.go 既有断言覆盖。
 
-## 9. 生产形状压测与长稳观测（设计稿 2026-10-19；驱动器、演练执行器与 plateau 判读器已交付并本机实测；验收实跑待指定机器与排期）
+## 9. 生产形状压测与长稳观测（设计定稿 2026-10-27；驱动器、演练执行器与 plateau 判读器已交付并本机实测；验收实跑待指定机器与排期）
 
 本节以上与 [基准](/zh/benchmarks) 全部测的是服务层：memory store、单进程、分钟级
 运行，不含网络 / TLS / JSON / 存储 I/O。今天没有任何测量回答部署侧问题——端到端
@@ -318,11 +318,27 @@ p95/p99、GC 行为、多小时运行对内存与文件描述符的影响（2026
 | 角色事件 | created / login 按舰队规模固定比例——驱动投影写路径与 §8 倒排索引更新 |
 | 运维滴流 | 窗口 / 公告 / 审计 sink 低频写入，够让审计派发器与每小时保留清扫可见即可 |
 
+**规模点**——绝对值随舰队规模缩放；`deploy/perf/soak.sh --scale` 钉定各 §9 档，
+`deploy/perf/run.sh --scale` 是一键验收入口：
+
+| 档 | 台数 | 读混合 5:3:2（列表/详情/推荐） | 角色写 | 运维滴流 | 读 worker | soakcheck 预热 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 100 | 100 rps | 1 rps | 每 10s | 16 | 2 点 |
+| 1k | 1,000 | 200 rps | 20 rps | 每 5s | 16 | 4 点 |
+| 5k | 5,000 | 500 rps | 50 rps | 每 5s | 32 | 6 点 |
+
+验收调用为 `run.sh --scale <100|1k|5k> --duration 24h --drills both`；`--scale smoke`
+只是工作站门禁。
+
 **验收口径**——「通过」的形状；数值由首跑钉定、之后转为警戒线（与
 [基准](/zh/benchmarks) §2 钉定基线同一哲学）：持续负载下按端点分类（心跳 / 注册 /
-列表 / 详情 / 推荐）的 p95/p99——写路径在 `:8082` 已有时长直方图
-（`atlas_registry_write_duration_seconds{op}`、`atlas_directory_write_duration_seconds`），
-读路径从已落地链路的 OTel span 取分位，或补一枚读侧直方图（属跑前准备，非重设计）；
+列表 / 详情 / 推荐）的 p95/p99——`cmd/loadgen` 八股流（`register`、`heartbeat`、
+`storm-register`、`read-list`、`read-detail`、`read-recommend`、`char-write`、
+`ops-stats`）落 `loadgen.json`；runner 聚合为五类（`register`、`heartbeat`、`read`、
+`character-write`、`admin`）进 `endpoints.json` / `endpoints.txt`，
+`summary.json` / `summary.txt` 每股保留 p50/p95/p99、count、errors 与 skipped。分类型
+报告即验收证据；`:8082` 已有时长直方图（`atlas_registry_write_duration_seconds{op}`、
+`atlas_directory_write_duration_seconds`）与 OTel span 仍作内部归因链，不是门禁；
 跑动中折入 §7 留在部署级的两条演练——HAProxy 下杀一个 Atlas 副本（故障转移时长、
 心跳零丢失）与 PG 短断（连接池自愈、错误传播而非挂死）；浸泡 ≥24h（中档规模点），
 通过条件是平台不是峰值——堆内存平稳无单调增长、goroutine 与 fd 计数稳定。

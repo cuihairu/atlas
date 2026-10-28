@@ -1,0 +1,9 @@
+soakcheck plateau verdict
+source                       metric                         ticks            min            max    drift  verdict
+http://127.0.0.1:18082/metrics go_memstats_heap_inuse_bytes   12/12         43.95M         99.49M   +41.1%  monotonic growth above tolerance
+http://127.0.0.1:18082/metrics process_open_fds               12/12           19.0           71.0   +33.3%  monotonic growth above tolerance
+http://127.0.0.1:18082/metrics go_goroutines                  12/12           18.0           22.0    +3.4%  plateau
+http://127.0.0.1:28082/metrics process_open_fds               12/12           19.0           74.0   +32.9%  monotonic growth above tolerance
+http://127.0.0.1:28082/metrics go_goroutines                  12/12           18.0           24.0   +11.7%  plateau
+http://127.0.0.1:28082/metrics go_memstats_heap_inuse_bytes   12/12         44.00M         94.46M   +40.6%  monotonic growth above tolerance
+verdict: FAIL — at least one series is not a plateau

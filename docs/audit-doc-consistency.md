@@ -13,7 +13,7 @@ mechanical translation would be exactly the kind of low-quality output worth avo
 so the page was left with this marker instead.
 
 It is tracked for translation in
-[TODO.md](https://github.com/cuihairu/atlas/blob/main/TODO.md) alongside
+[todo.md](https://github.com/cuihairu/atlas/blob/main/todo.md) alongside
 [the API reference](api.md).
 
 ## What the report covers

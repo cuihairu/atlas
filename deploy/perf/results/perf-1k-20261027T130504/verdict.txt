@@ -1,0 +1,9 @@
+soakcheck plateau verdict
+source                       metric                         ticks            min            max    drift  verdict
+http://127.0.0.1:18082/metrics go_goroutines                  36/36           18.0           22.0    +0.6%  plateau
+http://127.0.0.1:18082/metrics go_memstats_heap_inuse_bytes   36/36        383.90M        783.26M   +17.9%  plateau
+http://127.0.0.1:18082/metrics process_open_fds               36/36           19.0           96.0    +9.5%  plateau
+http://127.0.0.1:28082/metrics process_open_fds               36/36           19.0          110.0   +11.3%  plateau
+http://127.0.0.1:28082/metrics go_goroutines                  36/36           19.0           27.0    +8.1%  plateau
+http://127.0.0.1:28082/metrics go_memstats_heap_inuse_bytes   36/36        384.07M        755.89M   +15.0%  plateau
+verdict: PASS — every series holds a plateau
