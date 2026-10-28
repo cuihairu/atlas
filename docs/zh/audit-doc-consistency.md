@@ -126,7 +126,7 @@
 
 ## 附注（不列入三类差异）
 
-- 版本时间线主张（「v0.1.15/17/20 交付」）对的是 todo.md 版本台账，非 git tag（远端 tag 仅至 v0.1.2）——tag 补齐属仓库管理事项，R1/R2 修文档时一并处理 release 表。
+- 版本时间线主张（「v0.1.15/17/20 交付」）对的是 TODO.md 版本台账，非 git tag（远端 tag 仅至 v0.1.2）——tag 补齐属仓库管理事项，R1/R2 修文档时一并处理 release 表。
 - lifecycle.md:205 与 :221 重复同一句 webhook 表述，属编辑重复，修文时顺手合并。
 - api-quickstart:144 create 响应示例含 `last_login_at`（omitempty 通常缺省）——影响极小，随 API-A7 顺手改。
 - 组一备注：mysql store 全实现+契约在仓，但 `ATLAS_STORE` 目前仅接 memory/postgres（main.go:178）——码内现状，文档未超配。
@@ -268,7 +268,7 @@ go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2
 
 ## 审计范围与方法
 
-- **触发**：巡检单 PATROL1013——todo.md 5 个未勾项全部标注挂起/待操作（凭据、审核、上游阻塞），无自主推进项；转查「新出现的可自主推进项」，命中依赖告警与文档漂移两类。
+- **触发**：巡检单 PATROL1013——TODO.md 5 个未勾项全部标注挂起/待操作（凭据、审核、上游阻塞），无自主推进项；转查「新出现的可自主推进项」，命中依赖告警与文档漂移两类。
 - **依赖面**：Dependabase API 30 条告警逐条核对锁定版本（stale）；新命中 Go 1.27.1 标准库漏洞 11 条（GO-2026-6599 等 11 个编号，net/http、http2、textproto、tls、httputil、html/template），govulncheck 复跑确认。
 - **文档面**：承接 2026-10-08 轮未修完的 P1 余量（SYNC-1/2、DM-1、PF-1/2、BM-1、G01–G04、CS01、R05、R06），逐条重新取证；否定性结论先验证搜索树存在。
 - **口径**：以源码为真相；基准数字为空载 min-of-5 复测（2026-10-13，i9-10880H / Go 1.27.2），文档标注测量环境。
@@ -361,7 +361,7 @@ go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2
 | S2-4 | docs/sdk-go.md:95 | ConfigWatcher 仅一句「轮询 + 退避」 | Notify/Pull/Run/Current/Stats 五方法（config.go:174-250） | 码超前 | P2 | 补 API 一览 |
 | S2-5 | docs/sdk-csharp.md:60 | HttpInvoker 注入 HttpMessageInvoker | AtlasClientOptions.cs:41 实为 HttpClient? | 不符 | P2 | 改 HttpClient |
 | S2-6 | docs/roadmap.md Dashboard 行 | 缺服务器负载热力图交付记录 | a26f25e 等三提交（REST+gRPC+dash 页） | 码超前 | P2 | 补行 |
-| S2-7 | todo.md | 534 行混杂过程叙述/装饰符号/情绪措辞 | — | 不符 | P1 | 重写 195 行：85 完成项一行证据、5 挂起项一句话需求 |
+| S2-7 | TODO.md | 534 行混杂过程叙述/装饰符号/情绪措辞 | — | 不符 | P1 | 重写 195 行：85 完成项一行证据、5 挂起项一句话需求 |
 | S2-8 | docs/BUGS.md:20-21 | BUG-1 状态注声称三请求全兜底 | 仅 tags 请求已兜底；getServer/listCharactersByServer 仍留加载态 | 不符 | P1 | 改实口径（未完成余项写明） |
 | S2-9 | （非文档）internal/event/redis/adapter_test.go | 全量 -race 并行下 TestDeadLetterAfterMaxRedelivery 消费循环被饿死 >15s（曾 >30s）超时 | 消费循环 goroutine 在全套件并行调度下长期无时间片 | 不符 | P1 | 测试改确定性：关闭循环后第二适配器同步驱动 sweep（adapter_test.go:273、233） |
 

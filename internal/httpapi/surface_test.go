@@ -20,7 +20,7 @@ var routePattern = regexp.MustCompile(`mux\.HandleFunc\("([^"]+)"`)
 // patterns at runtime, so the pin reads the registration site itself — and
 // also checks that every HandleFunc call site was matched, so a registration
 // reformatted across lines cannot slip past silently. This is the mechanical
-// half of the v1.0 API-freeze preparation (TODO.md "API stabilization and
+// half of the v1.0 API-freeze preparation (todo.md "API stabilization and
 // v1.0"); the freeze decision itself stays with the user.
 func TestRouteSurfacePinned(t *testing.T) {
 	src, err := os.ReadFile("handlers.go")

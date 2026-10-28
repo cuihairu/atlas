@@ -3,7 +3,7 @@
 [0m✱ [0mGrep "TODO|FIXME|XXX|HACK" [90m109 matches[0m
 [0m$ [0mgit status --short && git branch --show-current
 main
-[0m→ [0mRead todo.md 
+[0m→ [0mRead TODO.md 
 [0m→ [0mRead todo.md 
 [0m→ [0mRead README.zh.md 
 [0m→ [0mRead BUGS.md 
@@ -42,7 +42,7 @@ tracked files: 428 source/docs/config: 358
      75 sdk
       1 static
       1 todo.md
-      1 todo.md
+      1 TODO.md
 [0m→ [0mRead Makefile 
 正在按源码为准复核；仓库已有审计报告只作为线索，不直接当作当前结论。当前工作区干净，我不会改文件或提交。
 [0m→ [0mRead docs/zh/roadmap.md 
@@ -132,7 +132,7 @@ sdk/go/atlas/types.go
 BUGS.md
 README.md
 README.zh.md
-todo.md
+TODO.md
 dashboard/README.md
 deploy/k8s/README.md
 docs/api-quickstart.md

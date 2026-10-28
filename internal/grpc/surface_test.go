@@ -26,7 +26,7 @@ import (
 // here). Both must equal the inventory below verbatim, so adding, renaming
 // or removing an RPC, flipping one to streaming, or silently un-registering
 // a service fails this test until the inventory is updated on purpose. This
-// is the mechanical half of the v1.0 API-freeze preparation (TODO.md "API
+// is the mechanical half of the v1.0 API-freeze preparation (todo.md "API
 // stabilization and v1.0"); the freeze decision itself stays with the user.
 func TestServiceSurfacePinned(t *testing.T) {
 	mem := memory.New()
