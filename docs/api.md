@@ -1,7 +1,7 @@
 
 # API Reference — English translation not yet available
 
-> This is a marker page, not a translation. The full API reference is the Chinese original at [api.md](zh/api.md) (1019 lines). It is the longest page in this site, so it was left untranslated rather than risk a low-quality forced translation; the full English version is tracked in [TODO.md](https://github.com/cuihairu/atlas/blob/main/TODO.md).
+> This is a marker page, not a translation. The full API reference is the Chinese original at [api.md](zh/api.md) (1019 lines). It is the longest page in this site, so it was left untranslated rather than risk a low-quality forced translation; the full English version is tracked in [todo.md](https://github.com/cuihairu/atlas/blob/main/todo.md).
 
 ## What that reference covers
 
