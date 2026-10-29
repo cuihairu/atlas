@@ -41,7 +41,7 @@
 
 ### 候补
 
-- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0 — **契约冻结前仓内准备已交付**（2026-10-19）：REST 全部 52 条路由与 gRPC 全部 5 服务 23 方法已 pin 进测试——internal/httpapi/surface_test.go 读 handlers.go 注册点比对金清单（含 call-site 数自检，注册改行不静默漏检）、internal/grpc/surface_test.go 枚举编译内 proto 描述符比对金清单（含流式标记）——加 / 删 / 改契约不有意识更新清单即测试红，冻结从「靠自觉」变成「diff 有守卫」；**BLOCKED（冻结决策与发版须用户拍板 + 缺生产环境部署验证实证，均不代决）**；复核 2026-10-19 → 2026-10-20 22:00（三次，重实测）：仍无生产环境验证证据，触发条件未成立，维持挂起（取证：`find deploy -type f` = 15 个文件，全是 compose/HA/k8s 演示 manifest + 演练脚本，部署记录检索 0 命中；`git tag -l` 仅 v0.1.0–v0.1.4（10-01…10-09 所打，早于 10-11 发版红线），`git ls-remote --tags origin` 同样只到 v0.1.4（6 个 ref 含 peeled），均无 v1.0；`grep -rln "in production\|生产环境" docs/` 命中 27 个文件，全为指引性文本非部署实证，如 docs/ha.md:74、docs/architecture.md:305）
+- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0 — **契约冻结前仓内准备已交付**（2026-10-19）：REST 全部 52 条路由与 gRPC 全部 5 服务 23 方法已 pin 进测试——internal/httpapi/surface_test.go 读 handlers.go 注册点比对金清单（含 call-site 数自检，注册改行不静默漏检）、internal/grpc/surface_test.go 枚举编译内 proto 描述符比对金清单（含流式标记）——加 / 删 / 改契约不有意识更新清单即测试红，冻结从「靠自觉」变成「diff 有守卫」；**BLOCKED（冻结决策与发版须用户拍板 + 缺生产环境部署验证实证，均不代决）**；复核 2026-10-19 → 2026-10-20 22:00（三次，重实测）：仍无生产环境验证证据，触发条件未成立，维持挂起（取证：`find deploy -type f` = 15 个文件，全是 compose/HA/k8s 演示 manifest + 演练脚本，部署记录检索 0 命中；`git tag -l` 仅 v0.1.0–v0.1.4（10-01…10-09 所打，早于 10-11 发版红线），`git ls-remote --tags origin` 同样只到 v0.1.4（6 个 ref 含 peeled），均无 v1.0；`grep -rln "in production\|生产环境" docs/` 命中 27 个文件，全为指引性文本非部署实证，如 docs/ha.md:74、docs/architecture.md:305） BLOCKED：缺用户冻结/发版决策与生产环境部署验证实证。
 
 ## 审核发现
 
