@@ -1,8 +1,8 @@
 # 批量决策分析 · 2026-10-30 · atlas
 
-> 状态:已代决(2026-10-14 用户授权「按推荐拍,后续可推翻」);需要密钥/账号/用户私有数据的事项标「需用户输入,暂缓」,不硬做
+> 状态:待用户确认;需要密钥/账号/用户私有数据的事项标「需用户输入,暂缓」,不硬做
 >
-> 范围:todo.md 中所有 BLOCKED / 待决策 / 缺用户输入 条目。分析基于仓库事实(file:line),不臆造。
+> 范围:todo.md 中两项完整 BLOCKED 条目(API v1.0、性能验收);不含嵌在已交付/未勾进展条目内的后续拍板点。分析基于仓库事实(file:line),不臆造。
 
 ---
 
@@ -12,7 +12,7 @@
 测试(`internal/httpapi/surface_test.go` 读注册点比对金清单、`internal/grpc/surface_test.go` 枚举
 编译内 proto 描述符比对金清单),加/删/改契约不有意识更新清单即测试红,冻结从"靠自觉"变成
 "diff 有守卫"。BLOCKED 两点:① 冻结决策与发版须用户拍板;② 缺生产环境部署验证实证
-(取证:`find deploy -type f` = 15 个,全是 compose/HA/k8s 演示 manifest + 演练脚本,部署记录检索
+(取证:`find deploy -type f` = 42 个,其中 15 个为 compose/HA/k8s 演示 manifest + 演练脚本,其余为性能工具/测试与结果档案、Redis/Postgres 配置;部署记录检索
 0 命中;`git tag -l` 仅 v0.1.0–v0.1.4,均早于 2026-10-11 发版红线)。
 
 ### 推荐决策
@@ -38,7 +38,7 @@
 
 **现状**:设计定稿 `docs/performance.md §9`(代表性拓扑 `deploy/docker-compose.ha.yaml`、节拍形
 负载模型、规模点 100/1k/5k、验收口径全文 §9)。工具链已齐:一键入口 `deploy/perf/run.sh`
-(四档 plan 均 exit 0)、`soak.sh` 三件套、`loadgen` 分端点 p50/p95/p99、`soakcheck` 判读器
+(验收档按 §9 调用 `--duration 24h --drills both` 时四档 `--plan` 均 exit 0;smoke 缺省亦 exit 0;验收档缺省或 45s 计划因缺必填/低于 60s 最小样本窗 exit 2)、`soak.sh` 三件套、`loadgen` 分端点 p50/p95/p99、`soakcheck` 判读器
 (覆盖度/warmup/plateau)。本地已实测:100 档、1k 档、5k 档(5k 显示盒子先饱和,ops p50 3.0s)、
 两类演练(杀副本、PG 短断自愈)。BLOCKED:缺用户指定生产形状机器+排期(24h 浸泡不能落共享
 演示机;候选机 docker100 本机无 SSH key——`Permission denied (publickey)`,hermes 唯一 peer
@@ -63,4 +63,4 @@ win-worker 是 Windows,承接不了 Linux PG+Redis+HAProxy 栈)。
 
 ---
 
-*结论:本仓 BLOCKED 条目 2 项(API v1.0、性能验收),均为「需用户输入,暂缓」,无免凭据立即动作。*
+*结论:本分析范围内 BLOCKED 条目 2 项(API v1.0、性能验收),均为「需用户输入,暂缓」,无免凭据立即动作;标题「已代决」待用户确认,嵌在进展条目内的后续拍板点另行处理。*
