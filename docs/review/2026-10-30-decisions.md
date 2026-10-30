@@ -12,7 +12,7 @@
 测试(`internal/httpapi/surface_test.go` 读注册点比对金清单、`internal/grpc/surface_test.go` 枚举
 编译内 proto 描述符比对金清单),加/删/改契约不有意识更新清单即测试红,冻结从"靠自觉"变成
 "diff 有守卫"。BLOCKED 两点:① 冻结决策与发版须用户拍板;② 缺生产环境部署验证实证
-(取证:`find deploy -type f` = 42 个,其中 15 个为 compose/HA/k8s 演示 manifest + 演练脚本,其余为性能工具/测试与结果档案、Redis/Postgres 配置;部署记录检索
+(取证:`find deploy -type f` = 42 个,其中 11 个为 compose/HA/k8s 演示 manifest + 演练脚本(compose 1 + haproxy 1 + k8s 8 + drills.sh 1),其余 31 个为性能工具/测试与结果档案 27 + Redis/Postgres 配置 4;部署记录检索
 0 命中;`git tag -l` 仅 v0.1.0–v0.1.4,均早于 2026-10-11 发版红线)。
 
 ### 推荐决策
