@@ -25,6 +25,14 @@ func TestRateLimit_ParseRulesSkipsEmptyParts(t *testing.T) {
 			t.Errorf("ParseRateLimitRules(%q) accepted a bad burst", bad)
 		}
 	}
+	// A negative RPS parses fine but must be rejected with a real error —
+	// a silent (nil, nil) would make the caller treat the whole config as
+	// valid while allow() lets rule.RPS <= 0 through unthrottled.
+	for _, bad := range []string{"/a=-5", "/a=-1:10"} {
+		if _, err := ParseRateLimitRules(bad); err == nil {
+			t.Errorf("ParseRateLimitRules(%q) accepted a negative rps", bad)
+		}
+	}
 }
 
 func TestRateLimit_StatsCountRejections(t *testing.T) {

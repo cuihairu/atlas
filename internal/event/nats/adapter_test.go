@@ -415,11 +415,17 @@ func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
 
 func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
 	// An empty URL must fall back to the default NATS address, not the
-	// empty string; with nothing listening there the connect error is the
-	// observable proof the fallback ran.
-	if _, err := Open(Options{}); err == nil ||
-		!strings.Contains(err.Error(), "nats connect") {
-		t.Errorf("Open without URL = %v, want connect failure via default URL", err)
+	// empty string. Compare against an explicit DefaultURL: both must
+	// behave identically — if a server is listening on the default port
+	// both connect, otherwise both fail with a connect error. Any
+	// disagreement means the empty URL did not resolve to DefaultURL.
+	_, errEmpty := Open(Options{})
+	_, errDefault := Open(Options{URL: DefaultURL})
+	if (errEmpty == nil) != (errDefault == nil) {
+		t.Fatalf("Open() and Open(DefaultURL) disagree: empty=%v default=%v", errEmpty, errDefault)
+	}
+	if errEmpty != nil && !strings.Contains(errEmpty.Error(), "nats connect") {
+		t.Errorf("Open without URL = %v, want connect failure via default URL", errEmpty)
 	}
 }
 

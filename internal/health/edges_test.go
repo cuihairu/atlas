@@ -199,9 +199,9 @@ func TestSweepTransitionFailures(t *testing.T) {
 		clockAhead time.Duration
 	}{
 		{"starting_no_heartbeat", model.StatusStarting, false, 200 * time.Second}, // 142
-		{"starting_slow_heartbeat", model.StatusStarting, true, 60 * time.Second},  // 164
-		{"suspect_dead", model.StatusSuspect, true, 150 * time.Second},             // 171
-		{"suspect_recovered", model.StatusSuspect, true, 10 * time.Second},         // 178
+		{"starting_slow_heartbeat", model.StatusStarting, true, 60 * time.Second}, // 164
+		{"suspect_dead", model.StatusSuspect, true, 150 * time.Second},            // 171
+		{"suspect_recovered", model.StatusSuspect, true, 10 * time.Second},        // 178
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
