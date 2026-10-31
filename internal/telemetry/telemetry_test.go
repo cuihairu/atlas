@@ -80,4 +80,15 @@ func TestRateFromCumulative(t *testing.T) {
 	if r := Rate(pts[:1]); r != 0 {
 		t.Errorf("single point rate = %v, want 0", r)
 	}
+	// A zero-width window (all points at one instant) carries no rate.
+	if r := Rate([]Point{{T: base, V: 1}, {T: base, V: 5}}); r != 0 {
+		t.Errorf("zero-span rate = %v, want 0", r)
+	}
+}
+
+func TestSamplerCapacityFloor(t *testing.T) {
+	// Retention shorter than two ticks still keeps a usable ring.
+	if got := NewSampler(time.Second, time.Millisecond).Capacity(); got != 2 {
+		t.Fatalf("floored capacity = %d, want 2", got)
+	}
 }
