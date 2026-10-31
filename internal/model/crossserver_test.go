@@ -85,6 +85,13 @@ func TestValidateCrossServerSpec(t *testing.T) {
 		{"empty server id in cluster", func(s *CrossServerSpec) { s.Topology.Clusters[0].Servers = []string{"game-1", ""} }},
 		{"duplicate server in cluster", func(s *CrossServerSpec) { s.Topology.Clusters[0].Servers = []string{"game-1", "game-1"} }},
 		{"missing group id", func(s *CrossServerSpec) { s.Groups[0].ID = "" }},
+		{"duplicate group id", func(s *CrossServerSpec) {
+			s.Groups = append(s.Groups, CrossServerGroup{ID: "g1"})
+		}},
+		{"empty server id in match domain", func(s *CrossServerSpec) {
+			s.MatchDomains[0].Servers = []string{"game-1", ""}
+		}},
+		{"empty feature key", func(s *CrossServerSpec) { s.Features[""] = true }},
 		// 拓扑为准（三者关系裁决）: groups are ops sets constrained by the
 		// topology — members must sit inside ONE cluster.
 		{"group member outside every cluster", func(s *CrossServerSpec) {
@@ -123,6 +130,13 @@ func TestValidateCrossServerSpec(t *testing.T) {
 		if err := ValidateCrossServerSpec(spec); err == nil {
 			t.Errorf("%s: accepted an invalid spec", tc.name)
 		}
+	}
+
+	// The id_prefix is optional: a crossplay type without one validates.
+	spec := testCrossSpec()
+	spec.CrossPlayTypes[0].IDPrefix = ""
+	if err := ValidateCrossServerSpec(spec); err != nil {
+		t.Fatalf("prefix-less crossplay type rejected: %v", err)
 	}
 }
 
