@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { ConfigProvider, Spin, theme, App as AntApp } from 'antd';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
+import { Button, ConfigProvider, Result, Spin, theme, App as AntApp } from 'antd';
 import AppLayout from './components/Layout';
 import Login from './pages/Login';
 import Overview from './pages/Overview';
@@ -15,7 +15,7 @@ import PlayerDiagnose from './pages/PlayerDiagnose';
 import SystemConfig from './pages/SystemConfig';
 import AuditLog from './pages/AuditLog';
 import { probeAdmin } from './api/client';
-import { useLang, antdLocale } from './i18n';
+import { useLang, antdLocale, t } from './i18n';
 import { useTheme } from './theme';
 
 // 会话守卫：进管理台前探一次管理口。401 → 跳登录页；200（已登录或该
@@ -35,6 +35,23 @@ function RequireAuth() {
   }
   if (verdict === 'login') return <Navigate to="/login" replace />;
   return <Outlet />;
+}
+
+// 未匹配路由兜底：不再静默渲染空白内容区（曾出现在 demo 站的 /heatmap 直接访问）。
+function NotFound() {
+  const navigate = useNavigate();
+  return (
+    <Result
+      status="404"
+      title="404"
+      subTitle={t('notFound')}
+      extra={
+        <Button type="primary" onClick={() => navigate('/')}>
+          {t('backHome')}
+        </Button>
+      }
+    />
+  );
 }
 
 export default function App() {
@@ -70,6 +87,7 @@ export default function App() {
                 <Route path="/diagnose" element={<PlayerDiagnose />} />
                 <Route path="/system" element={<SystemConfig />} />
                 <Route path="/audit" element={<AuditLog />} />
+                <Route path="*" element={<NotFound />} />
               </Route>
             </Route>
           </Routes>
