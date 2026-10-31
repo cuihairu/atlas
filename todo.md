@@ -18,7 +18,7 @@
 - [x] internal/registry 88.5%→100%（9 条→0 条）：CheckRegistration/Register/Heartbeat/Unregister 全 store 动词失败 wrap（fault 包装逐方法注入）+ 初始心跳失败 warn-but-succeed + 注销运行时清理失败 warn-but-succeed + config 托管 suspect 重入 promote 失败 — commit cf8e519（无残留）
 - [x] internal/event/kafka 88.9%→99.1%（13 条→1 条）：零 Options 走默认 brokers 的 Open + newDLReader 闭包真建 readDL（kafka-go 懒拨号，无需 broker）+ 停机期泛化 fetch 错误静默退出（entered 信号同步后才 cancel，免调度竞态）+ 死信写失败留 offset 不提交 + replay 四失败（canceled ctx 透传 / 死信读错 wrap / 重发布失败留底 / commit 失败不计 removal） — commit ad370be（残留 1 条为防御分支：Publish 的 Event 结构体 json.Marshal 不可错）
 - [x] internal/grpc 89.9%→99.7%（37 条→1 条）：全 RPC 失败 wrap（faultStore 逐动词注入真 service 层）+ Heartbeat 带 Status / Register 带 realm+shard / Update 全 patch 字段拷贝（name/class/avatar/metadata）+ 异步 adapter 的 queued 三态（create/update/delete）+ 回滚成功后确认读失败 + no_register 判 PermissionDenied + admin IP 白名单拒外网 + nil limiter 透传 + statusErr 边界（nil/泛化错→Internal）+ methodOf 无斜杠 + httpStatusOf(Canceled)=499 — commit dda375b（残留 1 条为防御分支：truncateAuditBody 的 json.Marshal(string) 不可错）
-- [ ] internal/admin 90.0%（20 条）
+- [x] internal/admin 90.0%→99.0%（单包口径 87.0%→99.0%）：全 store 动词失败 wrap（faultStore 逐动词注入）+ SetDrain/Enable 未知服 + Disable/DeleteServer 写失败 + 批量窗口三种 per-server 失败落 Failed（空 id/公告写失败/窗口写失败）+ CreateWindows 模板级拒绝（零 end_at）+ 重复 shard 冲突 + 公告无标题校验 + 标签 add/remove 写失败 + 删窗直通透传（fault 注入——内存库幂等删不报错） — commit 9dc298f（残留 2 条为防御分支：批量循环内 w.Validate 与模板级检查重复不可达）
 - [ ] internal/crossserver 91.7%（23 条）
 - [ ] internal/fleet 91.8%（20 条）：QueueStats / UpdateServerStatusIf 0%
 - [ ] internal/event 91.8%（4 条）：replay Error 0%；internal/routing 93.3%（13 条）
