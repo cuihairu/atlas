@@ -14,7 +14,7 @@
 - [x] internal/audit 85.3%→94.3%（31 条→12 条）：sink 错误分支（写后关/死池 ping/受限角色 DDL/Retain 关池）+ mask 标量与 null/对象值/解析失败 + queue size 回退/nil logger/Drain 停 sweep — commit 7d9cf11（残留 12 条为防御分支：Entry.Marshal 不可错、fsync 不可错、json.Valid 前置的 copy 错误分支、type-switch 不可达 default、1h 定时器分支）
 - [x] internal/store/postgres 85.6%→96.5%（82 条→20 条）：canceled-ctx 全动词 sweep + Patch 全臂/空 patch/零行 ErrNotFound + limit clamp + 单行 missing ErrNotFound + splitCursor/joinStrings + GetStats schema drift 双形态 + runtime 合并失败 — commit 5617785（残留 20 条为防御分支：JSONB 列解码头（写时校验不可达）、rows.Err 迭代、marshal 不可错、List 循环 scan 错需表结构漂移）
 - [x] internal/health 86.4%→99.0%（27 条→2 条）：sweep 韧性（ListServers 失败 fail-fast / Run 记日志续跑 / 分页续页）+ CAS 转移失败四形态（starting 无心跳/慢心跳/suspect 死/恢复）+ expireTemporary 边界（ttl<=0 / notfound / delete 失败 / runtime 失败）+ 维护窗口失败三形态（退出恢复/过期删除/进入）+ alerter 空接收者与 webhook 三形态（载荷/坏 URL/非 2xx） — commit a8db040（残留 2 条为防御分支：webhook json.Marshal 结构体不可错）
-- [ ] internal/store/redisstore 87.1%（9 条）：Ping 0%；internal/event/redis 87.1%（18 条）
+- [x] internal/store/redisstore 87.1%→98.6%（9 条→1 条）：Ping/心跳/单读/批读/删除 canceled-ctx sweep + ListRuntimes 三分支（HGetAll 错 fail-hard / SCAN-HGETALL 过期窗口跳过 / SCAN 错）——后两者经 ghost-HGetAll 客户端注入（真后端只能靠 TTL 竞态） — commit fa17b92（残留 1 条为防御分支：GetRuntimes 单键 Result 错——pipeline Exec 先行返回任何命令错，该 continue 不可达）；internal/event/redis 87.1%→97.9%（18 条→3 条）：死信复制三失败（源读死/源被裁剪/镜像写失败——wrapper 客户端逐方法注入）+ 毒载荷丢弃 + ack 失败日志 + replay 读死/重发布失败（不可路由 type）/删除失败留底 + miniredis XPENDING 计数器不认 XCLAIM 移交消费者（用 XPENDING EXTENDED 断言） — commit a851435（残留 3 条为防御分支：Event 结构体 marshal 不可错、consume 的 ctx.Err 案在 Canceled 案之后不可达、流条目零字段不可能（XADD 至少一字段））
 - [ ] internal/registry 88.5%（9 条）
 - [ ] internal/event/kafka 88.9%（13 条）：readDL 0%
 - [ ] internal/grpc 89.9%（37 条）
