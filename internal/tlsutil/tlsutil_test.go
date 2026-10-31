@@ -142,6 +142,17 @@ func TestServerConfig_RejectsBadInput(t *testing.T) {
 	if _, err := ServerConfig(Options{
 		CertFile:     filepath.Join(dir, "server.crt.pem"),
 		KeyFile:      filepath.Join(dir, "server.key.pem"),
+		ClientCAFile: filepath.Join(dir, "missing-ca.pem"),
+	}); err == nil {
+		t.Error("expected error for unreadable CA bundle")
+	}
+	// A bundle that exists but holds no parseable certificate.
+	if err := os.WriteFile(filepath.Join(dir, "garbage.pem"), []byte("definitely not a certificate"), 0o600); err != nil {
+		t.Fatalf("write garbage pem: %v", err)
+	}
+	if _, err := ServerConfig(Options{
+		CertFile:     filepath.Join(dir, "server.crt.pem"),
+		KeyFile:      filepath.Join(dir, "server.key.pem"),
 		ClientCAFile: filepath.Join(dir, "garbage.pem"),
 	}); err == nil {
 		t.Error("expected error for invalid CA bundle")
