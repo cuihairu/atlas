@@ -1,5 +1,31 @@
 # TODO
 
+<!-- 覆盖率基线（2026-10-31，用户令提 98%）：./internal/... 交叉覆盖口径（-coverpkg=./internal/...，与 ci.yml Test with coverage 一致）。
+     带本地临时容器（atlas-cov-pg 127.0.0.1:15432 / atlas-cov-mysql 127.0.0.1:13307 / atlas-cov-redis 127.0.0.1:16380，
+     版本对齐 CI：postgres:16-alpine / mysql:8.0 / redis:7-alpine）总覆盖率 86.6%；无 SQL/Redis 环境时 73.5%（SQL 契约套件 skip）。
+     口径：`go test ./internal/... -coverprofile -count=1 -coverpkg=./internal/...` + 按块去重（保留最大计数）后 `go tool cover -func` total 行。 -->
+
+## 覆盖率 98%（用户 2026-10-31 令；按包覆盖率从低到高推进，禁死代码凑数，只补核心业务路径含错误分支）
+
+- [ ] internal/store/storetest 64.8%（281 条未覆盖）：weight 59.3% / RunRuntime 58.3% / statusCAS 57.7% 等契约路径
+- [ ] internal/event/nats 73.1%（46 条）：Open 51.6% 等连接/错误分支
+- [ ] internal/event/rabbitmq 80.6%（30 条）：deadLetter 55.6% / Open 31.2%
+- [ ] internal/httpapi 83.6%（200 条）：parseSeriesWindow 57.1% / handleAdminAddServerTag 56.2% 等
+- [ ] internal/store/mysql 84.9%（86 条）：scanShard 等 + Ping/Close 0%
+- [ ] internal/audit 85.3%（31 条）：sink/retention 错误分支
+- [ ] internal/store/postgres 85.6%（82 条）：scanShard 50.0% + Ping/Close 0%
+- [ ] internal/health 86.4%（27 条）
+- [ ] internal/store/redisstore 87.1%（9 条）：Ping 0%；internal/event/redis 87.1%（18 条）
+- [ ] internal/registry 88.5%（9 条）
+- [ ] internal/event/kafka 88.9%（13 条）：readDL 0%
+- [ ] internal/grpc 89.9%（37 条）
+- [ ] internal/admin 90.0%（20 条）
+- [ ] internal/crossserver 91.7%（23 条）
+- [ ] internal/fleet 91.8%（20 条）：QueueStats / UpdateServerStatusIf 0%
+- [ ] internal/event 91.8%（4 条）：replay Error 0%；internal/routing 93.3%（13 条）
+- [ ] 长尾至 98%：migration 94.3%、event/http 94.7%、tlsutil 94.7%、directory 95.4%、store/memory 95.6%（40 条）、metrics 95.8%、serversconfig 96.4%、tracing 96.7%、discovery 97.4%、model 97.9%、telemetry 98.2%
+- [ ] 锁门禁：Makefile `test-coverage`（total <98% 则 exit 1）+ codecov.yml 对齐 98%
+
 - [x] 注册生命周期：永久 / 暂时 两类标记（来源：用户 2026-10-14）— 已交付（2026-10-14）：`reg_kind`（permanent / temporary）+ `ttl_seconds` 显式标记落 server 记录与三库存储（迁移 0008），注册 API（REST）与校验接入；过期走健康监控独立路径，只对 `temporary` 且 `created_at + ttl_seconds` 超时回收（绝对时长，不读运行时），永久与遗留空值行任何情况不自动删；显式删除入口 `DELETE /v1/admin/servers/{id}`（config 托管 409）；model/registry/health/admin/httpapi/storetest 新增 14 tests 绿 — commit 4ed7dae
 - [x] 永久实例离线告警（来源：用户 2026-10-14）— 已交付（2026-10-14）：健康监控 offline 转移时经既有 Alerter 渠道（Warn 日志 + `ATLAS_ALERT_WEBHOOK_URL`）发单服务器告警 `permanent_offline`，载荷含 `server_id` / `reg_kind` / `offline_for` / `maintenance`（lifecycle.md §4.4）；豁免两条路径齐备：maintenance 非 auto-managed 不进转移（结构性豁免），temporary 消失属预期不告警；阈值沿用 `ATLAS_SUSPECT_AFTER` / `ATLAS_OFFLINE_AFTER`（默认 30s / 60s）；health 新增 6 tests 绿（含告警触发与维修豁免） — commit 4ed7dae
 - [x] 审核整改（2026-10-18 独立审核，见 docs/review/luna-review-2026-10-18.md）：
