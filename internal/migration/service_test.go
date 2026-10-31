@@ -255,3 +255,35 @@ func TestRollbackMigration(t *testing.T) {
 		t.Errorf("rollback missing err = %v, want ErrNotFound", err)
 	}
 }
+
+// faultMigrationStore fails the migration write on demand; every other
+// verb delegates to the backing memory store.
+type faultMigrationStore struct {
+	Store
+	createErr error
+}
+
+func (f *faultMigrationStore) CreateMigration(ctx context.Context, m *model.Migration) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+	return f.Store.CreateMigration(ctx, m)
+}
+
+// TestCreateMigrationStoreWriteFailure pins the record-write wrap: a store
+// failure on CreateMigration surfaces (never a half-reported migration).
+func TestCreateMigrationStoreWriteFailure(t *testing.T) {
+	mem := memory.New()
+	ctx := context.Background()
+	registerServer(t, mem, "game-1001", model.StatusOnline)
+	registerServer(t, mem, "game-2001", model.StatusOnline)
+
+	boom := errors.New("migration store broken")
+	svc := New(&faultMigrationStore{Store: mem, createErr: boom})
+	if _, err := svc.CreateMigration(ctx, CreateMigrationRequest{
+		SourceServers: []string{"game-1001"},
+		TargetServer:  "game-2001",
+	}); !errors.Is(err, boom) {
+		t.Fatalf("CreateMigration store failure = %v, want the store error", err)
+	}
+}
