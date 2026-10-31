@@ -35,15 +35,15 @@
 - **定位**：`src/App.tsx`（无 catch-all 路由）、`src/i18n.ts`（缺 `notFound`/`backHome` 文案）。
 - **修复**（commit `06e4a6b`）：新增 `<Route path="*">` 渲染 `Result status="404"`（"404 / 页面不存在或已被移除 / 返回总览"按钮），zh/en 双语文案补齐。验证：`t3-404-desktop.png` 完整 404 页。
 
-### 4. [中 · a11y 对比度] 品牌橙 `#d97706` 上白字 3.19:1 — 待拍板
+### 4. [中 · a11y 对比度] 品牌橙 `#d97706` 上白字 3.19:1 — 待用户
 - **现象**：`ConfigProvider colorPrimary: '#d97706'`（primary 按钮"返回总览"等）与 Logo 上的白字 3.19:1 < 4.5:1（AA）。14px 按钮正文。
 - **定位**：`src/App.tsx`（colorPrimary）、`src/components/Layout.tsx`（Logo）。
-- **建议**：品牌色 vs 可访问性取舍。本次按"不动品牌色"边界**未改**；若要达标，需产品同意微调明度至 ≥4.5:1，或 primary 按钮文案加粗。**待用户拍板**。
+- **建议**：品牌色 vs 可访问性取舍。本次按"不动品牌色"边界**未改**；若要达标，需产品同意微调明度至 ≥4.5:1，或 primary 按钮文案加粗。**待用户**：需产品拍板品牌色取舍。
 
-### 5. [低 · 技术债] antd `message` 静态调用不感知主题上下文 — 待定
+### 5. [低 · 技术债] antd `message` 静态调用不感知主题上下文 ✅已修
 - **现象**：控制台多处 `Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.`（本次复验截图亦复现）。
 - **定位**：`src/` 内使用 `message.xxx()` 静态调用的页面。
-- **建议**：改用 `App.useApp()` 的 `message` 实例（`<AntApp>` 已在 `App.tsx` 挂载）。待定。
+- **修复**（commit `1c01ac3`）：组件内改用 `App.useApp()` 的 `message` 实例（Migrations / ServerDetail / Operations / Servers / CrossServer 五页共 16 处调用点）；非组件模块 `api/client.ts` 经新 `src/api/messageBus.ts` holder 注入（`<AntApp>` 内 `MessageBridge` 挂载时写入、卸载清空，挂载前退回静态兜底）。消除告警，message 感知主题上下文（深色档样式一致）。
 
 ### 6. [信息] demo 站为陈旧构建 — 运维
 - **现象**：`atlas.cuihairu.site` 落后源码 163 个 commit（bundle 分析佐证），不含上述修复；`deploy-docker.yml` 为 `workflow_dispatch` 手动触发，非 CI 自动部署。
@@ -61,5 +61,6 @@
 | --- | --- |
 | 问题总数 | 5（不含信息项） |
 | 当场修复 | 3（#1 移动端侧边栏、#2 宽表窄屏、#3 未知路由） |
-| 列入 TODO | 2（#4 品牌橙拍板、#5 antd message 上下文） |
+| 修复波已修 | 1（#5 antd message 上下文 `1c01ac3`） |
+| 待用户 | 1（#4 品牌橙拍板） |
 | 信息项 | 3（#6 demo 陈旧构建、#7 heatmap 源级观察、#8 设计权威缺失） |
