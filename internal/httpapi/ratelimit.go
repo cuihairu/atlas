@@ -238,7 +238,9 @@ func ParseRateLimitRules(raw string) (map[string]RateRule, error) {
 		if hasBurst {
 			burst, err = strconv.Atoi(strings.TrimSpace(burstStr))
 			if err != nil || burst <= 0 {
-				return nil, err
+				// err is nil when the number parses but is not positive —
+				// return a real error, not a silent (nil, nil).
+				return nil, fmt.Errorf("rate limit rule %q: burst must be a positive integer", part)
 			}
 		}
 		rules[prefix] = RateRule{RPS: rps, Burst: burst}
