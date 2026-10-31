@@ -3,6 +3,8 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,5 +169,112 @@ func TestReplayLimitAndEmptyChannel(t *testing.T) {
 	}
 	if rep.Found != 1 || rep.Republished != 1 || rep.Removed != 1 || rep.Failed() {
 		t.Fatalf("second pass = %+v, want the remaining copy replayed", rep)
+	}
+}
+
+func TestReplayReportsUndecodableDeadLetter(t *testing.T) {
+	a := openReplayAdapter(t)
+	ack, err := a.js.Publish(event.DeadLetterTopic(event.TopicCharacters), []byte("not json"))
+	if err != nil {
+		t.Fatalf("publish garbage: %v", err)
+	}
+
+	rep, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if rep.Found != 1 || rep.Republished != 0 || rep.Removed != 0 {
+		t.Fatalf("report = %+v, want found=1 and nothing republished or removed", rep)
+	}
+	if len(rep.Errors) != 1 {
+		t.Fatalf("errors = %v, want exactly one replay error", rep.Errors)
+	} else {
+		re := rep.Errors[0]
+		if re.ID != fmt.Sprintf("%d", ack.Sequence) {
+			t.Errorf("error ID = %q, want stream sequence %d (locate the copy)", re.ID, ack.Sequence)
+		}
+		if re.Err == nil {
+			t.Error("replay error carries nil Err")
+		}
+	}
+}
+
+func TestReplaySubjectMismatchFailsAtSubscribe(t *testing.T) {
+	a := openReplayAdapter(t)
+	// A leftover consumer pinned to the replay durable but filtering a
+	// different subject must fail the replay up front instead of silently
+	// draining nothing.
+	if _, err := a.js.AddConsumer(a.stream, &nats.ConsumerConfig{
+		Durable:       "atlas-dl-replay",
+		FilterSubject: "elsewhere.>",
+		AckPolicy:     nats.AckExplicitPolicy,
+	}); err != nil {
+		t.Fatalf("seed conflicting consumer: %v", err)
+	}
+	t.Cleanup(func() { _ = a.js.DeleteConsumer(a.stream, "atlas-dl-replay") })
+
+	_, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err == nil || !strings.Contains(err.Error(), "nats replay subscribe") {
+		t.Errorf("replay with mismatched filter = %v, want subscribe error", err)
+	}
+}
+
+func TestReplayRepublishFailureReportsAndKeepsCopy(t *testing.T) {
+	srv := startServer(t)
+	conn, err := nats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(conn.Close)
+	js, err := conn.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+	// A stream that covers only the dead-letter subject: the replay can
+	// consume the copy but republishing to the live subject has no
+	// responders — a partial-topology failure that must land in the report
+	// instead of aborting the run.
+	dl := event.DeadLetterTopic(event.TopicCharacters)
+	if _, err := js.AddStream(&nats.StreamConfig{
+		Name: "dl-only", Subjects: []string{dl}, Retention: nats.LimitsPolicy,
+	}); err != nil {
+		t.Fatalf("seed dl-only stream: %v", err)
+	}
+	seed, err := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 11})
+	if err != nil {
+		t.Fatalf("marshal seed: %v", err)
+	}
+	if _, err := js.Publish(dl, seed); err != nil {
+		t.Fatalf("seed copy: %v", err)
+	}
+	a := New(conn, js, Options{Stream: "dl-only", Fetch: 20 * time.Millisecond})
+
+	rep, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if rep.Found != 1 || rep.Republished != 0 || rep.Removed != 0 || len(rep.Errors) != 1 {
+		t.Fatalf("report = %+v, want found=1, republish error, nothing removed", rep)
+	}
+	if !strings.Contains(rep.Errors[0].Err.Error(), "nats publish") {
+		t.Errorf("republish error = %v, want nats publish failure", rep.Errors[0].Err)
+	}
+}
+
+// consumerFailJS fails AddConsumer; the embedded nil interface panics on
+// any other call, pinning the stub to the one path under test.
+type consumerFailJS struct {
+	nats.JetStreamContext
+}
+
+func (consumerFailJS) AddConsumer(string, *nats.ConsumerConfig, ...nats.JSOpt) (*nats.ConsumerInfo, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func TestReplayAddConsumerFailureSurfaces(t *testing.T) {
+	a := New(nil, consumerFailJS{}, Options{Stream: "dl-only"})
+	_, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err == nil || !strings.Contains(err.Error(), "nats replay consumer") {
+		t.Errorf("replay with failing consumer add = %v, want consumer error", err)
 	}
 }

@@ -412,3 +412,212 @@ func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
 		t.Fatalf("dead-letter payload = %s, want the original event", raw.Data)
 	}
 }
+
+func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
+	// An empty URL must fall back to the default NATS address, not the
+	// empty string; with nothing listening there the connect error is the
+	// observable proof the fallback ran.
+	if _, err := Open(Options{}); err == nil ||
+		!strings.Contains(err.Error(), "nats connect") {
+		t.Errorf("Open without URL = %v, want connect failure via default URL", err)
+	}
+}
+
+func TestOpenReconcilesDeadLetterSubjectOntoExistingStream(t *testing.T) {
+	srv := startServer(t)
+
+	// First open with no delivery cap: the stream is created covering only
+	// the live subject.
+	first, err := Open(Options{URL: srv.ClientURL()})
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	dl := event.DeadLetterTopic(event.TopicCharacters)
+	info, err := first.js.StreamInfo(first.stream)
+	if err != nil {
+		t.Fatalf("stream info: %v", err)
+	}
+	if containsString(info.Config.Subjects, dl) {
+		t.Fatalf("fresh stream already covers %s: %v", dl, info.Config.Subjects)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+
+	// A rolling restart onto the delivery cap must extend the existing
+	// stream's subject list — JetStream rejects publishes to uncovered
+	// subjects, so dead-lettering would silently fail without the reconcile.
+	second, err := Open(Options{URL: srv.ClientURL(), MaxDelivery: 2})
+	if err != nil {
+		t.Fatalf("open onto existing stream: %v", err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+	if info, err := second.js.StreamInfo(second.stream); err != nil {
+		t.Fatalf("stream info after reconcile: %v", err)
+	} else if !containsString(info.Config.Subjects, dl) {
+		t.Fatalf("subjects after reconcile = %v, want %s covered", info.Config.Subjects, dl)
+	}
+
+	// A third open onto an already-covered stream must be a no-op success.
+	third, err := Open(Options{URL: srv.ClientURL(), MaxDelivery: 2})
+	if err != nil {
+		t.Fatalf("open onto covered stream: %v", err)
+	}
+	if err := third.Close(); err != nil {
+		t.Fatalf("third close: %v", err)
+	}
+}
+
+func TestDeadLetterCopyFailureKeepsMessageUnacked(t *testing.T) {
+	srv := startServer(t)
+
+	// Create the stream without the dead-letter subject, then attach a
+	// capped adapter through New — bypassing Open's subject reconcile — so
+	// the dead-letter copy must fail against the real server.
+	seed, err := Open(Options{URL: srv.ClientURL()})
+	if err != nil {
+		t.Fatalf("seed open: %v", err)
+	}
+	t.Cleanup(func() { _ = seed.Close() })
+	conn, err := nats.Connect(srv.ClientURL(), nats.Name("atlas-test"))
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(conn.Close)
+	js, err := conn.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+	a := New(conn, js, Options{MaxDelivery: 1, Fetch: 20 * time.Millisecond})
+
+	var calls atomic.Int32
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, _ *event.Event) error {
+		calls.Add(1)
+		return context.DeadlineExceeded
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	if err := a.Publish(context.Background(), &event.Event{Type: event.EventCharacterUpdated, CharacterID: 7}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && calls.Load() == 0 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if calls.Load() == 0 {
+		t.Fatal("handler never called")
+	}
+	// The copy fails, so nothing may sit on the dead-letter subject and the
+	// original must stay unacked for redelivery — the message is never
+	// dropped to make a dead-letter write succeed (adapter.go deadLetter).
+	dlSubject := event.DeadLetterTopic(event.TopicCharacters)
+	if _, err := a.js.GetLastMsg(a.stream, dlSubject); err == nil {
+		t.Fatalf("dead-letter copy stored on uncovered subject %s", dlSubject)
+	}
+	ci, err := a.js.ConsumerInfo(a.stream, a.durable)
+	if err != nil {
+		t.Fatalf("consumer info: %v", err)
+	}
+	if ci.NumAckPending != 1 {
+		t.Fatalf("ack pending = %d, want 1 (failed copy must leave the original)", ci.NumAckPending)
+	}
+}
+
+func TestPublishRejectsUnknownEventType(t *testing.T) {
+	a := openAdapter(t)
+	err := a.Publish(context.Background(), &event.Event{Type: event.EventType("bogus")})
+	if err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Errorf("publish with unknown type = %v, want topic-mapping error", err)
+	}
+}
+
+func TestOpenStreamInfoErrorOnNonJetStreamServer(t *testing.T) {
+	// A plain NATS server: connect works, JetStream context builds lazily,
+	// and the first StreamInfo fails with something other than
+	// "stream not found" — that error must surface, not be mistaken for
+	// "create the stream".
+	srv, err := natsserver.NewServer(&natsserver.Options{Port: -1, StoreDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("nats server: %v", err)
+	}
+	go srv.Start()
+	t.Cleanup(srv.Shutdown)
+	if !srv.ReadyForConnections(5 * time.Second) {
+		t.Fatal("nats server not ready")
+	}
+	if _, err := Open(Options{URL: srv.ClientURL()}); err == nil ||
+		!strings.Contains(err.Error(), "nats stream info") {
+		t.Errorf("Open against non-JetStream server = %v, want stream info error", err)
+	}
+}
+
+func TestOpenAddStreamFailsOnSubjectOverlap(t *testing.T) {
+	srv := startServer(t)
+	conn, err := nats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(conn.Close)
+	js, err := conn.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+	// Another stream already owns the subject: JetStream rejects a second
+	// stream over the same subject, which must surface as an add-stream
+	// error, not a silent half-open adapter.
+	if _, err := js.AddStream(&nats.StreamConfig{
+		Name:      "squatter",
+		Subjects:  []string{event.TopicCharacters},
+		Retention: nats.LimitsPolicy,
+	}); err != nil {
+		t.Fatalf("seed squatter stream: %v", err)
+	}
+	if _, err := Open(Options{URL: srv.ClientURL()}); err == nil ||
+		!strings.Contains(err.Error(), "nats add stream") {
+		t.Errorf("Open with subject overlap = %v, want add stream error", err)
+	}
+}
+
+func TestOpenUpdateStreamFailsWhenDeadLetterSubjectOwnedElsewhere(t *testing.T) {
+	srv := startServer(t)
+	conn, err := nats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(conn.Close)
+	js, err := conn.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream: %v", err)
+	}
+	dl := event.DeadLetterTopic(event.TopicCharacters)
+	if _, err := js.AddStream(&nats.StreamConfig{
+		Name:      "dl-owner",
+		Subjects:  []string{dl},
+		Retention: nats.LimitsPolicy,
+	}); err != nil {
+		t.Fatalf("seed dl owner stream: %v", err)
+	}
+	// The live stream exists without the dead-letter subject; reconciling
+	// it must fail because another stream already owns that subject.
+	if _, err := js.AddStream(&nats.StreamConfig{
+		Name:      DefaultStream,
+		Subjects:  []string{event.TopicCharacters},
+		Retention: nats.LimitsPolicy,
+	}); err != nil {
+		t.Fatalf("seed live stream: %v", err)
+	}
+	if _, err := Open(Options{URL: srv.ClientURL(), MaxDelivery: 2}); err == nil ||
+		!strings.Contains(err.Error(), "nats update stream for dead letter") {
+		t.Errorf("Open with owned dl subject = %v, want update stream error", err)
+	}
+}
+
+func TestDeadLetterAckFailureIsLoggedNotPanic(t *testing.T) {
+	a := openReplayAdapter(t)
+	// A copied message whose ack then fails must be logged and swallowed —
+	// the copy already succeeded, so the delivery chain still ends.
+	a.attempts.Reset("0")
+	msg := &nats.Msg{Subject: event.TopicCharacters, Data: []byte(`{}`)}
+	a.deadLetter(msg, 1, 1)
+}
