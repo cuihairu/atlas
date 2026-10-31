@@ -103,6 +103,7 @@ func TestLoadErrors(t *testing.T) {
 		{"duplicate id", `{"servers": [{"server_id": "dup", "region": "r", "endpoint": {"host": "h", "port": 1}}, {"server_id": "dup", "region": "r", "endpoint": {"host": "h", "port": 1}}]}`, "", `duplicates`},
 		{"invalid entry", `{"servers": [{"server_id": "s", "region": "r", "endpoint": {"host": "h", "port": 99999}}]}`, "", `port`},
 		{"missing region", `{"servers": [{"server_id": "s", "endpoint": {"host": "h", "port": 1}}]}`, "", `region`},
+		{"invalid selected profile", `{"profiles": {"default": {"servers": [{"server_id": "s", "region": "r", "endpoint": {"host": "h", "port": 99999}}]}}}`, "", `port`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -274,5 +275,41 @@ func TestApplyErrors(t *testing.T) {
 				t.Errorf("err = %v, want containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// TestApplyUpdateAndReleaseFailures pins the two RegisterServer write wraps
+// past the create path: refreshing an existing declared server, and
+// releasing a config-owned server that is no longer declared.
+func TestApplyUpdateAndReleaseFailures(t *testing.T) {
+	ctx := context.Background()
+
+	// Update: the declared server exists, so the refresh write runs and fails.
+	mem := memory.New()
+	if err := mem.RegisterServer(ctx, &model.Server{
+		ID: "s1", Name: "s1", Type: "game", Region: "cn", Version: "1.0.0",
+		Platform: "android", Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity: 100, Status: model.StatusOnline,
+	}); err != nil {
+		t.Fatalf("seed s1: %v", err)
+	}
+	upd := &failingStore{ServerStore: mem, failReg: true}
+	if _, err := Apply(ctx, upd, &Profile{Servers: []Server{{ID: "s1", Region: "cn", Endpoint: Endpoint{Host: "h", Port: 1}}}}); err == nil || !strings.Contains(err.Error(), "update s1") {
+		t.Fatalf("update failure = %v, want the update s1 wrap", err)
+	}
+
+	// Release: a config-owned server disappears from the declaration; the
+	// release write (marker flip) fails.
+	mem2 := memory.New()
+	if err := mem2.RegisterServer(ctx, &model.Server{
+		ID: "legacy", Name: "legacy", Type: "game", Region: "cn", Version: "1.0.0",
+		Platform: "android", Endpoint: model.Endpoint{Host: "10.0.0.2", Port: 30001},
+		Capacity: 100, Status: model.StatusOnline, Source: "config",
+	}); err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+	rel := &failingStore{ServerStore: mem2, failReg: true}
+	if _, err := Apply(ctx, rel, &Profile{}); err == nil || !strings.Contains(err.Error(), "release legacy") {
+		t.Fatalf("release failure = %v, want the release legacy wrap", err)
 	}
 }
