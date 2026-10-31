@@ -13,7 +13,7 @@
 - [x] internal/store/mysql 84.9%→95.4%（86 条→?）：canceled-ctx 全动词 sweep + 纯函数（jsonPathKey/conflictIfExists/joinStrings）+ 损坏 tags 行 + limit clamp + schema drift + Ping/Close 生命周期 — commit 00ab686（残留为 JSON 列解码头：MySQL JSON 列写时即校验、TEXT 已覆盖；内存运行时接口不在本实现）
 - [x] internal/audit 85.3%→94.3%（31 条→12 条）：sink 错误分支（写后关/死池 ping/受限角色 DDL/Retain 关池）+ mask 标量与 null/对象值/解析失败 + queue size 回退/nil logger/Drain 停 sweep — commit 7d9cf11（残留 12 条为防御分支：Entry.Marshal 不可错、fsync 不可错、json.Valid 前置的 copy 错误分支、type-switch 不可达 default、1h 定时器分支）
 - [x] internal/store/postgres 85.6%→96.5%（82 条→20 条）：canceled-ctx 全动词 sweep + Patch 全臂/空 patch/零行 ErrNotFound + limit clamp + 单行 missing ErrNotFound + splitCursor/joinStrings + GetStats schema drift 双形态 + runtime 合并失败 — commit 5617785（残留 20 条为防御分支：JSONB 列解码头（写时校验不可达）、rows.Err 迭代、marshal 不可错、List 循环 scan 错需表结构漂移）
-- [ ] internal/health 86.4%（27 条）
+- [x] internal/health 86.4%→99.0%（27 条→2 条）：sweep 韧性（ListServers 失败 fail-fast / Run 记日志续跑 / 分页续页）+ CAS 转移失败四形态（starting 无心跳/慢心跳/suspect 死/恢复）+ expireTemporary 边界（ttl<=0 / notfound / delete 失败 / runtime 失败）+ 维护窗口失败三形态（退出恢复/过期删除/进入）+ alerter 空接收者与 webhook 三形态（载荷/坏 URL/非 2xx） — commit a8db040（残留 2 条为防御分支：webhook json.Marshal 结构体不可错）
 - [ ] internal/store/redisstore 87.1%（9 条）：Ping 0%；internal/event/redis 87.1%（18 条）
 - [ ] internal/registry 88.5%（9 条）
 - [ ] internal/event/kafka 88.9%（13 条）：readDL 0%
