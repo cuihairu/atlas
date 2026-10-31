@@ -88,6 +88,9 @@ func TestValidateCrossServerSpec(t *testing.T) {
 		{"duplicate group id", func(s *CrossServerSpec) {
 			s.Groups = append(s.Groups, CrossServerGroup{ID: "g1"})
 		}},
+		{"empty server id in group", func(s *CrossServerSpec) {
+			s.Groups[0].Servers = []string{"game-1", ""}
+		}},
 		{"empty server id in match domain", func(s *CrossServerSpec) {
 			s.MatchDomains[0].Servers = []string{"game-1", ""}
 		}},
@@ -105,6 +108,9 @@ func TestValidateCrossServerSpec(t *testing.T) {
 			s.Topology.Clusters = append(s.Topology.Clusters, CrossServerCluster{ID: "c2", Servers: []string{"game-1"}})
 		}},
 		{"bad feature key", func(s *CrossServerSpec) { s.Features["Cross Battle!"] = true }},
+		// Underscore/dash are legal in the charset but not as the first
+		// character — keys stay matchable against [a-z0-9] prefixes.
+		{"feature key starts with punctuation", func(s *CrossServerSpec) { s.Features["_lead"] = true }},
 		{"feature key too long", func(s *CrossServerSpec) {
 			s.Features["a"+string(make([]byte, 64))] = true
 		}},
