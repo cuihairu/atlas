@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Layout as AntLayout, Menu, Button, Tooltip, theme } from 'antd';
+import { Layout as AntLayout, Menu, Button, Tooltip, theme, Grid } from 'antd';
 import {
   DashboardOutlined,
   CloudServerOutlined,
@@ -30,6 +30,9 @@ export default function AppLayout() {
   const lang = useLang();
   const mode = useTheme();
   const account = getAdminAccount();
+  const screens = Grid.useBreakpoint();
+  // 窄屏收紧内容内边距（antd useBreakpoint 首帧为空对象 → 按桌面 24 处理，避免闪烁）
+  const contentPad = screens.md === false ? 12 : 24;
   const {
     token: { colorBgContainer, colorBorder, borderRadiusLG },
   } = theme.useToken();
@@ -59,6 +62,8 @@ export default function AppLayout() {
         collapsible
         collapsed={collapsed}
         onCollapse={setCollapsed}
+        breakpoint="lg"
+        collapsedWidth={80}
         theme={mode === 'dark' ? 'dark' : 'light'}
         style={{ background: mode === 'dark' ? '#141414' : colorBgContainer, borderBottom: `1px solid ${colorBorder}` }}
       >
@@ -141,8 +146,8 @@ export default function AppLayout() {
         </Header>
         <Content
           style={{
-            margin: 24,
-            padding: 24,
+            margin: contentPad,
+            padding: contentPad,
             background: colorBgContainer,
             borderRadius: borderRadiusLG,
             minHeight: 360,
