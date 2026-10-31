@@ -7,11 +7,11 @@
 
 ## 覆盖率 98%（用户 2026-10-31 令；按包覆盖率从低到高推进，禁死代码凑数，只补核心业务路径含错误分支）
 
-- [ ] internal/store/storetest 64.8%（281 条未覆盖）：weight 59.3% / RunRuntime 58.3% / statusCAS 57.7% 等契约路径
+- [ ] internal/store/storetest 64.8%（281 条未覆盖）：**测试支撑包，已定从门禁口径剔除**（53/60 抽样未覆盖行是 t.Fatalf 失败分支，诚实覆盖即测试失败；与 codecov 剔除 cmd/** 同理），最终门禁 commit 一并落地
 - [x] internal/event/nats 73.1%→91.8% — commit b2581a7；internal/event/rabbitmq 80.6%→92.3% — commit a4d5c3d
 - [x] internal/httpapi 83.6%→97.3%（200 条→33 条）：failingStore 全路由 5xx sweep + bad-JSON 400 sweep + 查询参数/404/异步 202/telemetry+bus 面板/RegistryAuth 白名单 — commit 1df9d4c（残留 33 条为防御分支：rand 失败、batch 顶层 500、MaxBody getter 等）
-- [ ] internal/store/mysql 84.9%（86 条）：scanShard 等 + Ping/Close 0%
-- [ ] internal/audit 85.3%（31 条）：sink/retention 错误分支
+- [x] internal/store/mysql 84.9%→95.4%（86 条→?）：canceled-ctx 全动词 sweep + 纯函数（jsonPathKey/conflictIfExists/joinStrings）+ 损坏 tags 行 + limit clamp + schema drift + Ping/Close 生命周期 — commit 00ab686（残留为 JSON 列解码头：MySQL JSON 列写时即校验、TEXT 已覆盖；内存运行时接口不在本实现）
+- [x] internal/audit 85.3%→94.3%（31 条→12 条）：sink 错误分支（写后关/死池 ping/受限角色 DDL/Retain 关池）+ mask 标量与 null/对象值/解析失败 + queue size 回退/nil logger/Drain 停 sweep — commit 7d9cf11（残留 12 条为防御分支：Entry.Marshal 不可错、fsync 不可错、json.Valid 前置的 copy 错误分支、type-switch 不可达 default、1h 定时器分支）
 - [ ] internal/store/postgres 85.6%（82 条）：scanShard 50.0% + Ping/Close 0%
 - [ ] internal/health 86.4%（27 条）
 - [ ] internal/store/redisstore 87.1%（9 条）：Ping 0%；internal/event/redis 87.1%（18 条）
