@@ -51,6 +51,15 @@ func TestPublishWithoutSubscriber(t *testing.T) {
 	}
 }
 
+func TestPublishUnknownEventType(t *testing.T) {
+	a := New()
+	// An unroutable type fails before the subscriber lookup — it names no
+	// topic the transport could deliver to.
+	if err := a.Publish(context.Background(), &event.Event{Type: event.EventType("totally_bogus")}); err == nil {
+		t.Fatal("publish with unroutable type: expected error, got nil")
+	}
+}
+
 func TestAckAndCloseAreNoop(t *testing.T) {
 	a := New()
 	ctx := context.Background()
