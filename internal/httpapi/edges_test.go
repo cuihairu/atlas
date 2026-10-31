@@ -33,6 +33,26 @@ func TestRateLimit_ParseRulesSkipsEmptyParts(t *testing.T) {
 			t.Errorf("ParseRateLimitRules(%q) accepted a negative rps", bad)
 		}
 	}
+	// strconv.ParseFloat accepts NaN and Inf with err=nil, and NaN compares
+	// false for rps < 0 — so those values bypass the negative guard and
+	// int(math.Max(1, rps)) overflows to the int64 minimum, producing a
+	// pathological rule. Each must be rejected with a real error.
+	for _, tc := range []struct {
+		name string
+		spec string
+	}{
+		{"NaN", "/a=NaN"},
+		{"+Inf", "/a=+Inf"},
+		{"-Inf", "/a=-Inf"},
+		{"overflow", "/a=1e300"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseRateLimitRules(tc.spec)
+			if err == nil {
+				t.Errorf("ParseRateLimitRules(%q) accepted a non-finite or overflow rps", tc.spec)
+			}
+		})
+	}
 }
 
 func TestRateLimit_StatsCountRejections(t *testing.T) {

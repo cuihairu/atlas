@@ -231,15 +231,23 @@ func ParseRateLimitRules(raw string) (map[string]RateRule, error) {
 		}
 		rpsStr, burstStr, hasBurst := strings.Cut(spec, ":")
 		rps, err := strconv.ParseFloat(strings.TrimSpace(rpsStr), 64)
-		if err != nil || rps < 0 {
-			// err is nil when the number parses but is negative — return a
-			// real error, not a silent (nil, nil) that the caller treats as
-			// success (a negative RPS would otherwise silently disable the
-			// rule, since allow() lets rule.RPS <= 0 through unthrottled).
+		if err != nil || rps < 0 || math.IsNaN(rps) || math.IsInf(rps, 0) {
+			// err is nil when the number parses but is negative, NaN, or
+			// infinite — return a real error, not a silent (nil, nil) that
+			// the caller treats as success (a negative RPS would otherwise
+			// silently disable the rule since allow() lets rule.RPS <= 0
+			// through unthrottled, and a NaN/Inf RPS slips past the rps < 0
+			// check because NaN compares false and Inf is positive).
 			if err != nil {
 				return nil, err
 			}
-			return nil, fmt.Errorf("rate limit rule %q: rps must be a non-negative number", part)
+			return nil, fmt.Errorf("rate limit rule %q: rps must be a non-negative finite number", part)
+		}
+		// Guard the burst conversion: a finite RPS at or above the float64
+		// rounding of MaxInt64 overflows int(math.Max(1, rps)) to a negative
+		// burst, silently producing a broken rule.
+		if rps >= float64(math.MaxInt64) {
+			return nil, fmt.Errorf("rate limit rule %q: rps is too large", part)
 		}
 		burst := int(math.Max(1, rps))
 		if hasBurst {
