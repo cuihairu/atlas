@@ -1,4 +1,5 @@
-import { message } from 'antd';
+import { message as staticMessage } from 'antd';
+import { getAppMessage } from './messageBus';
 import { t } from '../i18n';
 import type {
   Server,
@@ -109,7 +110,10 @@ async function request<T>(path: string, init?: RequestInit, base = API_BASE): Pr
     return (await res.json()) as T;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    message.error(`${t('requestFailed')}: ${msg}`);
+    // 优先用 App 上下文实例（感知主题）；挂载前（MessageBridge 未就绪）退回静态兜底
+    const apiMessage = getAppMessage();
+    if (apiMessage) apiMessage.error(`${t('requestFailed')}: ${msg}`);
+    else staticMessage.error(`${t('requestFailed')}: ${msg}`);
     throw err;
   }
 }

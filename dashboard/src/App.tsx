@@ -15,6 +15,7 @@ import PlayerDiagnose from './pages/PlayerDiagnose';
 import SystemConfig from './pages/SystemConfig';
 import AuditLog from './pages/AuditLog';
 import { probeAdmin } from './api/client';
+import { setAppMessage } from './api/messageBus';
 import { useLang, antdLocale, t } from './i18n';
 import { useTheme } from './theme';
 
@@ -35,6 +36,17 @@ function RequireAuth() {
   }
   if (verdict === 'login') return <Navigate to="/login" replace />;
   return <Outlet />;
+}
+
+// 把 App.useApp() 的 message 实例经 holder 注入，供非组件模块（api/client.ts）
+// 使用；消除 antd 静态 message 不感知主题上下文的告警与深色档样式错位。
+function MessageBridge() {
+  const { message } = AntApp.useApp();
+  useEffect(() => {
+    setAppMessage(message);
+    return () => setAppMessage(null);
+  }, [message]);
+  return null;
 }
 
 // 未匹配路由兜底：不再静默渲染空白内容区（曾出现在 demo 站的 /heatmap 直接访问）。
@@ -71,6 +83,7 @@ export default function App() {
       key={lang}
     >
       <AntApp>
+        <MessageBridge />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />

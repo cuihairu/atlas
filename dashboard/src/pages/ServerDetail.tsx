@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Descriptions, Card, Table, Button, Space, Progress, Spin, message, Popconfirm,
-  Select, Input, Switch, Tooltip, Tag, Result, InputNumber, Slider,
+  Descriptions, Card, Table, Button, Space, Progress, Spin, Popconfirm,
+  Select, Input, Switch, Tooltip, Tag, Result, InputNumber, Slider, App,
 } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons';
 import StatusTag from '../components/StatusTag';
@@ -38,6 +38,7 @@ const PRESETS: { code: string; label: string; tier: TagTier }[] = [
 ];
 
 export default function ServerDetail() {
+  const { message } = App.useApp();
   useLang(); // re-render on language switch
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();

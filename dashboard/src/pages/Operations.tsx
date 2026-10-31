@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Form, Input, Select, Switch, Space, Tag,
-  message, Popconfirm, DatePicker, InputNumber, Typography,
+  Popconfirm, DatePicker, InputNumber, Typography, App,
 } from 'antd';
 import { PlusOutlined, NotificationOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -28,6 +28,7 @@ function fmtTime(v?: string | null): string {
 }
 
 export default function Operations() {
+  const { message } = App.useApp();
   useLang();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [windows, setWindows] = useState<MaintenanceWindow[]>([]);

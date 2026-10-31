@@ -3,7 +3,7 @@
 // each row expands to a Steps timeline showing created → migrating → done.
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Table, Button, Modal, Form, Input, Space, Tag, Badge, Steps, message, Popconfirm, Alert,
+  Table, Button, Modal, Form, Input, Space, Tag, Badge, Steps, Popconfirm, Alert, App,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useLang, t } from '../i18n';
@@ -48,6 +48,7 @@ function progressOf(status: string): { current: number; stepStatus: 'wait' | 'pr
 const isActive = (m: Migration) => m.status === 'pending' || m.status === 'running';
 
 export default function Migrations() {
+  const { message } = App.useApp();
   useLang(); // re-render on language switch
   const [migrations, setMigrations] = useState<Migration[]>([]);
   const [loading, setLoading] = useState(true);

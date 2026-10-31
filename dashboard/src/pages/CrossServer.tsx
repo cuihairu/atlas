@@ -6,7 +6,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Space, Tag, Input, Switch, Select, Modal, Form,
-  message, Popconfirm, Descriptions, Typography, Alert,
+  Popconfirm, Descriptions, Typography, Alert, App,
 } from 'antd';
 import {
   PlusOutlined, ClusterOutlined, AppstoreOutlined, PartitionOutlined,
@@ -113,6 +113,7 @@ const SEVEN_TYPES: {
 ];
 
 export default function CrossServer() {
+  const { message } = App.useApp();
   useLang();
   const [spec, setSpec] = useState<CrossServerSpec>(emptySpec());
   const [meta, setMeta] = useState<{ version: number; hash: string; updated_at?: string } | null>(null);

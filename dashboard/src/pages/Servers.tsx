@@ -4,7 +4,7 @@
 // URL query（可分享链接）。数据走 /v1/admin/servers：比公网发现口多
 // 最近心跳 / 元数据等管理面字段（item 9）。
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Table, Button, Space, Select, Input, Progress, message, Popconfirm, Card, Typography } from 'antd';
+import { Table, Button, Space, Select, Input, Progress, Popconfirm, Card, Typography, App } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import StatusTag from '../components/StatusTag';
 import TagBadge from '../components/TagBadge';
@@ -59,6 +59,7 @@ function paramsFromFilters(f: Filters): URLSearchParams {
 }
 
 export default function Servers() {
+  const { message } = App.useApp();
   useLang(); // re-render on language switch
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
