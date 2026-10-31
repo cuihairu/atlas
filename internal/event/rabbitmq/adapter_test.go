@@ -20,13 +20,13 @@ import (
 // controllable delivery stream — enough to exercise the adapter's logic
 // against an in-memory stand-in for *amqp091.Channel.
 type fakeChannel struct {
-	mu        sync.Mutex
-	declared  []string // exchange/queue declare names in call order
-	boundKey  string
-	qos       int
-	published []amqp.Publishing
+	mu          sync.Mutex
+	declared    []string // exchange/queue declare names in call order
+	boundKey    string
+	qos         int
+	published   []amqp.Publishing
 	publishKeys []string
-	publishID string
+	publishID   string
 
 	deliveries  chan amqp.Delivery
 	acked       []uint64
@@ -35,13 +35,16 @@ type fakeChannel struct {
 	closed      bool
 
 	// injectable failures for the declare/bind/qos/consume/publish/ack
-	// error paths
-	errQueueDeclare error
-	errBind         error
-	errQos          error
-	errConsume      error
-	errPublish      error
-	errAck          error
+	// error paths; the queue-named pair fails only that queue, so a test
+	// can break the dead-letter topology without breaking the main one
+	failDeclareQueue string
+	failBindQueue    string
+	errQueueDeclare  error
+	errBind          error
+	errQos           error
+	errConsume       error
+	errPublish       error
+	errAck           error
 }
 
 func newFakeChannel() *fakeChannel {
@@ -59,6 +62,9 @@ func (c *fakeChannel) QueueDeclare(name string, _, _, _, _ bool, _ amqp.Table) (
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.declared = append(c.declared, "queue:"+name)
+	if c.failDeclareQueue == name {
+		return amqp.Queue{}, errors.New("declare failed: " + name)
+	}
 	if c.errQueueDeclare != nil {
 		return amqp.Queue{}, c.errQueueDeclare
 	}
@@ -70,6 +76,9 @@ func (c *fakeChannel) QueueBind(queue, key, _ string, _ bool, _ amqp.Table) erro
 	defer c.mu.Unlock()
 	c.boundKey = key
 	c.declared = append(c.declared, "bind:"+queue)
+	if c.failBindQueue == queue {
+		return errors.New("bind failed: " + queue)
+	}
 	if c.errBind != nil {
 		return c.errBind
 	}
@@ -505,5 +514,70 @@ func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
 	}
 	if body != string(payload) {
 		t.Fatalf("dead-letter body = %s, want the original %s", body, payload)
+	}
+}
+
+func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
+	// An empty URL must fall back to the broker's default address; with
+	// nothing listening there the dial error proves the fallback ran.
+	if _, err := Open(Options{}); err == nil ||
+		!strings.Contains(err.Error(), "amqp dial") {
+		t.Errorf("Open without URL = %v, want dial failure via default URL", err)
+	}
+}
+
+func TestSubscribeDeadLetterTopologyFailures(t *testing.T) {
+	// The dead-letter queue and its binding are part of the capped
+	// subscription: either failing to declare must stop Subscribe up front
+	// instead of leaving a cap that cannot copy.
+	t.Run("declare", func(t *testing.T) {
+		a, ch := newTestAdapter(t)
+		a.maxDelivery = 1
+		ch.failDeclareQueue = event.DeadLetterTopic(event.TopicCharacters)
+		if err := a.Subscribe(context.Background(), event.TopicCharacters, func(context.Context, *event.Event) error { return nil }); err == nil ||
+			!strings.Contains(err.Error(), "declare dead-letter queue") {
+			t.Errorf("subscribe with failing dl declare = %v, want dl declare error", err)
+		}
+	})
+
+	t.Run("bind", func(t *testing.T) {
+		a, ch := newTestAdapter(t)
+		a.maxDelivery = 1
+		ch.failBindQueue = event.DeadLetterTopic(event.TopicCharacters)
+		if err := a.Subscribe(context.Background(), event.TopicCharacters, func(context.Context, *event.Event) error { return nil }); err == nil ||
+			!strings.Contains(err.Error(), "bind dead-letter queue") {
+			t.Errorf("subscribe with failing dl bind = %v, want dl bind error", err)
+		}
+	})
+}
+
+func TestDeliveryCapDeadLetterCopyFailureRequeues(t *testing.T) {
+	a, ch := newTestAdapter(t)
+	a.maxDelivery = 1
+	if err := a.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, _ *event.Event) error {
+		return errors.New("apply failed")
+	}); err != nil {
+		t.Fatalf("subscribe: %v", err)
+	}
+	// The copy to the dead-letter queue fails: the delivery must be nacked
+	// back onto the original queue (retried next redelivery), never acked
+	// away while the copy is lost.
+	ch.errPublish = errors.New("unroutable")
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 8})
+	ch.deliveries <- amqp.Delivery{MessageId: "m1", Type: string(event.EventCharacterUpdated), Body: payload}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, acked, nacked := ch.stats(); acked == 0 && nacked >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	_, acked, nacked := ch.stats()
+	if acked != 0 {
+		t.Fatalf("acked = %d, want 0 (a failed copy must never ack the original)", acked)
+	}
+	if nacked < 1 {
+		t.Fatalf("nacked = %d, want >=1 (original requeued for another copy attempt)", nacked)
 	}
 }

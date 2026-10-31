@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -165,3 +166,84 @@ func TestReplayAckFailureCountsAsError(t *testing.T) {
 }
 
 var errReplayAck = errors.New("amqp ack failed")
+
+func TestReplaySetupFailures(t *testing.T) {
+	cases := []struct {
+		name   string
+		inject func(*fakeChannel) func()
+		want   string
+	}{
+		{"declare", func(c *fakeChannel) func() { c.errQueueDeclare = errors.New("boom"); return func() {} }, "replay declare queue"},
+		{"bind", func(c *fakeChannel) func() { c.errBind = errors.New("boom"); return func() {} }, "replay bind queue"},
+		{"consume", func(c *fakeChannel) func() { c.errConsume = errors.New("boom"); return func() {} }, "replay consume"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a, ch := newTestAdapter(t)
+			restore := tc.inject(ch)
+			defer restore()
+			_, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("replay setup failure (%s) = %v, want %q", tc.name, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestReplayContextCancelReturnsReport(t *testing.T) {
+	a, _ := newTestAdapter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rep, err := a.ReplayDeadLetters(ctx, event.TopicCharacters, event.ReplayOptions{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+	if rep.Found != 0 {
+		t.Errorf("found = %d, want 0", rep.Found)
+	}
+}
+
+func TestReplayClosedChannelEndsDrain(t *testing.T) {
+	a, ch := newTestAdapter(t)
+	close(ch.deliveries)
+	rep, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if rep.Found != 0 {
+		t.Errorf("found = %d, want 0", rep.Found)
+	}
+}
+
+func TestReplayDryRunRequeueFailureStops(t *testing.T) {
+	a, ch := newTestAdapter(t)
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 5})
+	ch.deliveries <- amqp.Delivery{DeliveryTag: 1, MessageId: "m1", Body: payload}
+	ch.errAck = errors.New("ack refused")
+
+	rep, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if rep.Found != 1 || len(rep.Errors) != 1 || !strings.Contains(rep.Errors[0].Err.Error(), "dry-run ack") {
+		t.Fatalf("report = %+v, want one dry-run ack error", rep)
+	}
+}
+
+func TestReplayRepublishFailureAcksAndContinues(t *testing.T) {
+	a, ch := newTestAdapter(t)
+	payload, _ := json.Marshal(&event.Event{Type: event.EventCharacterUpdated, CharacterID: 6})
+	ch.deliveries <- amqp.Delivery{DeliveryTag: 2, MessageId: "m2", Body: payload}
+	ch.errPublish = errors.New("unroutable")
+
+	rep, err := a.ReplayDeadLetters(context.Background(), event.TopicCharacters, event.ReplayOptions{})
+	if err != nil {
+		t.Fatalf("replay: %v", err)
+	}
+	if rep.Found != 1 || rep.Republished != 0 || rep.Removed != 0 || len(rep.Errors) != 1 {
+		t.Fatalf("report = %+v, want republish failure recorded and acked", rep)
+	}
+	if _, acked, _ := ch.stats(); acked != 1 {
+		t.Fatalf("acked = %d, want 1 (failed copy acked out, not redelivered)", acked)
+	}
+}
