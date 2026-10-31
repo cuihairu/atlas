@@ -16,7 +16,7 @@
 - [x] internal/health 86.4%→99.0%（27 条→2 条）：sweep 韧性（ListServers 失败 fail-fast / Run 记日志续跑 / 分页续页）+ CAS 转移失败四形态（starting 无心跳/慢心跳/suspect 死/恢复）+ expireTemporary 边界（ttl<=0 / notfound / delete 失败 / runtime 失败）+ 维护窗口失败三形态（退出恢复/过期删除/进入）+ alerter 空接收者与 webhook 三形态（载荷/坏 URL/非 2xx） — commit a8db040（残留 2 条为防御分支：webhook json.Marshal 结构体不可错）
 - [x] internal/store/redisstore 87.1%→98.6%（9 条→1 条）：Ping/心跳/单读/批读/删除 canceled-ctx sweep + ListRuntimes 三分支（HGetAll 错 fail-hard / SCAN-HGETALL 过期窗口跳过 / SCAN 错）——后两者经 ghost-HGetAll 客户端注入（真后端只能靠 TTL 竞态） — commit fa17b92（残留 1 条为防御分支：GetRuntimes 单键 Result 错——pipeline Exec 先行返回任何命令错，该 continue 不可达）；internal/event/redis 87.1%→97.9%（18 条→3 条）：死信复制三失败（源读死/源被裁剪/镜像写失败——wrapper 客户端逐方法注入）+ 毒载荷丢弃 + ack 失败日志 + replay 读死/重发布失败（不可路由 type）/删除失败留底 + miniredis XPENDING 计数器不认 XCLAIM 移交消费者（用 XPENDING EXTENDED 断言） — commit a851435（残留 3 条为防御分支：Event 结构体 marshal 不可错、consume 的 ctx.Err 案在 Canceled 案之后不可达、流条目零字段不可能（XADD 至少一字段））
 - [x] internal/registry 88.5%→100%（9 条→0 条）：CheckRegistration/Register/Heartbeat/Unregister 全 store 动词失败 wrap（fault 包装逐方法注入）+ 初始心跳失败 warn-but-succeed + 注销运行时清理失败 warn-but-succeed + config 托管 suspect 重入 promote 失败 — commit cf8e519（无残留）
-- [ ] internal/event/kafka 88.9%（13 条）：readDL 0%
+- [x] internal/event/kafka 88.9%→99.1%（13 条→1 条）：零 Options 走默认 brokers 的 Open + newDLReader 闭包真建 readDL（kafka-go 懒拨号，无需 broker）+ 停机期泛化 fetch 错误静默退出（entered 信号同步后才 cancel，免调度竞态）+ 死信写失败留 offset 不提交 + replay 四失败（canceled ctx 透传 / 死信读错 wrap / 重发布失败留底 / commit 失败不计 removal） — commit ad370be（残留 1 条为防御分支：Publish 的 Event 结构体 json.Marshal 不可错）
 - [ ] internal/grpc 89.9%（37 条）
 - [ ] internal/admin 90.0%（20 条）
 - [ ] internal/crossserver 91.7%（23 条）
