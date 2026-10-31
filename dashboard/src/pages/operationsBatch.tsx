@@ -106,6 +106,7 @@ export function BatchOutcome({
         />
       )}
       <Table
+        scroll={{ x: 'max-content' }}
         rowKey="key"
         size="small"
         dataSource={rows}

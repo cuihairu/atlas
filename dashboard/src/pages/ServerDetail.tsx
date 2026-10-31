@@ -416,6 +416,7 @@ export default function ServerDetail() {
 
       <Card title={`${t('characterList')} (${characters.length})`}>
         <Table
+          scroll={{ x: 'max-content' }}
           dataSource={characters}
           rowKey="character_id"
           size="small"

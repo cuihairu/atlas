@@ -146,6 +146,7 @@ export default function AuditLog() {
           />
         ) : (
           <Table
+            scroll={{ x: 'max-content' }}
             rowKey={(row) => `${row.time}-${row.method}-${row.path}-${row.status}`}
             size="small"
             loading={loading}

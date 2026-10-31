@@ -165,6 +165,7 @@ export default function PlayerDiagnose() {
 
           <Card title={t('candidateVerdicts')} size="small">
             <Table
+              scroll={{ x: 'max-content' }}
               rowKey={(row) => row.server?.id ?? String(row.rank)}
               size="small"
               columns={verdictColumns}
@@ -195,6 +196,7 @@ export default function PlayerDiagnose() {
 
           <Card title={`${t('accountCharacters')} (${characters.length})`} size="small">
             <Table
+              scroll={{ x: 'max-content' }}
               rowKey="character_id"
               size="small"
               dataSource={characters}

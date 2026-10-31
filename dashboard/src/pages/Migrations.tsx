@@ -130,6 +130,7 @@ export default function Migrations() {
       </Space>
 
       <Table
+        scroll={{ x: 'max-content' }}
         dataSource={migrations}
         rowKey="id"
         loading={loading}

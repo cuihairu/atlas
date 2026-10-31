@@ -96,6 +96,7 @@ export default function Characters() {
 
       {characters.length > 0 && (
         <Table
+          scroll={{ x: 'max-content' }}
           dataSource={characters}
           rowKey="character_id"
           loading={loading}

@@ -223,6 +223,7 @@ export default function Operations() {
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => setAnnModal(true)}>{t('annCreate')}</Button>}
       >
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id"
           size="small"
           loading={loading}
@@ -243,6 +244,7 @@ export default function Operations() {
         }
       >
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id"
           size="small"
           loading={loading}

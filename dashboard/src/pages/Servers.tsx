@@ -229,6 +229,7 @@ export default function Servers() {
       </Card>
 
       <Table
+        scroll={{ x: 'max-content' }}
         dataSource={servers}
         rowKey="id"
         loading={loading}

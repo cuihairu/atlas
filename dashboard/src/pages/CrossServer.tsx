@@ -552,6 +552,7 @@ export default function CrossServer() {
         extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>{t('csSevenTypesTip')}</Typography.Text>}
       >
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id" size="small" columns={sevenTypeColumns}
           dataSource={SEVEN_TYPES} pagination={false}
         />
@@ -585,6 +586,7 @@ export default function CrossServer() {
           {t('csTopologyBaselineTip')}
         </Typography.Paragraph>
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id" size="small" columns={clusterColumns}
           dataSource={spec.topology.clusters} pagination={false}
           locale={{ emptyText: t('noData') }}
@@ -599,6 +601,7 @@ export default function CrossServer() {
           {t('csGroupsConstrainedTip')}
         </Typography.Paragraph>
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id" size="small" columns={groupColumns}
           dataSource={spec.groups} pagination={false}
           locale={{ emptyText: t('noData') }}
@@ -639,6 +642,7 @@ export default function CrossServer() {
         extra={<Button icon={<PlusOutlined />} onClick={() => editDomain()}>{t('csAddDomain')}</Button>}
       >
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id" size="small" columns={domainColumns}
           dataSource={spec.match_domains} pagination={false}
           locale={{ emptyText: t('noData') }}
@@ -657,6 +661,7 @@ export default function CrossServer() {
           description={t('csTypeFleetWideTip')}
         />
         <Table
+          scroll={{ x: 'max-content' }}
           rowKey="id" size="small" columns={typeColumns}
           dataSource={spec.crossplay_types} pagination={false}
           locale={{ emptyText: t('noData') }}

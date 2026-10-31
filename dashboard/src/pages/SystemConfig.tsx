@@ -60,6 +60,7 @@ export default function SystemConfig() {
               </Descriptions>
             )}
             <Table<RateLimitRuleView>
+              scroll={{ x: 'max-content' }}
               rowKey="prefix"
               size="small"
               columns={ruleColumns}
@@ -78,6 +79,7 @@ export default function SystemConfig() {
               {t('byEndpoint')}
             </Typography.Text>
             <Table
+              scroll={{ x: 'max-content' }}
               rowKey={(r) => r[0]}
               size="small"
               pagination={false}
@@ -102,6 +104,7 @@ export default function SystemConfig() {
               {t('byClient')}
             </Typography.Text>
             <Table
+              scroll={{ x: 'max-content' }}
               rowKey={(r) => r[0]}
               size="small"
               pagination={false}
