@@ -244,9 +244,12 @@ func ParseRateLimitRules(raw string) (map[string]RateRule, error) {
 			return nil, fmt.Errorf("rate limit rule %q: rps must be a non-negative finite number", part)
 		}
 		// Guard the burst conversion: a finite RPS at or above the float64
-		// rounding of MaxInt64 overflows int(math.Max(1, rps)) to a negative
-		// burst, silently producing a broken rule.
-		if rps >= float64(math.MaxInt64) {
+		// rounding of the platform int max overflows int(math.Max(1, rps))
+		// to a negative burst, silently producing a broken rule. math.MaxInt
+		// is platform-correct (2^31-1 on 32-bit, 2^63-1 on 64-bit), unlike
+		// math.MaxInt64 which only guards 64-bit int and lets [2^31, 2^63)
+		// values through on 32-bit where int is 32 bits wide.
+		if rps >= float64(math.MaxInt) {
 			return nil, fmt.Errorf("rate limit rule %q: rps is too large", part)
 		}
 		burst := int(math.Max(1, rps))

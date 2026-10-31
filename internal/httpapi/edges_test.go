@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -50,6 +51,37 @@ func TestRateLimit_ParseRulesSkipsEmptyParts(t *testing.T) {
 			_, err := ParseRateLimitRules(tc.spec)
 			if err == nil {
 				t.Errorf("ParseRateLimitRules(%q) accepted a non-finite or overflow rps", tc.spec)
+			}
+		})
+	}
+	// The overflow guard must be platform-correct: finite RPS values in
+	// [2^31, 2^63) are representable in float64 and pass a MaxInt64-based
+	// guard, but overflow int (int=32) on 32-bit platforms (GOARCH=386/arm),
+	// yielding a negative burst. On 32-bit they must be rejected; on 64-bit
+	// they are legitimate and must convert to a positive burst equal to the
+	// integer RPS. This is exactly the regression the MaxInt guard fixes.
+	mid32 := []struct {
+		name string
+		spec string
+		want int64
+	}{
+		{"above_2_31", "/a=3e9", 3000000000},
+		{"above_2_31_2", "/a=1e10", 10000000000},
+	}
+	for _, tc := range mid32 {
+		t.Run("mid32_"+tc.name, func(t *testing.T) {
+			rules, err := ParseRateLimitRules(tc.spec)
+			if strconv.IntSize == 32 {
+				if err == nil {
+					t.Errorf("ParseRateLimitRules(%q) accepted an rps that overflows int on 32-bit", tc.spec)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseRateLimitRules(%q): %v", tc.spec, err)
+			}
+			if got := int64(rules["/a"].Burst); got != tc.want {
+				t.Errorf("burst = %d, want %d", got, tc.want)
 			}
 		})
 	}
