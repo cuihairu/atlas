@@ -10,10 +10,13 @@ codecov:
 
 coverage:
   status:
-    # 项目级：相对基线自动比较（首次上传无基线即通过）
+    # 项目级：门禁 98%（2026-10-31 用户令）。硬门禁在本地 `make
+    # test-coverage`（需 SQL/Redis 契约容器，见 Makefile）；CI 无容器、
+    # SQL 契约套件 skip，上传数字低约 16 个点属预期，故此处保持
+    # informational 只作趋势，不阻断合入。
     project:
       default:
-        target: auto
+        target: 98%
         informational: true
     # 行级：新增/变更代码的覆盖率
     patch:
@@ -30,6 +33,9 @@ ignore:
   # 服务入口装配（不承载逻辑）与 gRPC 生成代码
   - "cmd/**"
   - "api/**"
+  # 测试支撑包：未覆盖行是 t.Fatalf 失败分支（诚实覆盖即测试失败），
+  # 与本地 make test-coverage 门禁同口径剔除（todo.md）
+  - "internal/store/storetest/**"
   # 非 Go 产物与样例（六语言 SDK / 仪表盘 / 文档 / 部署 / 插件示例）
   - "sdk/**"
   - "dashboard/**"
