@@ -5,6 +5,10 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+# npm/cli#4828：optional 原生依赖在 musl 上偶发被 npm ci 跳过，vite 8 的
+# rolldown 找不到绑定就构建失败。显式补装当平台的绑定（已装齐时为秒级
+# no-op），让构建不依赖那个 bug 是否复现。
+RUN npm i --no-save @rolldown/binding-linux-x64-musl
 COPY . .
 RUN npm run build
 
