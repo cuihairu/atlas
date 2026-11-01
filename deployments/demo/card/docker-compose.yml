@@ -1,0 +1,124 @@
+# 卡牌/放置 demo —— 最小接入形态（账号服 + 逻辑服 + 无状态计算服）。
+#
+# 一键起（在本目录执行）：
+#   docker compose up -d --build
+# 管理台: http://localhost:28240
+# 收尾:   docker compose down -v
+#
+# 端口段 28240-28245（与其他品类 demo 错开，可并行起）。
+name: atlas-demo-card
+
+services:
+  atlas:
+    build:
+      context: ../../..
+      dockerfile: deployments/docker/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ATLAS_STORE: postgres
+      ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
+      ATLAS_REDIS_URL: redis://redis:6379/0
+      ATLAS_PUBLIC_URL: http://localhost:28241
+    ports:
+      - "28241:8080"
+      - "28242:8081"
+      - "28243:8082"
+    healthcheck:
+      test: ["CMD", "/atlas", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: atlas
+      PGDATABASE: atlas
+    volumes:
+      - ../../../migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "28244:5432"
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "28245:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build:
+      context: ../../../dashboard
+    depends_on:
+      atlas:
+        condition: service_healthy
+    ports:
+      - "28240:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # 卡牌舰队：三台服、无 realm/shard/标签/跨服——接入 Atlas 的最小形态。
+  demoagents:
+    build:
+      context: ../../..
+      dockerfile: deployments/docker/Dockerfile
+    entrypoint: ["/demoagents"]
+    depends_on:
+      atlas:
+        condition: service_healthy
+    command:
+      - -registry=http://atlas:8081
+      - -public=http://atlas:8080
+      - -admin=http://atlas:8082
+      - -fleet=/fleet.json
+      - -interval=15s
+      - -watch-server=
+      - -http=:9098
+    volumes:
+      - ./fleet.json:/fleet.json:ro
+    environment:
+      ATLAS_DEMOAGENTS_HTTP_ADDR: ":9098"
+    healthcheck:
+      test: ["CMD", "/demoagents", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  pgdata:
