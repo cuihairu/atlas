@@ -1,0 +1,131 @@
+# MMORPG 大世界 demo —— gateway + 分线场景服 + 跨服战场。
+#
+# 一键起（在本目录执行）：
+#   docker compose up -d --build
+# 管理台: http://localhost:28210  （服务器/角色目录/跨服配置都有真实数据）
+# 收尾:   docker compose down -v
+#
+# 端口段 28210-28215（与其他品类 demo 错开，可并行起）：
+#   28210 管理台   28211 公网 API   28212 注册 API   28213 管理 API
+#   28214 PostgreSQL  28215 Redis
+name: atlas-demo-mmorpg
+
+services:
+  atlas:
+    build:
+      context: ../../..
+      dockerfile: deployments/docker/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ATLAS_STORE: postgres
+      ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
+      ATLAS_REDIS_URL: redis://redis:6379/0
+      # 跨服战场节点用 subscribe 模式收配置变更信号（Redis Streams）
+      ATLAS_EVENT_ADAPTER: redis
+      ATLAS_PUBLIC_URL: http://localhost:28211
+    ports:
+      - "28211:8080"
+      - "28212:8081"
+      - "28213:8082"
+    healthcheck:
+      test: ["CMD", "/atlas", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # Schema bootstrap：distroless 镜像没有 psql，迁移一次性服务代跑。
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: atlas
+      PGPASSWORD: atlas
+      PGDATABASE: atlas
+    volumes:
+      - ../../../migrations:/migrations:ro
+    entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "28214:5432"
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "28215:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build:
+      context: ../../../dashboard
+    depends_on:
+      atlas:
+        condition: service_healthy
+    ports:
+      - "28210:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  # MMORPG 舰队：2 网关 + 6 分线场景服（含 1 台停机维护）+ 2 跨服战场。
+  demoagents:
+    build:
+      context: ../../..
+      dockerfile: deployments/docker/Dockerfile
+    entrypoint: ["/demoagents"]
+    depends_on:
+      atlas:
+        condition: service_healthy
+    command:
+      - -registry=http://atlas:8081
+      - -public=http://atlas:8080
+      - -admin=http://atlas:8082
+      - -fleet=/fleet.json
+      - -interval=10s
+      - -poll-interval=30s
+      - -redis-url=redis://redis:6379/0
+      - -watch-server=mmorpg-xbattle-1
+      - -http=:9098
+    volumes:
+      - ./fleet.json:/fleet.json:ro
+    environment:
+      ATLAS_DEMOAGENTS_HTTP_ADDR: ":9098"
+    healthcheck:
+      test: ["CMD", "/demoagents", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  pgdata:

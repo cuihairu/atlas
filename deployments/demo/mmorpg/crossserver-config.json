@@ -1,0 +1,17 @@
+{
+  "topology": {
+    "clusters": [
+      { "id": "xb-tianyu", "name": "天域集群", "region": "cn-east", "servers": ["mmorpg-line-tianyu-1", "mmorpg-line-tianyu-2", "mmorpg-xbattle-1"] },
+      { "id": "xb-xinghai", "name": "星海集群", "region": "cn-north", "servers": ["mmorpg-line-xinghai-1", "mmorpg-line-xinghai-2", "mmorpg-xbattle-2"] }
+    ]
+  },
+  "groups": [
+    { "id": "g-season-12-ty", "name": "第 12 赛季·天域", "servers": ["mmorpg-xbattle-1"] },
+    { "id": "g-season-12-xh", "name": "第 12 赛季·星海", "servers": ["mmorpg-xbattle-2"] }
+  ],
+  "features": { "world-boss": true, "arena": true, "kv-persistence": false },
+  "match_domains": [
+    { "id": "md-rank-ty", "servers": ["mmorpg-xbattle-1"], "params": { "mmr_range": "800" } },
+    { "id": "md-rank-xh", "servers": ["mmorpg-xbattle-2"], "params": { "mmr_range": "800" } }
+  ]
+}
