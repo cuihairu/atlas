@@ -64,6 +64,9 @@ type fleetEntry struct {
 	// NotifyMode declares the cross-server config notification channel:
 	// subscribe | callback | poll (empty = poll). See docs/config-center.md.
 	NotifyMode string `json:"notify_mode,omitempty"`
+	// NotifyCallbackURL is required when NotifyMode is callback: the URL
+	// Atlas POSTs the config-changed signal to.
+	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 
 	// Tags are ops-owned badges seeded through the admin API after
 	// registration ({"code":"hot"}, or a full custom tag).
@@ -283,6 +286,9 @@ func (e *fleetEntry) validate() error {
 	default:
 		return fmt.Errorf("server %s: invalid notify_mode %q", e.ServerID, e.NotifyMode)
 	}
+	if e.NotifyMode == atlas.NotifyModeCallback && e.NotifyCallbackURL == "" {
+		return fmt.Errorf("server %s: notify_callback_url is required when notify_mode=callback", e.ServerID)
+	}
 
 	// Ephemeral-room knobs. Durations are parsed here (pointer receiver) so
 	// the rest of the code deals in time.Duration only.
@@ -328,6 +334,9 @@ func (e *fleetEntry) registerRequest() atlas.RegisterRequest {
 		Endpoint:   e.Endpoint,
 		Capacity:   e.Capacity,
 		NotifyMode: orString(e.NotifyMode, atlas.NotifyModePoll),
+	}
+	if e.NotifyCallbackURL != "" {
+		req.NotifyCallbackURL = e.NotifyCallbackURL
 	}
 	if e.RealmID != "" {
 		req.RealmID = &e.RealmID
