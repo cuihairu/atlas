@@ -1,0 +1,95 @@
+{
+  "servers": [
+    {
+      "server_id": "slg-world-1",
+      "name": "S3·世界一区·中原",
+      "type": "world",
+      "region": "cn-east",
+      "realm_id": "realm-s3",
+      "shard_id": "shard-s3-w1",
+      "version": "3.7.0",
+      "endpoint": { "host": "10.40.1.21", "port": 33011 },
+      "capacity": 5000,
+      "players": 4712,
+      "drift": 150,
+      "notify_mode": "subscribe",
+      "tags": [{ "code": "hot" }],
+      "characters": [
+        { "account_id": 800001, "character_id": 700101, "name": "燕云十八骑", "level": 120, "class_id": 1 },
+        { "account_id": 800002, "character_id": 700102, "name": "江东盟主", "level": 118, "class_id": 2 }
+      ]
+    },
+    {
+      "server_id": "slg-world-2",
+      "name": "S3·世界二区·塞北",
+      "type": "world",
+      "region": "cn-east",
+      "realm_id": "realm-s3",
+      "shard_id": "shard-s3-w2",
+      "version": "3.7.0",
+      "endpoint": { "host": "10.40.1.22", "port": 33012 },
+      "capacity": 5000,
+      "players": 3205,
+      "drift": 120,
+      "notify_mode": "subscribe",
+      "characters": [
+        { "account_id": 800001, "character_id": 700201, "name": "燕云·塞北", "level": 96, "class_id": 3 },
+        { "account_id": 800003, "character_id": 700202, "name": "陇右都督", "level": 105, "class_id": 2 }
+      ]
+    },
+    {
+      "server_id": "slg-world-3",
+      "name": "S3·世界三区·江南(合服预约)",
+      "type": "world",
+      "region": "cn-north",
+      "realm_id": "realm-s3",
+      "shard_id": "shard-s3-w3",
+      "version": "3.7.0",
+      "endpoint": { "host": "10.40.2.23", "port": 33013 },
+      "capacity": 5000,
+      "players": 640,
+      "drift": 40,
+      "notify_mode": "subscribe",
+      "tags": [
+        { "code": "merge-pending", "label": "合服预约", "tier": "info", "public": true }
+      ],
+      "characters": [
+        { "account_id": 800003, "character_id": 700301, "name": "陇右·江南", "level": 61, "class_id": 4 }
+      ]
+    },
+    {
+      "server_id": "slg-war-cluster-a",
+      "name": "联盟战·官渡之战 A",
+      "type": "war",
+      "region": "cn-east",
+      "realm_id": "realm-s3",
+      "version": "3.7.0",
+      "endpoint": { "host": "10.40.9.31", "port": 33091 },
+      "capacity": 2000,
+      "players": 1830,
+      "drift": 160,
+      "lifetime": "4m",
+      "recycle": "1m",
+      "start_delay": "0s",
+      "notify_mode": "subscribe",
+      "tags": [{ "code": "crosswar", "label": "联盟战", "tier": "hot", "public": true }]
+    },
+    {
+      "server_id": "slg-war-cluster-b",
+      "name": "联盟战·赤壁之战 B",
+      "type": "war",
+      "region": "cn-north",
+      "realm_id": "realm-s3",
+      "version": "3.7.0",
+      "endpoint": { "host": "10.40.9.32", "port": 33092 },
+      "capacity": 2000,
+      "players": 940,
+      "drift": 200,
+      "lifetime": "4m",
+      "recycle": "1m",
+      "start_delay": "2m",
+      "notify_mode": "subscribe",
+      "tags": [{ "code": "crosswar", "label": "联盟战", "tier": "hot", "public": true }]
+    }
+  ]
+}
