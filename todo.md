@@ -116,3 +116,9 @@
     4. 卡牌/放置弱实时:账号服+轻量服务发现(展示最小接入)
     5. FPS 低延迟房间:区域制房间服+就近接入(展示按地域注册)
   - 验收:每个 demo compose 一键起,agents 注册可见于 dashboard,README 逐品类说明;复用 atlas-demoagents 骨架不复制粘贴。
+
+- [ ] **DOC-GIF · P2 · 文档 · 配置开关效果动态图(每个开关 off→on 对比+GIF)**
+  - 交付:枚举本仓全部「开启后有效果」的开关/配置项;自动流水线生成证据——GUI 类用 @vscode/test-electron 或应用截图(off 一张/on 一张+切换过程录屏),CLI 类用终端录屏(asciinema→GIF 或 ffmpeg);ffmpeg 缝合动态 GIF。
+  - 文档:docs「配置效果」页(双语)逐开关嵌入:说明+off 图+on 图+GIF。
+  - 验收:清单内每个开关都有 off/on+GIF;流水线可重跑(配置变更随时再生成);兼作配置效果回归测试。
+  - 参考:kode todo C-24 同款流水线模式(2026-11-01 用户令全舰队推广)。
