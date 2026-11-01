@@ -13,6 +13,10 @@ import (
 // routePattern matches the single-line route registrations in handlers.go.
 var routePattern = regexp.MustCompile(`mux\.HandleFunc\("([^"]+)"`)
 
+// adminHandlePattern matches the direct admin-mux registrations that live in
+// cmd/atlas/main.go rather than handlers.go (the Prometheus scrape endpoint).
+var adminHandlePattern = regexp.MustCompile(`adminMux\.Handle\("([^"]+)"`)
+
 // TestRouteSurfacePinned freezes the REST contract surface: every
 // "METHOD /path" pattern registered in handlers.go must be listed here
 // verbatim, so adding, renaming or removing a route fails this test until
@@ -96,6 +100,36 @@ func TestRouteSurfacePinned(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("REST surface changed:\n  added:   %v\n  removed: %v\nupdate the pinned inventory in this test on purpose (v1.0 freeze guardrail)",
+			missing(want, got), missing(got, want))
+	}
+}
+
+// TestProductionMetricsPinned freezes the Prometheus scrape endpoint. It is
+// mounted directly on the admin mux in cmd/atlas/main.go (not through
+// handlers.go), so TestRouteSurfacePinned cannot see it; without this pin a
+// /metrics change would slip past the v1.0 freeze guardrail silently. The
+// call-site count check keeps a reformatted registration from sneaking by.
+func TestProductionMetricsPinned(t *testing.T) {
+	src, err := os.ReadFile("../../cmd/atlas/main.go")
+	if err != nil {
+		t.Fatalf("read cmd/atlas/main.go: %v", err)
+	}
+
+	callSites := strings.Count(string(src), "adminMux.Handle(")
+	matches := adminHandlePattern.FindAllStringSubmatch(string(src), -1)
+	if callSites == 0 || callSites != len(matches) {
+		t.Fatalf("admin mux registration moved or reformatted: %d adminMux.Handle( call sites, %d matched; adjust adminHandlePattern before trusting this pin", callSites, len(matches))
+	}
+
+	got := make([]string, 0, len(matches))
+	for _, m := range matches {
+		got = append(got, m[1])
+	}
+	sort.Strings(got)
+
+	want := []string{"GET /metrics"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("production admin surface changed:\n  added:   %v\n  removed: %v\nupdate this pin on purpose (v1.0 freeze guardrail)",
 			missing(want, got), missing(got, want))
 	}
 }
