@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -71,6 +72,20 @@ type fleetEntry struct {
 	// SeedOnly registers the entry once and never heartbeats it, so a status
 	// the demo then sets through the admin API (e.g. maintenance) sticks.
 	SeedOnly bool `json:"seed_only,omitempty"`
+
+	// Lifetime turns the entry into an ephemeral room (MOBA battles, FPS
+	// matches): register → heartbeat for Lifetime → unregister → sleep
+	// Recycle → re-register, forever. Tags are re-seeded every cycle (the
+	// unregister deletes the server row and its tags with it); characters
+	// are not allowed — rooms hold no directory state.
+	LifetimeS   string `json:"lifetime,omitempty"`    // e.g. "75s"; empty = permanent
+	RecycleS    string `json:"recycle,omitempty"`     // downtime between instances (default 10s)
+	StartDelayS string `json:"start_delay,omitempty"` // stagger before the first close, so a room fleet does not cycle in lockstep
+
+	// parsed forms (loadFleet fills them; JSON never sees them)
+	lifetime   time.Duration
+	recycle    time.Duration
+	startDelay time.Duration
 
 	// Characters seeds the directory index for this server: one entry per
 	// account, so the cross-server character view has data to show.
@@ -268,6 +283,37 @@ func (e *fleetEntry) validate() error {
 	default:
 		return fmt.Errorf("server %s: invalid notify_mode %q", e.ServerID, e.NotifyMode)
 	}
+
+	// Ephemeral-room knobs. Durations are parsed here (pointer receiver) so
+	// the rest of the code deals in time.Duration only.
+	if e.SeedOnly && e.LifetimeS != "" {
+		return fmt.Errorf("server %s: seed_only and lifetime are mutually exclusive", e.ServerID)
+	}
+	if len(e.Characters) > 0 && e.LifetimeS != "" {
+		return fmt.Errorf("server %s: ephemeral rooms hold no directory state, remove characters", e.ServerID)
+	}
+	if e.LifetimeS != "" {
+		d, err := time.ParseDuration(e.LifetimeS)
+		if err != nil || d <= 0 {
+			return fmt.Errorf("server %s: lifetime %q: want a positive duration like \"75s\"", e.ServerID, e.LifetimeS)
+		}
+		e.lifetime = d
+	}
+	e.recycle = 10 * time.Second
+	if e.RecycleS != "" {
+		d, err := time.ParseDuration(e.RecycleS)
+		if err != nil || d < 0 {
+			return fmt.Errorf("server %s: recycle %q: want a non-negative duration", e.ServerID, e.RecycleS)
+		}
+		e.recycle = d
+	}
+	if e.StartDelayS != "" {
+		d, err := time.ParseDuration(e.StartDelayS)
+		if err != nil || d < 0 {
+			return fmt.Errorf("server %s: start_delay %q: want a non-negative duration", e.ServerID, e.StartDelayS)
+		}
+		e.startDelay = d
+	}
 	return nil
 }
 
@@ -405,7 +451,8 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Heartbeats: one goroutine per server so a slow or failing endpoint
-	// cannot delay the rest of the fleet.
+	// cannot delay the rest of the fleet. Entries with a lifetime run the
+	// ephemeral room loop instead of the plain heartbeat.
 	for i := range fleet {
 		e := &fleet[i]
 		if e.SeedOnly {
@@ -414,6 +461,10 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if e.lifetime > 0 {
+				roomLoop(ctx, log, client, admin, e, live[e.ServerID], *interval, &hbOK, &hbFail, &lastBeat)
+				return
+			}
 			heartbeat(ctx, log, client, e, live[e.ServerID], *interval, &hbOK, &hbFail, &lastBeat)
 		}()
 	}
@@ -603,6 +654,97 @@ func registerOne(ctx context.Context, log *slog.Logger, client *atlas.Client, ad
 		}
 	}
 	return nil
+}
+
+// roomLoop drives one ephemeral room slot: the entry is already registered
+// by registerFleet, so the first cycle only waits out its stagger, then the
+// slot turns forever — live (heartbeats) → closed (unregister) → dormant
+// (recycle) → a fresh instance (re-register; tags ride along because the
+// unregister deleted the row). Each instance picks a fresh player baseline
+// so the dashboard shows different fills, not one repeated number.
+func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin *adminClient, e *fleetEntry, state *liveState, interval time.Duration, ok, fail *atomic.Int64, lastBeat *atomic.Int64) {
+	if !sleepOrStop(ctx, e.startDelay) {
+		return
+	}
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for instance := 1; ; instance++ {
+		live := time.NewTimer(e.lifetime)
+	beats:
+		for {
+			select {
+			case <-ctx.Done():
+				live.Stop()
+				return
+			case <-live.C:
+				break beats
+			case <-tick.C:
+				players, load := state.tick(interval)
+				if _, err := client.Heartbeat(ctx, e.ServerID, atlas.HeartbeatRequest{Players: players, Load: load}); err != nil {
+					fail.Add(1)
+					log.Warn("heartbeat failed", "server_id", e.ServerID, "error", err)
+					continue
+				}
+				ok.Add(1)
+				lastBeat.Store(time.Now().UnixNano())
+			}
+		}
+		if _, err := client.Unregister(ctx, e.ServerID); err != nil {
+			log.Warn("room close failed", "server_id", e.ServerID, "instance", instance, "error", err)
+		} else {
+			log.Info("room closed", "server_id", e.ServerID, "instance", instance, "lifetime", e.lifetime.String())
+		}
+		if !sleepOrStop(ctx, e.recycle) {
+			return
+		}
+		state.reroll()
+		backoff := time.Second
+		for {
+			err := registerOne(ctx, log, client, admin, e, false)
+			if err == nil {
+				break
+			}
+			log.Warn("room re-register failed, retrying", "server_id", e.ServerID, "error", err, "backoff", backoff)
+			if !sleepOrStop(ctx, backoff) {
+				return
+			}
+			backoff = min(backoff*2, 10*time.Second)
+		}
+	}
+}
+
+// sleepOrStop waits d (a zero d returns immediately) and reports false when
+// the process is shutting down instead.
+func sleepOrStop(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return ctx.Err() == nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// reroll picks a new player baseline within the drift band, so successive
+// room instances fill differently.
+func (s *liveState) reroll() {
+	if s.drift == 0 {
+		return
+	}
+	span := 2*s.drift + 1
+	v := s.baseline - s.drift + rand.Intn(span)
+	if v < 0 {
+		v = 0
+	}
+	if v > s.capacity {
+		v = s.capacity
+	}
+	s.players.Store(int64(v))
+	s.loadBits.Store(math.Float64bits(ratio(v, s.capacity)))
 }
 
 func heartbeat(ctx context.Context, log *slog.Logger, client *atlas.Client, e *fleetEntry, state *liveState, interval time.Duration, ok, fail *atomic.Int64, lastBeat *atomic.Int64) {
