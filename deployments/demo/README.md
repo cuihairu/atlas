@@ -33,3 +33,6 @@ docker compose down -v       # 收尾（清库重来）
   开局→心跳→注销→休整→重开循环；不带这些字段的节点常驻。
 - `notify_mode`（subscribe/callback/poll）决定节点如何收跨服配置变更；
   mmorpg 与 slg 各带一份 `crossserver-config.json` 供一键发布验证热更。
+- 本目录顶层另有一份 `fleet.json`：那是 demoagents **内建默认舰队**的镜像
+  （`atlas-demoagents -print-fleet` 生成，二者保持同步）——不带 `-fleet`
+  参数启动时跑的就是它，与五个品类 demo 无关。
