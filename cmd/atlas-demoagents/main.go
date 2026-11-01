@@ -588,6 +588,13 @@ func registerFleet(ctx context.Context, log *slog.Logger, client *atlas.Client, 
 	}
 	for i := range fleet {
 		e := &fleet[i]
+		// Ephemeral rooms register inside their room loop (after start_delay)
+		// so an unopened room is absent from the directory, not parked in a
+		// heartbeat-less "starting" row; their retries also stop gating the
+		// rest of the fleet here.
+		if e.lifetime > 0 {
+			continue
+		}
 		backoff := 500 * time.Millisecond
 		for {
 			if err := ctx.Err(); err != nil {
@@ -678,6 +685,21 @@ func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for instance := 1; ; instance++ {
+		// registerFleet skips ephemeral entries, so every instance — the
+		// first included — starts here: the room enters the directory when
+		// it actually opens, with tags freshly seeded.
+		backoff := time.Second
+		for {
+			err := registerOne(ctx, log, client, admin, e, false)
+			if err == nil {
+				break
+			}
+			log.Warn("room register failed, retrying", "server_id", e.ServerID, "error", err, "backoff", backoff)
+			if !sleepOrStop(ctx, backoff) {
+				return
+			}
+			backoff = min(backoff*2, 10*time.Second)
+		}
 		live := time.NewTimer(e.lifetime)
 	beats:
 		for {
@@ -707,18 +729,6 @@ func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin
 			return
 		}
 		state.reroll()
-		backoff := time.Second
-		for {
-			err := registerOne(ctx, log, client, admin, e, false)
-			if err == nil {
-				break
-			}
-			log.Warn("room re-register failed, retrying", "server_id", e.ServerID, "error", err, "backoff", backoff)
-			if !sleepOrStop(ctx, backoff) {
-				return
-			}
-			backoff = min(backoff*2, 10*time.Second)
-		}
 	}
 }
 
