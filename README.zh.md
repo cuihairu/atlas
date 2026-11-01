@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="static/logo.svg" alt="Atlas" width="64" height="64" /> <a href="https://cuihairu.github.io/atlas/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+  <img src="static/logo.svg" alt="Atlas" width="64" height="64" />
 </p>
 
 <h1 align="center">Atlas</h1>
 <p align="center">
   <a href="https://github.com/cuihairu/atlas/releases"><img src="https://img.shields.io/github/v/release/cuihairu/atlas" alt="Release" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache-2.0" /></a>
-  <a href="https://cuihairu.github.io/atlas/zh//"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a>
+  <a href="https://cuihairu.github.io/atlas/zh/"><img src="https://img.shields.io/badge/docs-VitePress-3C8C94" alt="Docs" /></a>
   <a href="https://codecov.io/gh/cuihairu/atlas"><img src="https://codecov.io/gh/cuihairu/atlas/graph/badge.svg" alt="Codecov" /></a>
 </p>
 <p align="center">
