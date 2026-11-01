@@ -27,7 +27,7 @@
 - **现象**：固定多列表格（服务器/角色/迁移/审计/跨服/排障/系统配置等 18 处）在窄屏下列宽被压缩到不可读，或超出容器被截断，无横向滚动兜底。
 - **截图**：`operations-mobile.png`、`diagnose-mobile.png`（修复前：列被挤压）。
 - **定位**：`src/pages/*.tsx` 全部 `<Table>`（Servers / Characters / Migrations / AuditLog / CrossServer×5 / Operations×2 / PlayerDiagnose×2 / SystemConfig×3 / ServerDetail / operationsBatch）。
-- **修复**（commit `5997ca6`）：统一 `scroll={{ x: 'max-content' }}`（无尾逗号，规避 oxlint 解析）。验证：`t1-servers-desktop.png` / `t2-servers-narrow.png` 表按自然列宽渲染、容器内横向滚动，不再挤压/截断。
+- **修复**（commit `5997ca6`）：统一 `scroll` 的 `x` 项设为 `'max-content'`（对象字面量写法，无尾逗号以规避 oxlint 解析）。验证：`t1-servers-desktop.png` / `t2-servers-narrow.png` 表按自然列宽渲染、容器内横向滚动，不再挤压/截断。
 
 ### 3. [高 · 路由健壮性] 未知路由渲染静默空白内容区 ✅已修
 - **现象**：demo 站直接访问 `/heatmap` 时内容区空白（bundle 分析：无对应路由与 i18n key，属陈旧构建而非源码缺陷）；任何拼错的 URL 都得到无提示的空白页，用户无从得知路由不存在。
