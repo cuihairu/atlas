@@ -25,10 +25,10 @@
 
 ## 演示站点
 
-**演示站点 https://atlas.cuihairu.site/ ｜ 演示账号 `demo` / `demo-ab36cfc2cb77ac66ccd0523512efffbe`（体验用，数据定期重置）**
+**演示站点 https://atlas.cuihairu.site/ ｜ 演示账号 `demo` / `demo-ab36cfc2cb77ac66ccd0523512efffbe`（体验用，数据为模拟且可弃置）**
 
 - 演示账号为 viewer 只读角色（沙箱账号，不能改动任何数据）；管理员密钥只在部署机上，不对外。
-- 站点由 CI 从 main 分支部署（主分支测试全绿才上线，失败自动回滚），数据会被定期重置，仅供体验。
+- 站点由 CI 从 main 分支部署（主分支测试全绿才上线，失败自动回滚）；演示数据为模拟、可弃置，部署栈与数据生命周期由部署机管理。
 - 站内跑着演示舰队模拟器：一组模拟游戏服持续注册、心跳、写入角色与跨服配置数据。
 
 ---
@@ -72,7 +72,7 @@ Atlas 是游戏后端的 **Game Infrastructure Directory**，围绕四个问题�
 | **计划停机维护** | 运维手动踢人、群里发公告、祈祷没人在这时充值 | 维护窗口定时生效：`start_at` 自动进入维护、`end_at` 自动恢复，同时段自动挂 warning 公告，客户端登录即见 |
 | **紧急故障公告** | 没有统一通道，公告靠客户端热更 | Admin 一条 API 发布全局/服务器级公告（info / warning / critical），生效区间可控 |
 | **服务器掉线自愈** | 半死不活的服务器继续接玩家，投诉炸锅 | 心跳判活：30s 无心跳进 `suspect`、60s 进 `offline` 自动摘除；恢复心跳或重新注册自动回到线上 |
-| **合服 / 迁服** | 人肉搬库、改配置、全服停机 | 迁移记录（pending / migrating / completed / failed / rolled_back）+ 一键回退状态；角色搬迁由游戏服执行，Atlas 不重放事件 |
+| **合服 / 迁服** | 人肉搬库、改配置、全服停机 | 迁移记录（pending / migrating / verifying / completed / failed / rolled_back）+ 一键回退状态；角色搬迁由游戏服执行，Atlas 不重放事件 |
 | **多生态 / 大规模舰队** | 数百台服务器的注册表没有一个权威视图 | Registry 幂等注册 + 分片存储 + Prometheus 指标 + 占比告警，舰队状态一目了然 |
 
 ---
@@ -229,7 +229,7 @@ Atlas 当前暴露 50 个业务端点（默认配置，含审计端点），分�
 
 ```text
 atlas/
-├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard）
+├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard / dlq / loadgen / soakcheck）
 ├── internal/
 │   ├── model/              领域模型（Server, Character, Status…）
 │   ├── store/              存储接口
@@ -243,6 +243,7 @@ atlas/
 │   ├── directory/          角色目录
 │   ├── routing/            接入推荐
 │   ├── admin/              Admin 服务（Realm/Shard/迁移/审计…）
+│   ├── audit/              审计日志环 + 可选持久化 sink
 │   ├── health/             健康监控（自动掉线 + 占比告警）
 │   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers

@@ -25,10 +25,10 @@
 
 ## Demo Site
 
-**Demo site https://atlas.cuihairu.site/ | demo account `demo` / `demo-ab36cfc2cb77ac66ccd0523512efffbe` (for evaluation; data is reset periodically)**
+**Demo site https://atlas.cuihairu.site/ | demo account `demo` / `demo-ab36cfc2cb77ac66ccd0523512efffbe` (for evaluation; data is simulated and disposable)**
 
 - The demo account holds the viewer read-only role (a sandbox account that cannot modify any data); the admin key stays on the deployment host and is not published.
-- The site is deployed from the main branch by CI (it only goes live when main-branch tests are green; failed deployments roll back automatically). Its data is reset periodically — for evaluation only.
+- The site is deployed from the main branch by CI (it only goes live when main-branch tests are green; failed deployments roll back automatically). The demo dataset is simulated and disposable — the deployment stack and its data lifecycle are owned by the deployment host.
 - A demo fleet simulator runs on the site: a set of simulated game servers keeps registering, sending heartbeats, and writing character and cross-server configuration data.
 
 ---
@@ -72,7 +72,7 @@ Atlas is the **Game Infrastructure Directory** of a game backend, built around f
 | **Planned maintenance** | Ops kicks players by hand, posts a notice in a chat group, and hopes nobody is mid-purchase | Maintenance windows take effect on schedule: `start_at` enters maintenance automatically, `end_at` restores automatically, a warning announcement covers the same window, and clients see it at login |
 | **Emergency incident notices** | No unified channel; announcements depend on client hotfixes | One Admin API publishes global or per-server announcements (info / warning / critical) with a controlled effect window |
 | **Self-healing after server dropouts** | Half-dead servers keep accepting players; complaints pile up | Heartbeat liveness: 30 s without a heartbeat moves a server to `suspect`, 60 s moves it to `offline` and it is removed automatically; a returning heartbeat or re-registration brings it back online |
-| **Server merges / migrations** | Manual database moves, config edits, fleet-wide downtime | Migration records (pending / migrating / completed / failed / rolled_back) with one-call status rollback; character relocation is executed by the game server — Atlas does not replay events |
+| **Server merges / migrations** | Manual database moves, config edits, fleet-wide downtime | Migration records (pending / migrating / verifying / completed / failed / rolled_back) with one-call status rollback; character relocation is executed by the game server — Atlas does not replay events |
 | **Multi-ecosystem / large fleets** | Hundreds of servers with no authoritative registry view | Idempotent Registry registration + sharded storage + Prometheus metrics + ratio alerts — fleet state at a glance |
 
 ---
@@ -229,7 +229,7 @@ Full request/response examples are in [docs/api.md](docs/api.md); for a fast wal
 
 ```text
 atlas/
-├── cmd/                    service entry points and tools (atlas main service / crossagent / demoagents / reshard)
+├── cmd/                    service entry points and tools (atlas main service / crossagent / demoagents / reshard / dlq / loadgen / soakcheck)
 ├── internal/
 │   ├── model/              domain models (Server, Character, Status…)
 │   ├── store/              storage interfaces
@@ -243,6 +243,7 @@ atlas/
 │   ├── directory/          character directory
 │   ├── routing/            access recommendation
 │   ├── admin/              Admin service (Realm/Shard/migrations/audit…)
+│   ├── audit/              audit log ring + optional persistence sink
 │   ├── health/             health monitoring (auto offlining + ratio alerts)
 │   ├── event/              event adapters (redis/kafka/nats/rabbitmq)
 │   ├── httpapi/            REST API handlers
@@ -285,16 +286,16 @@ Atlas
 └── Events      character-index event sync (Redis Streams / Kafka / NATS / RabbitMQ)
 ```
 
-- **[Registry](docs/api.md#registry)** — server registration at startup, periodic heartbeats, voluntary unregister
-- **[Discovery](docs/api.md#discovery)** — filter servers by region / realm / shard / version / status / platform
-- **[Directory](docs/api.md#directory)** — a cross-server index of all characters under an account
-- **[Routing](docs/api.md#routing)** — access-target recommendation from load and capacity (same-account character stickiness)
-- **[Admin](docs/api.md#admin)** — Realm / Shard management, maintenance windows coupled with announcements, migrations, audit log
+- **[Registry](docs/zh/api.md#registry)** — server registration at startup, periodic heartbeats, voluntary unregister
+- **[Discovery](docs/zh/api.md#discovery)** — filter servers by region / realm / shard / version / status / platform
+- **[Directory](docs/zh/api.md#directory)** — a cross-server index of all characters under an account
+- **[Routing](docs/zh/api.md#routing)** — access-target recommendation from load and capacity (same-account character stickiness)
+- **[Admin](docs/zh/api.md#admin)** — Realm / Shard management, maintenance windows coupled with announcements, migrations, audit log
 - **[Event sync](docs/sync.md)** — character-index writes decoupled through Redis Streams / Kafka / NATS / RabbitMQ
 - **[Six-language SDKs](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#, automatic heartbeats built in
 - **[APISIX plugins](docs/apisix.md)** — player-token auth injection + endpoint-group rate limiting
 - **[Health alerts](docs/lifecycle.md)** — suspect / offline ratio-threshold alerts + webhook notification
-- **[gRPC](docs/api.md#grpc-api)** — five services, 23 RPCs, dual transport (the core surface shares its source with REST)
+- **[gRPC](docs/zh/api.md#grpc-api)** — five services, 23 RPCs, dual transport (the core surface shares its source with REST)
 
 ---
 
@@ -342,7 +343,7 @@ The only built-in channel with business-semantic filtering carries nothing beyon
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Overall architecture, component responsibilities, boundary with APISIX |
 | [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character conceptual model |
-| [docs/api.md](docs/api.md) | Complete definition of the five REST groups + gRPC |
+| [docs/api.md](docs/api.md) | REST + gRPC reference — English marker page, full reference in [Chinese](docs/zh/api.md) |
 | [docs/api-quickstart.md](docs/api-quickstart.md) | API quick-start guide (curl examples) |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL table schemas and Redis key design |
 | [docs/lifecycle.md](docs/lifecycle.md) | Server lifecycle state machine |
