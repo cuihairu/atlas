@@ -342,24 +342,33 @@ func runRoom(t *testing.T, s *roomServer, e *fleetEntry, unregisterErr, deleteEr
 		close(done)
 	}()
 	// Wait until the unregister+delete choreography has run once (or, when
-	// delete is expected, until the DELETE landed), then stop.
+	// delete is expected, until the DELETE landed), then stop. Poll instead
+	// of sleeping a fixed settle window so the assertions below do not flake
+	// under load (a re-register can take longer than one beat).
 	deadline := time.Now().Add(5 * time.Second)
+	settled := false
 	for time.Now().Before(deadline) {
 		s.mu.Lock()
 		unreg := s.unreg
+		reg := s.register
 		deletes := len(s.deletes)
 		s.mu.Unlock()
 		if unreg >= 1 {
-			if unregisterErr || deleteErr {
-				// Unregister-fail must never delete; delete-fail still
-				// attempts the DELETE. Either way once unregister fired the
-				// branch is decided — give the loop one beat to settle.
-				time.Sleep(30 * time.Millisecond)
-				break
+			switch {
+			case unregisterErr:
+				// Unregister-fail must never delete; once the branch is
+				// decided there is nothing more to assert.
+				settled = true
+			case deleteErr:
+				// Delete-fail still proceeds to the next instance: poll
+				// for the re-register so the loop's survival is asserted.
+				settled = reg >= 2
+			default:
+				settled = deletes >= 1
 			}
-			if deletes >= 1 {
-				break
-			}
+		}
+		if settled {
+			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
