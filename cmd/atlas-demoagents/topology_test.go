@@ -154,3 +154,49 @@ func TestDefaultFleetEntriesAreValid(t *testing.T) {
 		}
 	}
 }
+
+// TestAdminDeleteJSON verifies the room teardown call: DELETE on the admin
+// server endpoint, carrying the bearer key when configured.
+func TestAdminDeleteJSON(t *testing.T) {
+	var mu sync.Mutex
+	var gotMethod, gotPath, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	admin := &adminClient{base: srv.URL, key: "demo-key", http: srv.Client()}
+	if err := admin.deleteJSON(context.Background(), "/v1/admin/servers/moba-room-rank-101"); err != nil {
+		t.Fatalf("deleteJSON: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotMethod != http.MethodDelete {
+		t.Errorf("method = %s, want DELETE", gotMethod)
+	}
+	if gotPath != "/v1/admin/servers/moba-room-rank-101" {
+		t.Errorf("path = %s, want the server row endpoint", gotPath)
+	}
+	if gotAuth != "Bearer demo-key" {
+		t.Errorf("auth = %q, want Bearer demo-key", gotAuth)
+	}
+}
+
+// TestAdminDeleteJSONReportsFailure ensures a non-2xx admin DELETE is an error,
+// so the room loop logs the failed teardown instead of silently proceeding.
+func TestAdminDeleteJSONReportsFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	admin := &adminClient{base: srv.URL, http: srv.Client()}
+	if err := admin.deleteJSON(context.Background(), "/v1/admin/servers/ghost"); err == nil {
+		t.Fatal("deleteJSON: 404 must surface as an error")
+	}
+}

@@ -26,8 +26,8 @@ docker compose down -v         # 收尾（清库重来）
 `cmd/atlas-demoagents` 的 ephemeral 模式（`lifetime` 字段）驱动每个房间：
 
 ```
-register → 心跳(5s×N，人数每次开局重摇) → lifetime 到点 → unregister(行删除)
-        → 休整 recycle → 重新 register(标签随注册重打) → ……
+register → 心跳(5s×N，人数每次开局重摇) → lifetime 到点 → unregister(置 offline)
+        → 显式删除(行+标签移除) → 休整 recycle → 重新 register(标签随注册重打) → ……
 ```
 
 排位房一局 75 秒、匹配房 45 秒；`docker compose logs -f demoagents` 里

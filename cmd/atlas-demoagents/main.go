@@ -78,12 +78,14 @@ type fleetEntry struct {
 
 	// Lifetime turns the entry into an ephemeral room (MOBA battles, FPS
 	// matches): register → heartbeat for Lifetime → unregister → sleep
-	// Recycle → re-register, forever. Tags are re-seeded every cycle (the
-	// unregister deletes the server row and its tags with it); characters
-	// are not allowed — rooms hold no directory state.
+	// Recycle → re-register, forever. The graceful unregister marks the
+	// record offline, then the demoagent issues the explicit admin delete so
+	// the row (and its tags) actually disappear between instances — exactly
+	// what an operator's lifecycle teardown would do; characters are not
+	// allowed — rooms hold no directory state.
 	LifetimeS   string `json:"lifetime,omitempty"`    // e.g. "75s"; empty = permanent
 	RecycleS    string `json:"recycle,omitempty"`     // downtime between instances (default 10s)
-	StartDelayS string `json:"start_delay,omitempty"` // stagger before the first close, so a room fleet does not cycle in lockstep
+	StartDelayS string `json:"start_delay,omitempty"` // stagger before the first open, so a room fleet does not cycle in lockstep
 
 	// parsed forms (loadFleet fills them; JSON never sees them)
 	lifetime   time.Duration
@@ -676,8 +678,9 @@ func registerOne(ctx context.Context, log *slog.Logger, client *atlas.Client, ad
 // by registerFleet, so the first cycle only waits out its stagger, then the
 // slot turns forever — live (heartbeats) → closed (unregister) → dormant
 // (recycle) → a fresh instance (re-register; tags ride along because the
-// unregister deleted the row). Each instance picks a fresh player baseline
-// so the dashboard shows different fills, not one repeated number.
+// explicit delete removed the row with them). Each instance picks a fresh
+// player baseline so the dashboard shows different fills, not one repeated
+// number.
 func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin *adminClient, e *fleetEntry, state *liveState, interval time.Duration, ok, fail *atomic.Int64, lastBeat *atomic.Int64) {
 	if !sleepOrStop(ctx, e.startDelay) {
 		return
@@ -724,6 +727,15 @@ func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin
 			log.Warn("room close failed", "server_id", e.ServerID, "instance", instance, "error", err)
 		} else {
 			log.Info("room closed", "server_id", e.ServerID, "instance", instance, "lifetime", e.lifetime.String())
+			// The registry's unregister only flips the record to offline; the
+			// demo's room cycle promises the row (and tags) are gone between
+			// instances, so follow the graceful unregister with the explicit
+			// admin delete an operator would issue. Best-effort: the next
+			// instance's registerOne re-upserts the row anyway, and tags are
+			// re-seeded by registerOne regardless.
+			if err := admin.deleteJSON(ctx, "/v1/admin/servers/"+e.ServerID); err != nil {
+				log.Warn("room row delete failed", "server_id", e.ServerID, "instance", instance, "error", err)
+			}
 		}
 		if !sleepOrStop(ctx, e.recycle) {
 			return
@@ -932,6 +944,26 @@ func (a *adminClient) postJSON(ctx context.Context, path string, body any) error
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("POST %s: http %d", path, resp.StatusCode)
+	}
+	return nil
+}
+
+// deleteJSON issues a DELETE to the admin API and reports non-2xx as an error.
+func (a *adminClient) deleteJSON(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, a.base+path, nil)
+	if err != nil {
+		return err
+	}
+	if a.key != "" {
+		req.Header.Set("Authorization", "Bearer "+a.key)
+	}
+	resp, err := a.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("DELETE %s: http %d", path, resp.StatusCode)
 	}
 	return nil
 }

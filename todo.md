@@ -23,3 +23,9 @@
 - [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练折入（BLOCKED：待用户指定机器与排期；docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈）
 - [ ] DOC-GIF（P2）：配置开关效果动态图，每开关 off→on 对比 + GIF
 - [ ] CODE-LINT（P3）：接入 golangci-lint/errcheck 并纳入 `make lint`，防未检错误回归（OBS-2，docs/review/2026-11-01-code-review.md；当前唯一丢弃错误 auth.go:201 为有意兜底）
+
+## 审核发现
+
+- [x] 审核发现：临时房间注销仅将记录置为 offline，未删除服务器行和标签，与“注销删除行/标签”的实现描述不一致 — `go test ./cmd/atlas-demoagents/...: ok`
+- [x] 审核发现：临时房间注销后仍保留 offline 服务器记录，demo 无法呈现声称的列表增减效果 — `go test ./cmd/atlas-demoagents/...: ok`
+- [x] 审核发现：start_delay 延迟的是首个 close 时刻而非首个 open 时刻，README 错峰开局表述与实际房间注册时序不符 — `go test ./cmd/atlas-demoagents/...: ok`
