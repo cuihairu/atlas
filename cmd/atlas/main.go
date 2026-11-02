@@ -866,7 +866,10 @@ func readyzHandler(ping func(context.Context) error) http.HandlerFunc {
 		if err := ping(r.Context()); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			body, _ := json.Marshal(map[string]string{"status": "not ready", "error": err.Error()})
+			body, err := json.Marshal(map[string]string{"status": "not ready", "error": err.Error()})
+			if err != nil {
+				body = []byte(`{"status":"not ready"}`)
+			}
 			_, _ = w.Write(body)
 			return
 		}
