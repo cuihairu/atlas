@@ -29,3 +29,11 @@
 - [x] 审核发现：临时房间注销仅将记录置为 offline，未删除服务器行和标签，与“注销删除行/标签”的实现描述不一致 — `go test ./cmd/atlas-demoagents/...: ok`
 - [x] 审核发现：临时房间注销后仍保留 offline 服务器记录，demo 无法呈现声称的列表增减效果 — `go test ./cmd/atlas-demoagents/...: ok`
 - [x] 审核发现：start_delay 延迟的是首个 close 时刻而非首个 open 时刻，README 错峰开局表述与实际房间注册时序不符 — `go test ./cmd/atlas-demoagents/...: ok`
+- [x] 审核发现：roomLoop 的“注销成功后显式删除行”编排无集成测试，新测试仅覆盖 deleteJSON HTTP 辅助函数，注销失败跳过删除、删除失败降级路径均未验证 — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-demoagents/topology_test.go:378,398,415
+- [x] 审核发现：deleteJSON 以字符串拼接构造 admin URL 且未对 ServerID 做 url.PathEscape（Server.Validate 仅校验非空），含 `/`、`?`、`#`、`..` 的 server_id 会错路由到其它 admin 端点；延续既有 postJSON 模式，配置可控、非攻击者可控 — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-demoagents/main.go:738 cmd/atlas-demoagents/topology_test.go:198
+- [x] 审核发现：deleteJSON 关闭响应体前未 drain，与 crossserver/service.go:427 的“drain 以便连接复用”约定不一致，demo adminClient 的 keep-alive 连接无法复用 — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-demoagents/main.go:947,969 cmd/atlas-demoagents/topology_test.go:224
+- [x] 审核发现：make lint 改为硬依赖本机 golangci-lint 二进制且未 pin 版本，本机缺失时 command not found、与 CI 的 v2.15.0 版本漂移时行为不一致 — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 Makefile:65-66
+- [x] 审核发现：rabbitmq.Open 的 ExchangeDeclare 失败路径 `_ = a.Close()` 仅关闭 channel，`owns` 字段只写不读、amqp.Connection 从不关闭，错误路径连接泄漏（既有缺陷，本 diff 触及该行） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 internal/event/rabbitmq/adapter.go:96,133,252 internal/event/rabbitmq/adapter_test.go:597
+- [x] 审核发现：atlas-crossagent 的 bus/busRdb 由 /ctl/bus-reset（busReset）与 /ctl/bus-off（busDrop）两个并发 HTTP handler 读写且无锁保护，并发请求存在数据竞态（既有缺陷，本 diff 触及该闭包） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-crossagent/main.go:398 cmd/atlas-crossagent/main_test.go:30
+- [x] 审核发现：/readyz 将 err.Error() 直接字符串拼接进 JSON 而未转义，Ping 错误信息含引号/控制字符时产出畸形 JSON（既有缺陷，本 diff 仅改写 w.Write 丢弃语义） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas/main.go:864,869 cmd/atlas/main_test.go:408
+- [x] 审核发现：本轮覆盖 0e19d5a64715..HEAD 全部 22 文件（2 commits：9a6df01 demo 房间注销修复、12fbd69 golangci-lint errcheck 接入）——安全注入/反序列化/越界未见问题，rows.Err() 均已检查，lint 门禁实测 0 issues — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 todo.md
