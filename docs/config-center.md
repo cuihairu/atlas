@@ -361,6 +361,30 @@ A left-hand menu entry, **Cross-Server Config**:
   affected servers, callback delivery/failure details, and bus errors (no subscribers is
   not an error, it is only recorded)
 
+### 7.1 Feature-switch toggles in action (demo fleet captures)
+
+The feature-switch card is a set of boolean toggles; flipping one publishes the full
+spec, which bumps the config version and hot-applies a `config_updated` signal to the
+online fleet (see §8.2–8.3). The captures below are from the demo fleet
+(deployments/demo/) and show, for each switch, the **off → on** flip and the resulting
+publish (version bump + `CONFIG APPLIED (hot)` with `targets=["*"]`):
+
+**mmorpg demo fleet** (deployments/demo/mmorpg):
+
+| Switch | Capture (off → on) |
+| --- | --- |
+| `arena` — cross-server arena entry | ![mmorpg arena feature switch off→on](/screenshots/config-gifs/mmorpg-arena.gif) |
+| `world-boss` — cross-server world boss | ![mmorpg world-boss feature switch off→on](/screenshots/config-gifs/mmorpg-world-boss.gif) |
+| `kv-persistence` — cross-server key-value persistence | ![mmorpg kv-persistence feature switch off→on](/screenshots/config-gifs/mmorpg-kv-persistence.gif) |
+
+**slg demo fleet** (deployments/demo/slg):
+
+| Switch | Capture (off → on) |
+| --- | --- |
+| `alliance-war` — cross-server alliance war | ![slg alliance-war feature switch off→on](/screenshots/config-gifs/slg-alliance-war.gif) |
+| `kv-persistence` — cross-server key-value persistence | ![slg kv-persistence feature switch off→on](/screenshots/config-gifs/slg-kv-persistence.gif) |
+| `map-merge` — cross-server map merge | ![slg map-merge feature switch off→on](/screenshots/config-gifs/slg-map-merge.gif) |
+
 ---
 
 ## 8. Real walkthroughs

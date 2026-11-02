@@ -284,6 +284,26 @@ POST /v1/registry/servers/register
 - 每段增删改模态框，服务器成员用 tag-input（逗号/回车分隔）
 - 发布后即时展示 **NotifyResult**：总线类型、变更目标、受影响服务器、回调送达/失败明细、bus 错误（无订阅者不报错，只记录）
 
+### 7.1 玩法开关切换效果（demo 舰队实录）
+
+玩法开关卡片是一组布尔开关；翻转任一开关即全量发布，配置版本号 +1 并向在线舰队热应用 `config_updated` 信号（见 §8.2–8.3）。以下实录取自 demo 舰队（deployments/demo/），每个开关展示 **off → on** 翻转及随后的发布（版本 +1 + `CONFIG APPLIED (hot)` + `targets=["*"]`）：
+
+**mmorpg demo 舰队**（deployments/demo/mmorpg）：
+
+| 开关 | 实录（off → on） |
+| --- | --- |
+| `arena` — 跨服竞技场入口 | ![mmorpg arena 玩法开关 off→on](/screenshots/config-gifs/mmorpg-arena.gif) |
+| `world-boss` — 跨服世界 Boss | ![mmorpg world-boss 玩法开关 off→on](/screenshots/config-gifs/mmorpg-world-boss.gif) |
+| `kv-persistence` — 跨服键值持久化 | ![mmorpg kv-persistence 玩法开关 off→on](/screenshots/config-gifs/mmorpg-kv-persistence.gif) |
+
+**slg demo 舰队**（deployments/demo/slg）：
+
+| 开关 | 实录（off → on） |
+| --- | --- |
+| `alliance-war` — 跨服联盟战 | ![slg alliance-war 玩法开关 off→on](/screenshots/config-gifs/slg-alliance-war.gif) |
+| `kv-persistence` — 跨服键值持久化 | ![slg kv-persistence 玩法开关 off→on](/screenshots/config-gifs/slg-kv-persistence.gif) |
+| `map-merge` — 跨服地图合并 | ![slg map-merge 玩法开关 off→on](/screenshots/config-gifs/slg-map-merge.gif) |
+
 ---
 
 ## 8. 真实走查
