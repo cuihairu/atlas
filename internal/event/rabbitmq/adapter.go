@@ -13,6 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -258,13 +259,11 @@ func (a *Adapter) Close() error {
 		cancel()
 	}
 	a.wg.Wait()
-	if err := a.ch.Close(); err != nil {
-		return err
-	}
+	err := a.ch.Close()
 	if a.conn != nil {
-		return a.conn.Close()
+		return errors.Join(err, a.conn.Close())
 	}
-	return nil
+	return err
 }
 
 func (a *Adapter) consume(ctx context.Context, topic string, deliveries <-chan amqp.Delivery, h event.Handler) {

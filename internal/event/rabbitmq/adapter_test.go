@@ -45,6 +45,7 @@ type fakeChannel struct {
 	errConsume       error
 	errPublish       error
 	errAck           error
+	errClose         error
 }
 
 func newFakeChannel() *fakeChannel {
@@ -136,7 +137,7 @@ func (c *fakeChannel) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closed = true
-	return nil
+	return c.errClose
 }
 
 func (c *fakeChannel) stats() (published int, acked int, nacked int) {
@@ -604,5 +605,23 @@ func TestCloseReleasesConnection(t *testing.T) {
 	}
 	if !conn.closed {
 		t.Fatal("Close must close the broker connection")
+	}
+}
+
+func TestCloseReleasesConnectionWhenChannelCloseFails(t *testing.T) {
+	ch := newFakeChannel()
+	ch.errClose = errors.New("channel already closed")
+	conn := &fakeConnection{}
+	adapter := New(ch, Options{})
+	adapter.conn = conn
+
+	if err := adapter.Close(); err == nil || !strings.Contains(err.Error(), "channel already closed") {
+		t.Fatalf("Close error = %v, want channel close failure", err)
+	}
+	if !ch.closed {
+		t.Fatal("Close must attempt to close the channel")
+	}
+	if !conn.closed {
+		t.Fatal("Close must still close the broker connection")
 	}
 }
