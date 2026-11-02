@@ -42,10 +42,33 @@ const (
 	defaultDrainWait = 250 * time.Millisecond
 )
 
+// connection is the subset of *amqp091.Connection the adapter uses. Keeping
+// it an interface lets amqpDial be swapped in tests to drive Open() through
+// the ExchangeDeclare failure path without a live broker.
+type connection interface {
+	Channel() (Channel, error)
+	io.Closer
+}
+
+// amqpConnection adapts *amqp091.Connection to the connection interface.
+// Channel()'s concrete return type differs from the interface's, so the
+// wrapper bridges the two.
+type amqpConnection struct{ *amqp.Connection }
+
+func (c amqpConnection) Channel() (Channel, error) {
+	return c.Connection.Channel()
+}
+
 // amqpDial opens the broker connection. A package variable so the failure
 // path (ExchangeDeclare error → connection must be closed) is testable
 // without a live broker.
-var amqpDial = amqp.Dial
+var amqpDial = func(url string) (connection, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, err
+	}
+	return amqpConnection{conn}, nil
+}
 
 // Channel is the subset of *amqp091.Channel the adapter needs. Injecting
 // the interface keeps the consume/publish logic testable without a broker.
@@ -94,7 +117,7 @@ type Options struct {
 // Adapter delivers events over RabbitMQ.
 type Adapter struct {
 	ch       Channel
-	conn     io.Closer
+	conn     connection
 	exchange string
 	consumer string
 	qos      int

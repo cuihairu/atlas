@@ -46,6 +46,7 @@ type fakeChannel struct {
 	errPublish       error
 	errAck           error
 	errClose         error
+	errExchangeDeclare error
 }
 
 func newFakeChannel() *fakeChannel {
@@ -56,6 +57,9 @@ func (c *fakeChannel) ExchangeDeclare(name, _ string, _, _, _, _ bool, _ amqp.Ta
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.declared = append(c.declared, "exchange:"+name)
+	if c.errExchangeDeclare != nil {
+		return c.errExchangeDeclare
+	}
 	return nil
 }
 
@@ -584,12 +588,62 @@ func TestDeliveryCapDeadLetterCopyFailureRequeues(t *testing.T) {
 }
 
 type fakeConnection struct {
-	closed bool
+	closed     bool
+	errClose   error
+	fakeCh     *fakeChannel
+	errChannel error
+}
+
+func (c *fakeConnection) Channel() (Channel, error) {
+	if c.errChannel != nil {
+		return nil, c.errChannel
+	}
+	if c.fakeCh != nil {
+		return c.fakeCh, nil
+	}
+	return nil, errors.New("Channel() not configured")
 }
 
 func (c *fakeConnection) Close() error {
 	c.closed = true
-	return nil
+	return c.errClose
+}
+
+func TestOpenClosesConnectionWhenExchangeDeclareFails(t *testing.T) {
+	boom := errors.New("declare failed")
+	fakeCh := newFakeChannel()
+	fakeCh.errExchangeDeclare = boom
+	conn := &fakeConnection{fakeCh: fakeCh}
+	origDial := amqpDial
+	amqpDial = func(string) (connection, error) { return conn, nil }
+	t.Cleanup(func() { amqpDial = origDial })
+
+	if _, err := Open(Options{URL: "amqp://test/"}); err == nil ||
+		!errors.Is(err, boom) || !strings.Contains(err.Error(), "declare exchange") {
+		t.Fatalf("Open error = %v, want exchange declare failure", err)
+	}
+	if !conn.closed {
+		t.Fatal("Open must close the broker connection when ExchangeDeclare fails")
+	}
+	if !fakeCh.closed {
+		t.Fatal("Open must also close the channel on the ExchangeDeclare failure path")
+	}
+}
+
+func TestOpenClosesConnectionWhenChannelOpenFails(t *testing.T) {
+	boom := errors.New("channel refused")
+	conn := &fakeConnection{errChannel: boom}
+	origDial := amqpDial
+	amqpDial = func(string) (connection, error) { return conn, nil }
+	t.Cleanup(func() { amqpDial = origDial })
+
+	if _, err := Open(Options{URL: "amqp://test/"}); err == nil ||
+		!errors.Is(err, boom) || !strings.Contains(err.Error(), "amqp channel") {
+		t.Fatalf("Open error = %v, want channel open failure", err)
+	}
+	if !conn.closed {
+		t.Fatal("Open must close the broker connection when Channel fails")
+	}
 }
 
 // TestCloseReleasesConnection verifies Close also closes the broker
