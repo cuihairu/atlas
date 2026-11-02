@@ -29,3 +29,20 @@ For the maintainer's benefit, the Chinese original covers:
 | Notes | Items deliberately excluded from the three discrepancy classes (release-tag bookkeeping, an editorial duplication, and a note that the mysql store is fully implemented in the repo but not yet wired into `ATLAS_STORE`) |
 | Appendix A | Before/after benchmark comparison for the performance batch, with the method and reproduction command |
 | Closure section | The four documentation-fixing batches executed on 2026-10-08, each row cancelled against its commit |
+
+---
+
+## 2026-11-02 Incremental Re-review (AI-flavor sweep + full re-check)
+
+> Full six-step pass per the audit specification, plus a style-spec sweep over README ×2 and docs/** (review archives excluded). The GitHub About line was checked via `gh repo view`: description and homepageUrl match the README positioning — no drift.
+
+### Re-check verdict
+
+- README technical claims verified claim by claim, all matching: Go 1.27 = `go.mod:3`; "50 business endpoints" = exactly 50 deduped (method, path) pairs registered in non-test `internal/httpapi` files; gRPC "five services, 23 RPCs" = 5 service definitions / 23 rpc entries in `api/proto/atlas.proto`; six-language SDKs = `sdk/{go,cpp,python,js,java,csharp}`; releases v0.1.0–v0.1.4 = `gh release list`; the project-structure tree matches the real `internal/`, `cmd/`, `internal/store/` entries; runtime `ATLAS_STORE` accepts memory/postgres only = `cmd/atlas/main.go:113,182`.
+- Buckets: **0 / 0 / 0 new items**.
+
+### AI-flavor sweep (fixed in place this batch)
+
+- README.md and README.zh.md badge rows carried orphan duplicate badges (Release / License / Codecov each rendered twice, as unlinked bare `<img>` copies) — duplicates removed, one linked set kept; en keeps the docs badge, zh the 文档 badge. The Codecov badge URL was also normalized to the `img.shields.io/codecov.io/…` form (was the legacy `img.shields.io/codecov/…`).
+- Banned-phrase sweep review: `永不` hits under docs/zh are technical semantics (lifecycle/config-center design invariants such as "never auto-expires", "never mutually exclusive", "never pushes full config") — kept; `里程碑` are factual internal-milestone labels — kept; roadmap ✅/❌/🔒 marks are legend-defined status values — kept.
+- Post-fix self-check: no duplicate badges, no empty anchors, no double slashes.

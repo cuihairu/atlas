@@ -412,3 +412,20 @@ go test ./internal/store/memory/ -run '^$' -bench . -benchmem -count 2
 ## 观察项（不动）
 
 - Makefile:3 `VERSION := v0.1.1` 与远端 tag（v0.1.4+）不齐——版本号红线（只能用户手动给），延续 10-13 轮 R05 口径待用户定版本时一并处理。
+
+---
+
+## 2026-11-02 增量复审(AI-味清扫 + 全面复核)
+
+> 按《文档与源码一致性审计规范》六步全量跑一遍;另按《文档写作风格规范》扫 README ×2 与 docs/**(排除 review 存档)。审计面含 GitHub About 行(`gh repo view`):描述、homepageUrl 与 README 定位一致,无漂移。
+
+### 复核结果
+
+- README 技术主张逐条取证,全对上:Go 1.27 ≡ `go.mod:3`;「50 business endpoints」≡ `internal/httpapi` 非测试文件注册的 (method,path) 去重后恰 50 对;gRPC「five services, 23 RPCs」≡ `api/proto/atlas.proto` 5 个 service 定义 / 23 个 rpc;六语言 SDK ≡ `sdk/{go,cpp,python,js,java,csharp}`;releases v0.1.0–v0.1.4 五枚 ≡ `gh release list`;项目结构树逐目录 ≡ `internal/`、`cmd/`、`internal/store/` 实体;`ATLAS_STORE` 运行时只收 memory/postgres ≡ `cmd/atlas/main.go:113,182`。
+- 三类差异:**0 / 0 / 0 新增**。
+
+### AI-味清扫(同批已就地修)
+
+- README.md 与 README.zh.md 徽章行有孤儿重复徽章(Release / License / Codecov 各出现两次,无链接的裸 `<img>` 复制品)——已删重复,仅保留带链接的一套;en 用 docs 徽章、zh 用文档徽章,语言归属不动。Codecov 徽章 URL 一并改为规范 `img.shields.io/codecov.io/…` 形态(原为 `img.shields.io/codecov/…` 旧式)。
+- 禁词扫描命中复核:docs/zh 下「永不」命中均为技术语义(「永不自动过期」「永不互斥」「永不推配置全文」——生命周期与配置中心的设计不变量,非质量承诺),保留;「里程碑」为内部版本里程碑事实表述,保留;roadmap 的 ✅/❌/🔒 为带图例状态标记,保留。
+- 修后自查:徽章行无重复、无空锚、无双斜杠。
