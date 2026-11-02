@@ -37,3 +37,11 @@
 - [x] 审核发现：atlas-crossagent 的 bus/busRdb 由 /ctl/bus-reset（busReset）与 /ctl/bus-off（busDrop）两个并发 HTTP handler 读写且无锁保护，并发请求存在数据竞态（既有缺陷，本 diff 触及该闭包） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-crossagent/main.go:398 cmd/atlas-crossagent/main_test.go:30
 - [x] 审核发现：/readyz 将 err.Error() 直接字符串拼接进 JSON 而未转义，Ping 错误信息含引号/控制字符时产出畸形 JSON（既有缺陷，本 diff 仅改写 w.Write 丢弃语义） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas/main.go:864,869 cmd/atlas/main_test.go:408
 - [x] 审核发现：本轮覆盖 0e19d5a64715..HEAD 全部 22 文件（2 commits：9a6df01 demo 房间注销修复、12fbd69 golangci-lint errcheck 接入）——安全注入/反序列化/越界未见问题，rows.Err() 均已检查，lint 门禁实测 0 issues — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 todo.md
+
+## 审核发现（12fbd699..HEAD）
+
+- [x] 审核发现：Adapter.Close() 在 `a.ch.Close()` 返回错误时提前 return，跳过 `a.conn.Close()`——本 diff 为“修复 ExchangeDeclare 失败路径连接泄漏”而新增的 conn 字段，在其自身的 ch.Close 错误分支仍会泄漏 broker 连接（ch.Close 已失败时 conn 大概率也处于故障态，实际影响偏小，但属资源管理缺陷）— `go test ./...: ok`；`make lint: 0 issues`；commit adcebe27379c258f455ff35eda261bc5c6fba18f internal/event/rabbitmq/adapter.go:258-266 internal/event/rabbitmq/adapter_test.go:604,617
+- [ ] 审核发现：`amqpDial` 包变量注释明确其用途是“让 ExchangeDeclare 错误路径（连接必须被关闭）可测试”，但该范围内无任何测试改写 amqpDial 或驱动 Open() 走 ExchangeDeclare 失败分支；新增的 TestCloseReleasesConnection 仅直接对手工构造的 adapter 调 Close()，未覆盖这个变量本要暴露的回归路径（测试缺口）— internal/event/rabbitmq/adapter.go:47,134 internal/event/rabbitmq/adapter_test.go:597
+- [ ] 审核发现：readyzHandler 忽略 json.Marshal 错误（`body, _ :=`），当前 map[string]string 载荷不会失败，但若载荷类型变更，会在 503 下写出空体而非合法 JSON，违背本改动“确保输出恒为合法 JSON”的初衷（防御性缺陷，低危）— cmd/atlas/main.go:869
+- [ ] 审核发现：TestRoomLoopDegradesOnDeleteFailure 断言 `s.register >= 2` 依赖 runRoom 内 30ms 的单次 settle 窗口（recycle=0 时循环重注册），负载下时序敏感、存在偶发 flake 风险；建议以轮询直至 register>=2 或超时判定替代固定 30ms — cmd/atlas-demoagents/topology_test.go:426,352
+- [ ] 审核发现：本轮 diff 12fbd699..HEAD（5 commits：45fd98d 修复、d38b4a5/b0b16c9/ea27a9b/3a93697 文档）覆盖 22 文件——busState 互斥重构（bus/busRdb 竞态修复）、deleteJSON 的 url.PathEscape（路径注入修复）、响应体 drain、rabbitmq conn 关闭（ExchangeDeclare 泄漏修复）、/readyz JSON 转义均实现正确；docs/Makefile 无安全问题。以上 4 条为本次新增发现，其余未再见问题
