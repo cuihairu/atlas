@@ -28,7 +28,7 @@ int main() {
         if (const char* env = std::getenv("ATLAS_ADDR")) o.base_url = env;
         // Local dev (no merged proxy): point Registry at its split port.
         if (const char* env = std::getenv("ATLAS_REGISTRY_ADDR")) o.registry_base_url = env;
-        if (const char* tok = std::getenv("ATLAS_REGISTRY_TOKEN")) o.registry_token = tok;
+        if (const char* tok = std::getenv("ATLAS_REGISTRY_TOKENS")) o.registry_token = tok;
         return o;
     }());
 

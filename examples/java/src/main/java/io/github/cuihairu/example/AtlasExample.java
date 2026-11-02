@@ -23,7 +23,7 @@ public final class AtlasExample {
     public static void main(String[] args) throws Exception {
         String addr = envOr("ATLAS_ADDR", "http://localhost:8080");
         String registryAddr = System.getenv("ATLAS_REGISTRY_ADDR");
-        String registryToken = System.getenv("ATLAS_REGISTRY_TOKEN");
+        String registryToken = System.getenv("ATLAS_REGISTRY_TOKENS");
         String serverId = envOr("SERVER_ID", "demo-game-1");
 
         // RegistryBaseUrl points at the split registry port when not behind

@@ -5,7 +5,7 @@
 //
 //    cd examples/js && npm install && npm start
 //
-// Environment: ATLAS_ADDR, ATLAS_REGISTRY_ADDR, ATLAS_REGISTRY_TOKEN, SERVER_ID.
+// Environment: ATLAS_ADDR, ATLAS_REGISTRY_ADDR, ATLAS_REGISTRY_TOKENS, SERVER_ID.
 
 import { AtlasClient, type RegisterRequest } from "@cuihairu/atlas-client";
 
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const client = new AtlasClient({
     baseUrl: envOr("ATLAS_ADDR", "http://localhost:8080"),
     registryBaseUrl: process.env.ATLAS_REGISTRY_ADDR,
-    registryToken: process.env.ATLAS_REGISTRY_TOKEN,
+    registryToken: process.env.ATLAS_REGISTRY_TOKENS,
   });
 
   // 1. Register this server.

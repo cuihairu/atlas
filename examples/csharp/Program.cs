@@ -10,12 +10,12 @@ using Atlas;
 //
 // Env: ATLAS_ADDR (default http://localhost:8080),
 //      ATLAS_REGISTRY_ADDR (e.g. http://localhost:8081 for the split
-//      registry port), ATLAS_REGISTRY_TOKEN, SERVER_ID.
+//      registry port), ATLAS_REGISTRY_TOKENS, SERVER_ID.
 
 var addr = Environment.GetEnvironmentVariable("ATLAS_ADDR") is { Length: > 0 } a
     ? a : "http://localhost:8080";
 var registryAddr = Environment.GetEnvironmentVariable("ATLAS_REGISTRY_ADDR");
-var registryToken = Environment.GetEnvironmentVariable("ATLAS_REGISTRY_TOKEN") ?? "";
+var registryToken = Environment.GetEnvironmentVariable("ATLAS_REGISTRY_TOKENS") ?? "";
 var serverId = Environment.GetEnvironmentVariable("SERVER_ID") is { Length: > 0 } s
     ? s : "demo-game-1";
 

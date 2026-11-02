@@ -29,7 +29,7 @@ func main() {
 		Addr:          envOr("ATLAS_ADDR", "localhost:8080"),
 		RegistryAddr:  os.Getenv("ATLAS_REGISTRY_ADDR"),
 		Transport:     atlas.Transport(envOr("ATLAS_TRANSPORT", string(atlas.TransportREST))),
-		RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKEN"),
+		RegistryToken: os.Getenv("ATLAS_REGISTRY_TOKENS"),
 	})
 	if err != nil {
 		log.Fatal(err)

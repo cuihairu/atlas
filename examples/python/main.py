@@ -5,7 +5,7 @@ Run against a local Atlas (default ports):
 
     python3 examples/python/main.py
 
-Environment: ATLAS_ADDR, ATLAS_REGISTRY_ADDR, ATLAS_REGISTRY_TOKEN, SERVER_ID.
+Environment: ATLAS_ADDR, ATLAS_REGISTRY_ADDR, ATLAS_REGISTRY_TOKENS, SERVER_ID.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import threading
 from atlas_client import (
     AtlasClient,
     Endpoint,
+    HeartbeatRequest,
     RegisterRequest,
 )
 
@@ -40,7 +41,7 @@ def main() -> None:
     client = AtlasClient(
         env_or("ATLAS_ADDR", "http://localhost:8080"),
         registry_base_url=os.getenv("ATLAS_REGISTRY_ADDR") or None,
-        registry_token=os.getenv("ATLAS_REGISTRY_TOKEN") or None,
+        registry_token=os.getenv("ATLAS_REGISTRY_TOKENS") or None,
     )
 
     # 1. Register this server.
