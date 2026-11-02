@@ -49,7 +49,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	defer e.Close()
+	defer func() { _ = e.Close() }()
 
 	ctx := context.Background()
 	if cfg.Duration > 0 {

@@ -78,7 +78,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "soakcheck: open sample file: %v\n", err)
 			os.Exit(2)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		samples, err := ReadSamples(f)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "soakcheck: read sample file: %v\n", err)
@@ -117,7 +117,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "soakcheck: open output: %v\n", err)
 			os.Exit(2)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		record = f
 	}
 	samples := scrape(ctx, urls, *interval, *timeout, record)
@@ -173,7 +173,7 @@ func fetch(client *http.Client, u string) (map[string]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: status %d", u, resp.StatusCode)
 	}
@@ -185,7 +185,7 @@ func fetch(client *http.Client, u string) (map[string]float64, error) {
 // 2 no samples at all (nothing was reachable).
 func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, winStart, winEnd string) int {
 	if winStart != "" {
-		fmt.Fprintf(os.Stdout, "window %s .. %s\n", winStart, winEnd)
+		_, _ = fmt.Fprintf(os.Stdout, "window %s .. %s\n", winStart, winEnd)
 	}
 	if len(samples) == 0 {
 		fmt.Fprintln(os.Stderr, "soakcheck: no samples (no replica answered, or the window is shorter than two ticks)")

@@ -91,6 +91,16 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # golangci-lint (errcheck) — the same surface `make lint` runs locally.
+      # go1.27.3 module: use the v2.15.0 binary built against go1.27 so the
+      # config loads (golangci-lint must not be older than the module's go
+      # directive). Errors are the lint gate itself, not a soft report.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+          args: --timeout=10m
+
       # -coverpkg 让跨包执行的代码（storetest 契约套件在三个 store 包的
       # 测试二进制里跑）如实计入覆盖；随后按块去重（保留最大计数）得到
       # 标准格式 profile，`go tool cover` 与 Codecov 均可直接解析。

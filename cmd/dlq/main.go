@@ -78,7 +78,7 @@ func run(args []string, out, errw io.Writer) int {
 		name = cfg.EventAdapter
 	}
 	if err := validateAdapter(name); err != nil {
-		fmt.Fprintln(errw, err)
+		_, _ = fmt.Fprintln(errw, err)
 		return 2
 	}
 	scope := resolveTopics(topics)
@@ -86,7 +86,7 @@ func run(args []string, out, errw io.Writer) int {
 	logger := slog.New(slog.NewTextHandler(errw, &slog.HandlerOptions{Level: slog.LevelError}))
 	replayer, closeFn, err := openReplayer(cfg, name, logger)
 	if err != nil {
-		fmt.Fprintln(errw, err)
+		_, _ = fmt.Fprintln(errw, err)
 		return 1
 	}
 	defer func() { _ = closeFn() }()
@@ -96,7 +96,7 @@ func run(args []string, out, errw io.Writer) int {
 	for _, topic := range scope {
 		rep, err := replayer.ReplayDeadLetters(ctx, topic, event.ReplayOptions{Limit: *limit, DryRun: *dryRun})
 		if err != nil {
-			fmt.Fprintf(errw, "replay %s: %v\n", topic, err)
+			_, _ = fmt.Fprintf(errw, "replay %s: %v\n", topic, err)
 			return 1
 		}
 		printReport(out, rep)
@@ -221,9 +221,9 @@ func printReport(w io.Writer, rep event.Report) {
 	if rep.Failed() {
 		mode = "incomplete"
 	}
-	fmt.Fprintf(w, "%s: found %d, republished %d, removed %d, %s\n",
+	_, _ = fmt.Fprintf(w, "%s: found %d, republished %d, removed %d, %s\n",
 		rep.Topic, rep.Found, rep.Republished, rep.Removed, mode)
 	for _, e := range rep.Errors {
-		fmt.Fprintf(w, "  %s\n", e.Error())
+		_, _ = fmt.Fprintf(w, "  %s\n", e.Error())
 	}
 }

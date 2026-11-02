@@ -34,7 +34,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	// 1. Register this server.
 	serverID := envOr("SERVER_ID", "demo-game-1")

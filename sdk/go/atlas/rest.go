@@ -98,7 +98,7 @@ func (b *restBackend) attempt(ctx context.Context, base, method, path string, pa
 	}
 	if resp.StatusCode >= 500 {
 		io.Copy(io.Discard, resp.Body) //nolint:errcheck // drain for keep-alive
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return &Error{StatusCode: resp.StatusCode, Code: "HTTP_" + strconv.Itoa(resp.StatusCode), Message: resp.Status}
 	}
 	*out = resp

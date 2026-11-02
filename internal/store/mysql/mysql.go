@@ -184,7 +184,7 @@ FROM servers WHERE 1=1`
 	if err != nil {
 		return nil, fmt.Errorf("list servers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*model.Server
 	for rows.Next() {
@@ -408,7 +408,7 @@ ORDER BY server_id, character_id
 	if err != nil {
 		return nil, fmt.Errorf("list characters by account: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanCharacters(rows)
 }
@@ -439,7 +439,7 @@ WHERE server_id = ?`
 	if err != nil {
 		return nil, fmt.Errorf("list characters by server: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	return scanCharacters(rows)
 }
@@ -503,7 +503,7 @@ FROM character_index WHERE 1=1`
 	if err != nil {
 		return nil, "", fmt.Errorf("search characters: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result, err := scanCharacters(rows)
 	if err != nil {
@@ -600,7 +600,7 @@ LIMIT ?
 	if err != nil {
 		return nil, fmt.Errorf("list migrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var result []*model.Migration
 	for rows.Next() {
@@ -638,7 +638,7 @@ func (s *Store) GetStats(ctx context.Context) (*model.Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get stats servers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var status, region, version string
@@ -827,7 +827,7 @@ func (s *Store) ListRealms(ctx context.Context, limit int) ([]*model.Realm, erro
 	if err != nil {
 		return nil, fmt.Errorf("list realms: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*model.Realm
 	for rows.Next() {
@@ -891,7 +891,7 @@ func (s *Store) ListShards(ctx context.Context, realmID string, limit int) ([]*m
 	if err != nil {
 		return nil, fmt.Errorf("list shards: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*model.Shard
 	for rows.Next() {
@@ -966,7 +966,7 @@ FROM maintenance_windows WHERE 1=1`
 	if err != nil {
 		return nil, fmt.Errorf("list maintenance windows: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*model.MaintenanceWindow
 	for rows.Next() {
@@ -1059,7 +1059,7 @@ FROM announcements WHERE 1=1`
 	if err != nil {
 		return nil, fmt.Errorf("list announcements: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*model.Announcement
 	for rows.Next() {

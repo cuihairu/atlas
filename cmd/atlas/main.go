@@ -174,7 +174,7 @@ func main() {
 
 		pingCloser = func() {
 			pool.Close()
-			rdb.Close()
+			_ = rdb.Close()
 		}
 
 	default:
@@ -597,7 +597,7 @@ func main() {
 	handler.RegisterPublicRoutes(publicMux)
 	publicMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	// CORS outermost: preflight clears before anything else, and only for
 	// origins ATLAS_CORS_ORIGINS explicitly allows (empty config = no CORS
@@ -618,7 +618,7 @@ func main() {
 	handler.RegisterRegistryRoutes(regMux)
 	regMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	var regHandler http.Handler = http.Handler(regMux)
 	if len(regTokens) > 0 || len(regIPs) > 0 {
@@ -648,11 +648,11 @@ func main() {
 	adminMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := composite.Ping(r.Context()); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"not ready","error":"` + err.Error() + `"}`))
+			_, _ = w.Write([]byte(`{"status":"not ready","error":"` + err.Error() + `"}`))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	adminMux.Handle("GET /metrics", prom.Handler())
 
@@ -813,9 +813,9 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
-	publicSrv.Shutdown(shutdownCtx)
-	regSrv.Shutdown(shutdownCtx)
-	adminSrv.Shutdown(shutdownCtx)
+	_ = publicSrv.Shutdown(shutdownCtx)
+	_ = regSrv.Shutdown(shutdownCtx)
+	_ = adminSrv.Shutdown(shutdownCtx)
 
 	// Graceful-stop gRPC (fall back to hard stop on timeout).
 	grpcDone := make(chan struct{})
@@ -831,9 +831,9 @@ func main() {
 
 	// Stop event pipeline.
 	evtCancel()
-	evtAdapter.Close()
+	_ = evtAdapter.Close()
 	if evtRdb != nil {
-		evtRdb.Close()
+		_ = evtRdb.Close()
 	}
 
 	// Flush pending audit entries before the stores close, then close the
@@ -1088,7 +1088,7 @@ func runHealthcheck() int {
 		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "healthcheck: /healthz returned %s\n", resp.Status)
 		return 1

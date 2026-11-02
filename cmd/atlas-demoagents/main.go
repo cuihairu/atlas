@@ -382,7 +382,7 @@ func runHealthcheck(addr string) int {
 		fmt.Fprintf(os.Stderr, "healthcheck: %v\n", err)
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "healthcheck: /healthz returned %s\n", resp.Status)
 		return 1
@@ -442,7 +442,7 @@ func main() {
 		log.Error("client init failed", "error", err)
 		os.Exit(1)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	admin := &adminClient{base: strings.TrimRight(*adminAddr, "/"), key: *adminKey, http: &http.Client{Timeout: 5 * time.Second}}
 
@@ -941,7 +941,7 @@ func (a *adminClient) postJSON(ctx context.Context, path string, body any) error
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("POST %s: http %d", path, resp.StatusCode)
 	}
@@ -961,7 +961,7 @@ func (a *adminClient) deleteJSON(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("DELETE %s: http %d", path, resp.StatusCode)
 	}
@@ -1006,7 +1006,7 @@ func startStatusServer(ctx context.Context, log *slog.Logger, addr string, fleet
 				return
 			}
 		}
-		fmt.Fprintln(w, "ok")
+		_, _ = fmt.Fprintln(w, "ok")
 	})
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {

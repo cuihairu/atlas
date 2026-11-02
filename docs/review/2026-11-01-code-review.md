@@ -59,13 +59,14 @@
 | 门禁 | 结果 | 证据 |
 | --- | --- | --- |
 | `go build ./...` | ✅ 0 错 | 实测 |
-| `go vet ./...`（= `make lint`） | ✅ 0 错 | Makefile:64 `lint: go vet ./...` |
+| `go vet ./...` | ✅ 0 错 | 实测 |
+| `make lint`（golangci-lint: errcheck + govet） | ✅ 0 issues | Makefile:64 `lint: golangci-lint run ./...`；.golangci.yml |
 | `go test ./...` | ✅ 全绿 exit 0（真实 SQL/Redis 容器） | 实测 |
 | `go test -race ./...` | ✅ 全绿 exit 0，0 FAIL | 实测 |
 | `make test-coverage` | ✅ 98.09% ≥ 98%（COVERAGE_GATE:=98，Makefile:41） | 先前本会话实测；Go 逻辑本轮无改动，门禁不受 docs 批影响 |
 | `npx vitepress build` | ✅ 绿（59.93s） | 阶段一实测 |
 
-**lint/类型检查基线：无 golangci-lint/staticcheck/errcheck 配置**（见 OBS-2）。
+**lint/类型检查基线：golangci-lint v2.15.0（errcheck + govet），`make lint` 全绿**（OBS-2 已补 errcheck 防回归，2026-11-02）。
 
 ## ④ 发现（按严重度排序）
 
@@ -74,7 +75,7 @@
 | SEC-1…SEC-7 | — | — | 七类安全扫描全净 | 见 §① | 无需修 |
 | BUG-1…BUG-4 | — | — | 资源/竞态/越界/错误处理全净 | 见 §② | 无需修 |
 | **OBS-1** | P3 | internal/httpapi/auth.go:201 | `SplitHostPort` 错误被 `_` 丢弃；RemoteAddr 非客户端可控，失败仅空 host 落空桶，无利用路径 | auth.go:201 | 记录不修 |
-| **OBS-2** | P3 | Makefile:64 | 无 golangci-lint/staticcheck/errcheck；`make lint` 仅 `go vet`。errcheck 类未配，当前唯一丢弃错误为 OBS-1 有意为之 | Makefile:64；rest.go:99-100 `//nolint:errcheck` | 记录不修（可后续加 errcheck 作为防回归） |
+| **OBS-2** | P3 | Makefile:64 | 无 golangci-lint/staticcheck/errcheck；`make lint` 仅 `go vet`。errcheck 类未配，当前唯一丢弃错误为 OBS-1 有意为之 | Makefile:64；rest.go:99-100 `//nolint:errcheck` | **已修**（2026-11-02）：接入 golangci-lint v2.15.0 errcheck+govet 并纳入 `make lint`，生产代码 38 处丢弃错误全部显式处理；auth.go:201 的有意丢弃保留 `_ =` 语义 |
 
 **P0 = 0，P1 = 0，P2 = 0，P3 = 2（观察项）。**
 
@@ -83,10 +84,11 @@
 - **P0/P1/P2：0 条，无需当场修（无 commit）。**
 - 阶段一（docs 审计）相关 commit（已推 `main`）：`3a50603` docs fix doc-source drift、`a99a231` fix examples env、`5ed862f` docs tidy todo、`35e39a4` docs audit report。
 - 阶段二：无修复 commit（发现仅 2 条 P3 观察项，按 P2/P3 记 todo 口径——OBS-2 记入 todo 待用户拍板是否补 errcheck）。
+- 2026-11-02：OBS-2 修复（golangci-lint errcheck+govet 接入 `make lint`）。
 
 ## ⑥ 计数汇报
 
 - **发现：0 条 P0/P1/P2 + 2 条 P3 观察项（OBS-1、OBS-2）。**
-- **已修：0 条（无 P0/P1 需修）。**
+- **已修：1 条 P3（OBS-2，2026-11-02）。**
 - **剩余：2 条 P3 观察项（记录不修；OBS-2 已记 todo 待拍板）。**
 - **commit 清单：阶段一 4 条（`3a50603`/`a99a231`/`5ed862f`/`35e39a4`，已推）；阶段二 0 条。**

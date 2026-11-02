@@ -196,7 +196,7 @@ func (a *Alerter) postWebhook(ctx context.Context, payload any) {
 		a.logger.Error("health alert webhook delivery failed", "error", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		a.logger.Error("health alert webhook rejected", "status", resp.StatusCode)
 	}

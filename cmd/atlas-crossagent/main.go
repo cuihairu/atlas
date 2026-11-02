@@ -212,11 +212,11 @@ func main() {
 	// while I was disconnected" window (断连→改配置→重连→补拉).
 	busDrop := func() {
 		if bus != nil {
-			bus.Close()
+			_ = bus.Close()
 			bus = nil
 		}
 		if busRdb != nil {
-			busRdb.Close()
+			_ = busRdb.Close()
 			busRdb = nil
 		}
 	}
@@ -231,7 +231,7 @@ func main() {
 		}
 		rdb := redis.NewClient(opts)
 		if err := rdb.Ping(ctx).Err(); err != nil {
-			rdb.Close()
+			_ = rdb.Close()
 			return err
 		}
 		adapter := redisEvent.New(rdb, redisEvent.Options{
@@ -255,7 +255,7 @@ func main() {
 				"targets", e.ConfigTargets, "receivers", e.ConfigServers)
 			return nil
 		}); err != nil {
-			rdb.Close()
+			_ = rdb.Close()
 			return err
 		}
 		bus = adapter
@@ -318,7 +318,7 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /notify", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "atlas-crossagent notify endpoint (POST)")
+		_, _ = fmt.Fprintln(w, "atlas-crossagent notify endpoint (POST)")
 	})
 	mux.HandleFunc("POST /ctl/failpull", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -327,7 +327,7 @@ func main() {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		failPull.Store(body.On)
 		log.Warn("FAULT INJECTION", "config_pull_failing", body.On)
-		fmt.Fprintf(w, "failpull=%v\n", body.On)
+		_, _ = fmt.Fprintf(w, "failpull=%v\n", body.On)
 	})
 	mux.HandleFunc("POST /ctl/bus-reset", func(w http.ResponseWriter, r *http.Request) {
 		if err := busReset(); err != nil {
@@ -335,12 +335,12 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fmt.Fprintln(w, "bus re-subscribed + re-pull triggered")
+		_, _ = fmt.Fprintln(w, "bus re-subscribed + re-pull triggered")
 	})
 	mux.HandleFunc("POST /ctl/bus-off", func(w http.ResponseWriter, r *http.Request) {
 		busDrop()
 		log.Warn("FAULT INJECTION", "bus_subscription", "dropped")
-		fmt.Fprintln(w, "bus subscription dropped (changes missed until /ctl/bus-reset)")
+		_, _ = fmt.Fprintln(w, "bus subscription dropped (changes missed until /ctl/bus-reset)")
 	})
 	mux.HandleFunc("GET /ctl/status", func(w http.ResponseWriter, r *http.Request) {
 		cur := watcher.Current()
@@ -361,7 +361,7 @@ func main() {
 			resp["config_version"] = nil
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	agentSrv := &http.Server{Addr: *callbackAddr, Handler: mux}
@@ -379,10 +379,10 @@ func main() {
 	defer cancel()
 	_ = agentSrv.Shutdown(shutdownCtx)
 	if bus != nil {
-		bus.Close()
+		_ = bus.Close()
 	}
 	if busRdb != nil {
-		busRdb.Close()
+		_ = busRdb.Close()
 	}
 	if _, err := client.Unregister(context.Background(), *serverID); err != nil {
 		log.Warn("unregister failed", "error", err)

@@ -177,7 +177,7 @@ type Sample struct {
 // WriteSamples writes samples as TSV: epoch\tsource\tmetric\tvalue.
 func WriteSamples(w io.Writer, samples []Sample) error {
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
+	defer func() { _ = bw.Flush() }()
 	for _, s := range samples {
 		if _, err := fmt.Fprintf(bw, "%d\t%s\t%s\t%.6g\n", s.At.Unix(), s.Source, s.Metric, s.Value); err != nil {
 			return err

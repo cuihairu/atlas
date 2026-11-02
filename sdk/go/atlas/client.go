@@ -202,7 +202,7 @@ func restBase(addr, def string) string {
 
 // decodeJSON decodes a response body into v, translating error envelopes.
 func decodeJSON(resp *http.Response, v any) error {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return apiError(resp)
 	}

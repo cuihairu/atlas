@@ -62,7 +62,7 @@ test-coverage:
 	@rm -f coverage.raw coverage.out
 
 lint:
-	go vet ./...
+	golangci-lint run ./...
 
 docker:
 	docker build -t atlas:$(VERSION) -f deployments/docker/Dockerfile .

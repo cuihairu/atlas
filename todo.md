@@ -22,7 +22,7 @@
 - [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0（BLOCKED：冻结决策与发版须用户拍板 + 缺生产环境部署验证实证；契约 pin 守卫已在仓）
 - [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练折入（BLOCKED：待用户指定机器与排期；docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈）
 - [ ] DOC-GIF（P2）：配置开关效果动态图，每开关 off→on 对比 + GIF
-- [ ] CODE-LINT（P3）：接入 golangci-lint/errcheck 并纳入 `make lint`，防未检错误回归（OBS-2，docs/review/2026-11-01-code-review.md；当前唯一丢弃错误 auth.go:201 为有意兜底）
+- [x] CODE-LINT（P3）：接入 golangci-lint/errcheck 并纳入 `make lint`，防未检错误回归 — `make lint: 0 issues`；`go build ./...: ok`；`go test ./...: exit 0`
 
 ## 审核发现
 

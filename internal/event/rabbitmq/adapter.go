@@ -120,13 +120,13 @@ func Open(opts Options) (*Adapter, error) {
 	}
 	ch, err := conn.Channel()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("event: amqp channel: %w", err)
 	}
 	a := New(ch, opts)
 	a.owns = true
 	if err := ch.ExchangeDeclare(a.exchange, "topic", true, false, false, false, nil); err != nil {
-		a.Close()
+		_ = a.Close()
 		return nil, fmt.Errorf("event: amqp declare exchange: %w", err)
 	}
 	return a, nil
