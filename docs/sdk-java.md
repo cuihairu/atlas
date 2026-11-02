@@ -1,8 +1,9 @@
 
 # Java SDK
 
-`sdk/java/` (delivered in v0.1.10). An OkHttp + Gson REST client with the same
-API surface as the Go / C++ / Python / JS SDKs. Java 17+, synchronous blocking
+`sdk/java/` (delivered in internal milestone v0.1.10). An OkHttp + Gson REST client with the same
+core method surface as the Go SDK (the Go SDK additionally ships a cross-server config center;
+this SDK additionally offers `setWeight`). Java 17+, synchronous blocking
 interface, published coordinates `io.github.cuihairu:atlas-client`, with both
 Maven + Gradle build configurations.
 

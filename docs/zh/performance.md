@@ -196,7 +196,7 @@ fail）——表内两列永远是同一个查询。计 5 轮取
 **最小值**（min-of-5：长跑降频与调度噪声下，最小值是最接近无干扰真值的估计；中位数会随
 热累积漂移——实测 index/status 的 b.N 逐轮 5108→2635→1310 递减）。
 
-**环境**：Intel Core i9-10880H @ 2.30GHz（14 逻辑核）、Go 1.27.1（仓库现已钉 1.27.2，
+**环境**：Intel Core i9-10880H @ 2.30GHz（14 逻辑核）、Go 1.27.1（仓库现已钉 1.27.3，
 补丁级差异不影响本表）、linux/amd64。
 
 复现命令：
@@ -276,12 +276,12 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
    `flush_batch_size` / `flush_duration_seconds`（最近一批 gauge）与
    `capture_entries`。入队/合并速率按 PromQL 由 `*_total` 差分，不另设第二
    计数器。SQL 后端经转发快照报 `Enabled=false` 时整族不出序列——有指标即有队列。
-2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:213 路由、:1832
+2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:218 路由、:1922
    handler）：返回同一快照原文。装饰层不藏快照——fleet 装饰器与 main 的
    composite 都透传 `QueueStats`（fleet/track.go:75、main.go:912）；SQL 库的
    空快照（`Enabled=false`）与非 provider 一律 `503 INDEX_QUEUE_DISABLED`，
    不发空 200。curl 实证：memory 后端 200（watermark=enqueued=applied=4，
-   recent_flushes 真实记录，临界区 ~7-17µs）；`/metrics` 上 14 条序列同水位。
+   recent_flushes 真实记录，临界区 ~7-17µs）；`/metrics` 上 12 条序列同水位。
 3. **管理台「存储队列」卡**（dashboard `QueueStatusCard.tsx`，挂载于
    Overview.tsx:93）：压力灯阈值变色（深度 ≥500 黄 / ≥2000 红，背压退化
    ≥10 黄 / ≥100 红——severityColor，QueueStatusCard.tsx:16）、版本号（水位）、
@@ -300,6 +300,12 @@ p95/p99、GC 行为、多小时运行对内存与文件描述符的影响（2026
 的缺口）。本节补的是缺失的前半件事——代表性部署、负载模型与验收口径——让「跑」
 变成排期决定而不是重新设计。本节没有任何实测主张；实跑发生之前，[基准](/zh/benchmarks)
 仍是唯一基线。
+
+> **本地实证（非验收证据）**：`deploy/perf/results/` 归档两次本地尺度实跑，均不作验收
+> 证据——`perf-100-acceptance-20261025`（100 档、60s 窗、演练折入；verdict FAIL 因
+> heap +41.1%/+40.6%、fd +33.3%/+32.9% 为 boot 蜂群瞬态，`--warmup 2` 下六序列全
+> plateau 可过）与 `perf-1k-20261027T130504`（1k 档、180s、36/36 tick、六序列全
+> plateau、PASS、零负载错误）。≥24h 验收实跑仍待指定机器与排期。
 
 **代表性部署**：用仓里现成的 HA 拓扑，不另搭台——`deploy/docker-compose.ha.yaml`：
 2 个无状态 Atlas 副本挂 HAProxy（公口 :8080、registry 心跳扇入 :8081）、PostgreSQL

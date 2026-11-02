@@ -6,7 +6,7 @@ RBAC, operation audit and rate limiting. mTLS / RBAC / rate limiting are **opt-i
 (leaving them unconfigured turns the corresponding protection off); auditing is **on
 by default** (disable it with `ATLAS_AUDIT_ENABLED=0`).
 
-## 1. TLS / mTLS (Registry :8081, gRPC :9090, Admin :8083)
+## 1. TLS / mTLS (Registry :8081, gRPC :9090, Admin :8082)
 
 The three internal listeners — the REST registration port, the five-service gRPC
 port and the Admin HTTP port (dashboard + operator tools) — share the same TLS

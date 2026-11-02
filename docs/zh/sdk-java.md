@@ -1,8 +1,8 @@
 
 # Java SDK
 
-`sdk/java/`（v0.1.10 交付）。OkHttp + Gson 的 REST 客户端，与 Go / C++ /
-Python / JS SDK 同一 API 面。Java 17+，同步阻塞接口，发布坐标
+`sdk/java/`（内部里程碑 v0.1.10 交付）。OkHttp + Gson 的 REST 客户端，与 Go SDK 同核心
+方法面（Go SDK 另含跨服配置中心；本 SDK 另有 `setWeight`）。Java 17+，同步阻塞接口，发布坐标
 `io.github.cuihairu:atlas-client`，Maven + Gradle 双构建配置。
 
 ## 安装

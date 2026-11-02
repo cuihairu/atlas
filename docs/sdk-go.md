@@ -1,7 +1,7 @@
 
 # Go SDK
 
-`github.com/cuihairu/atlas/sdk/go/atlas` (delivered in v0.1.6). The same API surface covers both REST and gRPC transports; for an example see [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go).
+`github.com/cuihairu/atlas/sdk/go/atlas` (delivered in internal milestone v0.1.6). The same API surface covers both REST and gRPC transports; for an example see [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go).
 
 ## Installation
 

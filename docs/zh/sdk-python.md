@@ -1,8 +1,8 @@
 
 # Python SDK
 
-`sdk/python/`（v0.1.8 交付）。基于 httpx 的 REST 客户端，与 Go / C++ SDK
-同一 API 面。同步 `AtlasClient` 与异步 `AtlasAsyncClient` 方法同名，仅
+`sdk/python/`（内部里程碑 v0.1.8 交付）。基于 httpx 的 REST 客户端，与 Go SDK 同核心
+方法面（Go SDK 另含跨服配置中心；本 SDK 另有 `set_weight`）。同步 `AtlasClient` 与异步 `AtlasAsyncClient` 方法同名，仅
 协程之分；依赖仅 `httpx`，Python ≥ 3.9。
 
 ## 安装

@@ -1,8 +1,8 @@
 
 # JavaScript/TypeScript SDK
 
-`sdk/js/`（v0.1.9 交付）。基于 `fetch` 的 REST 客户端，与 Go / C++ /
-Python SDK 同一 API 面。零运行时依赖，Node.js 18+ 与现代浏览器通用；
+`sdk/js/`（内部里程碑 v0.1.9 交付）。基于 `fetch` 的 REST 客户端，与 Go SDK 同核心
+方法面（Go SDK 另含跨服配置中心；本 SDK 另有 `setWeight`）。零运行时依赖，Node.js 18+ 与现代浏览器通用；
 npm 产物 ESM + CJS 双格式，含完整 TypeScript 类型。
 
 ## 安装

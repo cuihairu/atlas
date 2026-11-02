@@ -184,7 +184,7 @@ type Config struct {
 	GRPCTLSClientCA string
 
 	// AdminTLSCert / AdminTLSKey enable TLS on the Admin listener
-	// (:8083) — same material semantics as the Registry pair above.
+	// (:8082) — same material semantics as the Registry pair above.
 	// Unset = plaintext (network isolation assumed), the historical
 	// behavior.
 	// Env: ATLAS_ADMIN_TLS_CERT / ATLAS_ADMIN_TLS_KEY, default "".

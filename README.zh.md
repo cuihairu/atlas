@@ -256,6 +256,7 @@ atlas/
 │   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
 │   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
 │   ├── config/             环境变量配置
+│   ├── migration/          合服迁移编排（服务 / 编排 / 审计）
 │   └── version/            版本信息
 ├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
@@ -353,6 +354,7 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 | [docs/zh/topology.md](docs/zh/topology.md) | 部署拓扑：单机 / 标准生产 / 大规模三档形态 |
 | [docs/zh/ha.md](docs/zh/ha.md) | 高可用：心跳扇入 LB 与存储冗余 |
 | [docs/zh/benchmarks.md](docs/zh/benchmarks.md) | 性能基准与回归警戒线 |
+| [docs/zh/performance.md](docs/zh/performance.md) | 性能设计：生产形状压测与长稳观测（§9） |
 | [docs/zh/security.md](docs/zh/security.md) | 安全模型：认证、限流、审计 |
 | [docs/zh/security-audit.md](docs/zh/security-audit.md) | 安全审计记录与周期清单 |
 | [docs/zh/sdk-go.md](docs/zh/sdk-go.md) | SDK 文档（六语言：Go / C++ / Python / JS / [Java](docs/zh/sdk-java.md) / [C#](docs/zh/sdk-csharp.md)） |

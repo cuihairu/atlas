@@ -256,6 +256,7 @@ atlas/
 │   ├── serversconfig/      server config file hosting (config-owned records)
 │   ├── telemetry/          load and bus series sampling (load-series / bus-series)
 │   ├── config/             environment-variable configuration
+│   ├── migration/          server-merge / transfer orchestration (service / orchestration / audit)
 │   └── version/            version information
 ├── api/proto/              gRPC proto definitions
 ├── migrations/             SQL migrations
@@ -353,6 +354,7 @@ The only built-in channel with business-semantic filtering carries nothing beyon
 | [docs/topology.md](docs/topology.md) | Deployment topologies: single box / standard production / large scale |
 | [docs/ha.md](docs/ha.md) | High availability: heartbeat fan-in LB and storage redundancy |
 | [docs/benchmarks.md](docs/benchmarks.md) | Performance benchmarks and regression guardrails |
+| [docs/performance.md](docs/performance.md) | Performance design: production-shaped load and soak (§9) |
 | [docs/security.md](docs/security.md) | Security model: authentication, rate limiting, audit |
 | [docs/security-audit.md](docs/security-audit.md) | Security audit records and periodic checklist |
 | [docs/sdk-go.md](docs/sdk-go.md) | SDK docs (six languages: Go / C++ / Python / JS / [Java](docs/sdk-java.md) / [C#](docs/sdk-csharp.md)) |

@@ -279,7 +279,7 @@ The operational metrics Atlas exposes externally are recommended to cover:
 | `atlas_health_transitions_total{from,to}` | Lifecycle status transition volume |
 | `atlas_directory_write_duration_seconds{op}` | Character directory write path latency (REST write + event projection) |
 | `atlas_registry_write_duration_seconds{op}` | Registration/heartbeat/unregistration write path latency (the hottest write path; write degradation shows here first) |
-| `atlas_store_queue_*` | memory store command write queue, 14 series (depth / watermark / enqueue / apply / merge / idempotent hits / backpressure degradation / flush batch and latency / distribution by type / replay ring length; the SQL backend exposes no series, same source as `/v1/admin/indexqueue/status`) |
+| `atlas_store_queue_*` | memory store command write queue, 12 series (depth / watermark / enqueue / apply / merge / idempotent hits / backpressure degradation / flush batch and latency / distribution by type / replay ring length; the SQL backend exposes no series, same source as `/v1/admin/indexqueue/status`) |
 
 The three HTTP listeners and the gRPC port additionally have request-level tracing: `X-Request-ID` (gRPC uses the `x-request-id` metadata) is propagated/generated and echoed, and on request completion an access log containing the request_id is recorded (except for `/healthz`, `/readyz`, `/metrics`); requests rejected by rate limiting/authentication also have an id. See docs/api.md "Request Tracing" for details. After configuring `ATLAS_OTLP_ENDPOINT`, the same request also opens an OpenTelemetry server span exported to any OTLP receiver (Jaeger / Tempo / collector), and the span attributes carry the same request id; see api.md "Distributed Tracing".
 

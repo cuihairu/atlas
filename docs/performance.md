@@ -318,7 +318,7 @@ closest estimate of the undisturbed truth; medians drift with accumulated heat �
 practice the b.N for index/status declined 5108→2635→1310 round over round).
 
 **Environment**: Intel Core i9-10880H @ 2.30GHz (14 logical cores), Go 1.27.1 (the repo
-is now pinned to 1.27.2; a patch-level difference does not affect this table),
+is now pinned to 1.27.3; a patch-level difference does not affect this table),
 linux/amd64.
 
 Reproduction command:
@@ -418,13 +418,13 @@ readers** (the no-drift contract in store.go's header comment):
    PromQL rather than a second set of counters. When SQL backends report
    `Enabled=false` through the forwarded snapshot, the entire family is not emitted —
    if the metric exists, there is a queue.
-2. **`GET /v1/admin/indexqueue/status`** (httpapi/handlers.go:213 routing, :1832
+2. **`GET /v1/admin/indexqueue/status`** (httpapi/handlers.go:218 routing, :1922
    handler): returns the same snapshot verbatim. The decoration layer does not hide the
    snapshot — the fleet decorator and main's composite both pass `QueueStats` through
    (fleet/track.go:75, main.go:912); the SQL stores' empty snapshot
    (`Enabled=false`) and non-providers return `503 INDEX_QUEUE_DISABLED` rather than an
    empty 200. Verified with curl: memory backend returns 200 (watermark=enqueued=applied=4,
-   genuine `recent_flushes` records, critical sections ~7-17µs); `/metrics` shows 14
+   genuine `recent_flushes` records, critical sections ~7-17µs); `/metrics` shows 12
    series at the same watermark.
 3. **Dashboard "Storage Queue" card** (dashboard `QueueStatusCard.tsx`, mounted at
    Overview.tsx:93): pressure-light thresholds that change colour (depth ≥500 yellow /
@@ -449,6 +449,13 @@ what a multi-hour run does to memory and file descriptors (the gap named by the
 representative deployment, the load model and the acceptance criteria — so that running
 it becomes a scheduling decision instead of a design exercise. Nothing here is a measured
 claim; [Benchmarks](/benchmarks) stays the only baseline until a run exists.
+
+> **Local evidence (not acceptance).** Two local-scale runs are archived under
+> `deploy/perf/results/` and are not acceptance evidence: `perf-100-acceptance-20261025`
+> (100-node, 60s window, drills folded in — verdict FAIL because heap +41.1%/+40.6% and
+> fd +33.3%/+32.9% are boot-transient, all six series plateau under `--warmup 2`) and
+> `perf-1k-20261027T130504` (1k-node, 180s, 36/36 ticks, six series all plateau, PASS,
+> zero load errors). The ≥24h acceptance run remains pending a machine and a schedule.
 
 **Representative deployment.** The run uses the HA topology the repo already ships, not a
 bespoke rig: `deploy/docker-compose.ha.yaml` — 2 stateless Atlas replicas behind HAProxy

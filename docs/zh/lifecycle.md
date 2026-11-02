@@ -39,7 +39,7 @@ stateDiagram-v2
     suspect --> offline: 心跳超时 60s
     suspect --> starting: 重新注册
     offline --> starting: 重新注册
-    draining --> offline: 存量清零 / 超时
+    draining --> offline: 游戏服务器 unregister
     maintenance --> online: 运维 enable
 
     note right of online
@@ -78,11 +78,12 @@ stateDiagram-v2
 
 ### DRAINING
 
-排水状态，用于**优雅下线**：`ONLINE → DRAINING → OFFLINE`。
+排水状态，用于**优雅下线**：`ONLINE → DRAINING`，随后游戏服务器 `unregister` → `OFFLINE`。
 
 - 停止接受新连接
 - **存量玩家不受影响**，继续游戏直到自己退出
-- 等待玩家自然离开或到达超时阈值后转 `OFFLINE`
+- 游戏服务器等待玩家自然离开后调用 `unregister`；Atlas 无自动「存量清零 / 超时」转
+  `OFFLINE` 的推进（健康监控只驱动 `starting` / `online` / `suspect`），此前一直保持 draining
 - 通常用于版本更新前的缩容、实例替换
 
 ### MAINTENANCE
@@ -128,7 +129,7 @@ stateDiagram-v2
 | `suspect` → `online` | Atlas | 收到心跳（恢复） |
 | `suspect` → `offline` | Atlas | 心跳超时阈值 2 |
 | `suspect` / `offline` → `starting` | 游戏服务器 | 重新 `register`（幂等；仅 `suspect` / `offline` 会被重置，`online` 与运维设置的状态不受重复注册影响） |
-| `draining` → `offline` | Atlas / 游戏服务器 | 存量清零或超时 |
+| `draining` → `offline` | 游戏服务器 | `unregister`（Atlas 无自动 draining→offline 转移；健康监控只驱动 `starting` / `online` / `suspect`） |
 | `maintenance` → `online` | 运维 | `POST /v1/admin/servers/{id}/enable` |
 | 任意 → `disabled` | 运维 | `POST /v1/admin/servers/{id}/disable` |
 | 任意 → `offline` | 游戏服务器 | `unregister` |

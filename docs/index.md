@@ -14,7 +14,7 @@ hero:
       link: /api-quickstart
     - theme: alt
       text: Find Docs by Scenario
-      link: #使用场景
+      link: #use-cases
 
 features:
   - title: Server Registration and Heartbeat

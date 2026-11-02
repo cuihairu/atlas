@@ -380,7 +380,7 @@ window reuses the already-delivered batch window API
 
 | Design decision | Value | Rationale |
 | --- | --- | --- |
-| Trigger point | After `CreateMigration` succeeds | Protection is needed the moment a migration starts; the window is written before the migration record |
+| Trigger point | Inside `CreateMigration`, before the migration record is written (fail-closed) | Protection is needed the moment a migration starts; the window is staged first, and the migration record is only written after it succeeds |
 | Target servers | The source servers (not the target) | The target is the destination; staging a window there is meaningless |
 | Window duration | 24h (`DefaultMigrationWindowDuration`) | A migration is an open-ended record (no end time), and the window is a protection convenience — it expires on its own instead of locking the source server |
 | Error semantics | fail-closed | If the window cannot be staged → the migration record is not written (a source server is never migrated away unprotected); per-server failures propagate the same way |

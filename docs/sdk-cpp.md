@@ -1,11 +1,13 @@
 
 # C++ SDK
 
-`sdk/cpp/` (delivered in v0.1.7). A REST client with the same API surface as
-the Go SDK. Dependencies are vendored as single headers under
+`sdk/cpp/` (delivered in internal milestone v0.1.7). A REST client with the same core method
+surface as the Go SDK (the Go SDK additionally ships a cross-server config center; this SDK
+additionally offers `set_weight`). Dependencies are vendored as single headers under
 `sdk/cpp/third_party/` (cpp-httplib v0.58.0, nlohmann/json
 v3.12.0, see [VENDORED.md](https://github.com/cuihairu/atlas/blob/main/sdk/cpp/third_party/VENDORED.md)),
-with no external system dependencies; C++17 is enough to compile.
+with no external system dependencies beyond a C++17 compiler and the threading library (pthread);
+C++17 is enough to compile.
 
 ## Build
 

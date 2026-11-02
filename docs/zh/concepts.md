@@ -103,15 +103,15 @@ flowchart TB
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 唯一标识 |
-| `realm_id` | string | 所属 Realm，可为空（直接挂在 Region 下） |
+| `realm_id` | string | 所属 Realm（必填；须引用已存在的 Realm，否则 `CreateShard` 拒绝并报 `REALM_NOT_FOUND`） |
 | `name` | string | 展示名 |
 | `status` | string | 状态（如 `active`） |
 | `created_at` | time | 创建时间 |
 
 Realm 内的分区。MMORPG 中的"一区""二区"。
 
-- **可选**
-- `realm_id` 可为空，允许 Shard 直接挂在 Region 下
+- **必填**：每个 Shard 挂在已存在的 Realm 下（不支持 Region 直挂 Shard；`CreateShard`
+  要求非空 `realm_id` 且引用已存在的 Realm）
 - 合服/转服的主要操作单元
 
 ---

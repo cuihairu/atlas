@@ -1,8 +1,8 @@
 
 # C# SDK
 
-`sdk/csharp/`（v0.1.11 交付）。HttpClient + System.Text.Json 的 REST
-客户端，与 Go / C++ / Python / JS / Java SDK 同一 API 面。目标
+`sdk/csharp/`（内部里程碑 v0.1.11 交付）。HttpClient + System.Text.Json 的 REST
+客户端，与 Go SDK 同核心方法面（Go SDK 另含跨服配置中心；本 SDK 另有 `setWeight`）。目标
 net8.0 + net10.0，零第三方依赖，NuGet 包名 `Atlas.Client`。
 
 ## 安装

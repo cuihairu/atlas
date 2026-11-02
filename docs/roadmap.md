@@ -56,7 +56,7 @@ more complete than plain Game Server Discovery, and it is naturally complementar
 | ✅ Dashboard enhancements | real-time server map, player trends, migration progress, theme switching, Chinese/English i18n, server load heatmap (REST + gRPC + dash pages, delivered 2026-10-12) | v0.1.18 |
 | ✅ High availability | Redis sentinel/cluster, PG connection pool tuning, HAProxy heartbeat fan-in, primary-replica replication guide | v0.1.19 |
 | ✅ Admin plane: maintenance windows and announcements | server metadata, planned maintenance windows (scheduled automatic entry/exit), announcement system (three severity levels) | v0.1.20 |
-| ✅ Quality infrastructure | service/handler coverage >80% target (CI report + Codecov upload, not a failing gate), performance benchmarks, Dependabot, periodic security audit CI | v0.1.x |
+| ✅ Quality infrastructure | service/handler coverage ≥98% gate (local `make test-coverage` hard gate; Codecov upload is informational, CI does not fail on coverage), performance benchmarks, Dependabot, periodic security audit CI | v0.1.x |
 
 How to use each capability and in which scenarios — see the [README usage scenarios](https://github.com/cuihairu/atlas#使用场景) and [Announcements and Planned Maintenance](operations.md).
 
@@ -137,7 +137,7 @@ The positioning statement is in [architecture.md](architecture.md#_1-overview) m
 
 ```text
 atlas/
-├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard）
+├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard / dlq / loadgen / soakcheck）
 ├── internal/
 │   ├── model/              领域模型（Server, Character, Realm, Shard…）
 │   ├── store/              存储接口
@@ -151,6 +151,7 @@ atlas/
 │   ├── directory/          角色目录
 │   ├── routing/            接入推荐
 │   ├── admin/              Admin 服务（Realm/Shard/维护窗口/公告/迁移/审计）
+│   ├── audit/              审计日志（登录审计 / 数据操作审计 / 审计查询）
 │   ├── health/             健康监控（自动掉线 + 占比告警）
 │   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers
@@ -163,6 +164,7 @@ atlas/
 │   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
 │   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
 │   ├── config/             环境变量配置
+│   ├── migration/          合服迁移编排（服务 / 编排 / 审计）
 │   └── version/            版本信息
 ├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration

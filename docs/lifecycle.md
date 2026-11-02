@@ -39,7 +39,7 @@ stateDiagram-v2
     suspect --> offline: 心跳超时 60s
     suspect --> starting: 重新注册
     offline --> starting: 重新注册
-    draining --> offline: 存量清零 / 超时
+    draining --> offline: 游戏服务器 unregister
     maintenance --> online: 运维 enable
 
     note right of online
@@ -78,11 +78,14 @@ The normal serving state. The only state that is both "client-visible + acceptin
 
 ### DRAINING
 
-The draining state, used for **graceful shutdown**: `ONLINE → DRAINING → OFFLINE`.
+The draining state, used for **graceful shutdown**: `ONLINE → DRAINING`, then the game
+server calls `unregister` → `OFFLINE`.
 
 - Stops accepting new connections
 - **Existing players are unaffected** and keep playing until they exit on their own
-- Waits for players to leave naturally or for the timeout threshold to be reached, then transitions to `OFFLINE`
+- The game server waits for players to leave naturally, then calls `unregister`; Atlas has
+  no automatic "players reach zero / timeout" transition out of draining (the health monitor
+  only drives `starting` / `online` / `suspect`), so until then it stays draining
 - Usually used for shrinking capacity before a version update, or instance replacement
 
 ### MAINTENANCE
@@ -128,7 +131,7 @@ Operationally disabled. The difference from `OFFLINE` is that this is an **expli
 | `suspect` → `online` | Atlas | Heartbeat received (recovery) |
 | `suspect` → `offline` | Atlas | Heartbeat timeout threshold 2 |
 | `suspect` / `offline` → `starting` | Game server | Re-`register` (idempotent; only `suspect` / `offline` are reset; `online` and operationally set states are unaffected by repeated registration) |
-| `draining` → `offline` | Atlas / game server | Existing players reach zero or timeout |
+| `draining` → `offline` | Game server | `unregister` (Atlas has no automatic draining → offline transition; the health monitor only drives `starting` / `online` / `suspect`) |
 | `maintenance` → `online` | Operations | `POST /v1/admin/servers/{id}/enable` |
 | Any → `disabled` | Operations | `POST /v1/admin/servers/{id}/disable` |
 | Any → `offline` | Game server | `unregister` |

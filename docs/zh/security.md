@@ -3,7 +3,7 @@
 
 v0.1.17 起 Atlas 内建四层防护：Registry mTLS、Admin RBAC、操作审计与限流。mTLS / RBAC / 限流为**可选启用**（未配置即对应防护关闭）；审计默认**开启**（`ATLAS_AUDIT_ENABLED=0` 关闭）。
 
-## 1. TLS / mTLS（Registry :8081、gRPC :9090、Admin :8083）
+## 1. TLS / mTLS（Registry :8081、gRPC :9090、Admin :8082）
 
 三个面向内网的监听口——REST 注册口、gRPC 五服务口与 Admin HTTP 口（管理台 + 运维工具）——共用同一套 TLS 语义，各自独立配置：配置证书后开启 TLS；再配置客户端 CA 即升级为**双向 TLS**——客户端必须出示受信任 CA 签发的证书。
 

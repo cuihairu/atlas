@@ -271,7 +271,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
   "characters": [
     {
       "server_id": "game-1001",
-      "character_id": "823712",
+      "character_id": 823712,
       "name": "剑无尘",
       "level": 182,
       "class_id": 3,
@@ -279,7 +279,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
     },
     {
       "server_id": "game-1008",
-      "character_id": "923812",
+      "character_id": 923812,
       "name": "无尘",
       "level": 97,
       "class_id": 7,
@@ -315,9 +315,9 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 ```json
 {
-  "account_id": "10001",
+  "account_id": 10001,
   "server_id": "game-1001",
-  "character_id": "823712",
+  "character_id": 823712,
   "name": "剑无尘",
   "level": 182,
   "class_id": 3,
@@ -1013,7 +1013,7 @@ Admin RBAC：`ATLAS_ADMIN_ROLES` 以 `key:role` 逗号列表授权（`admin`/`op
 | 409 | `ALREADY_REGISTERED` | 注册冲突（保留给未来的强校验场景） |
 | 409 | `SERVER_MANAGED_BY_CONFIG` | 注册对象由服务器配置文件托管（见 [server-config.md](server-config.md)） |
 | 429 | `RATE_LIMITED` | 触发内置令牌桶限流（按最长路径前缀 × 客户端 IP，见 [security.md](security.md)）；APISIX 网关层限流为可选叠加 |
-| 503 | `STORAGE_UNAVAILABLE` | Redis / PostgreSQL 不可用 |
+| 503 | `STORAGE_UNAVAILABLE` | 仅健康检查 `/readyz`：存储不可达；数据端点存储错误返回 500 `INTERNAL` |
 
 ### 版本
 

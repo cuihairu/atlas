@@ -64,7 +64,7 @@ curl -X POST http://localhost:8081/v1/registry/servers/register \
 ```
 
 ```json
-{"server_id":"game-1001","status":"starting"}
+{"server_id":"game-1001","status":"starting","crossserver_config":{"version":0,"hash":"521c265ebe4f52be"}}
 ```
 
 `starting` = recorded, not yet confirmed by a heartbeat. **The first valid heartbeat automatically promotes it to `online`**:

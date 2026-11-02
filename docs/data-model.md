@@ -53,7 +53,10 @@ CREATE TABLE servers (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- migrations/0005
     notify_mode         VARCHAR(16)  NOT NULL DEFAULT '',  -- migrations/0006
-    notify_callback_url VARCHAR(512) NOT NULL DEFAULT ''
+    notify_callback_url VARCHAR(512) NOT NULL DEFAULT '',
+    weight      INT         NOT NULL DEFAULT 0,            -- migrations/0007
+    reg_kind    TEXT        NOT NULL DEFAULT 'permanent',  -- migrations/0008
+    reg_ttl_seconds INTEGER NOT NULL DEFAULT 0             -- migrations/0008
 );
 
 CREATE INDEX idx_servers_region_status ON servers (region, status);
@@ -64,6 +67,10 @@ CREATE INDEX idx_servers_shard        ON servers (shard_id);
 `tags` holds operational tags (migrations/0005, a JSONB array `{code,label,tier,public}`; the registration upsert does not touch this column); `notify_mode` / `notify_callback_url` are cross-server config change notification declarations (migrations/0006, values `subscribe` / `callback` / `poll`, see [config-center.md](config-center.md) for details).
 
 `source` marks profile ownership (migrations/0004): `''` = API registration (default), `config` = config file declaration (`ATLAS_SERVERS_CONFIG`)—the registration API refuses to modify the profile fields of records owned by config (`409 SERVER_MANAGED_BY_CONFIG`); heartbeat and lifecycle operations proceed as usual.
+
+`weight` (migrations/0007) is the operator-set routing steering weight (routing ranks candidates on effective load = load × 100 / weight; 100 = neutral, 0 = unset); it is admin-owned—the register upsert never touches it, same rule as tags.
+
+`reg_kind` / `reg_ttl_seconds` (migrations/0008) classify registration lifecycle: `permanent` (default) never auto-expires and is removed only by an explicit admin instruction; `temporary` is reclaimed automatically once `reg_ttl_seconds` (absolute TTL from creation) have passed. The marker is explicit, not inferred—the expiry path acts only on `reg_kind = 'temporary'`, so an absent or empty value can never opt a record into auto-deletion. See [lifecycle.md §3](lifecycle.md).
 
 The value domain of `status` is in [lifecycle.md](lifecycle.md):
 

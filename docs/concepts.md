@@ -103,15 +103,15 @@ Logical realm. "Azeroth" in an MMORPG, "World" in an SLG.
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | string | Unique identifier |
-| `realm_id` | string | Owning Realm, may be empty (attached directly under Region) |
+| `realm_id` | string | Owning Realm (required; must reference an existing Realm — `CreateShard` rejects with `REALM_NOT_FOUND` otherwise) |
 | `name` | string | Display name |
 | `status` | string | Status (e.g. `active`) |
 | `created_at` | time | Creation time |
 
 A partition within a Realm. "Zone 1" and "Zone 2" in an MMORPG.
 
-- **Optional**
-- `realm_id` may be empty, allowing a Shard to attach directly under Region
+- **Required**: every Shard hangs under an existing Realm (direct Region → Shard attachment is
+  not supported; `CreateShard` requires a non-empty `realm_id` referencing an existing Realm)
 - The main unit of operation for server merge / server transfer
 
 ---
@@ -149,7 +149,7 @@ A server can carry **multiple operational tags**; each tag has four fields:
 | `tier` | Style tier: `hot` hot red / `new` new-server green / `warning` warning yellow / `info` info blue / `neutral` neutral |
 | `public` | Whether it is public: only `true` appears in player-visible discovery/recommendation responses |
 
-**Preset tags** (with built-in text and tier, `public` defaults to true): `hot` Hot, `full` Full, `no_register` Registration Forbidden, `maintenance` Under Maintenance, `new` New Server, `recommended` Recommended. Custom tags default to `public=false` (internal tags, not exposed to the frontend).
+**Preset tags** (with built-in default label, tier and `public=true`): `hot` 火热, `full` 爆满, `no_register` 禁止注册, `maintenance` 维护中, `new` 新服, `recommended` 推荐 — the default label text is Chinese (`internal/model/tags.go` `PresetTags`), and operators may override `Label` / `Tier` / `Public` per server. Custom tags default to `public=false` (internal tags, not exposed to the frontend).
 
 Three hard rules:
 

@@ -1,7 +1,7 @@
 
 # Go SDK
 
-`github.com/cuihairu/atlas/sdk/go/atlas`（v0.1.6 交付）。同一套 API 覆盖 REST 与 gRPC 双传输，示例见 [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go)。
+`github.com/cuihairu/atlas/sdk/go/atlas`（内部里程碑 v0.1.6 交付）。同一套 API 覆盖 REST 与 gRPC 双传输，示例见 [`examples/go`](https://github.com/cuihairu/atlas/blob/main/examples/go/main.go)。
 
 ## 安装
 

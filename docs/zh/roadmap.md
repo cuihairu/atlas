@@ -56,7 +56,7 @@ flowchart TB
 | ✅ Dashboard 增强 | 实时服务器地图、玩家趋势、迁移进度、主题切换、中英 i18n、服务器负载热力图（REST + gRPC + dash 页，2026-10-12 交付） | v0.1.18 |
 | ✅ 高可用 | Redis 哨兵/集群、PG 连接池调优、HAProxy 心跳扇入、主从复制指南 | v0.1.19 |
 | ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
-| ✅ 质量基建 | service/handler 覆盖率 >80% 目标（CI 报告 + Codecov 上报，未作失败门禁）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
+| ✅ 质量基建 | service/handler 覆盖率 ≥98% 门禁（本地 `make test-coverage` 硬门禁；Codecov 上报 informational，CI 不因覆盖率失败）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
 
 能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
 

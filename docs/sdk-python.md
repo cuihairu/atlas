@@ -1,8 +1,9 @@
 
 # Python SDK
 
-`sdk/python/` (delivered in v0.1.8). An httpx-based REST client with the same
-API surface as the Go / C++ SDKs. The synchronous `AtlasClient` and the
+`sdk/python/` (delivered in internal milestone v0.1.8). An httpx-based REST client with the same
+core method surface as the Go SDK (the Go SDK additionally ships a cross-server config center;
+this SDK additionally offers `set_weight`). The synchronous `AtlasClient` and the
 asynchronous `AtlasAsyncClient` share method names, differing only in
 coroutines; the only dependency is `httpx`, Python ≥ 3.9.
 

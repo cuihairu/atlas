@@ -1,8 +1,9 @@
 
 # C# SDK
 
-`sdk/csharp/` (delivered in v0.1.11). An HttpClient + System.Text.Json REST
-client with the same API surface as the Go / C++ / Python / JS / Java SDKs.
+`sdk/csharp/` (delivered in internal milestone v0.1.11). An HttpClient + System.Text.Json REST
+client with the same core method surface as the Go SDK (the Go SDK additionally ships a
+cross-server config center; this SDK additionally offers `setWeight`).
 Targets net8.0 + net10.0, zero third-party dependencies, NuGet package name
 `Atlas.Client`.
 

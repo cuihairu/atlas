@@ -1,8 +1,9 @@
 
 # JavaScript/TypeScript SDK
 
-`sdk/js/` (delivered in v0.1.9). A `fetch`-based REST client with the same API
-surface as the Go / C++ / Python SDKs. Zero runtime dependencies, works on
+`sdk/js/` (delivered in internal milestone v0.1.9). A `fetch`-based REST client with the same core
+method surface as the Go SDK (the Go SDK additionally ships a cross-server config center; this
+SDK additionally offers `setWeight`). Zero runtime dependencies, works on
 Node.js 18+ and modern browsers; the npm artifact ships both ESM + CJS formats
 with complete TypeScript types.
 

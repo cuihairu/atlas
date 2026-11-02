@@ -53,7 +53,10 @@ CREATE TABLE servers (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- migrations/0005
     notify_mode         VARCHAR(16)  NOT NULL DEFAULT '',  -- migrations/0006
-    notify_callback_url VARCHAR(512) NOT NULL DEFAULT ''
+    notify_callback_url VARCHAR(512) NOT NULL DEFAULT '',
+    weight      INT         NOT NULL DEFAULT 0,            -- migrations/0007
+    reg_kind    TEXT        NOT NULL DEFAULT 'permanent',  -- migrations/0008
+    reg_ttl_seconds INTEGER NOT NULL DEFAULT 0             -- migrations/0008
 );
 
 CREATE INDEX idx_servers_region_status ON servers (region, status);
@@ -64,6 +67,10 @@ CREATE INDEX idx_servers_shard        ON servers (shard_id);
 `tags` 为运营标记（migrations/0005，JSONB 数组 `{code,label,tier,public}`，注册 upsert 不触碰该列）；`notify_mode` / `notify_callback_url` 为跨服配置变更通知声明（migrations/0006，取值 `subscribe` / `callback` / `poll`，详见 [config-center.md](config-center.md)）。
 
 `source` 标记档案归属（migrations/0004）：`''` = API 注册（默认），`config` = 配置文件声明（`ATLAS_SERVERS_CONFIG`）——config 归属的记录注册 API 拒改其档案字段（`409 SERVER_MANAGED_BY_CONFIG`），心跳与生命周期操作照常。
+
+`weight`（migrations/0007）为运维设置的接入推荐权重（routing 以有效负载 = load × 100 / weight 排名；100 = 中性，0 = 未设）；属 Admin 独有列——注册 upsert 不触碰它，同 tags 规则。
+
+`reg_kind` / `reg_ttl_seconds`（migrations/0008）为注册生命周期分类：`permanent`（默认）不自动过期，仅显式运维指令可移除；`temporary` 在创建后 `reg_ttl_seconds`（绝对 TTL）内未被回收则自动回收。标记显式而非推断——过期路径只作用于 `reg_kind = 'temporary'`，故缺失或空值永不会把记录代入自动删除。见 [lifecycle.md §3](lifecycle.md)。
 
 `status` 的取值域见 [lifecycle.md](lifecycle.md)：
 
