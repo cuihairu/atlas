@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -645,15 +646,7 @@ func main() {
 	// ── Admin API (management network) ─────────────────────
 	adminMux := http.NewServeMux()
 	handler.RegisterAdminRoutes(adminMux)
-	adminMux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if err := composite.Ping(r.Context()); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"status":"not ready","error":"` + err.Error() + `"}`))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	adminMux.HandleFunc("GET /readyz", readyzHandler(composite.Ping))
 	adminMux.Handle("GET /metrics", prom.Handler())
 
 	var adminHandler http.Handler = http.Handler(adminMux)
@@ -863,6 +856,24 @@ func main() {
 	}
 
 	logger.Info("Atlas stopped")
+}
+
+// readyzHandler returns an HTTP handler that reports whether the underlying
+// store is reachable. Error text is JSON-encoded so quotes and control
+// characters cannot produce a malformed body.
+func readyzHandler(ping func(context.Context) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := ping(r.Context()); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			body, _ := json.Marshal(map[string]string{"status": "not ready", "error": err.Error()})
+			_, _ = w.Write(body)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
 }
 
 // newListener opens the TCP socket for one Atlas listener and wraps it in a

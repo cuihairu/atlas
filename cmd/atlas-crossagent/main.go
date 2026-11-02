@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -205,20 +206,12 @@ func main() {
 	// watcher. Reconnect (manual /ctl/bus-reset or redis auto-reconnect)
 	// re-subscribes and immediately re-pulls once so the disconnect window
 	// cannot lose an update.
-	var bus io.Closer
-	var busRdb io.Closer
+	var bus = &busState{}
 	// busDrop ends the subscription without rebuilding it — the
 	// fault-injection twin of bus-reset, used to walk the "an update landed
 	// while I was disconnected" window (断连→改配置→重连→补拉).
 	busDrop := func() {
-		if bus != nil {
-			_ = bus.Close()
-			bus = nil
-		}
-		if busRdb != nil {
-			_ = busRdb.Close()
-			busRdb = nil
-		}
+		bus.drop()
 	}
 	busReset := func() error {
 		busDrop()
@@ -258,8 +251,7 @@ func main() {
 			_ = rdb.Close()
 			return err
 		}
-		bus = adapter
-		busRdb = rdb
+		bus.replace(adapter, rdb)
 		log.Info("subscribed to config topic", "topic", event.TopicConfig, "group", "crossagent-"+*serverID)
 		// 补拉: an update may have landed while the subscription was down.
 		watcher.Notify()
@@ -378,12 +370,7 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = agentSrv.Shutdown(shutdownCtx)
-	if bus != nil {
-		_ = bus.Close()
-	}
-	if busRdb != nil {
-		_ = busRdb.Close()
-	}
+	bus.close()
 	if _, err := client.Unregister(context.Background(), *serverID); err != nil {
 		log.Warn("unregister failed", "error", err)
 	}
@@ -403,4 +390,42 @@ func addressed(receivers []string, serverID string) bool {
 		}
 	}
 	return false
+}
+
+// busState owns the subscribe-mode bus subscription and its backing Redis
+// client. /ctl/bus-off, /ctl/bus-reset, and process shutdown can race, so
+// every close-and-replace goes through one lock.
+type busState struct {
+	mu  sync.Mutex
+	bus io.Closer
+	rdb io.Closer
+}
+
+func (b *busState) drop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closeLocked()
+}
+
+func (b *busState) replace(newBus, newRdb io.Closer) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closeLocked()
+	b.bus = newBus
+	b.rdb = newRdb
+}
+
+func (b *busState) close() {
+	b.drop()
+}
+
+func (b *busState) closeLocked() {
+	if b.bus != nil {
+		_ = b.bus.Close()
+		b.bus = nil
+	}
+	if b.rdb != nil {
+		_ = b.rdb.Close()
+		b.rdb = nil
+	}
 }

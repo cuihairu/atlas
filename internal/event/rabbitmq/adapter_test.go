@@ -581,3 +581,28 @@ func TestDeliveryCapDeadLetterCopyFailureRequeues(t *testing.T) {
 		t.Fatalf("nacked = %d, want >=1 (original requeued for another copy attempt)", nacked)
 	}
 }
+
+type fakeConnection struct {
+	closed bool
+}
+
+func (c *fakeConnection) Close() error {
+	c.closed = true
+	return nil
+}
+
+// TestCloseReleasesConnection verifies Close also closes the broker
+// connection that Open retained — previously the connection leaked because
+// only the channel was closed.
+func TestCloseReleasesConnection(t *testing.T) {
+	conn := &fakeConnection{}
+	adapter := New(newFakeChannel(), Options{})
+	adapter.conn = conn
+
+	if err := adapter.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !conn.closed {
+		t.Fatal("Close must close the broker connection")
+	}
+}

@@ -1,16 +1,21 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -396,4 +401,49 @@ func TestNewListener_MTLSRejectsClientWithoutCert(t *testing.T) {
 		t.Fatalf("tls dial with client cert: %v", err)
 	}
 	conn.Close()
+}
+
+// TestReadyzHandlerEscapesError verifies the not-ready body is valid JSON even
+// when the store error contains quotes, backslashes, and control characters.
+func TestReadyzHandlerEscapesError(t *testing.T) {
+	pingErr := errors.New(`quoted "error"\newline`)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	readyzHandler(func(context.Context) error { return pingErr }).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+	var body struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not valid JSON (%q): %v", rr.Body.String(), err)
+	}
+	if body.Error != pingErr.Error() {
+		t.Errorf("error = %q, want %q", body.Error, pingErr.Error())
+	}
+}
+
+// TestReadyzHandlerOK verifies the success body stays machine-readable.
+func TestReadyzHandlerOK(t *testing.T) {
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	readyzHandler(func(context.Context) error { return nil }).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not valid JSON (%q): %v", rr.Body.String(), err)
+	}
+	if body.Status != "ok" {
+		t.Errorf("status = %q, want ok", body.Status)
+	}
 }

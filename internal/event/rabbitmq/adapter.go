@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -39,6 +40,11 @@ const (
 	// dead-letter delivery before declaring the channel drained.
 	defaultDrainWait = 250 * time.Millisecond
 )
+
+// amqpDial opens the broker connection. A package variable so the failure
+// path (ExchangeDeclare error → connection must be closed) is testable
+// without a live broker.
+var amqpDial = amqp.Dial
 
 // Channel is the subset of *amqp091.Channel the adapter needs. Injecting
 // the interface keeps the consume/publish logic testable without a broker.
@@ -87,12 +93,12 @@ type Options struct {
 // Adapter delivers events over RabbitMQ.
 type Adapter struct {
 	ch       Channel
+	conn     io.Closer
 	exchange string
 	consumer string
 	qos      int
 	backoff  time.Duration
 	logger   *slog.Logger
-	owns     bool
 
 	// drainWait bounds how long ReplayDeadLetters idles before declaring the
 	// dead-letter channel drained (tests shorten it).
@@ -108,13 +114,13 @@ type Adapter struct {
 }
 
 // Open connects to the broker, declares the exchange, and returns an
-// adapter owning the channel (Close releases it).
+// adapter owning the channel and connection (Close releases both).
 func Open(opts Options) (*Adapter, error) {
 	url := opts.URL
 	if url == "" {
 		url = DefaultURL
 	}
-	conn, err := amqp.Dial(url)
+	conn, err := amqpDial(url)
 	if err != nil {
 		return nil, fmt.Errorf("event: amqp dial: %w", err)
 	}
@@ -124,7 +130,7 @@ func Open(opts Options) (*Adapter, error) {
 		return nil, fmt.Errorf("event: amqp channel: %w", err)
 	}
 	a := New(ch, opts)
-	a.owns = true
+	a.conn = conn
 	if err := ch.ExchangeDeclare(a.exchange, "topic", true, false, false, false, nil); err != nil {
 		_ = a.Close()
 		return nil, fmt.Errorf("event: amqp declare exchange: %w", err)
@@ -252,7 +258,13 @@ func (a *Adapter) Close() error {
 		cancel()
 	}
 	a.wg.Wait()
-	return a.ch.Close()
+	if err := a.ch.Close(); err != nil {
+		return err
+	}
+	if a.conn != nil {
+		return a.conn.Close()
+	}
+	return nil
 }
 
 func (a *Adapter) consume(ctx context.Context, topic string, deliveries <-chan amqp.Delivery, h event.Handler) {

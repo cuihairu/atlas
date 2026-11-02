@@ -21,10 +21,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -733,7 +735,7 @@ func roomLoop(ctx context.Context, log *slog.Logger, client *atlas.Client, admin
 			// admin delete an operator would issue. Best-effort: the next
 			// instance's registerOne re-upserts the row anyway, and tags are
 			// re-seeded by registerOne regardless.
-			if err := admin.deleteJSON(ctx, "/v1/admin/servers/"+e.ServerID); err != nil {
+			if err := admin.deleteJSON(ctx, "/v1/admin/servers/"+url.PathEscape(e.ServerID)); err != nil {
 				log.Warn("room row delete failed", "server_id", e.ServerID, "instance", instance, "error", err)
 			}
 		}
@@ -941,6 +943,8 @@ func (a *adminClient) postJSON(ctx context.Context, path string, body any) error
 	if err != nil {
 		return err
 	}
+	// Drain a bounded amount so keep-alive connections can be reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("POST %s: http %d", path, resp.StatusCode)
@@ -961,6 +965,8 @@ func (a *adminClient) deleteJSON(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+	// Drain a bounded amount so keep-alive connections can be reused.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("DELETE %s: http %d", path, resp.StatusCode)
