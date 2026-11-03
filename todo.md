@@ -54,3 +54,9 @@
 ## 审核发现（dd8d62d4..HEAD）
 
 - [x] 审核发现：gofmt 对齐修复（60f5b39）仅修正了 fakeChannel 字段块本身，`.golangci.yml` 仍只启用 errcheck/govet、未启用 gofmt linter，且 Makefile 与 .github/workflows 均无 gofmt 检查目标——同类 struct 字段对齐回归仍无法被 `make lint`/CI 自动拦截（测试缺口，低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit fa2cc410d678c7beba20a0bb53e004c51bc948b5 Makefile:65-73 .github/workflows/ci.yml:91-99
+
+
+## 审核发现（964074ab..fc9d5646）
+
+- [x] 审核发现：gofmt 门禁在 Makefile 与 CI 两处硬编码同一目录列表 `./cmd ./internal ./sdk ./api ./examples ./deploy`（重复且无单一来源），而 `go build/vet/test ./...` 均用 `./...`；若日后在列表外新增 Go 包（含仓库根）gofmt 门禁将静默漏检，与 build/vet/test 覆盖不对称——当前所有 .go 文件均在列表内（`git ls-files '*.go'` 越界 0 个），属潜在覆盖盲区/维护陷阱（低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit d6aa60f524760d427998cea9b2e393087d4b7fe0 Makefile:64-66 .github/workflows/ci.yml:91-96
+- [x] 审核发现：`.golangci.yml` 仍未启用 gofmt linter（仅 errcheck/govet），gofmt 检查仅存在于 make lint/CI 的自定义步骤；直接运行 `golangci-lint run ./...` 或 IDE 内 lint 不会返回格式反馈，与 make lint/CI 形成双轨机制、存在漂移风险（低危；本轮已在 make lint/CI 补齐拦截，非阻断）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit d6aa60f524760d427998cea9b2e393087d4b7fe0 .golangci.yml:3-5 Makefile:64-66
