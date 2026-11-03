@@ -53,4 +53,4 @@
 
 ## 审核发现（dd8d62d4..HEAD）
 
-- [x] 审核发现：gofmt 对齐修复（60f5b39）仅修正了 fakeChannel 字段块本身，`.golangci.yml` 仍只启用 errcheck/govet、未启用 gofmt linter，且 Makefile 与 .github/workflows 均无 gofmt 检查目标——同类 struct 字段对齐回归仍无法被 `make lint`/CI 自动拦截（测试缺口，低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit 9d9a2e1e8f2a0e4e2a8f0f1b1e6e6b3e7a0f6a8f Makefile:65-73 .github/workflows/ci.yml:91-99
+- [x] 审核发现：gofmt 对齐修复（60f5b39）仅修正了 fakeChannel 字段块本身，`.golangci.yml` 仍只启用 errcheck/govet、未启用 gofmt linter，且 Makefile 与 .github/workflows 均无 gofmt 检查目标——同类 struct 字段对齐回归仍无法被 `make lint`/CI 自动拦截（测试缺口，低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit fa2cc410d678c7beba20a0bb53e004c51bc948b5 Makefile:65-73 .github/workflows/ci.yml:91-99
