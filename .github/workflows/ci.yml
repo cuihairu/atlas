@@ -90,10 +90,15 @@ jobs:
 
       - name: Gofmt
         run: |
-          output="$$(gofmt -l $$(go list -f '{{.Dir}}' ./...))"
-          if [ -n "$$output" ]; then
+          dirs="$(go list -f '{{.Dir}}' ./...)"
+          if [ -z "$dirs" ]; then
+            echo "go list returned no packages; refusing to run gofmt with no args"
+            exit 1
+          fi
+          output="$(gofmt -l $dirs)"
+          if [ -n "$output" ]; then
             echo "gofmt needed for:"
-            echo "$$output"
+            echo "$output"
             exit 1
           fi
 

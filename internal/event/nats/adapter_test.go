@@ -424,8 +424,18 @@ func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
 	if (errEmpty == nil) != (errDefault == nil) {
 		t.Fatalf("Open() and Open(DefaultURL) disagree: empty=%v default=%v", errEmpty, errDefault)
 	}
-	if errEmpty != nil && !strings.Contains(errEmpty.Error(), "nats connect") {
-		t.Errorf("Open without URL = %v, want connect failure via default URL", errEmpty)
+	if errEmpty == nil {
+		// A JetStream-enabled server is listening on the default port; both
+		// calls connected, which is consistent with a working fallback.
+		return
+	}
+	// Both failed. The empty URL must have resolved to DefaultURL, so the
+	// two errors must be identical. The failure kind depends on the
+	// environment: with no listener both are "nats connect" errors, while a
+	// listener without JetStream fails at stream info. Either way the errors
+	// must match — that is the fallback invariant under test.
+	if errDefault.Error() != errEmpty.Error() {
+		t.Fatalf("Open() and Open(DefaultURL) errors differ: empty=%v default=%v", errEmpty, errDefault)
 	}
 }
 

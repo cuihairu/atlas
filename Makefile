@@ -62,7 +62,12 @@ test-coverage:
 	@rm -f coverage.raw coverage.out
 
 lint:
-	@files="$$(gofmt -l $$(go list -f '{{.Dir}}' ./...))"; \
+	@dirs="$$(go list -f '{{.Dir}}' ./...)"; \
+	if [ -z "$$dirs" ]; then \
+		echo "go list returned no packages; refusing to run gofmt with no args"; \
+		exit 1; \
+	fi; \
+	files="$$(gofmt -l $$dirs)"; \
 	if [ -n "$$files" ]; then \
 		echo "gofmt needed for:"; \
 		echo "$$files"; \
