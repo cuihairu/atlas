@@ -37,15 +37,15 @@ type fakeChannel struct {
 	// injectable failures for the declare/bind/qos/consume/publish/ack
 	// error paths; the queue-named pair fails only that queue, so a test
 	// can break the dead-letter topology without breaking the main one
-	failDeclareQueue string
-	failBindQueue    string
-	errQueueDeclare  error
-	errBind          error
-	errQos           error
-	errConsume       error
-	errPublish       error
-	errAck           error
-	errClose         error
+	failDeclareQueue   string
+	failBindQueue      string
+	errQueueDeclare    error
+	errBind            error
+	errQos             error
+	errConsume         error
+	errPublish         error
+	errAck             error
+	errClose           error
 	errExchangeDeclare error
 }
 
