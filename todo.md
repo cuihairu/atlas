@@ -60,3 +60,9 @@
 
 - [x] 审核发现：gofmt 门禁在 Makefile 与 CI 两处硬编码同一目录列表 `./cmd ./internal ./sdk ./api ./examples ./deploy`（重复且无单一来源），而 `go build/vet/test ./...` 均用 `./...`；若日后在列表外新增 Go 包（含仓库根）gofmt 门禁将静默漏检，与 build/vet/test 覆盖不对称——当前所有 .go 文件均在列表内（`git ls-files '*.go'` 越界 0 个），属潜在覆盖盲区/维护陷阱（低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit d6aa60f524760d427998cea9b2e393087d4b7fe0 Makefile:64-66 .github/workflows/ci.yml:91-96
 - [x] 审核发现：`.golangci.yml` 仍未启用 gofmt linter（仅 errcheck/govet），gofmt 检查仅存在于 make lint/CI 的自定义步骤；直接运行 `golangci-lint run ./...` 或 IDE 内 lint 不会返回格式反馈，与 make lint/CI 形成双轨机制、存在漂移风险（低危；本轮已在 make lint/CI 补齐拦截，非阻断）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit d6aa60f524760d427998cea9b2e393087d4b7fe0 .golangci.yml:3-5 Makefile:64-66
+
+
+## 审核发现（964074ab..HEAD）
+
+- [x] 审核发现：`.github/workflows/ci.yml:93` Gofmt 步骤误用 Makefile 的 `$$` 转义——该 run 块是原始 bash 环境，`$$` 被解释为进程 PID 而非 `$` 转义，`$$(gofmt -l $$(go list ...))` 不构成命令替换、嵌套 `$$(` 直接触发 bash 语法错误（实测 `syntax error near unexpected token '('`），步骤每次运行都 exit 1 并打印 `gofmt needed for:` + PID 垃圾，无论 gofmt 是否干净都使 CI 门禁恒定失败；同一逻辑在 Makefile:65 正确（make 会把 `$$` 展开为 `$`），CI 此处应改用单 `$` — `bash 复现原脚本: syntax error + exit 1；修复后: exit 0；make lint: 0 issues`；commit 0ed102d2ac73e3e8ace3444e67d3bd2e4a5f495d .github/workflows/ci.yml:91
+- [x] 审核发现：`Makefile:65` 的 `gofmt -l $(go list -f '{{.Dir}}' ./...)` 在 `go list` 无输出（包加载/编译失败）时 `gofmt -l` 收不到任何参数而改读 stdin——非交互（CI/`/dev/null`）下静默返回 exit 0（实测无输出、放行），掩盖本应拦截的格式回归；交互式 `make lint` 下则挂起等待 stdin（低危，健壮性） — `注入 go list 失败: 修复后 exit 1；make test: exit 0`；commit 0ed102d2ac73e3e8ace3444e67d3bd2e4a5f495d Makefile:64
