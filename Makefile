@@ -62,7 +62,7 @@ test-coverage:
 	@rm -f coverage.raw coverage.out
 
 lint:
-	@files="$$(gofmt -l ./cmd ./internal ./sdk ./api ./examples ./deploy)"; \
+	@files="$$(gofmt -l $$(go list -f '{{.Dir}}' ./...))"; \
 	if [ -n "$$files" ]; then \
 		echo "gofmt needed for:"; \
 		echo "$$files"; \

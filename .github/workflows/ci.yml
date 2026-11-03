@@ -90,7 +90,7 @@ jobs:
 
       - name: Gofmt
         run: |
-          output="$$(gofmt -l ./cmd ./internal ./sdk ./api ./examples ./deploy)"
+          output="$$(gofmt -l $$(go list -f '{{.Dir}}' ./...))"
           if [ -n "$$output" ]; then
             echo "gofmt needed for:"
             echo "$$output"
