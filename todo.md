@@ -45,3 +45,8 @@
 - [x] 审核发现：readyzHandler 忽略 json.Marshal 错误（`body, _ :=`），当前 map[string]string 载荷不会失败，但若载荷类型变更，会在 503 下写出空体而非合法 JSON，违背本改动“确保输出恒为合法 JSON”的初衷（防御性缺陷，低危）— `go test ./...: ok`；`make lint: 0 issues`；commit 4a455207a70ef6fd3de4fc4040fbbcbb9ee56d23 cmd/atlas/main.go:866-871
 - [x] 审核发现：TestRoomLoopDegradesOnDeleteFailure 断言 `s.register >= 2` 依赖 runRoom 内 30ms 的单次 settle 窗口（recycle=0 时循环重注册），负载下时序敏感、存在偶发 flake 风险；建议以轮询直至 register>=2 或超时判定替代固定 30ms — `go test ./cmd/atlas-demoagents/... -count=100: ok`；`go test ./...: ok`；`make lint: 0 issues`；commit af5fc68e813efc7f34e6609239721939f9da5027 cmd/atlas-demoagents/topology_test.go:352-375
 - [x] 审核发现：本轮 diff 12fbd699..HEAD（5 commits：45fd98d 修复、d38b4a5/b0b16c9/ea27a9b/3a93697 文档）覆盖 22 文件——busState 互斥重构（bus/busRdb 竞态修复）、deleteJSON 的 url.PathEscape（路径注入修复）、响应体 drain、rabbitmq conn 关闭（ExchangeDeclare 泄漏修复）、/readyz JSON 转义均实现正确；docs/Makefile 无安全问题。以上 4 条为本次新增发现，其余未再见问题 — `go test ./...: ok`；`make lint: 0 issues`；commit b9f1e5e7e9bcb777bc11286cbb07a184f3b16bc4 todo.md
+
+## 审核发现（3a93697f..HEAD）
+
+- [x] 审核发现：fakeChannel 新增的 `errClose error` 与 `errExchangeDeclare error` 字段破坏了 struct 字段对齐（gofmt 期望整个字段块右移对齐到最长字段名），`gofmt -l internal/event/rabbitmq/adapter_test.go` 标记该文件；`.golangci.yml` 仅启用 errcheck/govet、未启用 gofmt linter，`make lint` 拦截不到——需按 gofmt 重新对齐该字段块 — `gofmt -l: clean`；`go test ./...: ok`；`make lint: 0 issues`；commit 60f5b39c95d105b174683783446e9e35572e8447 internal/event/rabbitmq/adapter_test.go:47-49
+
