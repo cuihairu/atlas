@@ -3,6 +3,7 @@ package nats
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -414,30 +415,30 @@ func TestDeliveryCapDeadLettersAfterThreshold(t *testing.T) {
 }
 
 func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
-	// An empty URL must fall back to the default NATS address, not the
-	// empty string. Compare against an explicit DefaultURL: both must
-	// behave identically — if a server is listening on the default port
-	// both connect, otherwise both fail with a connect error. Any
-	// disagreement means the empty URL did not resolve to DefaultURL.
-	_, errEmpty := Open(Options{})
-	_, errDefault := Open(Options{URL: DefaultURL})
-	if (errEmpty == nil) != (errDefault == nil) {
-		t.Fatalf("Open() and Open(DefaultURL) disagree: empty=%v default=%v", errEmpty, errDefault)
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "empty", url: "", want: "nats://localhost:4222"},
+		{name: "default", url: DefaultURL, want: "nats://localhost:4222"},
+		{name: "explicit", url: "nats://example.test:4223", want: "nats://example.test:4223"},
 	}
-	if errEmpty == nil {
-		// A JetStream-enabled server is listening on the default port; both
-		// calls connected, which is consistent with a working fallback.
-		return
-	}
-	// Both failed. The empty URL must have resolved to DefaultURL, so the
-	// two errors must be identical. The failure kind depends on the
-	// environment: with no listener both are "nats connect" errors, while a
-	// listener without JetStream fails at stream info. Either way the errors
-	// must match — that is the fallback invariant under test.
-	if errDefault.Error() != errEmpty.Error() {
-		t.Fatalf("Open() and Open(DefaultURL) errors differ: empty=%v default=%v", errEmpty, errDefault)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got string
+			_, _ = open(Options{URL: tt.url}, func(url string, _ ...nats.Option) (*nats.Conn, error) {
+				got = url
+				return nil, errConnectURLProbe
+			})
+			if got != tt.want {
+				t.Fatalf("connect URL = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
+
+var errConnectURLProbe = errors.New("connect URL probe")
 
 func TestOpenReconcilesDeadLetterSubjectOntoExistingStream(t *testing.T) {
 	srv := startServer(t)

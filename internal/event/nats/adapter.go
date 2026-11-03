@@ -57,6 +57,8 @@ type Options struct {
 	Logger *slog.Logger
 }
 
+type connectFunc func(url string, options ...nats.Option) (*nats.Conn, error)
+
 // Adapter delivers events over NATS JetStream.
 type Adapter struct {
 	conn    *nats.Conn
@@ -79,11 +81,15 @@ type Adapter struct {
 // Open connects to the server, ensures the stream exists, and returns an
 // adapter owning the connection (Close releases it).
 func Open(opts Options) (*Adapter, error) {
+	return open(opts, nats.Connect)
+}
+
+func open(opts Options, connect connectFunc) (*Adapter, error) {
 	url := opts.URL
 	if url == "" {
 		url = DefaultURL
 	}
-	conn, err := nats.Connect(url, nats.Name("atlas"), nats.Timeout(5*time.Second))
+	conn, err := connect(url, nats.Name("atlas"), nats.Timeout(5*time.Second))
 	if err != nil {
 		return nil, fmt.Errorf("event: nats connect: %w", err)
 	}
