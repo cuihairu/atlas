@@ -16,7 +16,7 @@ type DeliveryMetrics interface {
 
 type nopDeliveryMetrics struct{}
 
-func (nopDeliveryMetrics) ObserveRedelivery(string) {}
+func (nopDeliveryMetrics) ObserveRedelivery(string)         {}
 func (nopDeliveryMetrics) ObserveDeadLetter(string, string) {}
 
 // MetricsOrNop replaces a nil DeliveryMetrics with a no-op so adapter

@@ -252,8 +252,8 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Capacity int            `json:"capacity"`
 		// Config-center notify declaration (subscribe | callback | poll);
 		// callback mode also carries the URL atlas signals.
-		NotifyMode        string            `json:"notify_mode,omitempty"`
-		NotifyCallbackURL string            `json:"notify_callback_url,omitempty"`
+		NotifyMode        string `json:"notify_mode,omitempty"`
+		NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
 		// Registration lifecycle class (docs/lifecycle.md §3): "permanent"
 		// (default) never auto-expires and needs an explicit admin delete;
 		// "temporary" is reclaimed once created_at + ttl_seconds passes.

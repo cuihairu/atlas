@@ -138,10 +138,10 @@ func (k opKind) mergeable() bool {
 // caller BEFORE enqueue (锁外构造): the applier's critical section only
 // does map/index assignments.
 type instruction struct {
-	kind      opKind
-	target    string // server ID, charKey, or runtime ID — the lane key
-	hb        model.Heartbeat
-	runtime   *model.Runtime
+	kind       opKind
+	target     string // server ID, charKey, or runtime ID — the lane key
+	hb         model.Heartbeat
+	runtime    *model.Runtime
 	server     *model.Server
 	status     model.ServerStatus
 	statusAt   time.Time
@@ -185,32 +185,32 @@ type captureEntry struct {
 	fromStatus model.ServerStatus
 	tags       []model.ServerTag
 	tagsAt     time.Time
-	weight    int
-	weightAt  time.Time
-	hb        model.Heartbeat
-	runtime   *model.Runtime
-	char      *model.Character
-	charPatch store.CharacterPatch
-	hasPatch  bool
-	charUpAt  time.Time
+	weight     int
+	weightAt   time.Time
+	hb         model.Heartbeat
+	runtime    *model.Runtime
+	char       *model.Character
+	charPatch  store.CharacterPatch
+	hasPatch   bool
+	charUpAt   time.Time
 }
 
 func (e captureEntry) instruction() *instruction {
 	ins := &instruction{
-		kind:     e.kind,
-		target:   e.target,
-		hb:       e.hb,
-		runtime:  e.runtime,
+		kind:       e.kind,
+		target:     e.target,
+		hb:         e.hb,
+		runtime:    e.runtime,
 		server:     e.server,
 		status:     e.status,
 		statusAt:   e.statusAt,
 		fromStatus: e.fromStatus,
 		tags:       e.tags,
-		tagsAt:   e.tagsAt,
-		weight:   e.weight,
-		weightAt: e.weightAt,
-		char:     e.char,
-		charUpAt: e.charUpAt,
+		tagsAt:     e.tagsAt,
+		weight:     e.weight,
+		weightAt:   e.weightAt,
+		char:       e.char,
+		charUpAt:   e.charUpAt,
 	}
 	if e.hasPatch {
 		ins.charPatch = &e.charPatch
@@ -521,10 +521,10 @@ func (s *Store) captureAppend(ins *instruction) {
 		statusAt:   ins.statusAt,
 		fromStatus: ins.fromStatus,
 		tagsAt:     ins.tagsAt,
-		weight:   ins.weight,
-		weightAt: ins.weightAt,
-		hb:       ins.hb,
-		charUpAt: ins.charUpAt,
+		weight:     ins.weight,
+		weightAt:   ins.weightAt,
+		hb:         ins.hb,
+		charUpAt:   ins.charUpAt,
 	}
 	switch ins.kind {
 	case opRegisterServer:

@@ -50,3 +50,7 @@
 
 - [x] 审核发现：fakeChannel 新增的 `errClose error` 与 `errExchangeDeclare error` 字段破坏了 struct 字段对齐（gofmt 期望整个字段块右移对齐到最长字段名），`gofmt -l internal/event/rabbitmq/adapter_test.go` 标记该文件；`.golangci.yml` 仅启用 errcheck/govet、未启用 gofmt linter，`make lint` 拦截不到——需按 gofmt 重新对齐该字段块 — `gofmt -l: clean`；`go test ./...: ok`；`make lint: 0 issues`；commit 60f5b39c95d105b174683783446e9e35572e8447 internal/event/rabbitmq/adapter_test.go:47-49
 
+
+## 审核发现（dd8d62d4..HEAD）
+
+- [x] 审核发现：gofmt 对齐修复（60f5b39）仅修正了 fakeChannel 字段块本身，`.golangci.yml` 仍只启用 errcheck/govet、未启用 gofmt linter，且 Makefile 与 .github/workflows 均无 gofmt 检查目标——同类 struct 字段对齐回归仍无法被 `make lint`/CI 自动拦截（测试缺口，低危）— `make lint: 0 issues`；`go test ./...: ok`；`go build ./...: ok`；commit 9d9a2e1e8f2a0e4e2a8f0f1b1e6e6b3e7a0f6a8f Makefile:65-73 .github/workflows/ci.yml:91-99

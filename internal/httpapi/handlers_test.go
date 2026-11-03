@@ -1364,16 +1364,16 @@ func TestRegisterRegKind(t *testing.T) {
 	defer ts.Close()
 
 	body := map[string]any{
-		"server_id":    "game-temp",
-		"name":         "Leased Server",
-		"type":         "game",
-		"region":       "cn-east",
-		"version":      "1.0.0",
-		"platform":     "android",
-		"endpoint":     map[string]any{"host": "10.0.0.1", "port": 30001},
-		"capacity":     2000,
-		"reg_kind":     "temporary",
-		"ttl_seconds":  300,
+		"server_id":   "game-temp",
+		"name":        "Leased Server",
+		"type":        "game",
+		"region":      "cn-east",
+		"version":     "1.0.0",
+		"platform":    "android",
+		"endpoint":    map[string]any{"host": "10.0.0.1", "port": 30001},
+		"capacity":    2000,
+		"reg_kind":    "temporary",
+		"ttl_seconds": 300,
 	}
 	resp := postJSON(t, ts, "/v1/registry/servers/register", body)
 	if resp.StatusCode != http.StatusCreated {

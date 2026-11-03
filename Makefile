@@ -62,6 +62,12 @@ test-coverage:
 	@rm -f coverage.raw coverage.out
 
 lint:
+	@files="$$(gofmt -l ./cmd ./internal ./sdk ./api ./examples ./deploy)"; \
+	if [ -n "$$files" ]; then \
+		echo "gofmt needed for:"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not found: install the CI-pinned version — go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"; exit 1; }
 	@test "$$(golangci-lint version 2>/dev/null | grep -o 'version 2\.15\.0' | head -1)" = "version 2.15.0" || { echo "golangci-lint must be v2.15.0 (CI-pinned); have: $$(golangci-lint version 2>/dev/null | head -1) — go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0"; exit 1; }
 	golangci-lint run ./...

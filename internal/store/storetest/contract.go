@@ -209,8 +209,8 @@ func regKind(t *testing.T, ctx context.Context, s Core) {
 		ID: id("rgk"), Name: "srv-r", Type: "game", Region: id("rgk-region"),
 		RealmID: &realmID, ShardID: &shardID,
 		Version: "1.0.0", Platform: "android",
-		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
-		Capacity: 1000,
+		Endpoint:      model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity:      1000,
 		RegKind:       model.RegPermanent,
 		RegTTLSeconds: 0,
 	}
@@ -230,8 +230,8 @@ func regKind(t *testing.T, ctx context.Context, s Core) {
 		ID: srv.ID, Name: srv.Name, Type: "game", Region: srv.Region,
 		RealmID: &realmID, ShardID: &shardID,
 		Version: "1.0.0", Platform: "android",
-		Endpoint: model.Endpoint{Host: "10.0.0.1", Port: 30001},
-		Capacity: 1000,
+		Endpoint:      model.Endpoint{Host: "10.0.0.1", Port: 30001},
+		Capacity:      1000,
 		RegKind:       model.RegTemporary,
 		RegTTLSeconds: 300,
 	}

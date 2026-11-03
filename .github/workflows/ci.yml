@@ -88,6 +88,15 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Gofmt
+        run: |
+          output="$$(gofmt -l ./cmd ./internal ./sdk ./api ./examples ./deploy)"
+          if [ -n "$$output" ]; then
+            echo "gofmt needed for:"
+            echo "$$output"
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 
