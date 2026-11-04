@@ -341,7 +341,7 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 | --- | --- |
 | [docs/zh/architecture.md](docs/zh/architecture.md) | 整体架构、组件职责、与 APISIX 的边界 |
 | [docs/zh/concepts.md](docs/zh/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
-| [docs/zh/api.md](docs/zh/api.md) | 五组 REST API + gRPC 的完整定义 |
+| [docs/zh/api.md](docs/zh/api.md) | 六组 REST API + gRPC 的完整定义 |
 | [docs/zh/api-quickstart.md](docs/zh/api-quickstart.md) | API 快速上手指南（curl 示例） |
 | [docs/zh/data-model.md](docs/zh/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
 | [docs/zh/lifecycle.md](docs/zh/lifecycle.md) | 服务器生命周期状态机 |

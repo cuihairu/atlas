@@ -1,17 +1,18 @@
 
 # API Reference — English translation not yet available
 
-> This is a marker page, not a translation. The full API reference is the Chinese original at [api.md](zh/api.md) (1020 lines). It is the longest page in this site, so it was left untranslated rather than risk a low-quality forced translation; the full English version is tracked in [todo.md](https://github.com/cuihairu/atlas/blob/main/todo.md).
+> This is a marker page, not a translation. The full API reference is the Chinese original at [api.md](zh/api.md). It is the longest page in this site, so it was left untranslated rather than risk a low-quality forced translation; the full English version is tracked in [todo.md](https://github.com/cuihairu/atlas/blob/main/todo.md).
 
 ## What that reference covers
 
-Atlas exposes five endpoint groups. The English labels below correspond to the section headings of the Chinese original — read that page for the actual request/response tables:
+Atlas exposes six endpoint groups. The English labels below correspond to the section headings of the Chinese original — read that page for the actual request/response tables:
 
 ```text
 /v1/registry/*     server registration
 /v1/discovery/*    server discovery
 /v1/directory/*    character directory
 /v1/routing/*      connection recommendation
+/v1/crossserver/*  cross-server config pull (game servers)
 /v1/admin/*        operations administration
 ```
 

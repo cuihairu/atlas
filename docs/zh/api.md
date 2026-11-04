@@ -1,13 +1,14 @@
 
 # API 参考
 
-Atlas 的 API 分为五组，职责清晰互不重叠。
+Atlas 的 API 分为六组，职责清晰互不重叠。
 
 ```text
 /v1/registry/*     服务器注册
 /v1/discovery/*    服务器发现
 /v1/directory/*    角色目录
 /v1/routing/*      接入推荐
+/v1/crossserver/*  跨服配置拉取（游戏服）
 /v1/admin/*        运维管理
 ```
 
@@ -754,8 +755,22 @@ SQL 存储（postgres/mysql）没有指令队列：返回 `503` +
 ```json
 {
   "windows": [
-    { "id": "mwin-1759376400000000000-0", "server_id": "game-1001", "start_at": "2026-10-20T02:00:00Z", "end_at": "2026-10-20T04:00:00Z", "announcement_id": "ann-1759376400000000000-0", "created_at": "…" },
-    { "id": "mwin-1759376400000000000-2", "server_id": "game-1003", "start_at": "2026-10-20T02:20:00Z", "end_at": "2026-10-20T04:20:00Z", "announcement_id": "ann-1759376400000000000-2", "created_at": "…" }
+    {
+      "id": "mwin-1759376400000000000-0",
+      "server_id": "game-1001",
+      "start_at": "2026-10-20T02:00:00Z",
+      "end_at": "2026-10-20T04:00:00Z",
+      "announcement_id": "ann-1759376400000000000-0",
+      "created_at": "…"
+    },
+    {
+      "id": "mwin-1759376400000000000-2",
+      "server_id": "game-1003",
+      "start_at": "2026-10-20T02:20:00Z",
+      "end_at": "2026-10-20T04:20:00Z",
+      "announcement_id": "ann-1759376400000000000-2",
+      "created_at": "…"
+    }
   ],
   "failed": [
     { "server_id": "game-1002", "error": "maintenance window for unknown server game-1002: …" }
