@@ -204,7 +204,15 @@ ATLAS_ALERT_WEBHOOK_URL=http://127.0.0.1:9999/hook ./atlas
 After about 30 seconds, `game-1002` enters suspect due to heartbeat age; the share of 1/2 reaches the threshold, and the webhook receives the first message:
 
 ```json
-{"alert":"suspect_ratio","state":"firing","count":1,"auto_managed_total":2,"ratio":0.5,"threshold":0.5,"fired_at":"2026-10-02T03:27:30Z"}
+{
+  "alert": "suspect_ratio",
+  "state": "firing",
+  "count": 1,
+  "auto_managed_total": 2,
+  "ratio": 0.5,
+  "threshold": 0.5,
+  "fired_at": "2026-10-02T03:27:30Z"
+}
 ```
 
 After about 60 seconds it ages out and turns offline: suspect falls back to 0 (sending `recovered` for `suspect_ratio`), and the offline share crosses the limit (sending `firing` for `offline_ratio`). In the same period, the Atlas log shows the three corresponding Warn entries:

@@ -202,7 +202,15 @@ ATLAS_ALERT_WEBHOOK_URL=http://127.0.0.1:9999/hook ./atlas
 约 30 秒后 `game-1002` 因心跳超龄进入 suspect，占比 1/2 达到阈值，webhook 收到第一条：
 
 ```json
-{"alert":"suspect_ratio","state":"firing","count":1,"auto_managed_total":2,"ratio":0.5,"threshold":0.5,"fired_at":"2026-10-02T03:27:30Z"}
+{
+  "alert": "suspect_ratio",
+  "state": "firing",
+  "count": 1,
+  "auto_managed_total": 2,
+  "ratio": 0.5,
+  "threshold": 0.5,
+  "fired_at": "2026-10-02T03:27:30Z"
+}
 ```
 
 约 60 秒后它超龄转 offline：suspect 回落到 0（发 `suspect_ratio` 的 `recovered`），offline 占比越限（发 `offline_ratio` 的 `firing`）。同一时段 Atlas 日志里是三条对应的 Warn：

@@ -100,7 +100,13 @@ curl -X POST localhost:8082/v1/admin/servers/game-1001/maintenance-window -H 'Co
 
 # 全服公告（starts_at/ends_at 必填，end 必须晚于 start）
 curl -X POST localhost:8082/v1/admin/announcements -H 'Content-Type: application/json' \
-     -d '{"title":"今晚例行维护","body":"02:00-04:00","level":"info","starts_at":"2026-10-03T01:30:00+08:00","ends_at":"2026-10-03T04:30:00+08:00"}'
+     -d '{
+             "title": "今晚例行维护",
+             "body": "02:00-04:00",
+             "level": "info",
+             "starts_at": "2026-10-03T01:30:00+08:00",
+             "ends_at": "2026-10-03T04:30:00+08:00"
+           }'
 ```
 
 服务器侧的紧急维护/排水/禁用在 `Servers` 页每行操作按钮里（进维护、排水、禁用、启用）——[场景 2](#scenario-tags) 截图里的操作列。详见[公告与计划维护](/zh/operations)。

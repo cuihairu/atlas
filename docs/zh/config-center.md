@@ -30,7 +30,15 @@ Atlas 内置一个**游戏服务器协调专用配置中心**，托管跨服玩�
   "features": { "cross_battlefield": true, "world_boss": false },
   "match_domains": [ { "id": "mmr-0-3000", "name": "0-3000 段", "servers": ["game-1001", "game-2001"], "params": { "mmr_range": "0-3000", "max_team": "3" } } ],
   "crossplay_types": [
-    { "id": "battlefield", "name": "跨服战场/竞技", "summary": "跨服 PVP 匹配对局", "lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb" },
+    {
+      "id": "battlefield",
+      "name": "跨服战场/竞技",
+      "summary": "跨服 PVP 匹配对局",
+      "lifecycle": "seasonal",
+      "matchmaking": true,
+      "ranking": true,
+      "id_prefix": "xb"
+    },
     { "id": "dungeon", "name": "跨服副本/BOSS", "summary": "多人协作 PVE", "id_prefix": "xd" }
   ]
 }
@@ -343,7 +351,15 @@ curl -s localhost:8080/v1/crossserver/config | jq '.version, .hash, .spec.featur
 # 2) 管理台改配置：把 cross_battlefield 关掉，加一个新集群
 curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: application/json' -d '{
   "topology": { "clusters": [
-    { "id": "cluster-ea", "name": "华东", "region": "cn-east", "servers": ["game-1001", "game-1002"] },
+    {
+      "id": "cluster-ea",
+      "name": "华东",
+      "region": "cn-east",
+      "servers": [
+        "game-1001",
+        "game-1002"
+      ]
+    },
     { "id": "cluster-sc", "name": "华南", "region": "cn-south", "servers": ["game-3001"] }
   ]},
   "groups": [ { "id": "season-1", "servers": ["game-1001"] } ],
@@ -378,7 +394,15 @@ curl -X POST localhost:8081/v1/registry/servers/register -H 'Content-Type: appli
 # 3) 管理台再改一次配置（加个开关）
 curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: application/json' -d '{
   "topology": { "clusters": [
-    { "id": "cluster-ea", "name": "华东", "region": "cn-east", "servers": ["game-1001", "game-1002"] },
+    {
+      "id": "cluster-ea",
+      "name": "华东",
+      "region": "cn-east",
+      "servers": [
+        "game-1001",
+        "game-1002"
+      ]
+    },
     { "id": "cluster-sc", "name": "华南", "region": "cn-south", "servers": ["game-3001"] }
   ]},
   "groups": [ { "id": "season-1", "servers": ["game-1001"] } ],

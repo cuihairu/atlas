@@ -64,7 +64,14 @@ curl -X POST http://localhost:8081/v1/registry/servers/register \
 ```
 
 ```json
-{"server_id":"game-1001","status":"starting","crossserver_config":{"version":0,"hash":"521c265ebe4f52be"}}
+{
+  "server_id": "game-1001",
+  "status": "starting",
+  "crossserver_config": {
+    "version": 0,
+    "hash": "521c265ebe4f52be"
+  }
+}
 ```
 
 `starting` = recorded, not yet confirmed by a heartbeat. **The first valid heartbeat automatically promotes it to `online`**:
@@ -83,7 +90,16 @@ Start one more server, `game-1002` (same region, emptier); the recommendation st
 ```bash
 curl -s -X POST http://localhost:8081/v1/registry/servers/register \
   -H 'Content-Type: application/json' \
-  -d '{"server_id":"game-1002","name":"一区·白虎","region":"cn-east","endpoint":{"host":"10.0.1.22","port":30002},"capacity":2000}' > /dev/null
+  -d '{
+          "server_id": "game-1002",
+          "name": "一区·白虎",
+          "region": "cn-east",
+          "endpoint": {
+            "host": "10.0.1.22",
+            "port": 30002
+          },
+          "capacity": 2000
+        }' > /dev/null
 curl -s -X POST http://localhost:8081/v1/registry/servers/game-1002/heartbeat \
   -H 'Content-Type: application/json' -d '{"players":120,"load":0.11}' > /dev/null
 ```
@@ -124,7 +140,25 @@ curl 'http://localhost:8080/v1/routing/recommended?account_id=10001&region=cn-ea
 ```
 
 ```json
-{"reason":"lowest_load","server":{"id":"game-1002","name":"一区·白虎","region":"cn-east","status":"online","players":120,"load":0.11,"capacity":2000,"endpoint":{"host":"10.0.1.22","port":30002},"type":"","version":"","platform":""}}
+{
+  "reason": "lowest_load",
+  "server": {
+    "id": "game-1002",
+    "name": "一区·白虎",
+    "region": "cn-east",
+    "status": "online",
+    "players": 120,
+    "load": 0.11,
+    "capacity": 2000,
+    "endpoint": {
+      "host": "10.0.1.22",
+      "port": 30002
+    },
+    "type": "",
+    "version": "",
+    "platform": ""
+  }
+}
 ```
 
 **Write the character index** — the player created a character on `game-1001`, and the game server reports the projection to Atlas (this is an index,
@@ -143,7 +177,17 @@ curl -X POST http://localhost:8080/v1/directory/characters \
 ```
 
 ```json
-{"account_id":10001,"server_id":"game-1001","character_id":823712,"name":"剑无尘","level":182,"class_id":3,"last_login_at":"…","created_at":"…","updated_at":"…"}
+{
+  "account_id": 10001,
+  "server_id": "game-1001",
+  "character_id": 823712,
+  "name": "剑无尘",
+  "level": 182,
+  "class_id": 3,
+  "last_login_at": "…",
+  "created_at": "…",
+  "updated_at": "…"
+}
 ```
 
 **Character stickiness** — when the same account asks for a recommendation again, Atlas sends it back to the server where it already has a character (`has_character`),
@@ -164,7 +208,21 @@ curl http://localhost:8080/v1/directory/accounts/10001/characters
 ```
 
 ```json
-{"characters":[{"account_id":10001,"server_id":"game-1001","character_id":823712,"name":"剑无尘","level":182,"class_id":3,"last_login_at":"…","created_at":"…","updated_at":"…"}]}
+{
+  "characters": [
+    {
+      "account_id": 10001,
+      "server_id": "game-1001",
+      "character_id": 823712,
+      "name": "剑无尘",
+      "level": 182,
+      "class_id": 3,
+      "last_login_at": "…",
+      "created_at": "…",
+      "updated_at": "…"
+    }
+  ]
+}
 ```
 
 > Large-scale write paths should not land one record at a time — the same write endpoint plus one environment variable
@@ -215,7 +273,15 @@ curl -X POST http://localhost:8082/v1/admin/announcements \
 ```
 
 ```json
-{"id":"ann-1790909864389093095","title":"周末双倍经验","body":"10月4日 10:00-22:00 全服双倍经验","level":"info","starts_at":"2026-10-04T02:00:00Z","ends_at":"2026-10-04T14:00:00Z","created_at":"…"}
+{
+  "id": "ann-1790909864389093095",
+  "title": "周末双倍经验",
+  "body": "10月4日 10:00-22:00 全服双倍经验",
+  "level": "info",
+  "starts_at": "2026-10-04T02:00:00Z",
+  "ends_at": "2026-10-04T14:00:00Z",
+  "created_at": "…"
+}
 ```
 
 The player side (:8080) returns only announcements **inside their effective window** — the one above has a `starts_at` in the future, so a pull right now comes back empty;
@@ -238,7 +304,14 @@ curl -X POST http://localhost:8082/v1/admin/servers/game-1002/maintenance-window
 ```
 
 ```json
-{"id":"mwin-1790909851023996409","server_id":"game-1002","start_at":"2026-10-02T03:00:00Z","end_at":"2026-10-02T04:00:00Z","announcement_id":"ann-1790909851023996409","created_at":"…"}
+{
+  "id": "mwin-1790909851023996409",
+  "server_id": "game-1002",
+  "start_at": "2026-10-02T03:00:00Z",
+  "end_at": "2026-10-02T04:00:00Z",
+  "announcement_id": "ann-1790909851023996409",
+  "created_at": "…"
+}
 ```
 
 Scenario-level details in [Announcements and Planned Maintenance](/operations).
@@ -250,7 +323,22 @@ curl http://localhost:8082/v1/admin/stats
 ```
 
 ```json
-{"total_servers":2,"servers_by_status":{"online":2},"servers_by_region":{"cn-east":2},"servers_by_version":{"":1,"1.8.2":1},"total_players":963,"total_capacity":4000,"total_characters":1}
+{
+  "total_servers": 2,
+  "servers_by_status": {
+    "online": 2
+  },
+  "servers_by_region": {
+    "cn-east": 2
+  },
+  "servers_by_version": {
+    "": 1,
+    "1.8.2": 1
+  },
+  "total_players": 963,
+  "total_capacity": 4000,
+  "total_characters": 1
+}
 ```
 
 ## 4. Graceful shutdown (:8082 + :8081)

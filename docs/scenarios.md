@@ -97,7 +97,13 @@ curl -X POST localhost:8082/v1/admin/servers/game-1001/maintenance-window -H 'Co
 
 # 全服公告（starts_at/ends_at 必填，end 必须晚于 start）
 curl -X POST localhost:8082/v1/admin/announcements -H 'Content-Type: application/json' \
-     -d '{"title":"今晚例行维护","body":"02:00-04:00","level":"info","starts_at":"2026-10-03T01:30:00+08:00","ends_at":"2026-10-03T04:30:00+08:00"}'
+     -d '{
+             "title": "今晚例行维护",
+             "body": "02:00-04:00",
+             "level": "info",
+             "starts_at": "2026-10-03T01:30:00+08:00",
+             "ends_at": "2026-10-03T04:30:00+08:00"
+           }'
 ```
 
 Server-side emergency maintenance / drain / disable lives in the per-row action buttons on the `Servers` page (enter maintenance, drain, disable, enable) — the action column in the [Scenario 2](#scenario-tags) screenshot. Details in [Announcements and Planned Maintenance](/operations).

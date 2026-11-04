@@ -37,8 +37,21 @@ A single JSON document (`CrossServerSpec`) with five sections:
   "features": { "cross_battlefield": true, "world_boss": false },
   "match_domains": [ { "id": "mmr-0-3000", "name": "0-3000 bracket", "servers": ["game-1001", "game-2001"], "params": { "mmr_range": "0-3000", "max_team": "3" } } ],
   "crossplay_types": [
-    { "id": "battlefield", "name": "Cross-Server Battlefield / Arena", "summary": "Cross-server PVP matchmaking matches", "lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb" },
-    { "id": "dungeon", "name": "Cross-Server Dungeon / BOSS", "summary": "Cooperative multiplayer PVE", "id_prefix": "xd" }
+    {
+      "id": "battlefield",
+      "name": "Cross-Server Battlefield / Arena",
+      "summary": "Cross-server PVP matchmaking matches",
+      "lifecycle": "seasonal",
+      "matchmaking": true,
+      "ranking": true,
+      "id_prefix": "xb"
+    },
+    {
+      "id": "dungeon",
+      "name": "Cross-Server Dungeon / BOSS",
+      "summary": "Cooperative multiplayer PVE",
+      "id_prefix": "xd"
+    }
   ]
 }
 ```
@@ -427,7 +440,15 @@ curl -s localhost:8080/v1/crossserver/config | jq '.version, .hash, .spec.featur
 # 2) Change the configuration: turn cross_battlefield off and add a new cluster
 curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: application/json' -d '{
   "topology": { "clusters": [
-    { "id": "cluster-ea", "name": "East China", "region": "cn-east", "servers": ["game-1001", "game-1002"] },
+    {
+      "id": "cluster-ea",
+      "name": "East China",
+      "region": "cn-east",
+      "servers": [
+        "game-1001",
+        "game-1002"
+      ]
+    },
     { "id": "cluster-sc", "name": "South China", "region": "cn-south", "servers": ["game-3001"] }
   ]},
   "groups": [ { "id": "season-1", "servers": ["game-1001"] } ],
@@ -462,7 +483,15 @@ curl -X POST localhost:8081/v1/registry/servers/register -H 'Content-Type: appli
 # 3) Change the configuration once more from the dashboard (add a switch)
 curl -X PUT localhost:8082/v1/admin/crossserver/config -H 'Content-Type: application/json' -d '{
   "topology": { "clusters": [
-    { "id": "cluster-ea", "name": "East China", "region": "cn-east", "servers": ["game-1001", "game-1002"] },
+    {
+      "id": "cluster-ea",
+      "name": "East China",
+      "region": "cn-east",
+      "servers": [
+        "game-1001",
+        "game-1002"
+      ]
+    },
     { "id": "cluster-sc", "name": "South China", "region": "cn-south", "servers": ["game-3001"] }
   ]},
   "groups": [ { "id": "season-1", "servers": ["game-1001"] } ],
