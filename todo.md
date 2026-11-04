@@ -20,7 +20,7 @@
 ## 待办
 
 - [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0（BLOCKED：冻结决策与发版须用户拍板 + 缺生产环境部署验证实证；契约 pin 守卫已在仓；2026-11-04 复核：仍缺外部条件，保留 BLOCKED 不重试）
-- [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练折入（BLOCKED：待用户指定机器与排期；docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈；2026-11-04 复核：仍缺外部条件，保留 BLOCKED 不重试）
+- [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练折入（BLOCKED：待用户指定机器与排期（外部条件）；docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈（内部基础设施约束）；2026-11-04 复核：外部条件与内部基础设施约束均未解，保留 BLOCKED 不重试）
 - [x] DOC-GIF（P2）：配置开关效果动态图，每开关 off→on 对比 + GIF — commit ea27a9b（6 张 demo 舰队玩法开关 off→on 实录，接入 docs/config-center.md §7.1 + zh 镜像，docs build 绿）
 - [x] CODE-LINT（P3）：接入 golangci-lint/errcheck 并纳入 `make lint`，防未检错误回归 — `make lint: 0 issues`；`go build ./...: ok`；`go test ./...: exit 0`
 
@@ -70,3 +70,7 @@
 - [x] 审核发现：`Makefile:65` 的 `gofmt -l $(go list -f '{{.Dir}}' ./...)` 在 `go list` 无输出（包加载/编译失败）时 `gofmt -l` 收不到任何参数而改读 stdin——非交互（CI/`/dev/null`）下静默返回 exit 0（实测无输出、放行），掩盖本应拦截的格式回归；交互式 `make lint` 下则挂起等待 stdin（低危，健壮性） — `注入 go list 失败: 修复后 exit 1；make test: exit 0`；commit 0ed102d2ac73e3e8ace3444e67d3bd2e4a5f495d Makefile:64
 - [x] 审核发现：TestOpenDefaultsToLocalhostWhenURLOmitted 的 errEmpty.Error()==errDefault.Error() 恒等断言无法检测包级 DefaultURL 回退被删除——空 URL 会落入 nats.go 自身默认 nats://127.0.0.1:4222，与包默认 nats://localhost:4222 均为环回主机、无监听时错误串完全相同（实测均 "nats: no servers available for connection"）；且本环境有服务监听 4222 时测试在 427-430 行提前 return、根本不走该比较，未真正验证回退契约（低危）— 重构为注入 connect 并断言实际解析 URL：删除回退后 empty 子测试 FAIL（connect URL = "", want "nats://localhost:4222"）；回退存在时 PASS — internal/event/nats/adapter_test.go:427-439
 - [x] 审核发现：测试成功路径（默认端口有 JetStream 服务）丢弃两个 *Adapter 并直接 return 未调用 Close()，泄漏两条 NATS 连接及适配器 goroutine 至进程结束；本环境 4222 有服务故每次运行均泄漏（低危）— 重构后测试不再打开真实连接（mock connect 返回 err），无泄漏；go test ./... exit 0 — internal/event/nats/adapter_test.go:427-439
+
+## 审核发现（e24eec495238..2cde877）
+
+- [x] 审核发现：第二条 BLOCKED 项的「2026-11-04 复核：仍缺外部条件」把继续阻滞归纳为「外部条件」，但该行阻滞清单除「待用户指定机器与排期」（外部）外，还含「docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈」等内部基础设施约束——归纳失准，复核说明未完整反映实际阻滞来源（低危，文档准确性）— 已修正 todo.md:23 复核说明为「外部条件与内部基础设施约束均未解」；`go test ./...`: exit 0；`make lint`: 0 issues
