@@ -37,6 +37,8 @@
 - [x] 审核发现：atlas-crossagent 的 bus/busRdb 由 /ctl/bus-reset（busReset）与 /ctl/bus-off（busDrop）两个并发 HTTP handler 读写且无锁保护，并发请求存在数据竞态（既有缺陷，本 diff 触及该闭包） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas-crossagent/main.go:398 cmd/atlas-crossagent/main_test.go:30
 - [x] 审核发现：/readyz 将 err.Error() 直接字符串拼接进 JSON 而未转义，Ping 错误信息含引号/控制字符时产出畸形 JSON（既有缺陷，本 diff 仅改写 w.Write 丢弃语义） — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 cmd/atlas/main.go:864,869 cmd/atlas/main_test.go:408
 - [x] 审核发现：本轮覆盖 0e19d5a64715..HEAD 全部 22 文件（2 commits：9a6df01 demo 房间注销修复、12fbd69 golangci-lint errcheck 接入）——安全注入/反序列化/越界未见问题，rows.Err() 均已检查，lint 门禁实测 0 issues — commit 45fd98d25fecdd2b0a287fed93012462f1a566b4 todo.md
+- [x] 审核发现：TestOpenDefaultsToLocalhostWhenURLOmitted 重构后调用的是包内未导出 `open`（adapter_test.go:430）而非导出 `Open`——生产入口 `Open → open(opts, nats.Connect)` 的接线与 DefaultURL 回退在真实入口处已无任何测试覆盖：若 Open 被改为绕过 open、换用其它 connect 或在其复制路径丢弃回退，本测试仍 PASS（TestOpenConnectFailureAndAccessors 仅覆盖显式关闭端口 URL），测试名已名不副实（低危）— 修复：Open 经包级 `defaultConnect` 注入缝（adapter.go:83-89），测试改走导出 `Open` 并断言回退 URL；删除回退后 empty 子测试 FAIL（connect URL = "", want "nats://localhost:4222"）；恢复后 PASS — internal/event/nats/adapter_test.go:417-457
+- [x] 审核发现：注入的 mock connect 丢弃全部选项（`_ ...nats.Option`，adapter_test.go:430），`open` 传入的 `nats.Name("atlas")`/`nats.Timeout(5s)`（adapter.go:92）未被任何测试断言——本次新增注入缝本可轻易断言选项却未用（既有缺口，非本 diff 引入，低危）— 修复：注入缝改为收集 `nats.Option` 并套用到 `nats.Options` 断言 `Name=="atlas"`、`Timeout==5s`；`go test -race ./internal/event/nats/: ok`；`make lint: 0 issues`；`go test ./...: exit 0` — internal/event/nats/adapter.go:92 adapter_test.go:417-457
 
 ## 审核发现（12fbd699..HEAD）
 

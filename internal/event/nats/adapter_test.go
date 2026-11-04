@@ -427,12 +427,32 @@ func TestOpenDefaultsToLocalhostWhenURLOmitted(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var got string
-			_, _ = open(Options{URL: tt.url}, func(url string, _ ...nats.Option) (*nats.Conn, error) {
+			var gotOpts []nats.Option
+			prev := defaultConnect
+			defaultConnect = func(url string, opts ...nats.Option) (*nats.Conn, error) {
 				got = url
+				gotOpts = opts
 				return nil, errConnectURLProbe
-			})
+			}
+			t.Cleanup(func() { defaultConnect = prev })
+			// Exercise the exported production entry point, not the internal
+			// open helper: the DefaultURL fallback and option wiring must hold
+			// for callers of Open.
+			_, _ = Open(Options{URL: tt.url})
 			if got != tt.want {
 				t.Fatalf("connect URL = %q, want %q", got, tt.want)
+			}
+			var opts nats.Options
+			for _, apply := range gotOpts {
+				if err := apply(&opts); err != nil {
+					t.Fatalf("apply option: %v", err)
+				}
+			}
+			if opts.Name != "atlas" {
+				t.Fatalf("connect name option = %q, want %q", opts.Name, "atlas")
+			}
+			if opts.Timeout != 5*time.Second {
+				t.Fatalf("connect timeout option = %v, want %v", opts.Timeout, 5*time.Second)
 			}
 		})
 	}

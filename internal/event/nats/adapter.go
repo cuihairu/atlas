@@ -81,8 +81,12 @@ type Adapter struct {
 // Open connects to the server, ensures the stream exists, and returns an
 // adapter owning the connection (Close releases it).
 func Open(opts Options) (*Adapter, error) {
-	return open(opts, nats.Connect)
+	return open(opts, defaultConnect)
 }
+
+// defaultConnect is the production connect function. Tests swap it to
+// observe the URL and options Open passes without real network I/O.
+var defaultConnect = nats.Connect
 
 func open(opts Options, connect connectFunc) (*Adapter, error) {
 	url := opts.URL
