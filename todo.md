@@ -56,3 +56,4 @@
 - [x] 审核发现：本轮 diff 未见问题（08bf1b7f..HEAD） — 核实属实：范围 08bf1b7f..HEAD（HEAD=becd00b）仅 docs 变更、无 .go 改动；范围内长代码行不换行问题（下一条发现）已由同范围 becd00b 修复，终态无问题；go test ./...: exit 0；docs build 绿；commit becd00b
 - [x] 审核发现：代码块换行样式只设置在 pre 上，VitePress 默认给子元素 code 显式设置 white-space: pre 和 word-break: normal，导致长代码行仍不换行（docs/.vitepress/theme/custom.css:260） — 核实属实：VitePress 默认 vp-doc.css:312-314 给 code 设 white-space:pre/word-break:normal，原仅覆盖 pre 不生效；becd00b 增加 pre code 选择器（specificity 更高）已修复；go test ./...: exit 0；docs build 绿；commit becd00b；custom.css:260
 - [x] 审核发现：本轮 diff 未见问题（3ec5e77c..HEAD） — 核实属实：范围 3ec5e77c..HEAD（HEAD=becd00b）仅 custom.css 一处（pre code 换行修复 + !important），无 .go 改动，复核无新问题；go test ./...: exit 0；docs build 绿；commit becd00b
+- [x] 审核发现：本轮 diff 未见问题（becd00b..2ac4a9e） — 核实属实：范围 becd00b..2ac4a9e 仅 todo.md 变更（5 增 1 删）、无 .go 改动，复核无新问题；go test ./...: exit 0；commit 2ac4a9e；todo.md:59
