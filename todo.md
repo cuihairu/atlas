@@ -21,8 +21,8 @@
 
 ## 待办
 
-- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0（BLOCKED：待用户拍板与生产部署实证）
-- [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练（BLOCKED：待用户指定机器与排期，内部基础设施约束未解）
+- [ ] API 稳定化与 v1.0：生产验证充分后冻结 REST/gRPC 契约发 v1.0（BLOCKED：待用户拍板与生产部署实证；2026-11-06 复核：所缺外部条件（用户拍板 + 生产部署实证）未解，保留 BLOCKED）
+- [ ] 生产形状验收实跑：100/1k/5k 全规模 + ≥24h 浸泡 + 部署级演练（BLOCKED：待用户指定机器与排期，内部基础设施约束未解；2026-11-06 复核：外部条件（用户指定机器与排期）与内部基础设施约束（docker100 BatchMode 拒 key、hermes 仅 win-worker 承接不了 Linux HA 栈）均未解，保留 BLOCKED）
 
 ## 审核发现（已修复）
 
@@ -62,3 +62,4 @@
 - [x] 审核发现：本轮 diff 未见问题（04148f7c..HEAD） — 核实属实：范围 04148f7c..HEAD（HEAD=957dafd）仅 todo.md 变更（1 增）、无 .go 改动，复核无新问题；go test ./...: exit 0；commit 957dafd；todo.md:62
 - [x] 审核发现：本轮 diff 未见问题（957dafdb..HEAD） — 核实属实：范围 957dafd..HEAD（HEAD=7aa4e21）仅 todo.md 变更（1 增）、无 .go 改动，复核无新问题；go test ./...: exit 0；docs build 绿；commit 7aa4e21；todo.md:63
 - [x] 审核发现：本轮 diff 未见问题（7aa4e216..HEAD） — 核实属实：范围 7aa4e216..HEAD（HEAD=1f44f9d）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 7aa4e216..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=1f44f9d962646a5c3e794629959f387e1c96b691；commit 1f44f9d；todo.md:64
+- [x] 审核发现：本轮 diff 未见问题（1f44f9d..HEAD） — 核实属实：范围 1f44f9d..HEAD（HEAD=29960f0）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 1f44f9d..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=29960f025bfea68ac9f35433174f459d3fa0c993；commit 29960f0；todo.md:65
