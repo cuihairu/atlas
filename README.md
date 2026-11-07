@@ -284,16 +284,16 @@ Atlas
 └── Events      character-index event sync (Redis Streams / Kafka / NATS / RabbitMQ)
 ```
 
-- **[Registry](docs/zh/api.md#registry)** — server registration at startup, periodic heartbeats, voluntary unregister
-- **[Discovery](docs/zh/api.md#discovery)** — filter servers by region / realm / shard / version / status / platform
-- **[Directory](docs/zh/api.md#directory)** — a cross-server index of all characters under an account
-- **[Routing](docs/zh/api.md#routing)** — access-target recommendation from load and capacity (same-account character stickiness)
-- **[Admin](docs/zh/api.md#admin)** — Realm / Shard management, maintenance windows coupled with announcements, migrations, audit log
+- **[Registry](docs/api.md#registry)** — server registration at startup, periodic heartbeats, voluntary unregister
+- **[Discovery](docs/api.md#discovery)** — filter servers by region / realm / shard / version / status / platform
+- **[Directory](docs/api.md#directory)** — a cross-server index of all characters under an account
+- **[Routing](docs/api.md#routing)** — access-target recommendation from load and capacity (same-account character stickiness)
+- **[Admin](docs/api.md#admin)** — Realm / Shard management, maintenance windows coupled with announcements, migrations, audit log
 - **[Event sync](docs/sync.md)** — character-index writes decoupled through Redis Streams / Kafka / NATS / RabbitMQ
 - **[Six-language SDKs](docs/sdk-go.md)** — Go / C++ / Python / JS / Java / C#, automatic heartbeats built in
 - **[APISIX plugins](docs/apisix.md)** — player-token auth injection + endpoint-group rate limiting
 - **[Health alerts](docs/lifecycle.md)** — suspect / offline ratio-threshold alerts + webhook notification
-- **[gRPC](docs/zh/api.md#grpc-api)** — five services, 23 RPCs, dual transport (the core surface shares its source with REST)
+- **[gRPC](docs/api.md#grpc-api)** — five services, 23 RPCs, dual transport (the core surface shares its source with REST)
 
 ---
 
@@ -341,7 +341,7 @@ The only built-in channel with business-semantic filtering carries nothing beyon
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | Overall architecture, component responsibilities, boundary with APISIX |
 | [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character conceptual model |
-| [docs/api.md](docs/api.md) | REST + gRPC reference — English marker page, full reference in [Chinese](docs/zh/api.md) |
+| [docs/api.md](docs/api.md) | REST + gRPC reference — full reference in [Chinese](docs/zh/api.md) |
 | [docs/api-quickstart.md](docs/api-quickstart.md) | API quick-start guide (curl examples) |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL table schemas and Redis key design |
 | [docs/lifecycle.md](docs/lifecycle.md) | Server lifecycle state machine |
