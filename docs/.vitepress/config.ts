@@ -45,7 +45,6 @@ const zhNav: MenuItem[] = [
     items: [
       { text: '概念模型', link: '/concepts' },
       { text: '架构设计', link: '/architecture' },
-      { text: '源码分层术语表', link: '/source-layers-glossary' },
       { text: 'API 参考', link: '/api' },
       { text: '数据模型', link: '/data-model' },
       { text: '安全审计', link: '/security-audit' },
@@ -103,7 +102,6 @@ const zhSidebar: MenuItem[] = [
     text: '参考',
     items: [
       { text: '架构设计', link: '/architecture' },
-      { text: '源码分层术语表', link: '/source-layers-glossary' },
       { text: 'API 参考', link: '/api' },
       { text: '数据模型', link: '/data-model' },
       { text: '安全审计', link: '/security-audit' },
@@ -169,7 +167,6 @@ export default withMermaid({
             items: [
               { text: 'Concepts', link: '/concepts' },
               { text: 'Architecture', link: '/architecture' },
-              { text: 'Source Layer Glossary', link: '/source-layers-glossary' },
               { text: 'API Reference', link: '/api' },
               { text: 'Data Model', link: '/data-model' },
               { text: 'Security Audit', link: '/security-audit' },
@@ -227,7 +224,6 @@ export default withMermaid({
             text: 'Reference',
             items: [
               { text: 'Architecture', link: '/architecture' },
-              { text: 'Source Layer Glossary', link: '/source-layers-glossary' },
               { text: 'API Reference', link: '/api' },
               { text: 'Data Model', link: '/data-model' },
               { text: 'Security Audit', link: '/security-audit' },
