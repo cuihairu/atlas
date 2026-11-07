@@ -63,3 +63,32 @@
 - [x] 审核发现：本轮 diff 未见问题（957dafdb..HEAD） — 核实属实：范围 957dafd..HEAD（HEAD=7aa4e21）仅 todo.md 变更（1 增）、无 .go 改动，复核无新问题；go test ./...: exit 0；docs build 绿；commit 7aa4e21；todo.md:63
 - [x] 审核发现：本轮 diff 未见问题（7aa4e216..HEAD） — 核实属实：范围 7aa4e216..HEAD（HEAD=1f44f9d）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 7aa4e216..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=1f44f9d962646a5c3e794629959f387e1c96b691；commit 1f44f9d；todo.md:64
 - [x] 审核发现：本轮 diff 未见问题（1f44f9d..HEAD） — 核实属实：范围 1f44f9d..HEAD（HEAD=29960f0）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 1f44f9d..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=29960f025bfea68ac9f35433174f459d3fa0c993；commit 29960f0；todo.md:65
+- [ ] 审核发现：本轮 diff 未见问题（29960f02..HEAD）。
+
+## 源码分层分析 2026-11-07
+
+### 抽象层清单
+
+- 领域模型与契约层：定义服务器、心跳、角色、迁移、跨服协调等共享语义和存储能力接口 — `internal/model/model.go:176`、`internal/store/store.go:80`
+- 服务层：实现注册、发现、目录投影、推荐、管理、健康回收、舰队聚合、迁移与跨服配置等业务规则 — `internal/registry/registry.go:72`、`internal/health/monitor.go:16`
+- API 与传输层：把 REST 和 gRPC 解码为同一批服务调用，并执行端点级安全策略 — `internal/httpapi/handlers.go:107`、`internal/grpc/server.go:26`
+- 事件与总线层：以传输无关契约投递角色投影与配置信号，适配进程内分发、Redis Streams、Kafka、NATS 和 RabbitMQ — `internal/event/adapter.go:129`
+- 可观测性与中间件层：提供指标、追踪、限流、认证、授权和异步审计 — `internal/metrics/metrics.go:36`、`internal/audit/queue.go:50`
+- CLI、SDK 与前端层：为运维、游戏服务器和仪表盘提供进程外驱动与观测入口 — `cmd/atlas/main.go:113`、`sdk/go/atlas/client.go:47`
+
+### 超大文件候选
+
+- [ ] LAY-001 [P1] 拆分 internal/httpapi/handlers.go（1934 行）——公共发现、内部注册、目录、管理、热力图与辅助逻辑同文件，路由注册与多端 handler 互相放大维护成本。（internal/httpapi/handlers.go:107）
+- [ ] LAY-002 [P1] 拆分 internal/store/storetest/contract.go（1556 行）——十类存储契约的行为断言集中执行，按接口拆成可独立定位的契约组。（internal/store/storetest/contract.go:1）
+- [ ] LAY-003 [P1] 拆分 internal/store/memory/memory.go（1236 行）——内存后端同时实现全部契约，接口级文件可降低锁与生命周期修改的交叉影响。（internal/store/memory/memory.go:1）
+- [ ] LAY-004 [P3] 不拆分 api/pb/atlas_grpc.pb.go（1218 行）——protoc 生成文件，应保留整体再生而不是手工拆分。（api/proto/atlas.proto:96）
+- [ ] LAY-005 [P1] 拆分 internal/store/mysql/mysql.go（1172 行）——SQL、扫描器、错误映射和各契约实现叠放在一个文件，查询变更影响面过大。（internal/store/mysql/mysql.go:1）
+- [ ] LAY-006 [P1] 拆分 internal/store/postgres/postgres.go（1162 行）——PostgreSQL 实现按契约混排 SQL、事务、扫描和迁移辅助，接口级拆分能减少合并冲突。（internal/store/postgres/postgres.go:1）
+- [ ] LAY-007 [P1] 拆分 cmd/atlas/main.go（1111 行）——进程根同时承担配置、后端选择、服务装配、中间件、监听与关闭序列。（cmd/atlas/main.go:113）
+- [ ] LAY-008 [P2] 拆分 cmd/atlas-demoagents/main.go（1030 行）——demo agent、房间循环、HTTP 编排和统计状态同文件，便于按演示行为维护。（cmd/atlas-demoagents/main.go:1）
+
+### 目录/分类不合理处
+
+- internal/event/http 包名为 `http`，但实现是进程内同步分发且不使用 HTTP 网络；`atlas_event_adapter=http` 更接近历史标签，而不是通道命名。建议保留兼容值但考虑迁移到 `inprocess` 语义名。（internal/event/http/adapter.go:1）
+- `internal/model/crossserver.go` 已达 348 行且包含类型、规范化、克隆、哈希与三层校验；领域模型目录继续吸收配置中心规则后，会成为模型包的子域热点。（internal/model/crossserver.go:109）
+- `internal/telemetry` 作为时间序列采样器与 metrics、tracing、audit 并列，命名容易让读者把“遥测导出”误认为唯一观测实现；建议在概念文档中固定它属于可观测性装饰层的边界。（internal/telemetry/telemetry.go:63）

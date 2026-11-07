@@ -75,6 +75,8 @@ flowchart TB
 | 数据层 | PostgreSQL | 持久事实 + Effective 状态：服务器档案、拓扑、角色索引、迁移记录（`servers.status` 为合成结果，见 §4.4） |
 | 来源层 | Game Server | 角色数据的 Source of Truth，经 Atlas 写入接口（HTTP `:8080` POST `/v1/directory/characters`，或 gRPC `:9090` `DirectoryService`，同一实现）投递索引事件；不直连消息队列 |
 
+实现级职责在[§9 源码分层](#9-源码分层)展开；实现词汇见[源码分层术语表](/zh/source-layers-glossary)。
+
 ---
 
 ## 3. 与网关的边界
@@ -385,3 +387,82 @@ Redis 不适合：
 Atlas 是控制面，不是数据面。控制面优先考虑开发效率和运维简单性，Go 的单二进制 + goroutine 模型是最合适的选择。
 
 游戏服务器本身用 C++ 是合理的（性能敏感），但 Atlas 不在热路径上——它不处理游戏帧，不转发战斗包，只回答"服务器在哪、角色在哪"。这类控制面用 Go 完全够用。
+
+---
+
+## 9. 源码分层
+
+以下六层按实现中的职责归纳。每一层同时说明配置 schema、专属协议文件和文案/文档位置。
+
+### 9.1 领域模型与契约层
+
+**职责。** 定义传输层、服务层、存储层和外部 SDK 共用的语言。
+
+- **实现：** `internal/model/model.go:60` 定义服务器状态机；`internal/model/model.go:176`、`internal/model/model.go:244` 和 `internal/model/model.go:364` 定义服务器、心跳和角色。跨服协调拥有独立领域文件 `internal/model/crossserver.go:16`。
+- **持久契约：** `internal/store/store.go:80` 到 `internal/store/store.go:309` 把十类后端能力分开，而不是暴露通用数据库对象。
+- **协议：** `api/proto/atlas.proto:96`、`api/proto/atlas.proto:127`、`api/proto/atlas.proto:207`、`api/proto/atlas.proto:231` 和 `api/proto/atlas.proto:360` 声明五个 gRPC 服务；Go 生成代码位于 `api/pb/`。
+- **配置 schema：** 该层没有运行时配置。
+- **文案/文档：** 领域材料按受众拆分在 `docs/data-model.md` 和 `docs/concepts.md`；双语镜像位于 `docs/zh/`。
+
+### 9.2 服务层
+
+**职责。** 负责状态转移、编排和业务规则，只依赖模型与存储契约。
+
+- **实现：** Registry 写注册，见 `internal/registry/registry.go:72`；Discovery 读舰队状态，见 `internal/discovery/discovery.go:15`；Directory 负责投影写入和查询，见 `internal/directory/directory.go:17`；Routing 给候选排序，见 `internal/routing/service.go:47`；Admin 执行生命周期和运维操作，见 `internal/admin/service.go:21`。横切 worker 包括健康 `internal/health/monitor.go:16`、舰队聚合 `internal/fleet/index.go:31`、迁移 `internal/migration/service.go:50`、服务器配置 `internal/serversconfig/serversconfig.go:53` 和跨服配置 `internal/crossserver/service.go:54`。
+- **状态存储：** 服务本身只保留内存状态；持久与易变状态都必须穿过 `internal/store/store.go:80` 的存储边界。舰队索引是进程本地聚合，见 `internal/fleet/index.go:31`，并从持久行重建，见 `internal/fleet/index.go:233`。
+- **配置 schema：** 超时、告警、拓扑和后端开关经 `internal/config/config.go:11` 进入；解析集中在 `internal/config/config.go:312`。
+- **协议文件：** 无；服务暴露 Go 方法，不负责线上编码。
+- **文案/文档：** 生命周期和 worker 行为在 `docs/lifecycle.md`、`docs/config-center.md`、`docs/migration.md` 及其 `docs/zh/` 镜像中描述。
+
+### 9.3 API 与传输层
+
+**职责。** 解码外部协议，执行端点策略，并委托给同一批服务对象。
+
+- **实现：** `internal/httpapi/handlers.go:117` 注册内部 Registry 面，`internal/httpapi/handlers.go:121` 注册公共 Discovery 面，`internal/httpapi/handlers.go:129` 注册 Directory 面，`internal/httpapi/handlers.go:137` 注册 Admin 面。`internal/grpc/server.go:26` 用同一批服务构造 protobuf server，`internal/grpc/server.go:83` 注册全部服务。
+- **状态存储：** 无；除请求作用域的策略结构外，传输层不拥有状态。
+- **配置 schema：** 监听和 TLS 字段位于 `internal/config/config.go:14`、`internal/config/config.go:20`、`internal/config/config.go:25`、`internal/config/config.go:29`；端点密钥和凭据在同一 `Config` 聚合中。
+- **协议文件：** REST 路由与 handler 同文件定义；专属线上 schema 是 `api/proto/atlas.proto:1`，生成绑定在 `api/pb/`。
+- **文案/文档：** 外部路由、载荷和错误文案维护在 `docs/api.md`；生成文档不是行为授权来源。
+
+### 9.4 事件与总线层
+
+**职责。** 迁移投影更新和配置变更信号，避免业务服务绑定某个 broker。
+
+- **实现：** 中立契约是 `internal/event/adapter.go:129`。具体适配器包括 Go `http` 包中的同步进程内分发 `internal/event/http/adapter.go:18`、Redis Streams `internal/event/redis/adapter.go:37`、Kafka `internal/event/kafka/adapter.go:48`、NATS JetStream `internal/event/nats/adapter.go:45` 和 RabbitMQ `internal/event/rabbitmq/adapter.go:87`。
+- **状态存储：** 进程内分发是进程本地；Redis/Kafka/NATS/RabbitMQ 在各自基础设施中保存传输状态，死信映射定义在 `internal/event/adapter.go:50`。
+- **配置 schema：** `internal/config/config.go:85` 选择适配器；broker URL 和投递上限位于 `internal/config/config.go:92`、`internal/config/config.go:97`、`internal/config/config.go:101`、`internal/config/config.go:105`。
+- **协议文件：** `internal/event/adapter.go:65` 是 JSON 事件 schema，`internal/event/adapter.go:39` 是主题契约；没有 protobuf。
+- **文案/文档：** 语义与重试行为记录在 `docs/sync.md`，镜像为 `docs/zh/sync.md`。
+
+### 9.5 可观测性与中间件层
+
+**职责。** 度量、追踪、限流、认证、授权，并记录重要管理操作。
+
+- **实现：** Registry 指标位于 `internal/metrics/metrics.go:36`；追踪初始化位于 `internal/tracing/tracing.go:22`；遥测适配器在 `internal/telemetry/*.go`；审计渲染/sink 位于 `internal/audit/entry.go:14`、`internal/audit/queue.go:50`、`internal/audit/jsonl.go:15`、`internal/audit/sql.go:15`。HTTP 和 gRPC 中间件在 `cmd/atlas/main.go:448` 到 `cmd/atlas/main.go:735` 装入请求路径。
+- **状态存储：** 指标是进程本地；审计队列在 `internal/audit/queue.go:50` 也是进程本地，sink 写 JSONL 文件或 PostgreSQL。
+- **配置 schema：** 凭据、CIDR 白名单、角色、限流表达式、审计 sink/path/retention 和追踪字段都是 `internal/config/config.go:11` 的成员，由 `internal/config/config.go:312` 填充。
+- **协议文件：** 无。
+- **文案/文档：** 运维指引在 `docs/operations.md` 和 `docs/security.md`；中文镜像在 `docs/zh/`。
+
+### 9.6 CLI、SDK 与前端层
+
+**职责。** 为运维、游戏服务器和仪表盘提供驱动或观测 Atlas 的稳定入口，而不导入进程内部实现。
+
+- **实现：** Atlas 进程根是 `cmd/atlas/main.go:113`；独立运维/工具位于 `cmd/dlq/main.go`、`cmd/atlas-reshard/main.go`、`cmd/loadgen/main.go`、`cmd/soakcheck/main.go` 和 `cmd/atlas-crossagent/main.go`；演示舰队位于 `cmd/atlas-demoagents/main.go`。Go 与 JavaScript SDK 入口是 `sdk/go/atlas/client.go:47` 和 `sdk/js/src/client.ts:28`；仪表盘是 `dashboard/` 下的独立前端包。
+- **状态存储：** CLI 一般只保留本地调用状态；演示/压测工具拥有进程本地 agent/room 状态。仪表盘调用 Atlas，不保存控制面权威状态。
+- **配置 schema：** 命令 flag 和环境输入由各命令解析；服务端 `internal/config/config.go:11` schema 不约束客户端二进制。
+- **协议文件：** 客户端使用 REST 和 `api/proto/atlas.proto:1` 生成的 gRPC 契约。
+- **文案/文档：** SDK 用法按语言拆分在 `docs/sdk-*.md`；前端拥有包内 UI 文案。
+
+### 9.7 为什么这样拆层
+
+1. **领域契约不是线上格式。** 模型与存储概念已经在 `internal/model/model.go:60`、`internal/model/model.go:277`、`internal/store/store.go:78` 编码可见性、容量、临时注册和游标语义。把 protobuf 独立在 `api/proto/atlas.proto:1`，可避免每个内部规则都变成生成代码的兼容负担。
+2. **接缝是存储能力，不是单个数据库对象。** `internal/store/store.go:80` 到 `internal/store/store.go:309` 的十个接口允许 memory、PostgreSQL、MySQL、Redis 和分片 Redis 只承诺各自能实现的行为。因此运行时易变状态可以放在不同契约后面，见 `internal/store/store.go:203`。
+3. **过期健康决策需要后端级 CAS。** `UpdateServerStatusIf` 有意成为 `ServerStore` 的一部分，见 `internal/store/store.go:98`；其注释说明无条件写入可能覆盖更新的注册或状态。服务内加锁无法保护并发 Atlas 副本。
+4. **业务规则必须独立于传输变化。** `internal/grpc/server.go:26` 注入 HTTP handler 已在使用的 Registry、Discovery、Directory、Routing 和 Admin 实现。新增协议时不需要复制生命周期或投影规则。
+5. **事件投递有五个独立运维的后端。** `internal/event/adapter.go:129` 的唯一适配器契约在 `internal/event/adapter.go:133` 显式暴露同步/异步行为；Redis、Kafka、NATS、RabbitMQ 和进程内 HTTP 分发可替换，Directory 规则不变。
+6. **临时服务器需要后台回收，而不是请求路径。** 监视器拥有注册过期，见 `internal/health/monitor.go:184`，并用比较写做状态转移，见 `internal/health/monitor.go:262`。调用方断开后，纯 HTTP handler 无法保证后续清理。
+7. **舰队聚合是优化，不是持久事实。** `internal/fleet/index.go:31` 保留进程本地装饰聚合，`internal/fleet/index.go:233` 从持久行重建。将它与存储分开，可把缓存生命周期隔离在持久语义之外。
+8. **跨服配置需要独立校验和通知管线。** 该服务在 `internal/crossserver/service.go:52`、`internal/crossserver/service.go:311`、`internal/crossserver/service.go:459` 组合校验、哈希、受影响目标计算和通知；通用设置模块会模糊定向“先通知后拉取”的投递。
+9. **审计必须异步，不能变成管理事务本身。** 队列在 `internal/audit/queue.go:50` 解耦入队与 sink 写入，并在关闭时有界 drain，见 `cmd/atlas/main.go:832`。这样把可观测性丢失与业务成功/失败隔离。
+10. **进程装配是唯一知道全部具体类型的位置。** `cmd/atlas/main.go:113` 选择具体存储，`cmd/atlas/main.go:269` 选择适配器，`cmd/atlas/main.go:799` 反向关闭。集中在进程根，可防止每个领域服务依赖 PostgreSQL、Redis、Kafka、NATS 或 RabbitMQ 具体类型。
