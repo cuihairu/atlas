@@ -66,6 +66,8 @@ type Store struct {
 	hotCh     []chan *instruction
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+	closeMu   sync.Mutex // serializes submit's enqueue against Close's channel close
+	closed    bool
 
 	watermark        atomic.Uint64 // last applied instruction sequence
 	enqueued         atomic.Uint64

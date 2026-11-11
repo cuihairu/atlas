@@ -274,9 +274,27 @@ func (s *Store) startQueue() {
 func (s *Store) submit(ctx context.Context, ins *instruction) instructionResult {
 	s.enqueued.Add(1)
 	lane := s.laneFor(ins)
-	select {
-	case lane <- ins:
-	default:
+
+	// Serialize the enqueue against Close: the send is non-blocking, so
+	// holding closeMu across it closes the send-on-closed-channel window —
+	// once Close holds the lock no new send can start, and before it does
+	// the lanes are guaranteed open.
+	s.closeMu.Lock()
+	var queued bool
+	if !s.closed {
+		select {
+		case lane <- ins:
+			queued = true
+		default:
+		}
+	}
+	s.closeMu.Unlock()
+
+	if !queued {
+		// Queue full — or the store is already closed and its lane
+		// appliers are gone. Both degrade to an inline synchronous apply
+		// (backpressure: the caller becomes the single writer for its own
+		// instruction).
 		s.backpressureSync.Add(1)
 		s.applyBatch(ins)
 		return <-ins.out
@@ -627,15 +645,22 @@ func (s *Store) QueueStats() store.QueueStats {
 	}
 }
 
-// Close drains and stops the lane appliers.
+// Close drains and stops the lane appliers. Channels are closed under
+// closeMu so a concurrent submit can never send on a closed lane; submits
+// arriving after the close degrade to the inline apply path. Work already
+// buffered in the lanes is drained by runLane before it exits (close only
+// signals end-of-stream after the buffered items).
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
+		s.closeMu.Lock()
+		s.closed = true
 		for _, ch := range s.ctrlCh {
 			close(ch)
 		}
 		for _, ch := range s.hotCh {
 			close(ch)
 		}
+		s.closeMu.Unlock()
 		s.wg.Wait()
 	})
 	return nil

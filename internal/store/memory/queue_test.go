@@ -7,6 +7,7 @@ package memory
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,9 +235,11 @@ func TestQueueBackpressureInline(t *testing.T) {
 	if err := s.RegisterServer(context.Background(), &model.Server{ID: "srv-1", Name: "one", Region: "r"}); err != nil {
 		t.Fatal(err)
 	}
-	s.Close() // lanes drained and stopped
 
-	// Swap in a fresh, unconsumed hot lane with capacity 1.
+	// Swap in a fresh, unconsumed hot lane with capacity 1 — the live lane
+	// goroutines keep serving the old channels, so nothing consumes this
+	// one (and Close is not used: post-Close submits take the inline path
+	// by design, see TestSubmitAfterCloseInline).
 	s.hotCh = []chan *instruction{make(chan *instruction, 1)}
 
 	canceled, cancel := context.WithCancel(context.Background())
@@ -330,5 +333,71 @@ func TestQueueUncontendedWriteIsImmediate(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("uncontended heartbeat waited longer than a full flush window")
+	}
+}
+
+// TestCloseConcurrentWithSubmit pins the shutdown race: a submit that loses
+// the race against Close must degrade to the inline apply path, never send
+// on a closed lane (send-on-closed-channel panic). Run with -race.
+func TestCloseConcurrentWithSubmit(t *testing.T) {
+	for attempt := 0; attempt < 50; attempt++ {
+		s := New()
+		ctx := context.Background()
+		if err := s.RegisterServer(ctx, &model.Server{ID: "srv-1", Name: "one", Region: "r"}); err != nil {
+			t.Fatal(err)
+		}
+
+		var wg sync.WaitGroup
+		stop := make(chan struct{})
+		for w := 0; w < 8; w++ {
+			wg.Add(1)
+			go func(w int) {
+				defer wg.Done()
+				for j := 0; ; j++ {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					ins := hbInstr("srv-1", j%7)
+					_ = s.submit(ctx, ins)
+				}
+			}(w)
+		}
+
+		s.Close()
+		// Submits racing the close (or arriving after it) must still
+		// complete via the inline path — and must not panic.
+		close(stop)
+		wg.Wait()
+	}
+}
+
+// TestSubmitAfterCloseInline pins post-Close semantics: with the lanes
+// closed, submits take the inline synchronous path instead of sending on a
+// closed lane — writes keep applying (memory stores serve reads after
+// close), and Close stays idempotent.
+func TestSubmitAfterCloseInline(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	if err := s.RegisterServer(ctx, &model.Server{ID: "srv-1", Name: "one", Region: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RecordHeartbeat(ctx, "srv-1", model.Heartbeat{Players: 3}); err != nil {
+		t.Fatalf("post-close submit = %v, want inline apply", err)
+	}
+	rt, err := s.GetRuntime(ctx, "srv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Players != 3 {
+		t.Errorf("players = %d, want 3 (post-close inline write visible)", rt.Players)
+	}
+	if err := s.Close(); err != nil {
+		t.Errorf("second Close = %v, want nil (idempotent)", err)
 	}
 }
