@@ -181,6 +181,78 @@ func TestApplyEventMoved(t *testing.T) {
 	}
 }
 
+// TestApplyEventMovedRedeliveryKeepsRow pins the at-least-once contract for
+// moved events: after a completed move the old-address row is gone, so a
+// re-delivered event resolves to the row already sitting at the target. The
+// old path upserted a no-op and then deleted that resolved row — the
+// character vanished from the directory for good.
+func TestApplyEventMovedRedeliveryKeepsRow(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	if _, err := svc.ApplyEvent(ctx, &event.Event{
+		Type: event.EventCharacterCreated, AccountID: 1, ServerID: "s1",
+		CharacterID: 7, Name: "c", Level: intPtr(9),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	moved := &event.Event{
+		Type: event.EventCharacterMoved, CharacterID: 7, TargetServerID: "s2",
+	}
+	if _, err := svc.ApplyEvent(ctx, moved); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	// Re-delivery with the key resolved from character_id...
+	ch, err := svc.ApplyEvent(ctx, moved)
+	if err != nil {
+		t.Fatalf("redelivered move: %v", err)
+	}
+	if ch.ServerID != "s2" || ch.Level != 9 || ch.Name != "c" {
+		t.Errorf("redelivered move changed the row: %+v", ch)
+	}
+	// ...and a re-delivery that still carries the stale source composite:
+	// the old-address lookup misses, resolution lands on the target row.
+	stale := &event.Event{
+		Type: event.EventCharacterMoved, AccountID: 1, ServerID: "s1",
+		CharacterID: 7, TargetServerID: "s2",
+	}
+	if _, err := svc.ApplyEvent(ctx, stale); err != nil {
+		t.Fatalf("redelivered move (stale composite): %v", err)
+	}
+	if _, err := svc.GetCharacterByCharacterID(ctx, 7); err != nil {
+		t.Fatalf("character lost after redelivery: %v", err)
+	}
+	if _, err := svc.GetCharacter(ctx, 1, "s2", 7); err != nil {
+		t.Fatalf("row missing at target after redelivery: %v", err)
+	}
+}
+
+// TestApplyEventMovedSameSourceAndTarget pins that a move whose source
+// resolves to the target server is a no-op, not an upsert followed by a
+// delete of the just-upserted row.
+func TestApplyEventMovedSameSourceAndTarget(t *testing.T) {
+	svc, _ := newTestService()
+	ctx := context.Background()
+	if _, err := svc.ApplyEvent(ctx, &event.Event{
+		Type: event.EventCharacterCreated, AccountID: 1, ServerID: "s1",
+		CharacterID: 7, Name: "c", Level: intPtr(4),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ch, err := svc.ApplyEvent(ctx, &event.Event{
+		Type: event.EventCharacterMoved, AccountID: 1, ServerID: "s1",
+		CharacterID: 7, TargetServerID: "s1",
+	})
+	if err != nil {
+		t.Fatalf("same-server move: %v", err)
+	}
+	if ch.ServerID != "s1" || ch.Level != 4 {
+		t.Errorf("no-op move changed the row: %+v", ch)
+	}
+	if _, err := svc.GetCharacter(ctx, 1, "s1", 7); err != nil {
+		t.Fatalf("row deleted by same-server move: %v", err)
+	}
+}
+
 func TestApplyEventMovedRequiresTarget(t *testing.T) {
 	svc, _ := newTestService()
 	_, err := svc.ApplyEvent(context.Background(), &event.Event{

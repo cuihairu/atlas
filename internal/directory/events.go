@@ -230,6 +230,18 @@ func (s *Service) applyMoved(ctx context.Context, e *event.Event) (*model.Charac
 		}
 	}
 
+	// A resolved source that already sits at the target means this move has
+	// already been applied. At-least-once transports re-deliver moved events,
+	// and a retry after a failure between the target upsert and the source
+	// delete resolves to the row the earlier attempt placed at the target
+	// (the old-address row is gone). Upserting again would be harmless, but
+	// the trailing source delete would then remove the projection's only
+	// row. Replay — and a no-op move where source equals target — is a
+	// successful no-op.
+	if src.ServerID == e.TargetServerID {
+		return src, nil
+	}
+
 	dst := &model.Character{
 		AccountID:   src.AccountID,
 		ServerID:    e.TargetServerID,
