@@ -679,7 +679,9 @@ func TestActorContextRoundTrip(t *testing.T) {
 }
 
 // TestParseIPWhitelistVariants pins the whitelist parser: empty input,
-// CIDRs, bare IPs (v4/v6), and garbage parts being skipped.
+// CIDRs, bare IPs (v4/v6), and empty parts tolerated — while a malformed
+// entry is an error, never a silent skip (a silently dropped typo could
+// shrink the whitelist down to nothing and leave the listener open).
 func TestParseIPWhitelistVariants(t *testing.T) {
 	nets, err := ParseIPWhitelist("")
 	if err != nil || len(nets) != 0 {
@@ -695,12 +697,15 @@ func TestParseIPWhitelistVariants(t *testing.T) {
 	if nets[0].String() != "10.0.0.0/8" || nets[1].String() != "192.168.1.5/32" {
 		t.Errorf("unexpected nets: %v %v", nets[0], nets[1])
 	}
-	nets, err = ParseIPWhitelist("::1, not-an-ip,,")
+	nets, err = ParseIPWhitelist("::1,,,")
 	if err != nil {
-		t.Fatalf("v6+garbage input: %v", err)
+		t.Fatalf("v6+empty-parts input: %v", err)
 	}
 	if len(nets) != 1 || nets[0].String() != "::1/128" {
-		t.Errorf("expected only ::1/128 to survive, got %v", nets)
+		t.Errorf("expected only ::1/128, got %v", nets)
+	}
+	if _, err = ParseIPWhitelist("::1, not-an-ip,,"); err == nil {
+		t.Error("malformed bare IP must be an error, not a silent skip")
 	}
 }
 

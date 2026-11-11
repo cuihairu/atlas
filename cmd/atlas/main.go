@@ -434,16 +434,26 @@ func main() {
 		WithTelemetry(sampler).
 		WithBusStats(evtCounting)
 
-	// Parse auth config.
+	// Parse auth config. Malformed whitelist entries abort startup: silently
+	// dropping them could shrink the whitelist to nothing and leave the
+	// listener wide open.
 	adminKeys := httpapi.ParseAPIKeys(cfg.AdminAPIKeys)
-	adminIPs, _ := httpapi.ParseIPWhitelist(cfg.AdminIPWhitelist)
+	adminIPs, err := httpapi.ParseIPWhitelist(cfg.AdminIPWhitelist)
+	if err != nil {
+		logger.Error("invalid admin ip whitelist", "error", err)
+		os.Exit(1)
+	}
 	adminRoles, err := httpapi.ParseAdminRoles(cfg.AdminRoles)
 	if err != nil {
 		logger.Error("invalid admin roles", "error", err)
 		os.Exit(1)
 	}
 	regTokens := httpapi.ParseAPIKeys(cfg.RegistryTokens)
-	regIPs, _ := httpapi.ParseIPWhitelist(cfg.RegistryIPWhitelist)
+	regIPs, err := httpapi.ParseIPWhitelist(cfg.RegistryIPWhitelist)
+	if err != nil {
+		logger.Error("invalid registry ip whitelist", "error", err)
+		os.Exit(1)
+	}
 
 	// Registry TLS / mTLS (TODO v0.1.17).
 	regTLSOpts := tlsutil.Options{

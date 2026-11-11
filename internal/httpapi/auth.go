@@ -238,7 +238,9 @@ func extractBearerToken(r *http.Request) string {
 
 // ParseIPWhitelist parses a comma-separated list of CIDR strings into
 // []*net.IPNet. Individual IPs (e.g. "10.0.1.5") are treated as /32 (IPv4)
-// or /128 (IPv6).
+// or /128 (IPv6). Any malformed entry is an error, never a silent skip: an
+// ignored typo would silently shrink the whitelist — down to nothing — and
+// a whitelist that filters to empty leaves the listener fully open.
 func ParseIPWhitelist(raw string) ([]*net.IPNet, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -253,7 +255,7 @@ func ParseIPWhitelist(raw string) ([]*net.IPNet, error) {
 		if !strings.Contains(part, "/") {
 			ip := net.ParseIP(part)
 			if ip == nil {
-				continue
+				return nil, fmt.Errorf("invalid IP %q in whitelist", part)
 			}
 			if ip.To4() != nil {
 				part += "/32"
