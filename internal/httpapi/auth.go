@@ -82,6 +82,11 @@ type AuthConfig struct {
 	// IPWhitelist, when non-empty, restricts Admin access to these CIDR
 	// ranges. An empty list means "allow all".
 	IPWhitelist []*net.IPNet
+	// TrustForwardedFor honors X-Forwarded-For / X-Real-IP when resolving
+	// the client IP for the whitelist check. Only set it when the listener
+	// sits behind a trusted reverse proxy (ATLAS_TRUST_FORWARDED_FOR=1);
+	// with it unset, a spoofed header cannot forge the whitelist verdict.
+	TrustForwardedFor bool
 	// Logger for auth failures.
 	Logger *slog.Logger
 }
@@ -101,7 +106,7 @@ func AdminAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// ── IP whitelist ──────────────────────────────────
 			if hasIPs {
-				clientIP := extractIP(r)
+				clientIP := extractIP(r, cfg.TrustForwardedFor)
 				if !ipAllowed(clientIP, cfg.IPWhitelist) {
 					cfg.Logger.Warn("admin: ip blocked",
 						"ip", clientIP,
@@ -187,16 +192,22 @@ func ParseAdminRoles(raw string) (map[string]string, error) {
 	return roles, nil
 }
 
-// extractIP parses the client IP from the request, respecting X-Forwarded-For
-// and X-Real-IP when behind a reverse proxy.
-func extractIP(r *http.Request) string {
-	// X-Forwarded-For: client, proxy1, proxy2
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+// extractIP parses the client IP from the request. Forwarded headers
+// (X-Forwarded-For, X-Real-IP) are honored only when trustForwarded is set —
+// the deployment has declared that every listener sits behind a trusted
+// reverse proxy. Otherwise they are client-controlled and would let a direct
+// caller forge the whitelist verdict and the per-client rate-limit bucket,
+// so the socket address (RemoteAddr) is used instead.
+func extractIP(r *http.Request, trustForwarded bool) string {
+	if trustForwarded {
+		// X-Forwarded-For: client, proxy1, proxy2
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[0])
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host

@@ -207,6 +207,16 @@ type Config struct {
 	// Env: ATLAS_AUDIT_ENABLED, default true.
 	AuditEnabled bool
 
+	// TrustForwardedFor opt-in honors X-Forwarded-For / X-Real-IP when
+	// resolving the client IP for the Admin/Registry IP whitelists and the
+	// rate-limit bucket keys. Only enable it when every listener sits behind
+	// a trusted reverse proxy that overwrites these headers: on a direct
+	// connection they are client-controlled and would forge the whitelist
+	// verdict and the per-client bucket. "1" enables; anything else uses the
+	// socket address (RemoteAddr).
+	// Env: ATLAS_TRUST_FORWARDED_FOR, default "" (off).
+	TrustForwardedFor bool
+
 	// AuditSink persists every recorded audit entry beyond the in-memory ring:
 	// "postgres" (an audit_log table in ATLAS_DATABASE_URL — confirmed writes,
 	// queryable, retention by sweep), "jsonl" (one JSON object per line in
@@ -348,6 +358,7 @@ func Load() Config {
 		AdminTLSClientCA:    os.Getenv("ATLAS_ADMIN_TLS_CLIENT_CA"),
 		AdminRoles:          os.Getenv("ATLAS_ADMIN_ROLES"),
 		AuditEnabled:        os.Getenv("ATLAS_AUDIT_ENABLED") != "0",
+		TrustForwardedFor:   os.Getenv("ATLAS_TRUST_FORWARDED_FOR") == "1",
 		AuditSink:           envOr("ATLAS_AUDIT_SINK", ""),
 		AuditSinkPath:       os.Getenv("ATLAS_AUDIT_SINK_PATH"),
 		AuditRetention:      90 * 24 * time.Hour,

@@ -44,6 +44,14 @@ type RateLimiter struct {
 	rejectedByEndpoint map[string]int
 	rejectedByClient   map[string]int
 	maxClientStats     int
+
+	// trustForwarded honors X-Forwarded-For / X-Real-IP when resolving the
+	// per-client bucket key. Off by default: on a direct connection those
+	// headers are client-controlled, and trusting them both forges the
+	// bucket key and inflates the bucket map (the maxBuckets guard exists
+	// precisely for spoofed-XFF deployments). Enable only behind a trusted
+	// reverse proxy (ATLAS_TRUST_FORWARDED_FOR=1).
+	trustForwarded bool
 }
 
 type rateNamedRule struct {
@@ -91,10 +99,18 @@ func (rl *RateLimiter) Allow(path, clientIP string) bool {
 	return false
 }
 
+// TrustForwardedFor controls whether the middleware resolves the per-client
+// bucket key from X-Forwarded-For / X-Real-IP instead of the socket address.
+// Chainable; off unless explicitly enabled.
+func (rl *RateLimiter) TrustForwardedFor(on bool) *RateLimiter {
+	rl.trustForwarded = on
+	return rl
+}
+
 // Middleware returns the rate-limiting handler wrapper.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rl.Allow(r.URL.Path, extractIP(r)) {
+		if !rl.Allow(r.URL.Path, extractIP(r, rl.trustForwarded)) {
 			w.Header().Set("Retry-After", "1")
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED",
 				"too many requests for this endpoint; retry later")

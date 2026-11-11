@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -488,6 +489,40 @@ func TestRegistryAuthMiddleware(t *testing.T) {
 	secured(next).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("valid token = %d, want 200", rec.Code)
+	}
+}
+
+// TestRegistryAuth_ForwardedHeaderTrust pins the registry whitelist against
+// X-Forwarded-For forgery: the header is honored only with the trust opt-in.
+func TestRegistryAuth_ForwardedHeaderTrust(t *testing.T) {
+	_, cidr, _ := net.ParseCIDR("10.0.0.0/8")
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	build := func(trust bool) http.Handler {
+		return RegistryAuth(RegistryAuthConfig{
+			IPWhitelist:       []*net.IPNet{cidr},
+			TrustForwardedFor: trust,
+			Logger:            quietLogger(),
+		})(next)
+	}
+
+	// Socket address is outside the whitelist; the header claims an inside
+	// address. Untrusted (default): the header must be ignored → 403.
+	req := httptest.NewRequest(http.MethodPost, "/v1/registry/x", nil)
+	req.RemoteAddr = "192.168.1.1:80"
+	req.Header.Set("X-Forwarded-For", "10.0.2.10")
+	rec := httptest.NewRecorder()
+	build(false).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("untrusted registry = %d, want 403", rec.Code)
+	}
+
+	// Trusted: the header is the client → allowed.
+	rec = httptest.NewRecorder()
+	build(true).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("trusted registry = %d, want 200", rec.Code)
 	}
 }
 

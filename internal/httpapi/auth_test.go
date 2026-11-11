@@ -10,36 +10,40 @@ import (
 
 func TestAdminAuth_IPWhitelist(t *testing.T) {
 	_, cidr, _ := net.ParseCIDR("10.0.0.0/8")
-	cfg := AuthConfig{
-		IPWhitelist: []*net.IPNet{cidr},
-		Logger:      slog.Default(),
-	}
-
-	handler := AdminAuth(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
 
 	tests := []struct {
 		name       string
 		remoteAddr string
 		xff        string
+		trust      bool
 		wantCode   int
 	}{
-		{"allowed by remote", "10.0.1.5:1234", "", 200},
-		{"allowed by xff", "192.168.1.1:80", "10.0.2.10, 172.16.0.1", 200},
-		{"blocked", "172.16.0.1:80", "", 403},
-		{"blocked no xff", "192.168.1.1:80", "", 403},
+		{"allowed by remote", "10.0.1.5:1234", "", false, 200},
+		// A forwarded header only counts when the listener is declared to sit
+		// behind a trusted reverse proxy; without it the socket address is the
+		// client and a spoofed header cannot forge the whitelist verdict.
+		{"xff ignored untrusted", "192.168.1.1:80", "10.0.2.10", false, 403},
+		{"xff honored trusted", "192.168.1.1:80", "10.0.2.10", true, 200},
+		{"blocked", "172.16.0.1:80", "", false, 403},
+		{"blocked no xff", "192.168.1.1:80", "", false, 403},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			h := AdminAuth(AuthConfig{
+				IPWhitelist:       []*net.IPNet{cidr},
+				TrustForwardedFor: tt.trust,
+				Logger:            slog.Default(),
+			})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
 			req := httptest.NewRequest("GET", "/v1/admin/stats", nil)
 			req.RemoteAddr = tt.remoteAddr
 			if tt.xff != "" {
 				req.Header.Set("X-Forwarded-For", tt.xff)
 			}
 			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+			h.ServeHTTP(rec, req)
 			if rec.Code != tt.wantCode {
 				t.Errorf("got %d, want %d", rec.Code, tt.wantCode)
 			}

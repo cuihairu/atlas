@@ -560,7 +560,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		limiter = httpapi.NewRateLimiter(rules, def)
+		limiter = httpapi.NewRateLimiter(rules, def).TrustForwardedFor(cfg.TrustForwardedFor)
 		logger.Info("rate limiting enabled", "rules", len(rules), "default_rps", def.RPS, "default_burst", def.Burst)
 		handler.WithRateLimiter(limiter) // read-only rules view on /v1/admin/rate-limits
 	}
@@ -624,9 +624,10 @@ func main() {
 	var regHandler http.Handler = http.Handler(regMux)
 	if len(regTokens) > 0 || len(regIPs) > 0 {
 		regHandler = httpapi.RegistryAuth(httpapi.RegistryAuthConfig{
-			Tokens:      regTokens,
-			IPWhitelist: regIPs,
-			Logger:      logger,
+			Tokens:            regTokens,
+			IPWhitelist:       regIPs,
+			TrustForwardedFor: cfg.TrustForwardedFor,
+			Logger:            logger,
 		})(regHandler)
 	}
 	if limiter != nil {
@@ -657,10 +658,11 @@ func main() {
 	}
 	if len(adminKeys) > 0 || len(adminIPs) > 0 {
 		adminHandler = httpapi.AdminAuth(httpapi.AuthConfig{
-			APIKeys:     adminKeys,
-			Roles:       adminRoles,
-			IPWhitelist: adminIPs,
-			Logger:      logger,
+			APIKeys:           adminKeys,
+			Roles:             adminRoles,
+			IPWhitelist:       adminIPs,
+			TrustForwardedFor: cfg.TrustForwardedFor,
+			Logger:            logger,
 		})(adminHandler)
 	}
 	if limiter != nil {

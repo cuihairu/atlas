@@ -15,7 +15,12 @@ type RegistryAuthConfig struct {
 	// IPWhitelist, when non-empty, restricts Registry access to these CIDR
 	// ranges. Empty means "allow all".
 	IPWhitelist []*net.IPNet
-	Logger      *slog.Logger
+	// TrustForwardedFor honors X-Forwarded-For / X-Real-IP when resolving
+	// the client IP for the whitelist check. Only set it when the listener
+	// sits behind a trusted reverse proxy (ATLAS_TRUST_FORWARDED_FOR=1);
+	// with it unset, a spoofed header cannot forge the whitelist verdict.
+	TrustForwardedFor bool
+	Logger            *slog.Logger
 }
 
 // RegistryAuth returns middleware that enforces service token + optional IP
@@ -31,7 +36,7 @@ func RegistryAuth(cfg RegistryAuthConfig) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// ── IP whitelist ──────────────────────────────────
 			if hasIPs {
-				clientIP := extractIP(r)
+				clientIP := extractIP(r, cfg.TrustForwardedFor)
 				if !ipAllowed(clientIP, cfg.IPWhitelist) {
 					cfg.Logger.Warn("registry: ip blocked",
 						"ip", clientIP,

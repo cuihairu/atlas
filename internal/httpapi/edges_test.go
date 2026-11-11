@@ -145,8 +145,63 @@ func TestExtractIPPrefersRealIPHeader(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "10.0.0.1:1234"
 	r.Header.Set("X-Real-IP", " 203.0.113.9 ")
-	if got := extractIP(r); got != "203.0.113.9" {
+	if got := extractIP(r, true); got != "203.0.113.9" {
 		t.Errorf("extractIP = %q, want the X-Real-IP value", got)
+	}
+}
+
+// TestExtractIPIgnoresForwardedWhenUntrusted pins the forgery guard: without
+// the opt-in, forwarded headers are ignored and the socket address wins.
+func TestExtractIPIgnoresForwardedWhenUntrusted(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "10.0.0.1:1234"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	if got := extractIP(r, false); got != "10.0.0.1" {
+		t.Errorf("extractIP = %q, want the socket address", got)
+	}
+}
+
+// TestRateLimit_ForwardedHeaderBucketKeys pins the per-client bucket key:
+// untrusted (default) keys on the socket address so a spoofed XFF cannot
+// dodge the limit; trusted keys on the forwarded address.
+func TestRateLimit_ForwardedHeaderBucketKeys(t *testing.T) {
+	rl := NewRateLimiter(map[string]RateRule{"/v1/registry/": {RPS: 1, Burst: 1}}, RateRule{RPS: 1, Burst: 1})
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := rl.Middleware(next)
+
+	do := func(xff string) int {
+		req := httptest.NewRequest(http.MethodPost, "/v1/registry/heartbeat", nil)
+		req.RemoteAddr = "192.168.1.1:80"
+		if xff != "" {
+			req.Header.Set("X-Forwarded-For", xff)
+		}
+		rec := httptest.NewRecorder()
+		mw.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Same socket, different forwarded headers. Untrusted: same bucket → the
+	// second request trips the burst-1 limit (429).
+	if do("10.0.2.10") != http.StatusOK || do("10.0.2.11") != http.StatusTooManyRequests {
+		t.Errorf("untrusted: expected same-bucket 200 then 429, got %d then %d", 200, 200)
+	}
+
+	// Trusted: different forwarded headers land in different buckets.
+	trusted := NewRateLimiter(map[string]RateRule{"/v1/registry/": {RPS: 1, Burst: 1}}, RateRule{RPS: 1, Burst: 1}).TrustForwardedFor(true)
+	mwt := trusted.Middleware(next)
+	doT := func(xff string) int {
+		req := httptest.NewRequest(http.MethodPost, "/v1/registry/heartbeat", nil)
+		req.RemoteAddr = "192.168.1.1:80"
+		req.Header.Set("X-Forwarded-For", xff)
+		rec := httptest.NewRecorder()
+		mwt.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	first, second := doT("10.0.2.10"), doT("10.0.2.11")
+	if first != http.StatusOK || second != http.StatusOK {
+		t.Errorf("trusted: expected per-header buckets 200 then 200, got %d then %d", first, second)
 	}
 }
 
