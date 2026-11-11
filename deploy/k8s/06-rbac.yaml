@@ -1,0 +1,51 @@
+# Optional RBAC for reaching the atlas admin port from inside the cluster
+# (production checklist item "Enable RBAC for atlas-admin"). Nothing in
+# 00-05 needs this file — apply it only if the admin API is used from
+# outside the pod network. Replace the bound group with your own operator
+# group or user before applying.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: atlas-admin
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: rbac
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: atlas-admin-view
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: rbac
+rules:
+  # Read access to locate the atlas service and its backing pods, plus
+  # port-forward to reach :8082 (admin / metrics) without exposing it.
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/portforward"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["services/portforward"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: atlas-admin-view
+  namespace: atlas
+  labels:
+    app.kubernetes.io/name: atlas
+    app.kubernetes.io/component: rbac
+subjects:
+  # Replace with your operator group or user (kind: User for an individual).
+  - kind: Group
+    name: atlas-admin-operators
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atlas-admin-view

@@ -1,0 +1,163 @@
+# 主 CI 门禁：Go build / vet / test + 覆盖率报告。
+# Dependabot 的自动合并 workflow 会单独重跑这些门禁；本 workflow 面向所有
+# push / PR。覆盖率目标：service 与 handler 层 >80%（docs/benchmarks.md 的
+# 回归警戒线之外的另一条质量线，见 docs/security-audit.md 的范围表）。
+#
+# 三个 store 契约套件（postgres / mysql / redisstore）通过环境变量门控，
+# 指向下方 service containers —— 与本地一致：
+#   ATLAS_TEST_DATABASE_URL / ATLAS_TEST_MYSQL_DSN / ATLAS_TEST_REDIS_URL
+# 未设置时套件自动 skip，本地 `go test ./...` 保持零依赖。
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: atlas_test
+          MYSQL_USER: atlas
+          MYSQL_PASSWORD: atlas
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h127.0.0.1 -uroot -proot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
+      ATLAS_TEST_MYSQL_DSN: atlas:atlas@tcp(127.0.0.1:3306)/atlas_test
+      # 专用逻辑库（15）：套件每次 FlushDB，不与任何真实数据共存。
+      ATLAS_TEST_REDIS_URL: redis://localhost:6379/15
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Gofmt
+        run: |
+          dirs="$(go list -f '{{.Dir}}' ./...)"
+          if [ -z "$dirs" ]; then
+            echo "go list returned no packages; refusing to run gofmt with no args"
+            exit 1
+          fi
+          output="$(gofmt -l $dirs)"
+          if [ -n "$output" ]; then
+            echo "gofmt needed for:"
+            echo "$output"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # golangci-lint (errcheck) — the same surface `make lint` runs locally.
+      # go1.27.3 module: use the v2.15.0 binary built against go1.27 so the
+      # config loads (golangci-lint must not be older than the module's go
+      # directive). Errors are the lint gate itself, not a soft report.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+          args: --timeout=10m
+
+      # -coverpkg 让跨包执行的代码（storetest 契约套件在三个 store 包的
+      # 测试二进制里跑）如实计入覆盖；随后按块去重（保留最大计数）得到
+      # 标准格式 profile，`go tool cover` 与 Codecov 均可直接解析。
+      - name: Test with coverage
+        run: |
+          go test ./internal/... -coverprofile=coverage.raw -count=1 -coverpkg=./internal/...
+          go test ./cmd/... ./sdk/... ./api/... ./examples/... ./deploy/... -count=1
+          awk 'NR==1 {next} {
+            if (!($1 in stmt)) {order[++n]=$1; stmt[$1]=$2; cnt[$1]=0}
+            if ($3+0 > cnt[$1]) cnt[$1]=$3
+          } END {
+            print "mode: set"
+            for (i=1;i<=n;i++) print order[i] " " stmt[order[i]] " " cnt[order[i]]
+          }' coverage.raw > coverage.out
+          go tool cover -func=coverage.out | tail -1
+
+      - name: Coverage report
+        run: |
+          go tool cover -func=coverage.out | sed 's/^/  /' > coverage.txt
+          # 每包覆盖率摘要进 Actions Summary
+          {
+            echo "### Go coverage (per package)"
+            echo '```'
+            go test -cover ./internal/... ./sdk/... 2>&1 | grep -v "no test files"
+            echo '```'
+            go tool cover -func=coverage.out | tail -1
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+      # 覆盖率上传 Codecov —— 公共仓库免注册 tokenless 方案（无 token，
+      # 覆盖率口径由根目录 codecov.yml 驱动）。
+      # 上传失败不阻断门禁（fail_ci_if_error: false），Codecov 侧限流/故障不应挡代码合入。
+      - uses: codecov/codecov-action@v7.1.1
+        with:
+          files: coverage.out
+          # 受保护分支（main）强制要求 token：tokenless 上传会被 Codecov
+          # 以 "Token required because branch is protected" 拒绝（实测）。
+          # 在仓库 Secrets 配置 CODECOV_TOKEN（codecov.io 免费获取）即生效；
+          # 未配置时保持空值，行为同 tokenless（失败不阻断门禁）。
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

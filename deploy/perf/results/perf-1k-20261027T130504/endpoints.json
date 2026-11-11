@@ -1,0 +1,56 @@
+{
+  "classes": [
+    {
+      "class": "register",
+      "flows": [
+        "register"
+      ],
+      "count": 1000,
+      "errors": 0,
+      "p95_ms": 251,
+      "p99_ms": 287
+    },
+    {
+      "class": "heartbeat",
+      "flows": [
+        "heartbeat"
+      ],
+      "count": 18476,
+      "errors": 0,
+      "p95_ms": 28,
+      "p99_ms": 66
+    },
+    {
+      "class": "read",
+      "flows": [
+        "read-detail",
+        "read-list",
+        "read-recommend"
+      ],
+      "count": 35856,
+      "errors": 0,
+      "p95_ms": 15,
+      "p99_ms": 23
+    },
+    {
+      "class": "character-write",
+      "flows": [
+        "char-write"
+      ],
+      "count": 3584,
+      "errors": 0,
+      "p95_ms": 9,
+      "p99_ms": 15
+    },
+    {
+      "class": "admin",
+      "flows": [
+        "ops-stats"
+      ],
+      "count": 35,
+      "errors": 0,
+      "p95_ms": 175,
+      "p99_ms": 441
+    }
+  ]
+}

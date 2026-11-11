@@ -1,0 +1,11 @@
+perf runner summary — perf-1k-20261027T130504
+verdict: PASS — every series holds a plateau
+char-write         count=    3584 p95=    9ms p99=   15ms errors=0 skipped=1
+heartbeat          count=   18476 p95=   28ms p99=   66ms errors=0 skipped=6
+ops-stats          count=      35 p95=  175ms p99=  441ms errors=0 skipped=0
+read-detail        count=   10745 p95=    9ms p99=   15ms errors=0 skipped=0
+read-list          count=   17871 p95=   12ms p99=   21ms errors=0 skipped=0
+read-recommend     count=    7240 p95=   15ms p99=   23ms errors=0 skipped=0
+register           count=    1000 p95=  251ms p99=  287ms errors=0 skipped=5990
+storm-register     count=       0 p95=    0ms p99=    0ms errors=0 skipped=0
+errors=0 skipped=5997

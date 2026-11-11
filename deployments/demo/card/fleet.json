@@ -1,0 +1,41 @@
+{
+  "servers": [
+    {
+      "server_id": "card-account-1",
+      "name": "账号服",
+      "type": "account",
+      "region": "cn-east",
+      "version": "1.8.0",
+      "endpoint": { "host": "10.50.1.10", "port": 34000 },
+      "capacity": 20000,
+      "players": 3860,
+      "drift": 200
+    },
+    {
+      "server_id": "card-game-1",
+      "name": "游戏逻辑服",
+      "type": "game",
+      "region": "cn-east",
+      "version": "1.8.0",
+      "endpoint": { "host": "10.50.1.11", "port": 34001 },
+      "capacity": 10000,
+      "players": 2140,
+      "drift": 150,
+      "characters": [
+        { "account_id": 900001, "character_id": 800101, "name": "欧皇本皇", "level": 66, "class_id": 1 },
+        { "account_id": 900002, "character_id": 800102, "name": "零氪战神", "level": 48, "class_id": 2 }
+      ]
+    },
+    {
+      "server_id": "card-battle-1",
+      "name": "战斗计算服(无状态)",
+      "type": "battle",
+      "region": "cn-east",
+      "version": "1.8.0",
+      "endpoint": { "host": "10.50.1.12", "port": 34002 },
+      "capacity": 4000,
+      "players": 320,
+      "drift": 60
+    }
+  ]
+}

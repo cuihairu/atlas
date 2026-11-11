@@ -1,0 +1,198 @@
+{
+  "servers": [
+    {
+      "server_id": "game-1001",
+      "name": "一区·青龙",
+      "region": "cn-east",
+      "realm_id": "realm-cn",
+      "shard_id": "shard-east",
+      "version": "1.2.0",
+      "endpoint": {
+        "host": "10.0.1.21",
+        "port": 30001
+      },
+      "capacity": 2000,
+      "players": 843,
+      "drift": 40,
+      "notify_mode": "subscribe",
+      "tags": [
+        {
+          "code": "hot"
+        }
+      ],
+      "characters": [
+        {
+          "account_id": 424242,
+          "character_id": 100101,
+          "name": "青龙",
+          "level": 58,
+          "class_id": 1
+        },
+        {
+          "account_id": 424242,
+          "character_id": 100102,
+          "name": "青龙·影",
+          "level": 41,
+          "class_id": 2
+        },
+        {
+          "account_id": 777001,
+          "character_id": 100103,
+          "name": "云中君",
+          "level": 63,
+          "class_id": 3
+        }
+      ]
+    },
+    {
+      "server_id": "game-1002",
+      "name": "二区·白虎",
+      "region": "cn-east",
+      "realm_id": "realm-cn",
+      "shard_id": "shard-east",
+      "version": "1.2.0",
+      "endpoint": {
+        "host": "10.0.1.22",
+        "port": 30002
+      },
+      "capacity": 2000,
+      "players": 1265,
+      "drift": 60,
+      "tags": [
+        {
+          "code": "new"
+        },
+        {
+          "code": "recommended"
+        }
+      ],
+      "characters": [
+        {
+          "account_id": 424242,
+          "character_id": 100201,
+          "name": "白虎",
+          "level": 12,
+          "class_id": 4
+        }
+      ]
+    },
+    {
+      "server_id": "game-2001",
+      "name": "华北·朱雀",
+      "region": "cn-north",
+      "realm_id": "realm-cn",
+      "shard_id": "shard-north",
+      "version": "1.2.0",
+      "endpoint": {
+        "host": "10.0.2.11",
+        "port": 30011
+      },
+      "capacity": 1500,
+      "players": 402,
+      "drift": 25,
+      "characters": [
+        {
+          "account_id": 777001,
+          "character_id": 200101,
+          "name": "朱雀",
+          "level": 47,
+          "class_id": 2
+        }
+      ]
+    },
+    {
+      "server_id": "game-2002",
+      "name": "华北·玄武",
+      "region": "cn-north",
+      "realm_id": "realm-cn",
+      "shard_id": "shard-north",
+      "version": "1.1.9",
+      "endpoint": {
+        "host": "10.0.2.12",
+        "port": 30012
+      },
+      "capacity": 1500,
+      "players": 1498,
+      "drift": 30,
+      "tags": [
+        {
+          "code": "full"
+        }
+      ],
+      "characters": [
+        {
+          "account_id": 888002,
+          "character_id": 200201,
+          "name": "玄武",
+          "level": 60,
+          "class_id": 5
+        }
+      ]
+    },
+    {
+      "server_id": "game-3001",
+      "name": "华南·麒麟",
+      "region": "cn-south",
+      "version": "1.2.0",
+      "endpoint": {
+        "host": "10.0.3.31",
+        "port": 30031
+      },
+      "capacity": 800,
+      "players": 77,
+      "drift": 15,
+      "characters": [
+        {
+          "account_id": 888002,
+          "character_id": 300101,
+          "name": "麒麟",
+          "level": 33,
+          "class_id": 1
+        }
+      ]
+    },
+    {
+      "server_id": "game-9001",
+      "name": "华东-跨服节点",
+      "region": "cn-east",
+      "version": "1.0.0",
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 30001
+      },
+      "capacity": 500,
+      "players": 42,
+      "drift": 8,
+      "notify_mode": "poll"
+    },
+    {
+      "server_id": "game-9002",
+      "name": "华东-回调节点",
+      "region": "cn-east",
+      "version": "1.0.0",
+      "endpoint": {
+        "host": "127.0.0.1",
+        "port": 30001
+      },
+      "capacity": 500,
+      "players": 42,
+      "drift": 8,
+      "notify_mode": "subscribe"
+    },
+    {
+      "server_id": "game-7000",
+      "name": "维护演示·天枢",
+      "region": "cn-east",
+      "realm_id": "realm-cn",
+      "shard_id": "shard-east",
+      "version": "1.2.0",
+      "endpoint": {
+        "host": "10.0.7.70",
+        "port": 30070
+      },
+      "capacity": 1000,
+      "players": 31,
+      "seed_only": true
+    }
+  ]
+}

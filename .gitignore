@@ -1,0 +1,59 @@
+# 依赖
+node_modules/
+.pnpm-store/
+bower_components/
+
+# 构建产物
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Go 覆盖率产物（go test -coverprofile / CI 中间文件，勿提交）
+coverage.out
+coverage.raw
+
+# 环境
+.env
+.env.*
+!.env.example
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# 缓存
+.cache/
+.parcel-cache/
+.eslintcache
+/go
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Go 构建落根（make build）
+/bin/
+
+# Java 构建产物（Maven）
+target/
+
+# Gradle 本地缓存
+.gradle/
+
+# .NET 构建产物（C# SDK / examples）
+bin/
+obj/
+*.user

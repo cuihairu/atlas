@@ -1,0 +1,111 @@
+import { useEffect, useState } from 'react';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
+import { Button, ConfigProvider, Result, Spin, theme, App as AntApp } from 'antd';
+import AppLayout from './components/Layout';
+import Login from './pages/Login';
+import Overview from './pages/Overview';
+import Servers from './pages/Servers';
+import Heatmap from './pages/Heatmap';
+import ServerDetail from './pages/ServerDetail';
+import Characters from './pages/Characters';
+import Migrations from './pages/Migrations';
+import Operations from './pages/Operations';
+import CrossServer from './pages/CrossServer';
+import PlayerDiagnose from './pages/PlayerDiagnose';
+import SystemConfig from './pages/SystemConfig';
+import AuditLog from './pages/AuditLog';
+import { probeAdmin } from './api/client';
+import { setAppMessage } from './api/messageBus';
+import { useLang, antdLocale, t } from './i18n';
+import { useTheme } from './theme';
+
+// 会话守卫：进管理台前探一次管理口。401 → 跳登录页；200（已登录或该
+// 部署未启用鉴权）→ 放行。只在挂载时探测一次：页内导航不再闪屏，登出/
+// 重登会令本组件重新挂载从而复检。
+function RequireAuth() {
+  const [verdict, setVerdict] = useState<'checking' | 'ok' | 'login'>('checking');
+  useEffect(() => {
+    probeAdmin().then((v) => setVerdict(v === 'ok' ? 'ok' : 'login'));
+  }, []);
+  if (verdict === 'checking') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+  if (verdict === 'login') return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
+
+// 把 App.useApp() 的 message 实例经 holder 注入，供非组件模块（api/client.ts）
+// 使用；消除 antd 静态 message 不感知主题上下文的告警与深色档样式错位。
+function MessageBridge() {
+  const { message } = AntApp.useApp();
+  useEffect(() => {
+    setAppMessage(message);
+    return () => setAppMessage(null);
+  }, [message]);
+  return null;
+}
+
+// 未匹配路由兜底：不再静默渲染空白内容区（曾出现在 demo 站的 /heatmap 直接访问）。
+function NotFound() {
+  const navigate = useNavigate();
+  return (
+    <Result
+      status="404"
+      title="404"
+      subTitle={t('notFound')}
+      extra={
+        <Button type="primary" onClick={() => navigate('/')}>
+          {t('backHome')}
+        </Button>
+      }
+    />
+  );
+}
+
+export default function App() {
+  const lang = useLang();
+  const mode = useTheme();
+
+  return (
+    <ConfigProvider
+      locale={antdLocale()}
+      theme={{
+        algorithm: mode === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+        token: {
+          colorPrimary: '#d97706',
+          borderRadius: 8,
+        },
+      }}
+      key={lang}
+    >
+      <AntApp>
+        <MessageBridge />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route element={<RequireAuth />}>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<Overview />} />
+                <Route path="/servers" element={<Servers />} />
+                <Route path="/servers/:id" element={<ServerDetail />} />
+                <Route path="/heatmap" element={<Heatmap />} />
+                <Route path="/characters" element={<Characters />} />
+                <Route path="/migrations" element={<Migrations />} />
+                <Route path="/operations" element={<Operations />} />
+                <Route path="/crossserver" element={<CrossServer />} />
+                <Route path="/diagnose" element={<PlayerDiagnose />} />
+                <Route path="/system" element={<SystemConfig />} />
+                <Route path="/audit" element={<AuditLog />} />
+                <Route path="*" element={<NotFound />} />
+              </Route>
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AntApp>
+    </ConfigProvider>
+  );
+}

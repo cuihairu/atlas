@@ -1,0 +1,14 @@
+{
+  "topology": {
+    "clusters": [
+      { "id": "s3-main", "name": "S3 赛季全服", "region": "cn-east", "servers": ["slg-world-1", "slg-world-2", "slg-world-3", "slg-war-cluster-a", "slg-war-cluster-b"] }
+    ]
+  },
+  "groups": [
+    { "id": "g-alliance-war", "name": "联盟战·本期", "servers": ["slg-war-cluster-a", "slg-war-cluster-b"] }
+  ],
+  "features": { "alliance-war": true, "kv-persistence": true, "map-merge": false },
+  "match_domains": [
+    { "id": "md-alliance", "servers": ["slg-war-cluster-a", "slg-war-cluster-b"], "params": { "power_band": "2000" } }
+  ]
+}
