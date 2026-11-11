@@ -254,10 +254,25 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 		return "", fmt.Errorf("record heartbeat: %w", err)
 	}
 
-	// Auto-promote starting → online on first valid heartbeat.
+	// Auto-promote starting → online on first valid heartbeat. Guarded
+	// (from=starting): the health monitor's CAS transitions are the only
+	// writers out of starting besides this one — an unconditional write
+	// here could overwrite a just-landed offline verdict (starting aged
+	// past the offline threshold) with the online it raced against.
 	if srv.Status == model.StatusStarting {
-		if err := s.servers.UpdateServerStatus(ctx, serverID, model.StatusOnline); err != nil {
+		applied, err := s.servers.UpdateServerStatusIf(ctx, serverID, model.StatusStarting, model.StatusOnline)
+		if err != nil {
 			return "", fmt.Errorf("promote to online: %w", err)
+		}
+		if !applied {
+			// The health monitor won the race (starting aged past the
+			// offline threshold): report the row's verdict, not the stale
+			// one this call read before recording the heartbeat.
+			current, err := s.servers.GetServer(ctx, serverID)
+			if err != nil {
+				return "", fmt.Errorf("promote to online: %w", err)
+			}
+			return current.Status, nil
 		}
 		s.logger.Info("server promoted to online", "server_id", serverID)
 		return model.StatusOnline, nil
@@ -268,9 +283,22 @@ func (s *Service) Heartbeat(ctx context.Context, serverID string, hb model.Heart
 	// life: it re-enters rotation from dead-ish states the same way a
 	// re-register does for API servers. Without this, a declared server
 	// aged offline before its instance booted could never come back.
+	// Guarded per source status: the health monitor's offline verdicts are
+	// CAS-guarded writes, and this path must not clobber one from under it
+	// — it re-enters only when the row still reads the state it read.
 	if srv.Source == "config" && (srv.Status == model.StatusSuspect || srv.Status == model.StatusOffline) {
-		if err := s.servers.UpdateServerStatus(ctx, serverID, model.StatusOnline); err != nil {
+		applied, err := s.servers.UpdateServerStatusIf(ctx, serverID, srv.Status, model.StatusOnline)
+		if err != nil {
 			return "", fmt.Errorf("promote to online: %w", err)
+		}
+		if !applied {
+			// Lost the race with the health monitor's offline verdict —
+			// report the row, not the stale snapshot.
+			current, err := s.servers.GetServer(ctx, serverID)
+			if err != nil {
+				return "", fmt.Errorf("promote to online: %w", err)
+			}
+			return current.Status, nil
 		}
 		s.logger.Info("config-managed server re-entered rotation", "server_id", serverID, "from", srv.Status)
 		return model.StatusOnline, nil

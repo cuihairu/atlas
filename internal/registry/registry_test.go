@@ -242,6 +242,56 @@ func TestHeartbeatConfigReentry(t *testing.T) {
 	}
 }
 
+// TestHeartbeatReentryLostRace pins the guarded re-entry: when the health
+// monitor's offline verdict lands between the heartbeat's read and its
+// status write, the write must not overwrite it — the heartbeat reports the
+// row's verdict instead, and the server stays down until it beats again.
+func TestHeartbeatReentryLostRace(t *testing.T) {
+	for name, tc := range map[string]struct {
+		seed model.ServerStatus // the state the heartbeat's read sees
+		race model.ServerStatus // what the monitor lands before the write
+	}{
+		"config offline lost to maintenance": {seed: model.StatusOffline, race: model.StatusMaintenance},
+		"config suspect lost to maintenance": {seed: model.StatusSuspect, race: model.StatusMaintenance},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := newTestService()
+			ctx := context.Background()
+
+			mem := svc.servers.(*memory.Store)
+			if err := mem.RegisterServer(ctx, &model.Server{
+				ID:       "game-cfg",
+				Name:     "Declared",
+				Region:   "cn-east",
+				Endpoint: model.Endpoint{Host: "10.0.0.9", Port: 30009},
+				Status:   tc.seed,
+				Source:   "config",
+			}); err != nil {
+				t.Fatalf("seed config server (%s): %v", tc.seed, err)
+			}
+			// The monitor's write lands after the heartbeat's read.
+			if err := mem.UpdateServerStatus(ctx, "game-cfg", tc.race); err != nil {
+				t.Fatalf("race write (%s): %v", tc.race, err)
+			}
+
+			status, err := svc.Heartbeat(ctx, "game-cfg", model.Heartbeat{Players: 3, Load: 0.1})
+			if err != nil {
+				t.Fatalf("Heartbeat: %v", err)
+			}
+			if status != tc.race {
+				t.Errorf("heartbeat status = %q, want the row's verdict %q", status, tc.race)
+			}
+			srv, err := mem.GetServer(ctx, "game-cfg")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if srv.Status != tc.race {
+				t.Errorf("persisted status = %q, want %q (the offline verdict must survive)", srv.Status, tc.race)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Registration gating (server tags)
 // ---------------------------------------------------------------------------

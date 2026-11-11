@@ -26,6 +26,7 @@ type faultServers struct {
 	getServerFn      func(ctx context.Context, id string) (*model.Server, error)
 	registerServerFn func(ctx context.Context, s *model.Server) error
 	updateStatusFn   func(ctx context.Context, id string, status model.ServerStatus) error
+	updateStatusIfFn func(ctx context.Context, id string, from, to model.ServerStatus) (bool, error)
 }
 
 func (f *faultServers) GetServer(ctx context.Context, id string) (*model.Server, error) {
@@ -47,6 +48,13 @@ func (f *faultServers) UpdateServerStatus(ctx context.Context, id string, status
 		return f.updateStatusFn(ctx, id, status)
 	}
 	return f.ServerStore.UpdateServerStatus(ctx, id, status)
+}
+
+func (f *faultServers) UpdateServerStatusIf(ctx context.Context, id string, from, to model.ServerStatus) (bool, error) {
+	if f.updateStatusIfFn != nil {
+		return f.updateStatusIfFn(ctx, id, from, to)
+	}
+	return f.ServerStore.UpdateServerStatusIf(ctx, id, from, to)
 }
 
 // faultRuntime wraps a memory store the same way for the runtime verbs.
@@ -181,8 +189,8 @@ func TestHeartbeatPromoteFailure(t *testing.T) {
 	mem := memory.New()
 	ctx := context.Background()
 	seedServer(t, mem, "promo-srv", model.StatusStarting, "")
-	fs := &faultServers{ServerStore: mem, updateStatusFn: func(context.Context, string, model.ServerStatus) error {
-		return errFault
+	fs := &faultServers{ServerStore: mem, updateStatusIfFn: func(context.Context, string, model.ServerStatus, model.ServerStatus) (bool, error) {
+		return false, errFault
 	}}
 	svc := New(fs, mem, newBufLogger(&bytes.Buffer{}))
 
@@ -198,8 +206,8 @@ func TestHeartbeatConfigReentryPromoteFailure(t *testing.T) {
 	mem := memory.New()
 	ctx := context.Background()
 	seedServer(t, mem, "cfg-srv", model.StatusSuspect, "config")
-	fs := &faultServers{ServerStore: mem, updateStatusFn: func(context.Context, string, model.ServerStatus) error {
-		return errFault
+	fs := &faultServers{ServerStore: mem, updateStatusIfFn: func(context.Context, string, model.ServerStatus, model.ServerStatus) (bool, error) {
+		return false, errFault
 	}}
 	svc := New(fs, mem, newBufLogger(&bytes.Buffer{}))
 
