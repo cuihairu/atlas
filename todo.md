@@ -27,6 +27,11 @@
 ## 审核发现（已修复）
 
 - [x] P0 applyMoved 重投丢行：重放 moved 事件解析到已迁入目标服的新行，upsert 空转后 DeleteCharacter 删掉唯一一行，目录字符永久丢失 — commit 3eda7c3（src.ServerID==target 短路，events.go:241；回归测试 TestApplyEventMovedRedeliveryKeepsRow + TestApplyEventMovedSameSourceAndTarget，旧码红新码绿；go build/vet ok、make lint 0 issues、go test ./internal/... ./sdk/... ./cmd/... 37 包 ok）
+- [x] P1 extractIP 无条件信 X-Forwarded-For，Admin/Registry 白名单与限流桶键可伪造 — commit 62d887d（extractIP 加 trust 开关 + ATLAS_TRUST_FORWARDED_FOR opt-in（=1），三面接入：AdminAuth/RegistryAuth/RateLimiter；回归测试 auth_test/edges_test/handlers_gap_test 三处，build/vet/lint/37 包绿）
+- [x] P1 ParseIPWhitelist 非法裸 IP 静默跳过 + main.go 两处吞错，白名单可缩成空后监听口全开 — commit b431312（非法条目返回 error + main 启动即退；回归测试 TestParseIPWhitelistVariants 断言错误；build/vet/lint/37 包绿）
+- [x] P1 memory queue Close 与 submit 无同步，关闭后提交 send-on-closed panic — commit 4721ae3（closeMu 序列化 enqueue vs close + closed 标记，post-Close 走 inline 路径；TestCloseConcurrentWithSubmit 旧码 panic 新码绿 + TestSubmitAfterCloseInline；-race 37 包绿）
+- [x] P1 registry 心跳促活无条件 UpdateServerStatus，可覆盖 health monitor 刚落地的 offline 判定 — commit cf145f7（两处促活改 UpdateServerStatusIf CAS，!applied 回读行上真值；TestHeartbeatReentryLostRace + faultServers 补 updateStatusIfFn；-race 37 包绿）
+- [x] 配套：docs 双语（security.md env 表 + api.md 白名单语义）与前置 d312829（main 恢复全码树，保 619739d 分析文档 + 保留未提交依赖漂移） — docs commit 505099f，docs build 绿 81.05s
 - [x] demo 临时房间注销后离线记录未删除，与实现描述不一致 — go test ./cmd/atlas-demoagents/...: ok
 - [x] start_delay 延迟首个 close 而非首个 open，README 时序表述不符 — go test ./cmd/atlas-demoagents/...: ok
 - [x] roomLoop 注销后删除行的编排缺集成测试 — commit 45fd98d
