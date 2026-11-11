@@ -211,6 +211,7 @@ cannot escape the bucket by switching transports.
 | `ATLAS_AUDIT_QUEUE_SIZE` | `1000` | Bounded audit write queue (overflow drops the oldest entry) |
 | `ATLAS_RATE_LIMITS` | (empty) | Per-prefix rate limit rules |
 | `ATLAS_RATE_LIMIT_DEFAULT` | (empty) | Rate limit fallback rule |
+| `ATLAS_TRUST_FORWARDED_FOR` | (empty) | Honors `X-Forwarded-For` / `X-Real-IP` when resolving the client IP for the Admin/Registry IP allowlists and rate-limit buckets. Set to `1` only when every listener sits behind a trusted reverse proxy; on a direct connection those headers are client-controlled and would forge the allowlist verdict and the bucket key |
 | `ATLAS_CORS_ORIGINS` | (empty) | CORS allowlist (comma-separated, applies to the public/admin ports); empty means no CORS headers are emitted, `*` is for development only |
 
 Rate recommendations: registration endpoints get the strictest limits (low RPS plus a
