@@ -26,6 +26,7 @@
 
 ## 审核发现（已修复）
 
+- [x] P0 applyMoved 重投丢行：重放 moved 事件解析到已迁入目标服的新行，upsert 空转后 DeleteCharacter 删掉唯一一行，目录字符永久丢失 — commit 3eda7c3（src.ServerID==target 短路，events.go:241；回归测试 TestApplyEventMovedRedeliveryKeepsRow + TestApplyEventMovedSameSourceAndTarget，旧码红新码绿；go build/vet ok、make lint 0 issues、go test ./internal/... ./sdk/... ./cmd/... 37 包 ok）
 - [x] demo 临时房间注销后离线记录未删除，与实现描述不一致 — go test ./cmd/atlas-demoagents/...: ok
 - [x] start_delay 延迟首个 close 而非首个 open，README 时序表述不符 — go test ./cmd/atlas-demoagents/...: ok
 - [x] roomLoop 注销后删除行的编排缺集成测试 — commit 45fd98d
