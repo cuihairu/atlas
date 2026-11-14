@@ -33,33 +33,33 @@
     <Feature Id="MainFeature" Title="Atlas" Level="1">
       <ComponentGroupRef Id="AtlasComponents" />
     </Feature>
+  </Product>
 
-    <Fragment>
-      <Directory Id="TARGETDIR" Name="SourceDir">
-        <Directory Id="ProgramFiles64Folder">
-          <Directory Id="INSTALLDIR" Name="Atlas">
-            <Component Id="AtlasBinary" Guid="*" Win64="yes">
-              <File Id="atlas.exe" Source="atlas.exe" KeyPath="yes" />
-            </Component>
-            <Component Id="AtlasLicense" Guid="*" Win64="yes">
-              <File Id="AtlasLicenseFile" Source="LICENSE" />
-            </Component>
-            <Component Id="AtlasReadme" Guid="*" Win64="yes">
-              <File Id="AtlasReadmeFile" Source="README.md" />
-            </Component>
-            <Component Id="AtlasEnvSample" Guid="*" Win64="yes">
-              <File Id="AtlasEnvSampleFile" Source=".env.example" />
-            </Component>
-          </Directory>
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="Atlas">
+          <Component Id="AtlasBinary" Guid="*" Win64="yes">
+            <File Id="atlas.exe" Source="atlas.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="AtlasLicense" Guid="*" Win64="yes">
+            <File Id="AtlasLicenseFile" Source="LICENSE" />
+          </Component>
+          <Component Id="AtlasReadme" Guid="*" Win64="yes">
+            <File Id="AtlasReadmeFile" Source="README.md" />
+          </Component>
+          <Component Id="AtlasEnvSample" Guid="*" Win64="yes">
+            <File Id="AtlasEnvSampleFile" Source=".env.example" />
+          </Component>
         </Directory>
       </Directory>
+    </Directory>
 
-      <ComponentGroup Id="AtlasComponents">
-        <ComponentRef Id="AtlasBinary" />
-        <ComponentRef Id="AtlasLicense" />
-        <ComponentRef Id="AtlasReadme" />
-        <ComponentRef Id="AtlasEnvSample" />
-      </ComponentGroup>
-    </Fragment>
-  </Product>
+    <ComponentGroup Id="AtlasComponents">
+      <ComponentRef Id="AtlasBinary" />
+      <ComponentRef Id="AtlasLicense" />
+      <ComponentRef Id="AtlasReadme" />
+      <ComponentRef Id="AtlasEnvSample" />
+    </ComponentGroup>
+  </Fragment>
 </Wix>
