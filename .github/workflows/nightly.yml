@@ -297,12 +297,14 @@ jobs:
           # third and fourth names are "positional parameters that cannot be found".
           # Pass everything through -Path with an explicit -Destination.
           Copy-Item -Path LICENSE, README.md, .env.example, deploy\packaging\atlas.wxs -Destination stage\
-          # candle/wixl resolve File/@Source relative to the .wxs directory,
-          # so the wxs must live beside the staged payload, not in deploy/.
-          New-Item -ItemType Directory -Force -Path build | Out-Null
-          & "$wixbin\candle.exe" -arch x64 stage\atlas.wxs -o build\atlas.wixobj
+          # File/@Source may be resolved against either the .wxs directory or the .wixobj
+          # directory, depending on which stage re-reads it. Put the object in the SAME
+          # directory as the payload so both candidates agree — otherwise light reports
+          # LGHT0103 "cannot find the file 'atlas.exe'" because the payload sits in stage\
+          # while the object was in build\.
+          & "$wixbin\candle.exe" -arch x64 stage\atlas.wxs -o stage\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi build\atlas.wixobj
+          & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi stage\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
           # 结构自检：dark 全量解析 msi（不安装）
           & "$wixbin\dark.exe" -x "$env:RUNNER_TEMP\msi-extract" dist\atlas-nightly-windows-amd64.msi
