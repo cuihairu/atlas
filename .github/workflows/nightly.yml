@@ -211,6 +211,29 @@ jobs:
           rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/usr/bin/atlas'
           rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/etc/atlas/atlas.env'
 
+      # Arch 头必须与文件名一致。另一仓的 nightly 只改名不写 Arch 字段，
+      # arm64 包内部自报 x86_64；这里逐个包比对，避免同类错误静默过关。
+      - name: Verify package arch headers
+        run: |
+          for pair in atlas-nightly-linux-x86_64.rpm:x86_64 \
+                     atlas-nightly-linux-aarch64.rpm:aarch64; do
+            f="${pair%%:*}"; want="${pair##*:}"
+            got=$(rpm -qp --queryformat '%{ARCH}' "dist/$f")
+            if [ "$got" != "$want" ]; then
+              echo "rpm arch mismatch: $f claims $got, expected $want"; exit 1
+            fi
+            echo "  $f Arch=$got ok"
+          done
+          for pair in atlas-nightly-linux-amd64.deb:amd64 \
+                     atlas-nightly-linux-arm64.deb:arm64; do
+            f="${pair%%:*}"; want="${pair##*:}"
+            got=$(dpkg-deb --field "dist/$f" Architecture)
+            if [ "$got" != "$want" ]; then
+              echo "deb arch mismatch: $f claims $got, expected $want"; exit 1
+            fi
+            echo "  $f Arch=$got ok"
+          done
+
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux-assets
