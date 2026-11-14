@@ -285,10 +285,12 @@ jobs:
         run: |
           $wixbin = (Get-Item "C:\Program Files (x86)\WiX Toolset v3*\bin" | Select-Object -First 1).FullName
           if (-not $wixbin) { Write-Error "WiX not found; msi leg BLOCKED"; exit 1 }
-          Copy-Item LICENSE README.md .env.example stage\
+          # Bare positional args break here: Copy-Item has no Path2 parameter, so the
+          # third and fourth names are "positional parameters that cannot be found".
+          # Pass everything through -Path with an explicit -Destination.
+          Copy-Item -Path LICENSE, README.md, .env.example, deploy\packaging\atlas.wxs -Destination stage\
           # candle/wixl resolve File/@Source relative to the .wxs directory,
           # so the wxs must live beside the staged payload, not in deploy/.
-          Copy-Item deploy\packaging\atlas.wxs stage\
           New-Item -ItemType Directory -Force -Path build | Out-Null
           & "$wixbin\candle.exe" -arch x64 stage\atlas.wxs -o build\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -305,13 +307,27 @@ jobs:
         run: |
           $msi = Get-Item dist\*.msi -ErrorAction SilentlyContinue
           if ($msi) {
-            Write-Host "MSI_STATUS=ok ($($msi.Length) bytes)"
-            "MSI shipped: $($msi.FullName)" >> "$env:GITHUB_STEP_SUMMARY"
+            $bytes = ($msi | Measure-Object Length -Sum).Sum
+            Write-Host "MSI_STATUS=ok ($bytes bytes)"
+            "MSI shipped: $($msi.FullName) ($bytes bytes)" >> "$env:GITHUB_STEP_SUMMARY"
           } else {
-            Write-Host "MSI_STATUS=BLOCKED (WiX unavailable on this runner)"
-            "MSI leg BLOCKED this run; see 'Install WiX Toolset v3' / 'Build msi' logs. " +
-              "Local verification: choco install wixtoolset -y; candle -arch x64 deploy\packaging\atlas.wxs; light -spdb out.msi build\*.wixobj; dark -x tmp out.msi" +
-              "" >> "$env:GITHUB_STEP_SUMMARY"
+            # No msi is NOT proof that WiX is missing: the leg can also fail after
+            # WiX loaded (a bad copy, a rejected wxs, a light failure). Say which.
+            $wixbin = Get-Item "C:\Program Files (x86)\WiX Toolset v3*\bin" -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if ($wixbin) {
+              Write-Host "MSI_STATUS=FAILED (WiX present; the msi step itself failed)"
+              "MSI leg FAILED with WiX available — read the 'Build msi (WiX candle + light)' log; " +
+                "this is a build failure, not a missing toolchain. " +
+                "Local reproduction: choco install wixtoolset -y; copy the wxs next to the staged " +
+                "payload; candle -arch x64 stage\atlas.wxs -o build\atlas.wixobj; " +
+                "light -spdb -o out.msi build\atlas.wixobj; dark -x tmp out.msi" >> "$env:GITHUB_STEP_SUMMARY"
+            } else {
+              Write-Host "MSI_STATUS=BLOCKED (WiX unavailable on this runner)"
+              "MSI leg BLOCKED: no WiX Toolset v3 on this runner. " +
+                "Local verification: choco install wixtoolset -y; candle -arch x64 stage\atlas.wxs; " +
+                "light -spdb out.msi build\*.wixobj; dark -x tmp out.msi" >> "$env:GITHUB_STEP_SUMMARY"
+            }
           }
 
       - uses: actions/upload-artifact@v7.0.2
