@@ -199,13 +199,13 @@ jobs:
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       # 包结构自检：解包清单必须含 /usr/bin/atlas 与 /etc/atlas/atlas.env。
+      # （deb 的文件清单在 data 层，用 dpkg -c 而非 control.tar 探测。）
       - name: Verify package contents
         run: |
-          for f in dist/*.deb dist/*.rpm; do
-            echo "== $f"
-          done
-          ar p dist/atlas-nightly-linux-amd64.deb control.tar.gz | tar tzf - | grep -q '^./usr/bin/atlas$'
+          dpkg -c dist/atlas-nightly-linux-amd64.deb | grep -q ' ./usr/bin/atlas$'
+          dpkg -c dist/atlas-nightly-linux-amd64.deb | grep -q ' ./etc/atlas/atlas.env$'
           rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | grep -q '^/usr/bin/atlas$'
+          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | grep -q '^/etc/atlas/atlas.env$'
 
       - uses: actions/upload-artifact@v7.0.2
         with:
