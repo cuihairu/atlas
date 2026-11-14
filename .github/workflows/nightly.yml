@@ -388,9 +388,15 @@ jobs:
             [ "$f" = SHA256SUMS ] && continue
             sz=$(stat -c %s "$f")
             sum=$(sha256sum "$f" | cut -d' ' -f1)
-            echo "${f}  ${sum}" >> SHA256SUMS
+            # sha256sum 的 canonical 格式是 "<hash>  <name>"（hash 在前，两空格）。
+            # 反写成 "name  hash" 时文件虽在，`sha256sum -c SHA256SUMS` 却报
+            # "no properly formatted checksum lines found"，收口形同虚设：
+            # 下游拿到资产也无法一键校验。
+            echo "${sum}  ${f}" >> SHA256SUMS
             echo "${f} ${sz}" >> ../asset-manifest.txt
           done
+          # 生成即自证：格式错的话这里就会红，不会静默发出去。
+          sha256sum -c SHA256SUMS
           cat ../asset-manifest.txt
           # 四类产物收口：两个 deb + 两个 rpm + 一个 exe zip 必有；msi 另记。
           need=(atlas-nightly-linux-amd64.deb atlas-nightly-linux-arm64.deb \
