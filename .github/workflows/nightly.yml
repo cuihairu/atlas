@@ -294,9 +294,9 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: windows-assets
-          path: |
-            dist/*.zip
-            dist/*.msi
+          # One glob, not two: when the msi leg is BLOCKED a second pattern
+          # matching nothing makes the upload step fail the whole job.
+          path: dist/*
           retention-days: 7
 
   release:
