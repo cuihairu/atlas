@@ -23,9 +23,11 @@ description: >-
   Atlas is the control plane for game server fleets: registry, discovery,
   directory, routing and admin. This package ships the static control-plane
   binary from the rolling nightly build.
-# nfpm v2.49's Config carries no summary field — metadata comes from name +
-# description above. The nightly version is the build ordinal, not a release
-# version.
+# RPM wants an explicit one-line summary (nfpm puts `summary` under the rpm
+# block, not at top level); the deb synopsis comes from the first description
+# line above.
+rpm:
+  summary: Atlas control plane (nightly rolling build)
 contents:
   # Staging layout: the workflow copies the just-built binary to `atlas` in
   # the same directory as this config.

@@ -199,13 +199,17 @@ jobs:
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       # 包结构自检：解包清单必须含 /usr/bin/atlas 与 /etc/atlas/atlas.env。
-      # （deb 的文件清单在 data 层，用 dpkg -c 而非 control.tar 探测。）
+      # deb 的文件清单在 data 层，用 dpkg -c 而非 control.tar 探测；
+      # rpm -qlp 带权限列，取最后一列才是路径。
+      - name: Install rpm query tool
+        run: sudo apt-get install -y rpm
+
       - name: Verify package contents
         run: |
           dpkg -c dist/atlas-nightly-linux-amd64.deb | grep -q ' ./usr/bin/atlas$'
           dpkg -c dist/atlas-nightly-linux-amd64.deb | grep -q ' ./etc/atlas/atlas.env$'
-          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | grep -q '^/usr/bin/atlas$'
-          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | grep -q '^/etc/atlas/atlas.env$'
+          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/usr/bin/atlas'
+          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/etc/atlas/atlas.env'
 
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -321,9 +325,13 @@ jobs:
             echo "${f} ${sz}" >> ../asset-manifest.txt
           done
           cat ../asset-manifest.txt
-          if [ "$(ls -1 * | grep -v SHA256SUMS | wc -l)" -lt 5 ]; then
-            echo "expected at least 5 native artifacts, got: $(ls -1)"; exit 1
-          fi
+          # 四类产物收口：两个 deb + 两个 rpm + 一个 exe zip 必有；msi 另记。
+          need=(atlas-nightly-linux-amd64.deb atlas-nightly-linux-arm64.deb \
+               atlas-nightly-linux-x86_64.rpm atlas-nightly-linux-aarch64.rpm \
+               atlas-nightly-windows-amd64.zip)
+          for f in "${need[@]}"; do
+            if [ ! -f "$f" ]; then echo "missing required artifact: $f"; exit 1; fi
+          done
           if [ ! -f atlas-nightly-windows-amd64.msi ]; then
             echo "msi asset absent -> msi leg BLOCKED this run (deb/rpm/zip still published)"
           fi
