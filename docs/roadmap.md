@@ -7,11 +7,11 @@
 
 ```mermaid
 flowchart TB
-    A["Atlas<br/>Game Infrastructure Directory / Control Plane"] --> R["Server Registry<br/>“我是谁?”"]
-    A --> D["Server Discovery<br/>“谁在线?”"]
-    A --> C["Character Directory<br/>“我的角色在哪?”"]
-    A --> O["Ops 管理面<br/>“何时维护? 玩家知道什么?”"]
-    A --> T["Routing<br/>“该进哪台服?”"]
+    A["Atlas<br/>Game Infrastructure Directory / Control Plane"] --> R["Server Registry<br/>“Who am I?”"]
+    A --> D["Server Discovery<br/>“Who is online?”"]
+    A --> C["Character Directory<br/>“Where are my characters?”"]
+    A --> O["Ops plane<br/>“When is maintenance? What do players know?”"]
+    A --> T["Routing<br/>“Which server should I join?”"]
 ```
 
 The positioning statement and the NEVER-owns boundaries (character authoritative data / match state / player sessions /
@@ -58,20 +58,20 @@ more complete than plain Game Server Discovery, and it is naturally complementar
 | ✅ Admin plane: maintenance windows and announcements | server metadata, planned maintenance windows (scheduled automatic entry/exit), announcement system (three severity levels) | v0.1.20 |
 | ✅ Quality infrastructure | service/handler coverage ≥98% gate (local `make test-coverage` hard gate; Codecov upload is informational, CI does not fail on coverage), performance benchmarks, Dependabot, periodic security audit CI | v0.1.x |
 
-How to use each capability and in which scenarios — see the [README usage scenarios](https://github.com/cuihairu/atlas#使用场景) and [Announcements and Planned Maintenance](operations.md).
+How to use each capability and in which scenarios — see the [README usage scenarios](https://github.com/cuihairu/atlas/blob/main/README.md#when-you-need-atlas) and [Announcements and Planned Maintenance](operations.md).
 
 ### Explicitly not doing (scope discipline)
 
 ```text
-❌ Kubernetes Operator      —— Atlas 是普通无状态服务，compose/k8s 自行编排即可
-❌ Service Mesh 集成        —— 不绑定任何 mesh，保持标准 REST/gRPC
-❌ 复杂调度算法             —— Routing 只做推荐/定位元数据，不做调度器
-❌ 强绑定 APISIX            —— 网关永远是可选集成层
-❌ 角色权威数据              —— Directory 永远是 Projection
-❌ 匹配 / 排队 / 房间        —— 撮合决策是 Scheduler 的职责，Atlas 不进匹配池
-❌ 实例 / Zone 分配          —— 实例创建与放置归实例管理器，Atlas 只发布候选集
-❌ 玩家 Session / 登录态     —— 会话恢复归游戏侧管理服务
-❌ 背包 / 经济 / 排行榜等业务表 —— 游戏业务数据库的事，Atlas 连列都不建
+❌ Kubernetes Operator          —— Atlas is a plain stateless service; compose/k8s orchestrate it themselves
+❌ Service Mesh integration      —— not bound to any mesh; keep plain REST/gRPC
+❌ Complex scheduling algorithms —— Routing only recommends / locates metadata; it is not a scheduler
+❌ Tight APISIX coupling         —— the gateway is always an optional integration layer
+❌ Character authoritative data  —— Directory is always a Projection
+❌ Matching / queues / rooms     —— matchmaking decisions belong to the Scheduler; Atlas never joins the match pool
+❌ Instance / Zone placement     —— instance creation and placement belong to the instance manager; Atlas only publishes the candidate set
+❌ Player Session / login state  —— session restore belongs to the game-side management service
+❌ Inventory / economy / leaderboard tables —— that is the game business database's job; Atlas does not even create the columns
 ```
 
 These are not "not yet done" — they are **design decisions**: Atlas is a control-plane directory service, and every item above has a more appropriate home.
@@ -137,44 +137,44 @@ The positioning statement is in [architecture.md](architecture.md#_1-overview) m
 
 ```text
 atlas/
-├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard / dlq / loadgen / soakcheck）
+├── cmd/                    service entry points and tools (atlas main service / crossagent / demoagents / reshard / dlq / loadgen / soakcheck)
 ├── internal/
-│   ├── model/              领域模型（Server, Character, Realm, Shard…）
-│   ├── store/              存储接口
-│   │   ├── memory/         内存实现（测试 + 开发）
-│   │   ├── postgres/       PostgreSQL 实现
-│   │   ├── mysql/          MySQL 实现
-│   │   ├── redisstore/     Redis 运行时状态
-│   │   └── sharded/        一致性哈希分片包装
-│   ├── registry/           注册 / 心跳 / 注销
-│   ├── discovery/          服务器发现
-│   ├── directory/          角色目录
-│   ├── routing/            接入推荐
-│   ├── admin/              Admin 服务（Realm/Shard/维护窗口/公告/迁移/审计）
-│   ├── audit/              审计日志（登录审计 / 数据操作审计 / 审计查询）
-│   ├── health/             健康监控（自动掉线 + 占比告警）
-│   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
+│   ├── model/              domain models (Server, Character, Realm, Shard…)
+│   ├── store/              storage interfaces
+│   │   ├── memory/         in-memory implementation (tests + development)
+│   │   ├── postgres/       PostgreSQL implementation
+│   │   ├── mysql/          MySQL implementation
+│   │   ├── redisstore/     Redis runtime state
+│   │   └── sharded/        consistent-hashing shard wrapper
+│   ├── registry/           register / heartbeat / unregister
+│   ├── discovery/          server discovery
+│   ├── directory/          character directory
+│   ├── routing/            access recommendation
+│   ├── admin/              Admin service (Realm/Shard/maintenance windows/announcements/migrations/audit)
+│   ├── audit/              audit log ring + optional persistence sink
+│   ├── health/             health monitoring (auto offlining + ratio alerts)
+│   ├── event/              event adapters (http/redis/kafka/nats/rabbitmq)
 │   ├── httpapi/            REST API handlers
-│   ├── grpc/               gRPC 服务
-│   ├── metrics/            Prometheus 指标
-│   ├── tlsutil/            mTLS 辅助
-│   ├── tracing/            请求追踪（X-Request-ID 贯通三监听口）
-│   ├── crossserver/        跨服配置中心（发布 / 订阅 / 回调 / 轮询）
-│   ├── fleet/              舰队实时索引（load-series / 匹配判定）
-│   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
-│   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
-│   ├── config/             环境变量配置
-│   ├── migration/          合服迁移编排（服务 / 编排 / 审计）
-│   └── version/            版本信息
-├── api/proto/              gRPC proto 定义
-├── migrations/             SQL migration
-├── sdk/                    六语言 SDK（go/cpp/python/js/java/csharp）
-├── plugins/apisix/         APISIX 接入插件
-├── dashboard/              内置管理台（前端源码与构建产物）
-├── examples/               各语言可运行示例
-├── deploy/                 haproxy / postgres / redis 部署配置
+│   ├── grpc/               gRPC services
+│   ├── metrics/            Prometheus metrics
+│   ├── tlsutil/            mTLS helpers
+│   ├── tracing/            request tracing (X-Request-ID across all three listeners)
+│   ├── crossserver/        cross-server config center (publish / subscribe / callback / poll)
+│   ├── fleet/              real-time fleet index (load-series / match decisions)
+│   ├── serversconfig/      server config file hosting (config-owned records)
+│   ├── telemetry/          load and bus series sampling (load-series / bus-series)
+│   ├── config/             environment-variable configuration
+│   ├── migration/          server-merge / transfer orchestration (service / orchestration / audit)
+│   └── version/            version information
+├── api/proto/              gRPC proto definitions
+├── migrations/             SQL migrations
+├── sdk/                    six-language SDKs (go/cpp/python/js/java/csharp)
+├── plugins/apisix/         APISIX access plugins
+├── dashboard/              built-in admin console (frontend source and build output)
+├── examples/               runnable examples per language
+├── deploy/                 haproxy / postgres / redis deployment configs
 ├── deployments/docker/     Dockerfile + docker-compose
-├── docs/                   设计文档（VitePress 站点）
+├── docs/                   design docs (VitePress site)
 ├── Makefile
 ├── .env.example
 └── go.mod

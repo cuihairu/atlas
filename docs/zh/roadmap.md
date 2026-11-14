@@ -58,7 +58,7 @@ flowchart TB
 | ✅ 管理面：维护窗口与公告 | 服务器元数据、计划维护窗口（定时自动进出）、公告系统（三级严重度） | v0.1.20 |
 | ✅ 质量基建 | service/handler 覆盖率 ≥98% 门禁（本地 `make test-coverage` 硬门禁；Codecov 上报 informational，CI 不因覆盖率失败）、性能基准、Dependabot、周期安全审计 CI | v0.1.x |
 
-能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas#使用场景) 与 [公告与计划维护](operations.md)。
+能力怎么用、什么场景用，见 [README 使用场景](https://github.com/cuihairu/atlas/blob/main/README.zh.md#使用场景) 与 [公告与计划维护](operations.md)。
 
 ### 明确不做（范围纪律）
 
@@ -137,7 +137,7 @@ Region / Realm / Shard 的可选性不会因为功能增加而收紧。MMORPG、
 
 ```text
 atlas/
-├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard）
+├── cmd/                    服务入口与工具（atlas 主服务 / crossagent / demoagents / reshard / dlq / loadgen / soakcheck）
 ├── internal/
 │   ├── model/              领域模型（Server, Character, Realm, Shard…）
 │   ├── store/              存储接口
@@ -151,8 +151,9 @@ atlas/
 │   ├── directory/          角色目录
 │   ├── routing/            接入推荐
 │   ├── admin/              Admin 服务（Realm/Shard/维护窗口/公告/迁移/审计）
+│   ├── audit/              审计日志环 + 可选持久化 sink
 │   ├── health/             健康监控（自动掉线 + 占比告警）
-│   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
+│   ├── event/              事件适配器（http/redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
@@ -163,6 +164,7 @@ atlas/
 │   ├── serversconfig/      服务器配置文件托管（config-owned 记录）
 │   ├── telemetry/          负载与总线序列采样（load-series / bus-series）
 │   ├── config/             环境变量配置
+│   ├── migration/          合服迁移编排（服务 / 编排 / 审计）
 │   └── version/            版本信息
 ├── api/proto/              gRPC proto 定义
 ├── migrations/             SQL migration
