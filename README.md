@@ -242,7 +242,7 @@ atlas/
 │   ├── admin/              Admin service (Realm/Shard/migrations/audit…)
 │   ├── audit/              audit log ring + optional persistence sink
 │   ├── health/             health monitoring (auto offlining + ratio alerts)
-│   ├── event/              event adapters (redis/kafka/nats/rabbitmq)
+│   ├── event/              event adapters (http/redis/kafka/nats/rabbitmq)
 │   ├── httpapi/            REST API handlers
 │   ├── grpc/               gRPC services
 │   ├── metrics/            Prometheus metrics

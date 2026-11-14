@@ -242,7 +242,7 @@ atlas/
 │   ├── admin/              Admin 服务（Realm/Shard/迁移/审计…）
 │   ├── audit/              审计日志环 + 可选持久化 sink
 │   ├── health/             健康监控（自动掉线 + 占比告警）
-│   ├── event/              事件适配器（redis/kafka/nats/rabbitmq）
+│   ├── event/              事件适配器（http/redis/kafka/nats/rabbitmq）
 │   ├── httpapi/            REST API handlers
 │   ├── grpc/               gRPC 服务
 │   ├── metrics/            Prometheus 指标
