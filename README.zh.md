@@ -335,6 +335,27 @@ Routing 回答"该进哪台服"，不回答"怎么撮合 / 排到哪 / 实例开
 
 ---
 
+## 夜间构建产物
+
+每日构建的四类原生安装包进滚动 [`nightly` release](https://github.com/cuihairu/atlas/releases/tag/nightly)，**prerelease** 通道——不是版本号发布。完整性以 `SHA256SUMS` 校验。
+
+| 资产 | 安装 |
+|---|---|
+| `atlas-nightly-linux-amd64.deb` | `sudo dpkg -i atlas-nightly-linux-amd64.deb` |
+| `atlas-nightly-linux-arm64.deb` | `sudo dpkg -i atlas-nightly-linux-arm64.deb` |
+| `atlas-nightly-linux-x86_64.rpm` | `sudo rpm -i atlas-nightly-linux-x86_64.rpm` |
+| `atlas-nightly-linux-aarch64.rpm` | `sudo rpm -i atlas-nightly-linux-aarch64.rpm` |
+| `atlas-nightly-windows-amd64.zip` | 解压后运行 `atlas.exe`（旁有 env 样例） |
+| `atlas-nightly-windows-amd64.msi` | `msiexec /i atlas-nightly-windows-amd64.msi` |
+
+各产物装的都是同一个 `atlas` 控制面二进制，并附带 env 样例——deb/rpm 落在 `/etc/atlas/atlas.env`，Windows 包落在 `Program Files\Atlas`。载入样例后启动：
+
+```sh
+set -a; . /etc/atlas/atlas.env; set +a; atlas
+```
+
+每次构建的冒烟口径：amd64 二进制起服务并通过 `/healthz`；msi 在 runner 上只做结构解析（不安装）；两种包格式解包检查内容清单。arm64 包在同一 runner 交叉编译，不在该 runner 上做执行冒烟。
+
 ## 文档
 
 | 文档 | 内容 |

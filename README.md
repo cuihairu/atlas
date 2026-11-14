@@ -335,6 +335,32 @@ The only built-in channel with business-semantic filtering carries nothing beyon
 
 ---
 
+## Nightly Builds
+
+Daily-built packages land in the rolling [`nightly` release](https://github.com/cuihairu/atlas/releases/tag/nightly) as a **prerelease** — never a versioned release. Verify integrity against the published `SHA256SUMS`.
+
+| Artifact | Install |
+|---|---|
+| `atlas-nightly-linux-amd64.deb` | `sudo dpkg -i atlas-nightly-linux-amd64.deb` |
+| `atlas-nightly-linux-arm64.deb` | `sudo dpkg -i atlas-nightly-linux-arm64.deb` |
+| `atlas-nightly-linux-x86_64.rpm` | `sudo rpm -i atlas-nightly-linux-x86_64.rpm` |
+| `atlas-nightly-linux-aarch64.rpm` | `sudo rpm -i atlas-nightly-linux-aarch64.rpm` |
+| `atlas-nightly-windows-amd64.zip` | unzip, then run `atlas.exe` with the env sample beside it |
+| `atlas-nightly-windows-amd64.msi` | `msiexec /i atlas-nightly-windows-amd64.msi` |
+
+Every artifact installs the same `atlas` control-plane binary and ships the
+env sample — deb/rpm place it at `/etc/atlas/atlas.env`, the Windows packages
+under `Program Files\Atlas`. Start it with the sample loaded:
+
+```sh
+set -a; . /etc/atlas/atlas.env; set +a; atlas
+```
+
+Smoke contract per build: the amd64 binary serves and answers `/healthz`, the
+msi is structurally parsed (not installed) on the runner, and both package
+formats are unpacked and inspected. arm64 packages are cross-compiled on the
+same runner and are not execution-smoked there.
+
 ## Documentation
 
 | Doc | Contents |

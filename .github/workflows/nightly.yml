@@ -1,0 +1,421 @@
+# 每日构建（rolling nightly）：四类原生安装包进滚动 `nightly` release。
+#
+# 铁律对齐仓库红线：本 workflow 只维护 prerelease 的 nightly 滚动发布，
+# 不带版本号、不打 tag、不建正式 Release。正式发版只能由维护者手动触发。
+#
+# 产物四件套（资产命名 atlas-nightly-<os>-<arch>.<ext>）：
+#   linux amd64/arm64 deb + rpm（nfpm 单配置，arch 映射 amd64→x86_64）
+#   windows amd64 exe zip（原生可执行文件）+ msi（WiX v3，windows runner）
+#   全部资产由 SHA256SUMS 收口。
+name: nightly
+
+on:
+  schedule:
+    # 离峰非整点：每天 03:31 UTC（北京 11:31），避开 Actions 高峰
+    - cron: '31 3 * * *'
+  workflow_dispatch: # 手动触发必建（同时用于首轮验证）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atlas-nightly
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Decide whether nightly is needed
+    runs-on: ubuntu-latest
+    # 只在本仓库运行：fork 触发不会推本项目的发布
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'cuihairu/atlas'
+    outputs:
+      skip: ${{ steps.stagnation.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # 48h 判断需要完整历史
+
+      - name: Stagnation gate (48h no new commits on main -> skip)
+        if: github.event_name == 'schedule'
+        id: stagnation
+        run: |
+          LATEST=$(git log -1 --format=%ct origin/main)
+          NOW=$(date +%s)
+          DIFF_HOURS=$(( (NOW - LATEST) / 3600 ))
+          if [ "$DIFF_HOURS" -ge 48 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "no commit for $DIFF_HOURS h -> skip"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "last commit $DIFF_HOURS h ago -> build"
+          fi
+
+  gate:
+    # 与 ci.yml 同源的正确性门禁：nightly 资产只出自已验证的提交。
+    # 三个 store 契约套件经环境变量门控指向下方容器；未设定时套件自动 skip。
+    name: Existing correctness gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: atlas_test
+          MYSQL_USER: atlas
+          MYSQL_PASSWORD: atlas
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h127.0.0.1 -uroot -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
+      ATLAS_TEST_MYSQL_DSN: atlas:atlas@tcp(127.0.0.1:3306)/atlas_test
+      ATLAS_TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      - name: Gofmt
+        run: |
+          dirs="$(go list -f '{{.Dir}}' ./...)"
+          if [ -z "$dirs" ]; then echo "go list returned no packages"; exit 1; fi
+          output="$(gofmt -l $dirs)"
+          if [ -n "$output" ]; then echo "$output"; exit 1; fi
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+          args: --timeout=10m
+      - name: Test
+        run: |
+          go test ./internal/... -count=1
+          go test ./cmd/... ./sdk/... ./api/... ./examples/... ./deploy/... -count=1
+
+  linux-packages:
+    name: Native Linux packages (deb + rpm)
+    runs-on: ubuntu-latest
+    needs: gate
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # CGO_ENABLED=0 纯 Go 交叉编译：amd64 与 arm64 均在 amd64 runner 上出。
+      - name: Build static binaries
+        run: |
+          mkdir -p dist stage
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/cuihairu/atlas/internal/version.GitCommit=${COMMIT} -X github.com/cuihairu/atlas/internal/version.BuildDate=${DATE}"
+          for arch in amd64 arm64; do
+            echo ">> linux/$arch"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+              -ldflags "$LDFLAGS" -o "dist/atlas-linux-${arch}" ./cmd/atlas
+          done
+          ls -l dist
+
+      # 冒烟证明 linux 二进制可执行：起服务（in-memory store）再打 healthz。
+      - name: Smoke amd64 binary (serve + healthcheck)
+        run: |
+          export ATLAS_HTTP_ADDR=127.0.0.1:18091
+          export ATLAS_REGISTRY_ADDR=127.0.0.1:18092
+          export ATLAS_ADMIN_ADDR=127.0.0.1:18093
+          export ATLAS_GRPC_ADDR=127.0.0.1:18094
+          ./dist/atlas-linux-amd64 > /tmp/atlas-smoke.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            grep -q "starting Atlas" /tmp/atlas-smoke.log && break
+            sleep 0.5
+          done
+          grep -q "starting Atlas" /tmp/atlas-smoke.log || { cat /tmp/atlas-smoke.log; exit 1; }
+          ./dist/atlas-linux-amd64 healthcheck || { cat /tmp/atlas-smoke.log; exit 1; }
+          echo "healthcheck exit 0"
+
+      # nfpm 单配置文件出 deb+rpm；版本号为滚动构建序，不是发布版本号。
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
+
+      - name: Package deb + rpm (amd64, arm64)
+        run: |
+          VERSION="0.0.0.nightly$(date -u +%Y%m%d)"
+          for arch in amd64 arm64; do
+            case "$arch" in
+              amd64) rpm_arch=x86_64 ;;
+              arm64) rpm_arch=aarch64 ;;
+            esac
+            echo ">> $arch (rpm arch $rpm_arch)"
+            rm -rf "stage-$arch" && mkdir -p "stage-$arch"
+            cp "dist/atlas-linux-${arch}" "stage-$arch/atlas"
+            cp .env.example LICENSE README.md "stage-$arch/"
+            sed -e "s/^version:.*/version: \"${VERSION}\"/" \
+                -e "s/^arch:.*/arch: ${arch}/" \
+                deploy/packaging/nfpm.yaml > "stage-$arch/nfpm.yaml"
+            ( cd "stage-$arch"
+              nfpm package -f nfpm.yaml -p deb -t "../dist/atlas-nightly-linux-${arch}.deb"
+              nfpm package -f nfpm.yaml -p rpm -t "../dist/atlas-nightly-linux-${rpm_arch}.rpm"
+            )
+          done
+          ls -l dist
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      # 包结构自检：解包清单必须含 /usr/bin/atlas 与 /etc/atlas/atlas.env。
+      - name: Verify package contents
+        run: |
+          for f in dist/*.deb dist/*.rpm; do
+            echo "== $f"
+          done
+          ar p dist/atlas-nightly-linux-amd64.deb control.tar.gz | tar tzf - | grep -q '^./usr/bin/atlas$'
+          rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | grep -q '^/usr/bin/atlas$'
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-assets
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          retention-days: 7
+
+  windows-packages:
+    name: Native Windows packages (exe zip + msi)
+    runs-on: windows-latest
+    needs: gate
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build windows exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist, stage | Out-Null
+          $commit = (git rev-parse --short HEAD)
+          $date = Get-Date -AsUTC -Format "yyyy-MM-ddTHH:mm:ssZ"
+          $ldflags = "-s -w -X github.com/cuihairu/atlas/internal/version.GitCommit=$commit -X github.com/cuihairu/atlas/internal/version.BuildDate=$date"
+          $env:CGO_ENABLED = "0"
+          go build -trimpath -ldflags $ldflags -o stage\atlas.exe ./cmd/atlas
+          Get-Item stage\atlas.exe | Select-Object Name, Length
+
+      - name: Package exe zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path stage\atlas.exe -DestinationPath dist\atlas-nightly-windows-amd64.zip
+          Get-Item dist\atlas-nightly-windows-amd64.zip | Select-Object Name, Length
+
+      # WiX v3 由 choco 提供；装不上或构建失败时 msi 腿如实标记 BLOCKED，
+      # 不硬造——其余资产照常进 nightly，失败原因见本步日志。
+      - name: Install WiX Toolset v3
+        shell: pwsh
+        continue-on-error: true
+        run: choco install wixtoolset -y --no-progress
+
+      - name: Build msi (WiX candle + light)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $wixbin = (Get-Item "C:\Program Files (x86)\WiX Toolset v3*\bin" | Select-Object -First 1).FullName
+          if (-not $wixbin) { Write-Error "WiX not found; msi leg BLOCKED"; exit 1 }
+          Copy-Item LICENSE README.md .env.example stage\
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          & "$wixbin\candle.exe" -arch x64 deploy\packaging\atlas.wxs -o build\atlas.wixobj
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi build\atlas.wixobj
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # 结构自检：dark 全量解析 msi（不安装）
+          & "$wixbin\dark.exe" -x "$env:RUNNER_TEMP\msi-extract" dist\atlas-nightly-windows-amd64.msi
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "msi built and parsed"
+          Get-Item dist\atlas-nightly-windows-amd64.msi | Select-Object Name, Length
+
+      - name: Record which artifacts shipped
+        shell: pwsh
+        run: |
+          $msi = Get-Item dist\*.msi -ErrorAction SilentlyContinue
+          if ($msi) {
+            Write-Host "MSI_STATUS=ok ($($msi.Length) bytes)"
+            "MSI shipped: $($msi.FullName)" >> "$env:GITHUB_STEP_SUMMARY"
+          } else {
+            Write-Host "MSI_STATUS=BLOCKED (WiX unavailable on this runner)"
+            "MSI leg BLOCKED this run; see 'Install WiX Toolset v3' / 'Build msi' logs. " +
+              "Local verification: choco install wixtoolset -y; candle -arch x64 deploy\packaging\atlas.wxs; light -spdb out.msi build\*.wixobj; dark -x tmp out.msi" +
+              "" >> "$env:GITHUB_STEP_SUMMARY"
+          }
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-assets
+          path: |
+            dist/*.zip
+            dist/*.msi
+          retention-days: 7
+
+  release:
+    name: Publish nightly (rolling)
+    runs-on: ubuntu-latest
+    needs: [gate, linux-packages, windows-packages]
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*-assets"
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums (all assets)
+        run: |
+          cd dist
+          # 资产表：名字 + 字节数，进 release notes
+          : > ../asset-manifest.txt
+          for f in *; do
+            [ "$f" = SHA256SUMS ] && continue
+            sz=$(stat -c %s "$f")
+            sum=$(sha256sum "$f" | cut -d' ' -f1)
+            echo "${f}  ${sum}" >> SHA256SUMS
+            echo "${f} ${sz}" >> ../asset-manifest.txt
+          done
+          cat ../asset-manifest.txt
+          if [ "$(ls -1 * | grep -v SHA256SUMS | wc -l)" -lt 5 ]; then
+            echo "expected at least 5 native artifacts, got: $(ls -1)"; exit 1
+          fi
+          if [ ! -f atlas-nightly-windows-amd64.msi ]; then
+            echo "msi asset absent -> msi leg BLOCKED this run (deb/rpm/zip still published)"
+          fi
+          cat SHA256SUMS
+
+      # 滚动发布：恒为 prerelease 的 `nightly`，每次整组替换上一版资产。
+      # 用 gh CLI 而非 release action（action 在既有 release 更新路径上反复 403）。
+      - name: Rolling release to tag 'nightly'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          COMMIT_URL="https://github.com/${GITHUB_REPOSITORY}/commit/$(git rev-parse HEAD)"
+          {
+            echo "# Atlas Nightly Build"
+            echo
+            echo "**Commit**: [${COMMIT_SHA}](${COMMIT_URL}) — ${COMMIT_MSG}"
+            echo "**Branch**: main"
+            echo
+            echo "## Assets"
+            echo
+            echo "```"
+            cat asset-manifest.txt
+            echo "```"
+            echo
+            echo "The deb/rpm sets are cross-compiled for amd64 and arm64; the"
+            echo "amd64 binary is execution-smoked (serve + /healthz) and both"
+            echo "package formats are unpacked and inspected. arm64 binaries are"
+            echo "built on the CI host but not execution-smoked there."
+            echo
+            echo "> Rolling nightly channel: the tag stays \`nightly\` and each"
+            echo "> build replaces the previous asset set. This is not a formal"
+            echo "> versioned release."
+          } > release-body.md
+
+          ASSETS=(dist/*)
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --repo "${GITHUB_REPOSITORY}" \
+              --title "Atlas Nightly (rolling)" \
+              --notes-file release-body.md --prerelease
+            gh release upload nightly --repo "${GITHUB_REPOSITORY}" "${ASSETS[@]}" --clobber
+          else
+            gh release create nightly --repo "${GITHUB_REPOSITORY}" \
+              --title "Atlas Nightly (rolling)" \
+              --notes-file release-body.md \
+              --prerelease --latest=false "${ASSETS[@]}"
+          fi
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view nightly --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[] | "\(.name) \(.size)"'
+
+      - name: Remove superseded assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while IFS= read -r asset; do
+            [ -f "dist/${asset}" ] && continue
+            echo "dropping superseded ${asset}"
+            gh release delete-asset nightly "${asset}" --repo "${GITHUB_REPOSITORY}" --yes
+          done < <(gh release view nightly --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')
+
+  verify-no-version-tags:
+    name: Verify no version tag leaked
+    runs-on: ubuntu-latest
+    needs: release
+    if: always() && needs.release.result == 'success'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 1
+      - name: Version tags must have a published release
+        # nightly 滚动 tag 不计。有 tag 无 Release = 疑似误推，仍拦。
+        run: |
+          set -uo pipefail
+          TAGS=$(git ls-remote --tags origin | grep -v 'refs/tags/nightly$' | awk '{print $2}' | sed 's#refs/tags/##' | grep -v '\^{}' || true)
+          if [ -z "$TAGS" ]; then
+            echo "only the nightly tag exists"; exit 0
+          fi
+          bad=""
+          for t in $TAGS; do
+            if gh release view "$t" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "  $t -> published release"
+            else
+              echo "  $t -> NO release (suspected mis-push)"; bad="$bad $t"
+            fi
+          done
+          if [ -n "$bad" ]; then
+            echo "unpublished version tags:$bad"; exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

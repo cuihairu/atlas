@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v3 source for the nightly Windows installer.
+
+  Built on the windows runner (candle + light, installed via choco
+  wixtoolset). The same file parses under wixl (msitools) for local
+  structural checks, so the install path has an out-of-CI verification
+  command when a runner cannot provide WiX.
+
+  Product Version below is MSI-internal metadata for the rolling nightly
+  channel only — formal releases are versioned separately and only by the
+  maintainer. Each nightly shares the same UpgradeCode, so the next build
+  upgrades (or replaces) the previous one instead of coexisting with it.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="Atlas (nightly)"
+           Language="1033"
+           Version="0.0.1"
+           Manufacturer="cuihairu"
+           UpgradeCode="8F2A6C4D-1B7E-4E39-9A55-C0D83F41E2B6">
+    <Package Id="*"
+             InstallerVersion="200"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="Atlas control plane, nightly rolling build" />
+
+    <!-- Nightly carries no ordering: a newer build must be able to replace
+         the installed one even when its timestamp is older. -->
+    <MajorUpgrade AllowDowngrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="MainFeature" Title="Atlas" Level="1">
+      <ComponentGroupRef Id="AtlasComponents" />
+    </Feature>
+
+    <Fragment>
+      <Directory Id="TARGETDIR" Name="SourceDir">
+        <Directory Id="ProgramFiles64Folder">
+          <Directory Id="INSTALLDIR" Name="Atlas">
+            <Component Id="AtlasBinary" Guid="*" Win64="yes">
+              <File Id="atlas.exe" Source="atlas.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="AtlasLicense" Guid="*" Win64="yes">
+              <File Id="AtlasLicenseFile" Source="LICENSE" />
+            </Component>
+            <Component Id="AtlasReadme" Guid="*" Win64="yes">
+              <File Id="AtlasReadmeFile" Source="README.md" />
+            </Component>
+            <Component Id="AtlasEnvSample" Guid="*" Win64="yes">
+              <File Id="AtlasEnvSampleFile" Source=".env.example" />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+
+      <ComponentGroup Id="AtlasComponents">
+        <ComponentRef Id="AtlasBinary" />
+        <ComponentRef Id="AtlasLicense" />
+        <ComponentRef Id="AtlasReadme" />
+        <ComponentRef Id="AtlasEnvSample" />
+      </ComponentGroup>
+    </Fragment>
+  </Product>
+</Wix>

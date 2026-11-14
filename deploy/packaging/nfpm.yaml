@@ -1,0 +1,40 @@
+# nfpm source config for the nightly Linux packages.
+#
+# One config builds both the deb and the rpm: nfpm maps the packaging arch
+# to each format's own spelling (amd64 -> x86_64 for rpm, arm64 ->
+# aarch64). The nightly workflow regenerates this file in a staging
+# directory, substituting arch and version, and runs `nfpm package` once
+# per packager.
+#
+# The version is the rolling nightly build ordinal, not a release version —
+# formal releases stay maintainer-triggered and are versioned separately.
+name: atlas
+arch: amd64
+platform: linux
+version: "0.0.0"
+release: "1"
+section: admin
+priority: extra
+maintainer: cuihairu <chuihairu@gmail.com>
+license: Apache-2.0
+vendor: cuihairu
+homepage: https://github.com/cuihairu/atlas
+description: >-
+  Atlas is the control plane for game server fleets: registry, discovery,
+  directory, routing and admin. This package ships the static control-plane
+  binary from the rolling nightly build.
+summary: Atlas control plane (nightly rolling build)
+contents:
+  # Staging layout: the workflow copies the just-built binary to `atlas` in
+  # the same directory as this config.
+  - src: atlas
+    dst: /usr/bin/atlas
+  - src: .env.example
+    dst: /etc/atlas/atlas.env
+    type: config|noreplace
+  - src: LICENSE
+    dst: /usr/share/doc/atlas/copyright
+    type: doc
+  - src: README.md
+    dst: /usr/share/doc/atlas/README.md
+    type: doc
