@@ -172,7 +172,15 @@ jobs:
           echo "healthcheck exit 0"
 
       # nfpm 单配置文件出 deb+rpm；版本号为滚动构建序，不是发布版本号。
+      # GOTOOLCHAIN=auto 只给这一步：nfpm 新版抬高 go 门槛（v2.47=1.26.4，
+      # v2.48=1.26.4，v2.49=1.27.4），而 setup-go 按 go.mod 的 toolchain 装
+      # go1.27.3 并置 GOTOOLCHAIN=local，于是 `go install nfpm@v2.49.0` 报
+      # "requires go >= 1.27.4 (running go 1.27.3)"。不写死版本——nfpm 每次
+      # 发版都在抬门槛，钉版本等于每次必坏；auto 让 nfpm 自取所需工具链，
+      # 我们自己的 go build 仍按 go.mod 用 1.27.3。
       - name: Install nfpm
+        env:
+          GOTOOLCHAIN: auto
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
 
       - name: Package deb + rpm (amd64, arm64)
