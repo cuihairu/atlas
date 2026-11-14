@@ -263,8 +263,11 @@ jobs:
           $wixbin = (Get-Item "C:\Program Files (x86)\WiX Toolset v3*\bin" | Select-Object -First 1).FullName
           if (-not $wixbin) { Write-Error "WiX not found; msi leg BLOCKED"; exit 1 }
           Copy-Item LICENSE README.md .env.example stage\
+          # candle/wixl resolve File/@Source relative to the .wxs directory,
+          # so the wxs must live beside the staged payload, not in deploy/.
+          Copy-Item deploy\packaging\atlas.wxs stage\
           New-Item -ItemType Directory -Force -Path build | Out-Null
-          & "$wixbin\candle.exe" -arch x64 deploy\packaging\atlas.wxs -o build\atlas.wixobj
+          & "$wixbin\candle.exe" -arch x64 stage\atlas.wxs -o build\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi build\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
