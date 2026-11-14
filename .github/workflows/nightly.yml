@@ -306,10 +306,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi stage\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          # 结构自检：dark 全量解析 msi（不安装）
-          & "$wixbin\dark.exe" -x "$env:RUNNER_TEMP\msi-extract" dist\atlas-nightly-windows-amd64.msi
+          # 结构自检 + 载荷断言。dark 退出 0 只证明 msi 能解析（不安装）；
+          # 空壳包同样退出 0，所以必须解包后断言 atlas.exe 真的在里面、
+          # 且字节数与源 exe 相等。否则 cab 缺失时也会静默全绿。
+          $exeBytes  = (Get-Item stage\atlas.exe).Length
+          $msiBytes  = (Get-Item dist\atlas-nightly-windows-amd64.msi).Length
+          $extracted = "$env:RUNNER_TEMP\msi-extract"
+          & "$wixbin\dark.exe" -x "$extracted" dist\atlas-nightly-windows-amd64.msi
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          Write-Host "msi built and parsed"
+          $payload = Get-ChildItem -Recurse -Filter atlas.exe -Path "$extracted" |
+            Select-Object -First 1
+          if (-not $payload) {
+            Write-Error "msi contains no atlas.exe payload ($msiBytes bytes) — empty shell"
+            exit 1
+          }
+          if ($payload.Length -ne $exeBytes) {
+            Write-Error "payload size mismatch: msi $($payload.Length) vs exe $exeBytes"
+            exit 1
+          }
+          Write-Host "msi built and parsed; payload atlas.exe $exeBytes bytes matches source"
           Get-Item dist\atlas-nightly-windows-amd64.msi | Select-Object Name, Length
 
       - name: Record which artifacts shipped
