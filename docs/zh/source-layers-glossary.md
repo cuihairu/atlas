@@ -43,6 +43,6 @@
 
 ## 相关文档
 
-- [架构设计](/zh/architecture#9-源码分层)
-- [Architecture Design](/architecture#9-source-layers)
+- [架构设计](/zh/architecture)
+- [Architecture Design (English)](/architecture)
 

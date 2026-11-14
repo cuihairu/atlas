@@ -125,6 +125,18 @@ export default withMermaid({
 
   base: '/atlas/',
 
+  // 内部审计 / 评审记录不进站点：这些页面装的是 file:line 级源码引用与被推翻的旧结论，
+  // 只留在仓库里给审查看，不作为公开文档发布。VitePress 默认构建 srcDir 下所有 .md，
+  // 未出现在 nav/sidebar 只影响可发现性、不影响构建范围，必须显式排除。
+  // （security-audit.md 是公开文档，nav 与 README 文档表均引用，不在此列。）
+  srcExclude: [
+    '**/audit-*.md',
+    '审计-文档一致性.md',
+    // 用 `**/review/**` 而非 `review/**`：zh 镜像下还有一页 `zh/review/`，
+    // 它的全部内容是指向英文版评审页的语言入口，英文版既已排除就一起排除。
+    '**/review/**',
+  ],
+
   // 双语站点：根语言（root）= English，中文在 docs/zh/ → /zh/。
   // 主题依据 locales 自动生成切换器，并按 relativePath 逐页对应
   // （docs/zh/api.md ↔ docs/api.md），无需手写语言链接。

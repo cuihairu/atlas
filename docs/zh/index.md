@@ -11,7 +11,7 @@ hero:
   actions:
     - theme: brand
       text: 快速上手
-      link: /api-quickstart
+      link: /zh/api-quickstart
     - theme: alt
       text: 按场景找文档
       link: #使用场景
@@ -34,11 +34,11 @@ features:
 
 <script setup>
 const showcaseSlides = [
-  { image: '/screenshots/overview.png', title: '总览', caption: '总览 — 在线服务器 / 玩家 / 容量与状态分布', link: '/scenarios#scenario-overview' },
-  { image: '/screenshots/servers.png', title: '服务器列表', caption: '服务器列表 — 状态、角标（火热/新服/爆满）与容量水位', link: '/scenarios#scenario-tags' },
-  { image: '/screenshots/server-detail-tags.png', title: '服务器详情', caption: '服务器详情 — 标记管理（对外/内部）与实时指标', link: '/scenarios#scenario-tags' },
-  { image: '/screenshots/characters.png', title: '角色搜索', caption: '角色搜索 — 跨服角色索引，按名字/服务器/等级过滤', link: '/scenarios#scenario-characters' },
-  { image: '/screenshots/migrations.png', title: '迁移管理', caption: '迁移管理 — 合服/转服编排与回滚', link: '/scenarios#scenario-migration' },
+  { image: '/screenshots/overview.png', title: '总览', caption: '总览 — 在线服务器 / 玩家 / 容量与状态分布', link: '/zh/scenarios#scenario-overview' },
+  { image: '/screenshots/servers.png', title: '服务器列表', caption: '服务器列表 — 状态、角标（火热/新服/爆满）与容量水位', link: '/zh/scenarios#scenario-tags' },
+  { image: '/screenshots/server-detail-tags.png', title: '服务器详情', caption: '服务器详情 — 标记管理（对外/内部）与实时指标', link: '/zh/scenarios#scenario-tags' },
+  { image: '/screenshots/characters.png', title: '角色搜索', caption: '角色搜索 — 跨服角色索引，按名字/服务器/等级过滤', link: '/zh/scenarios#scenario-characters' },
+  { image: '/screenshots/migrations.png', title: '迁移管理', caption: '迁移管理 — 合服/转服编排与回滚', link: '/zh/scenarios#scenario-migration' },
 ]
 </script>
 

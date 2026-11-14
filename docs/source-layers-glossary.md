@@ -45,5 +45,5 @@ directory layout. Paths are repository-relative source anchors.
 ## Related Documents
 
 - [Architecture Design](/architecture#9-source-layers)
-- [架构设计](/zh/architecture#9-源码分层)
+- [架构设计](/zh/architecture)
 
