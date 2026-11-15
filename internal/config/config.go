@@ -2,8 +2,11 @@
 package config
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -320,7 +323,21 @@ type Config struct {
 }
 
 // Load reads configuration from environment variables with sensible defaults.
-func Load() Config {
+// Load reads the process environment into a Config. A value that is set but
+// fails to parse, or that violates the documented domain of its knob
+// (non-positive sizes, negative durations, ratios outside (0,1], unknown
+// audit sinks), is reported as an error instead of silently falling back to
+// the default: an operator who typos a retention window must not quietly get
+// 90 days. Unset variables keep their defaults; valid values behave exactly
+// as before. All offending keys are aggregated into one error so a single
+// restart surfaces every typo at once.
+func Load() (Config, error) {
+	var bad []string
+	// fail records one offending key; the raw value is quoted so the log
+	// line shows exactly what the operator wrote.
+	fail := func(format string, args ...any) {
+		bad = append(bad, fmt.Sprintf(format, args...))
+	}
 	cfg := Config{
 		HTTPAddr:            envOr("ATLAS_HTTP_ADDR", ":8080"),
 		RegistryAddr:        envOr("ATLAS_REGISTRY_ADDR", ":8081"),
@@ -375,59 +392,98 @@ func Load() Config {
 		cfg.AuditSink = ""
 	} else if v == "postgres" || v == "jsonl" {
 		cfg.AuditSink = v
+	} else {
+		fail("ATLAS_AUDIT_SINK: unknown sink %q (want off|postgres|jsonl)", v)
 	}
 	if v := os.Getenv("ATLAS_AUDIT_RETENTION"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_AUDIT_RETENTION: invalid duration %q", v)
+		} else {
 			cfg.AuditRetention = d
 		}
 	}
 	if v := os.Getenv("ATLAS_AUDIT_QUEUE_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fail("ATLAS_AUDIT_QUEUE_SIZE: must be a positive integer, got %q", v)
+		} else {
 			cfg.AuditQueueSize = n
 		}
 	}
 	if v := os.Getenv("ATLAS_EVENT_MAX_DELIVERY"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fail("ATLAS_EVENT_MAX_DELIVERY: must be a positive integer, got %q", v)
+		} else {
 			cfg.EventMaxDelivery = n
 		}
 	}
 	if v := os.Getenv("ATLAS_SUSPECT_AFTER"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_SUSPECT_AFTER: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.SuspectAfter = d
 		}
 	}
 	if v := os.Getenv("ATLAS_OFFLINE_AFTER"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_OFFLINE_AFTER: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.OfflineAfter = d
 		}
 	}
 	if v := os.Getenv("ATLAS_HEALTH_INTERVAL"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_HEALTH_INTERVAL: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.HealthInterval = d
 		}
 	}
 	if v := os.Getenv("ATLAS_ROUTING_MAINTENANCE_LEAD"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			fail("ATLAS_ROUTING_MAINTENANCE_LEAD: must be a positive duration, got %q", v)
+		} else {
 			cfg.RoutingMaintenanceLead = d
 		}
 	}
+	// Alert ratios above 1 stay legal: the wiring enables alerts whenever the
+	// value is > 0, so a ratio like 2.0 is a working "track but never fire"
+	// setting. Only unparseable, negative, or non-finite values are rejected.
 	if v := os.Getenv("ATLAS_ALERT_SUSPECT_RATIO"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
+			fail("ATLAS_ALERT_SUSPECT_RATIO: invalid ratio %q", v)
+		} else {
 			cfg.AlertSuspectRatio = f
 		}
 	}
 	if v := os.Getenv("ATLAS_ALERT_OFFLINE_RATIO"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0 || math.IsNaN(f) || math.IsInf(f, 0) {
+			fail("ATLAS_ALERT_OFFLINE_RATIO: invalid ratio %q", v)
+		} else {
 			cfg.AlertOfflineRatio = f
 		}
 	}
 	if v := os.Getenv("ATLAS_TRACING_SAMPLE_RATIO"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f <= 1 {
+		f, err := strconv.ParseFloat(v, 64)
+		// NaN/Inf fail the f > 0 && f <= 1 test and land in the same branch.
+		if err != nil || !(f > 0 && f <= 1) {
+			fail("ATLAS_TRACING_SAMPLE_RATIO: must be in (0,1], got %q", v)
+		} else {
 			cfg.TraceSampleRatio = f
 		}
 	}
 	if v := os.Getenv("ATLAS_CHAR_SHARDS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fail("ATLAS_CHAR_SHARDS: must be a positive integer, got %q", v)
+		} else {
 			cfg.CharShards = n
 		}
 	}
@@ -435,32 +491,51 @@ func Load() Config {
 	cfg.RedisMasterName = envOr("ATLAS_REDIS_MASTER_NAME", "mymaster")
 	cfg.RedisClusterAddrs = os.Getenv("ATLAS_REDIS_CLUSTER")
 	if v := os.Getenv("ATLAS_REDIS_POOL_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fail("ATLAS_REDIS_POOL_SIZE: must be a positive integer, got %q", v)
+		} else {
 			cfg.RedisPoolSize = n
 		}
 	}
 	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONNS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fail("ATLAS_PG_POOL_MAX_CONNS: must be a positive integer, got %q", v)
+		} else {
 			cfg.PGPoolMaxConns = n
 		}
 	}
 	if v := os.Getenv("ATLAS_PG_POOL_MIN_CONNS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		n, err := strconv.Atoi(v)
+		// 0 is legal: a zero floor means "let the pool shrink fully".
+		if err != nil || n < 0 {
+			fail("ATLAS_PG_POOL_MIN_CONNS: must be a non-negative integer, got %q", v)
+		} else {
 			cfg.PGPoolMinConns = n
 		}
 	}
 	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONN_LIFETIME"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_PG_POOL_MAX_CONN_LIFETIME: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.PGPoolMaxConnLifetime = d
 		}
 	}
 	if v := os.Getenv("ATLAS_PG_POOL_MAX_CONN_IDLE_TIME"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_PG_POOL_MAX_CONN_IDLE_TIME: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.PGPoolMaxConnIdleTime = d
 		}
 	}
 	if v := os.Getenv("ATLAS_PG_POOL_HEALTH_CHECK_PERIOD"); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			fail("ATLAS_PG_POOL_HEALTH_CHECK_PERIOD: invalid negative-or-unparseable duration %q", v)
+		} else {
 			cfg.PGPoolHealthCheckPeriod = d
 		}
 	}
@@ -468,7 +543,10 @@ func Load() Config {
 	cfg.ServersConfigFile = os.Getenv("ATLAS_SERVERS_CONFIG")
 	cfg.ServersProfile = os.Getenv("ATLAS_SERVERS_PROFILE")
 
-	return cfg
+	if len(bad) > 0 {
+		return cfg, fmt.Errorf("invalid configuration: %s", strings.Join(bad, "; "))
+	}
+	return cfg, nil
 }
 
 func envOr(key, fallback string) string {

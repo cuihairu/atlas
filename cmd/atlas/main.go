@@ -68,7 +68,11 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
 
 	// OpenTelemetry trace export (roadmap 可观测性深化): disabled unless
 	// ATLAS_OTLP_ENDPOINT is set — no-op provider, non-recording spans,

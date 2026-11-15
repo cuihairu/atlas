@@ -72,7 +72,11 @@ func run(args []string, out, errw io.Writer) int {
 		return 2
 	}
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		_, _ = fmt.Fprintln(errw, err)
+		return 2
+	}
 	name := strings.TrimSpace(*adapterFlag)
 	if name == "" {
 		name = cfg.EventAdapter

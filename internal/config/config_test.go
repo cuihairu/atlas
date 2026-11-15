@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -13,8 +14,19 @@ func setenv(t *testing.T, kv map[string]string) {
 	}
 }
 
+// mustLoad wraps Load for the happy-path tests: any validation error fails
+// the test immediately.
+func mustLoad(t *testing.T) Config {
+	t.Helper()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	return cfg
+}
+
 func TestLoad_HADefaults(t *testing.T) {
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.RedisMasterName != "mymaster" {
 		t.Errorf("RedisMasterName = %q, want mymaster", cfg.RedisMasterName)
 	}
@@ -44,7 +56,7 @@ func TestLoad_HAEnvParsing(t *testing.T) {
 		"ATLAS_PG_POOL_MAX_CONN_IDLE_TIME":  "5m",
 		"ATLAS_PG_POOL_HEALTH_CHECK_PERIOD": "15s",
 	})
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.RedisSentinelAddrs != "s1:26379,s2:26379" {
 		t.Errorf("RedisSentinelAddrs = %q", cfg.RedisSentinelAddrs)
 	}
@@ -73,39 +85,38 @@ func TestLoad_HAEnvParsing(t *testing.T) {
 
 func TestLoad_RoutingMaintenanceLead(t *testing.T) {
 	// Not set: zero value, the routing service applies its 5m default.
-	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
+	if cfg := mustLoad(t); cfg.RoutingMaintenanceLead != 0 {
 		t.Errorf("RoutingMaintenanceLead default = %v, want 0", cfg.RoutingMaintenanceLead)
 	}
 	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "2m"})
-	if cfg := Load(); cfg.RoutingMaintenanceLead != 2*time.Minute {
+	if cfg := mustLoad(t); cfg.RoutingMaintenanceLead != 2*time.Minute {
 		t.Errorf("RoutingMaintenanceLead = %v, want 2m", cfg.RoutingMaintenanceLead)
 	}
-	// Invalid values are ignored, leaving the zero default.
+	// Invalid or non-positive values are rejected at startup.
 	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "soon"})
-	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
-		t.Errorf("invalid lead should be ignored, got %v", cfg.RoutingMaintenanceLead)
+	if _, err := Load(); err == nil {
+		t.Errorf("invalid lead should be rejected, got nil error")
 	}
 	setenv(t, map[string]string{"ATLAS_ROUTING_MAINTENANCE_LEAD": "0s"})
-	if cfg := Load(); cfg.RoutingMaintenanceLead != 0 {
-		t.Errorf("0s lead should be ignored (stay 0), got %v", cfg.RoutingMaintenanceLead)
+	if _, err := Load(); err == nil {
+		t.Errorf("0s lead should be rejected (must be positive), got nil error")
 	}
 }
 
-func TestLoad_HAInvalidValuesIgnored(t *testing.T) {
+func TestLoad_HAInvalidValuesRejected(t *testing.T) {
 	setenv(t, map[string]string{
 		"ATLAS_REDIS_POOL_SIZE":           "not-a-number",
 		"ATLAS_PG_POOL_MAX_CONNS":         "-5",
 		"ATLAS_PG_POOL_MAX_CONN_LIFETIME": "soon",
 	})
-	cfg := Load()
-	if cfg.RedisPoolSize != 0 {
-		t.Errorf("invalid RedisPoolSize should be ignored, got %d", cfg.RedisPoolSize)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("invalid pool settings should be rejected, got nil error")
 	}
-	if cfg.PGPoolMaxConns != 0 {
-		t.Errorf("negative PGPoolMaxConns should be ignored, got %d", cfg.PGPoolMaxConns)
-	}
-	if cfg.PGPoolMaxConnLifetime != 0 {
-		t.Errorf("invalid duration should be ignored, got %v", cfg.PGPoolMaxConnLifetime)
+	for _, key := range []string{"ATLAS_REDIS_POOL_SIZE", "ATLAS_PG_POOL_MAX_CONNS", "ATLAS_PG_POOL_MAX_CONN_LIFETIME"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error should name %s, got: %v", key, err)
+		}
 	}
 }
 
@@ -162,7 +173,7 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 		"ATLAS_OTLP_ENDPOINT":         "http://otel:4318",
 		"ATLAS_TRACING_SAMPLE_RATIO":  "0.5",
 	})
-	cfg := Load()
+	cfg := mustLoad(t)
 
 	if cfg.HTTPAddr != ":18080" || cfg.RegistryAddr != ":18081" ||
 		cfg.AdminAddr != ":18082" || cfg.GRPCAddr != ":19090" {
@@ -240,11 +251,11 @@ func TestLoad_ScalarOverrides(t *testing.T) {
 	}
 }
 
-func TestLoad_InvalidValuesKeepDefaults(t *testing.T) {
-	// Malformed or out-of-range numerics fall back to the documented
-	// defaults rather than poisoning startup — each case here pins one
-	// guard the health of the fleet depends on (a bogus offline threshold
-	// must not silently become zero).
+func TestLoad_InvalidValuesRejected(t *testing.T) {
+	// Malformed or out-of-domain numerics must fail startup instead of
+	// silently falling back to defaults — each case here pins one guard the
+	// health of the fleet depends on (a bogus offline threshold must not
+	// quietly become the default while the operator believes it applied).
 	setenv(t, map[string]string{
 		"ATLAS_SUSPECT_AFTER":               "later",
 		"ATLAS_OFFLINE_AFTER":               "yesterday",
@@ -258,45 +269,77 @@ func TestLoad_InvalidValuesKeepDefaults(t *testing.T) {
 		"ATLAS_PG_POOL_MAX_CONN_IDLE_TIME":  "soon",
 		"ATLAS_PG_POOL_HEALTH_CHECK_PERIOD": "eventually",
 	})
-	cfg := Load()
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("invalid values should be rejected, got nil error")
+	}
+	for _, key := range []string{
+		"ATLAS_SUSPECT_AFTER", "ATLAS_OFFLINE_AFTER", "ATLAS_HEALTH_INTERVAL",
+		"ATLAS_ALERT_SUSPECT_RATIO", "ATLAS_ALERT_OFFLINE_RATIO",
+		"ATLAS_TRACING_SAMPLE_RATIO", "ATLAS_CHAR_SHARDS", "ATLAS_REDIS_POOL_SIZE",
+		"ATLAS_PG_POOL_MIN_CONNS", "ATLAS_PG_POOL_MAX_CONN_IDLE_TIME",
+		"ATLAS_PG_POOL_HEALTH_CHECK_PERIOD",
+	} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error should name %s, got: %v", key, err)
+		}
+	}
+}
 
-	if cfg.SuspectAfter != 30*time.Second {
-		t.Errorf("SuspectAfter = %v, want default 30s", cfg.SuspectAfter)
+func TestLoad_ValidBoundaryValues(t *testing.T) {
+	// Boundary values that ARE accepted: 0 keeps "no cap / immediate"
+	// semantics for the HA thresholds and pg pool lifetimes, a zero-connection
+	// floor is legal, sample ratio 1.0 stays valid, "off" is the documented
+	// audit-sink disable, and an alert ratio above 1 stays legal (enabled but
+	// never fires).
+	setenv(t, map[string]string{
+		"ATLAS_SUSPECT_AFTER":               "0s",
+		"ATLAS_OFFLINE_AFTER":               "0s",
+		"ATLAS_HEALTH_INTERVAL":             "0s",
+		"ATLAS_PG_POOL_MIN_CONNS":           "0",
+		"ATLAS_PG_POOL_MAX_CONN_LIFETIME":   "0s",
+		"ATLAS_PG_POOL_MAX_CONN_IDLE_TIME":  "0s",
+		"ATLAS_PG_POOL_HEALTH_CHECK_PERIOD": "0s",
+		"ATLAS_TRACING_SAMPLE_RATIO":        "1",
+		"ATLAS_AUDIT_SINK":                  "off",
+		"ATLAS_ALERT_SUSPECT_RATIO":         "2",
+	})
+	cfg := mustLoad(t)
+	if cfg.SuspectAfter != 0 || cfg.OfflineAfter != 0 || cfg.HealthInterval != 0 {
+		t.Errorf("zero durations should be accepted, got %v %v %v", cfg.SuspectAfter, cfg.OfflineAfter, cfg.HealthInterval)
 	}
-	if cfg.OfflineAfter != 60*time.Second {
-		t.Errorf("OfflineAfter = %v, want default 60s", cfg.OfflineAfter)
+	if cfg.PGPoolMinConns != 0 {
+		t.Errorf("PGPoolMinConns = %d, want 0 (zero floor is legal)", cfg.PGPoolMinConns)
 	}
-	if cfg.HealthInterval != 10*time.Second {
-		t.Errorf("HealthInterval = %v, want default 10s", cfg.HealthInterval)
-	}
-	if cfg.AlertSuspectRatio != 0.3 {
-		t.Errorf("AlertSuspectRatio = %v, want default 0.3", cfg.AlertSuspectRatio)
-	}
-	if cfg.AlertOfflineRatio != 0.2 {
-		t.Errorf("AlertOfflineRatio = %v, want default 0.2", cfg.AlertOfflineRatio)
+	if cfg.PGPoolMaxConnLifetime != 0 || cfg.PGPoolMaxConnIdleTime != 0 || cfg.PGPoolHealthCheckPeriod != 0 {
+		t.Errorf("zero pg durations should be accepted (no cap)")
 	}
 	if cfg.TraceSampleRatio != 1.0 {
-		t.Errorf("TraceSampleRatio = %v, want default 1.0 (out-of-range rejected)", cfg.TraceSampleRatio)
+		t.Errorf("TraceSampleRatio = %v, want 1.0", cfg.TraceSampleRatio)
 	}
-	if cfg.CharShards != 1 {
-		t.Errorf("CharShards = %d, want default 1 (non-positive rejected)", cfg.CharShards)
+	if cfg.AuditSink != "" {
+		t.Errorf("AuditSink = %q, want \"\" for off", cfg.AuditSink)
 	}
-	if cfg.RedisPoolSize != 0 || cfg.PGPoolMinConns != 0 {
-		t.Errorf("pool sizes = %d/%d, want defaults", cfg.RedisPoolSize, cfg.PGPoolMinConns)
+	if cfg.AlertSuspectRatio != 2 {
+		t.Errorf("AlertSuspectRatio = %v, want 2 (above 1 stays legal)", cfg.AlertSuspectRatio)
 	}
-	if cfg.PGPoolMaxConnIdleTime != 0 || cfg.PGPoolHealthCheckPeriod != 0 {
-		t.Errorf("pool durations = %v %v, want defaults", cfg.PGPoolMaxConnIdleTime, cfg.PGPoolHealthCheckPeriod)
-	}
+}
 
-	// Boundary values that ARE accepted: sample ratio 1.0 stays valid, and a
-	// zero-connection floor is legal for the min-conns knob.
+func TestLoad_AggregatesAllErrors(t *testing.T) {
+	// One restart should surface every typo, not just the first one hit.
 	setenv(t, map[string]string{
-		"ATLAS_TRACING_SAMPLE_RATIO": "1",
-		"ATLAS_PG_POOL_MIN_CONNS":    "0",
+		"ATLAS_SUSPECT_AFTER": "later",
+		"ATLAS_CHAR_SHARDS":   "0",
+		"ATLAS_AUDIT_SINK":    "clickhouse",
 	})
-	cfg = Load()
-	if cfg.TraceSampleRatio != 1.0 || cfg.PGPoolMinConns != 0 {
-		t.Errorf("boundary values rejected: ratio=%v minconns=%d", cfg.TraceSampleRatio, cfg.PGPoolMinConns)
+	_, err := Load()
+	if err == nil {
+		t.Fatalf("invalid values should be rejected, got nil error")
+	}
+	for _, key := range []string{"ATLAS_SUSPECT_AFTER", "ATLAS_CHAR_SHARDS", "ATLAS_AUDIT_SINK"} {
+		if !strings.Contains(err.Error(), key) {
+			t.Errorf("error should name %s, got: %v", key, err)
+		}
 	}
 }
 
@@ -318,7 +361,7 @@ func TestEnvOr(t *testing.T) {
 func TestLoad_AuditSinkDefaults(t *testing.T) {
 	// Unset: sink off (today's behavior), 90-day retention window, the
 	// documented default mask list, library-default queue.
-	cfg := Load()
+	cfg := mustLoad(t)
 	if cfg.AuditSink != "" {
 		t.Errorf("AuditSink default = %q, want \"\" (off)", cfg.AuditSink)
 	}
@@ -334,22 +377,26 @@ func TestLoad_AuditSinkDefaults(t *testing.T) {
 
 	// "off" normalizes to "" so the wiring reads one value.
 	setenv(t, map[string]string{"ATLAS_AUDIT_SINK": "off"})
-	if cfg := Load(); cfg.AuditSink != "" {
+	if cfg := mustLoad(t); cfg.AuditSink != "" {
 		t.Errorf("AuditSink off = %q, want \"\"", cfg.AuditSink)
 	}
 
-	// Invalid values keep the defaults rather than poisoning startup.
+	// Invalid values are rejected at startup instead of silently reverting
+	// to the defaults — an operator who typos the retention window must not
+	// quietly get 90 days.
 	setenv(t, map[string]string{
 		"ATLAS_AUDIT_RETENTION":  "soon",
 		"ATLAS_AUDIT_QUEUE_SIZE": "-5",
 	})
-	if cfg := Load(); cfg.AuditRetention != 90*24*time.Hour || cfg.AuditQueueSize != 0 {
-		t.Errorf("invalid audit envs landed: retention=%v queue=%d", cfg.AuditRetention, cfg.AuditQueueSize)
+	if _, err := Load(); err == nil {
+		t.Fatalf("invalid audit envs should be rejected, got nil error")
 	}
 
 	// A zero window is accepted: it means "never expire" and must survive.
-	setenv(t, map[string]string{"ATLAS_AUDIT_RETENTION": "0"})
-	if cfg := Load(); cfg.AuditRetention != 0 {
+	// Reset the queue size too — setenv above would otherwise leak "-5" into
+	// this block and fail the happy-path load.
+	setenv(t, map[string]string{"ATLAS_AUDIT_RETENTION": "0", "ATLAS_AUDIT_QUEUE_SIZE": ""})
+	if cfg := mustLoad(t); cfg.AuditRetention != 0 {
 		t.Errorf("AuditRetention 0 = %v, want 0 (never expire)", cfg.AuditRetention)
 	}
 }
