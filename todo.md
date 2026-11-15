@@ -70,3 +70,11 @@
 - [x] 审核发现：本轮 diff 未见问题（957dafdb..HEAD） — 核实属实：范围 957dafd..HEAD（HEAD=7aa4e21）仅 todo.md 变更（1 增）、无 .go 改动，复核无新问题；go test ./...: exit 0；docs build 绿；commit 7aa4e21；todo.md:63
 - [x] 审核发现：本轮 diff 未见问题（7aa4e216..HEAD） — 核实属实：范围 7aa4e216..HEAD（HEAD=1f44f9d）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 7aa4e216..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=1f44f9d962646a5c3e794629959f387e1c96b691；commit 1f44f9d；todo.md:64
 - [x] 审核发现：本轮 diff 未见问题（1f44f9d..HEAD） — 核实属实：范围 1f44f9d..HEAD（HEAD=29960f0）仅 todo.md 变更（1 增，即上一轮结论行）、无任何代码改动，复核无新问题；证据：git diff --stat 1f44f9d..HEAD → "todo.md | 1 +，1 file changed, 1 insertion(+)"；HEAD=29960f025bfea68ac9f35433174f459d3fa0c993；commit 29960f0；todo.md:65
+
+## Codex 深审发现（2026-11-12，luna profile 近5 commit 审核，0C/3M/2m，待修）
+
+- [ ] [M] Load() 无效数值/时长/比率配置改显式启动失败（internal/config/config.go:379）——ATLAS_AUDIT_RETENTION="abc" 等静默回退默认值，安全/健康参数与预期不符
+- [ ] [M] 定义并测试 Store.Close() 后提交与既有队列写的关系（internal/store/memory/queue.go:502）——关闭后 inline 写入不保证同目标顺序，CAS 可能先执行并失败
+- [ ] [M] 修正转发头仅作用于 REST 监听口的文档表述（docs/api.md:963、docs/security.md:214、docs/zh/security.md:124）——gRPC peerIP 无该逻辑，描述会让多协议网关误配 ATLAS_TRUST_FORWARDED_FOR
+- [ ] [m] 提交或还原 go.mod/go.sum 与 npm/pnpm 依赖漂移（go.mod:33）——当前工作树脏，审核与 CI 结果不可复现
+- [ ] [m] 后续证据锚定 commit + 工作树清洁度 + 依赖锁定状态（todo.md:30、31）——现结论基于陈旧依赖漂移

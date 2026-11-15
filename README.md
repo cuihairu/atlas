@@ -369,6 +369,11 @@ same runner and are not execution-smoked there.
 | [docs/concepts.md](docs/concepts.md) | Region / Realm / Shard / Server / Character conceptual model |
 | [docs/api.md](docs/api.md) | REST + gRPC reference — full reference in [Chinese](docs/zh/api.md) |
 | [docs/api-quickstart.md](docs/api-quickstart.md) | API quick-start guide (curl examples) |
+| [docs/scenarios.md](docs/scenarios.md) | Scenario walkthrough: where to start from each ops / dev / player pain point |
+| [docs/server-config.md](docs/server-config.md) | Declarative server info as configuration (config-owned fleet records) |
+| [docs/config-center.md](docs/config-center.md) | Cross-server config center: publish / subscribe / callback / poll |
+| [docs/realms-shards.md](docs/realms-shards.md) | Realm and shard management |
+| [docs/operations.md](docs/operations.md) | Announcements and planned maintenance windows |
 | [docs/data-model.md](docs/data-model.md) | PostgreSQL table schemas and Redis key design |
 | [docs/lifecycle.md](docs/lifecycle.md) | Server lifecycle state machine |
 | [docs/migration.md](docs/migration.md) | Server merges / transfers / migrations |
@@ -381,7 +386,11 @@ same runner and are not execution-smoked there.
 | [docs/security.md](docs/security.md) | Security model: authentication, rate limiting, audit |
 | [docs/security-audit.md](docs/security-audit.md) | Security audit records and periodic checklist |
 | [docs/sdk-go.md](docs/sdk-go.md) | SDK docs (six languages: Go / C++ / Python / JS / [Java](docs/sdk-java.md) / [C#](docs/sdk-csharp.md)) |
+| [docs/sdk-cpp.md](docs/sdk-cpp.md) | C++ SDK (CMake build, synchronous client) |
+| [docs/sdk-python.md](docs/sdk-python.md) | Python SDK |
+| [docs/sdk-js.md](docs/sdk-js.md) | JavaScript SDK (TypeScript source) |
 | [docs/roadmap.md](docs/roadmap.md) | MVP scope and evolution roadmap |
+| [docs/source-layers-glossary.md](docs/source-layers-glossary.md) | Source layer glossary: implementation abstractions with file:line anchors |
 
 ---
 

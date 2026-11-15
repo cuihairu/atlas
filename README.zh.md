@@ -364,6 +364,11 @@ set -a; . /etc/atlas/atlas.env; set +a; atlas
 | [docs/zh/concepts.md](docs/zh/concepts.md) | Region / Realm / Shard / Server / Character 概念模型 |
 | [docs/zh/api.md](docs/zh/api.md) | 六组 REST API + gRPC 的完整定义 |
 | [docs/zh/api-quickstart.md](docs/zh/api-quickstart.md) | API 快速上手指南（curl 示例） |
+| [docs/zh/scenarios.md](docs/zh/scenarios.md) | 场景导览：按运维 / 开发 / 玩家各自的痛点找入口 |
+| [docs/zh/server-config.md](docs/zh/server-config.md) | 服务器信息配置化（config-owned 的舰队记录） |
+| [docs/zh/config-center.md](docs/zh/config-center.md) | 跨服配置中心：发布 / 订阅 / 回调 / 轮询 |
+| [docs/zh/realms-shards.md](docs/zh/realms-shards.md) | Realm 与 Shard 管理 |
+| [docs/zh/operations.md](docs/zh/operations.md) | 公告与计划维护窗口 |
 | [docs/zh/data-model.md](docs/zh/data-model.md) | PostgreSQL 表结构与 Redis 键设计 |
 | [docs/zh/lifecycle.md](docs/zh/lifecycle.md) | 服务器生命周期状态机 |
 | [docs/zh/migration.md](docs/zh/migration.md) | 合服 / 转服 / 迁服 |
@@ -376,7 +381,11 @@ set -a; . /etc/atlas/atlas.env; set +a; atlas
 | [docs/zh/security.md](docs/zh/security.md) | 安全模型：认证、限流、审计 |
 | [docs/zh/security-audit.md](docs/zh/security-audit.md) | 安全审计记录与周期清单 |
 | [docs/zh/sdk-go.md](docs/zh/sdk-go.md) | SDK 文档（六语言：Go / C++ / Python / JS / [Java](docs/zh/sdk-java.md) / [C#](docs/zh/sdk-csharp.md)） |
+| [docs/zh/sdk-cpp.md](docs/zh/sdk-cpp.md) | C++ SDK（CMake 构建，同步客户端） |
+| [docs/zh/sdk-python.md](docs/zh/sdk-python.md) | Python SDK |
+| [docs/zh/sdk-js.md](docs/zh/sdk-js.md) | JavaScript SDK（TypeScript 源码） |
 | [docs/zh/roadmap.md](docs/zh/roadmap.md) | MVP 范围与演进路线 |
+| [docs/zh/source-layers-glossary.md](docs/zh/source-layers-glossary.md) | 源码分层术语表：带 file:line 锚点的实现抽象 |
 
 ---
 
