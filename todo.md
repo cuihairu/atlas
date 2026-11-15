@@ -73,8 +73,8 @@
 
 ## Codex 深审发现（2026-11-12，luna profile 近5 commit 审核，0C/3M/2m，待修）
 
-- [ ] [M] Load() 无效数值/时长/比率配置改显式启动失败（internal/config/config.go:379）——ATLAS_AUDIT_RETENTION="abc" 等静默回退默认值，安全/健康参数与预期不符
+- [x] [M] Load() 无效数值/时长/比率配置改显式启动失败（internal/config/config.go:379）——已修：Load() 改回 (Config, error)，设了但解析失败或越域的键聚合为单条 `invalid configuration: ...` 错误，atlas 启动记日志 exit 1（cmd/atlas/main.go:71）、dlq 返回 2（cmd/dlq/main.go:75）；新增边界值测试（0s 时长、PG_MIN_CONNS=0、ratio "1"、sink "off"、告警比率>1 仍合法）与聚合错误测试（一次重启报出全部错键）；go test ./... 39 包全绿；commit 0708a67
 - [ ] [M] 定义并测试 Store.Close() 后提交与既有队列写的关系（internal/store/memory/queue.go:502）——关闭后 inline 写入不保证同目标顺序，CAS 可能先执行并失败
-- [ ] [M] 修正转发头仅作用于 REST 监听口的文档表述（docs/api.md:963、docs/security.md:214、docs/zh/security.md:124）——gRPC peerIP 无该逻辑，描述会让多协议网关误配 ATLAS_TRUST_FORWARDED_FOR
-- [ ] [m] 提交或还原 go.mod/go.sum 与 npm/pnpm 依赖漂移（go.mod:33）——当前工作树脏，审核与 CI 结果不可复现
-- [ ] [m] 后续证据锚定 commit + 工作树清洁度 + 依赖锁定状态（todo.md:30、31）——现结论基于陈旧依赖漂移
+- [x] [M] 修正转发头仅作用于 REST 监听口的文档表述（docs/api.md:963、docs/security.md:214、docs/zh/security.md:124）——已修共 8 行：所列三处 + docs/zh/api.md:996/998 镜像 + docs/api.md 与 docs/zh/api.md 采样段，统一为「仅 REST 生效；gRPC 一律取传输层对端地址、从不读 XFF/X-Real-IP，代理后 gRPC 白名单看到的是代理 IP」；采样比率 (0,1] 外同步改为「启动即报错」（与 0708a67 行为一致）；commit 62730ba
+- [x] [m] 提交或还原 go.mod/go.sum 与 npm/pnpm 依赖漂移（go.mod:33）——已解：兄弟会话 checkpoint 8f2a5e3 收编全部依赖漂移并修复 UU 索引；本轮回检 git status 仅含本会话 8 个改动文件，正常 commit/push 恢复
+- [x] [m] 后续证据锚定 commit + 工作树清洁度 + 依赖锁定状态（todo.md:30、31）——本轮结论锚定：代码 0708a67、文档 62730ba、依赖基线 8f2a5e3；go test ./... 39 包全绿基于该基线
