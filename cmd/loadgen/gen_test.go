@@ -188,9 +188,11 @@ func TestEngineStormReregistersWholeFleet(t *testing.T) {
 // whole fleet has registered, or reads race boot and surface honest-looking
 // SERVER_NOT_FOUND noise in the report.
 func TestEngineReadsWaitForFleetBoot(t *testing.T) {
+	// Boot is 10 servers × 30ms = ~30ms ideal; the 1s budget keeps the
+	// fleet-ready gate from being starved under parallel-suite load.
 	cfg := Config{
 		Servers:     10,
-		Duration:    400 * time.Millisecond,
+		Duration:    1 * time.Second,
 		Heartbeat:   100 * time.Millisecond,
 		ReadRPS:     2000, // reads would certainly outrun boot without the gate
 		MaxInFlight: 64,

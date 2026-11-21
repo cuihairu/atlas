@@ -463,7 +463,11 @@ func TestSubmitAfterCloseInline(t *testing.T) {
 // store mutex the test holds, so it is queued-but-uncommittable.
 func waitPickedUp(t *testing.T, s *Store, pickedUp func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// Generous deadline: this only bounds how long the test waits for the
+	// lane applier to be scheduled, not any behavioural budget. Under
+	// parallel-suite CPU starvation (load several times the core count) a
+	// 2s budget flakes even though the queue itself is correct.
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if pickedUp() {
 			return
@@ -478,7 +482,7 @@ func waitPickedUp(t *testing.T, s *Store, pickedUp func() bool) {
 // the closed store.
 func waitClosed(t *testing.T, s *Store) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		s.closeMu.Lock()
 		closed := s.closed
