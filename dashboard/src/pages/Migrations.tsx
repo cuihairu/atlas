@@ -95,8 +95,10 @@ export default function Migrations() {
       const values = await form.validateFields();
       setCreating(true);
       await createMigration({
-        source_server_id: values.source_server_id,
-        target_server_id: values.target_server_id,
+        // The server contract takes a source_servers array + target_server id
+        // (migration.CreateMigrationRequest); empty source_servers is a 400.
+        source_servers: [values.source_server_id],
+        target_server: values.target_server_id,
       });
       message.success(t('migrationCreated'));
       setModalOpen(false);
@@ -157,8 +159,13 @@ export default function Migrations() {
         }}
         columns={[
           { title: t('id'), dataIndex: 'id', ellipsis: true, width: 200 },
-          { title: t('sourceServer'), dataIndex: 'source_server_id', ellipsis: true },
-          { title: t('targetServer'), dataIndex: 'target_server_id', ellipsis: true },
+          {
+            title: t('sourceServer'),
+            dataIndex: 'source_servers',
+            ellipsis: true,
+            render: (ids?: string[]) => (ids && ids.length > 0 ? ids.join(', ') : '—'),
+          },
+          { title: t('targetServer'), dataIndex: 'target_server', ellipsis: true },
           {
             title: t('status'),
             dataIndex: 'status',

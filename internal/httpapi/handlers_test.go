@@ -712,6 +712,11 @@ func TestAdminListMigrations(t *testing.T) {
 	var listResp struct {
 		Migrations []struct {
 			ID string `json:"id"`
+			// Pinned lowercase: the dashboard's list table reads
+			// source_servers (joined) / target_server, so capitalized wire
+			// keys would blank both columns silently.
+			SourceServers []string `json:"source_servers"`
+			TargetServer  string   `json:"target_server"`
 		} `json:"migrations"`
 	}
 	json.NewDecoder(resp.Body).Decode(&listResp)
@@ -719,6 +724,9 @@ func TestAdminListMigrations(t *testing.T) {
 
 	if len(listResp.Migrations) != 1 {
 		t.Fatalf("expected 1 migration, got %d", len(listResp.Migrations))
+	}
+	if got := listResp.Migrations[0]; len(got.SourceServers) != 1 || got.SourceServers[0] != "game-1001" || got.TargetServer != "game-2001" {
+		t.Errorf("list wire keys: %+v, want source_servers=[game-1001] target_server=game-2001", got)
 	}
 }
 

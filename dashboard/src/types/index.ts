@@ -260,15 +260,15 @@ export interface AuditListResponse {
   entries: AuditEntry[];
 }
 
+// Mirrors model.Migration: the source side is an array (multi-source merge)
+// and the target is a single server id.
 export interface Migration {
   id: string;
-  source_server_id: string;
-  target_server_id: string;
+  source_servers: string[];
+  target_server: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'rolled_back';
   started_at?: string;
   completed_at?: string;
-  created_at?: string;
-  error?: string;
 }
 
 export interface MigrationListResponse {

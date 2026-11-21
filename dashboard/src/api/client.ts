@@ -281,9 +281,12 @@ export function searchCharacters(params: {
   return request(`/v1/admin/characters/search${qs(params)}`, undefined, ADMIN_BASE);
 }
 
+// Body keys are the server's wire contract (migration.CreateMigrationRequest):
+// source_servers is an array, target_server a single id. The handler
+// rejects an empty source_servers as INVALID_ARGUMENT.
 export function createMigration(body: {
-  source_server_id: string;
-  target_server_id: string;
+  source_servers: string[];
+  target_server: string;
 }): Promise<Migration> {
   return request('/v1/admin/migrations', {
     method: 'POST',
