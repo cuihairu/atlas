@@ -312,8 +312,9 @@ server_ids**:
   transaction, so for failed entries you can simply create them one by one from
   `failed`.
 
-Linkage with migration orchestration (auto-staging windows before a migration) has not
-shipped yet; it remains on the candidate-directions list.
+Linkage with migration orchestration has shipped: creating a migration auto-stages a
+24h maintenance window on the **source** servers through this batch window API, before
+the migration record is written (fail-closed). See [migration.md §9.1](migration.md).
 
 ---
 
