@@ -141,11 +141,15 @@ type RateLimitRuleView struct {
 // page: the parsed effective rules (not the raw env strings) plus the 429
 // hit counts. Mutation is env-config + restart only.
 type RateLimitStats struct {
-	Enabled            bool                `json:"enabled"`
-	Rules              []RateLimitRuleView `json:"rules"`
-	Default            RateRule            `json:"default"`
-	RejectedByEndpoint map[string]int      `json:"rejected_by_endpoint"`
-	RejectedByClient   map[string]int      `json:"rejected_by_client"`
+	Enabled bool                `json:"enabled"`
+	Rules   []RateLimitRuleView `json:"rules"`
+	// Default is the catch-all rule shown in the same view shape as Rules
+	// (prefix "*" = any path not matched by a more specific rule). It must
+	// carry the rps/burst json tags — a bare RateRule would serialize as
+	// capitalized RPS/Burst and blank the dashboard's default-rule cells.
+	Default            RateLimitRuleView `json:"default"`
+	RejectedByEndpoint map[string]int    `json:"rejected_by_endpoint"`
+	RejectedByClient   map[string]int    `json:"rejected_by_client"`
 }
 
 // Stats snapshots the parsed rule set and 429 counters. Rules are already
@@ -155,7 +159,7 @@ func (rl *RateLimiter) Stats() RateLimitStats {
 	defer rl.mu.Unlock()
 	out := RateLimitStats{
 		Enabled:            true,
-		Default:            rl.def,
+		Default:            RateLimitRuleView{Prefix: "*", RPS: rl.def.RPS, Burst: rl.def.Burst},
 		RejectedByEndpoint: make(map[string]int, len(rl.rejectedByEndpoint)),
 		RejectedByClient:   make(map[string]int, len(rl.rejectedByClient)),
 	}

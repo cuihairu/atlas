@@ -394,7 +394,11 @@ func TestAdminRateLimits(t *testing.T) {
 	if len(out.Rules) != 1 || out.Rules[0].Prefix != "/v1/discovery" || out.Rules[0].RPS != 50 {
 		t.Errorf("rules: %+v", out.Rules)
 	}
-	if out.Default.RPS != 1000 || out.Default.Burst != 2000 {
+	// The default rule is served in the same view shape as Rules (lowercase
+	// rps/burst + a "*" catch-all prefix): the dashboard reads those keys, so
+	// a bare RateRule (capitalized RPS/Burst, no prefix) would blank the
+	// default-rule cells. Decoding into RateLimitRuleView pins the wire keys.
+	if out.Default.Prefix != "*" || out.Default.RPS != 1000 || out.Default.Burst != 2000 {
 		t.Errorf("default: %+v", out.Default)
 	}
 
