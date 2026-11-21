@@ -172,55 +172,35 @@ offline
 
 ### POST /v1/registry/servers/{id}/presence
 
-玩家 presence 批量上报（login / logout 事件），与 `heartbeat` 同挂 registry 监听通道，Bearer / X-Atlas-Token 认证。上报服务器必须已注册——ID 由认证通道盖章，报告不可能冒认他服会话。
+上报玩家在线状态（login / logout），与心跳同一条注册信任区。状态机与幂等规则见 [presence.md](presence.md)。
 
 **Request**
 
 ```json
 {
-  "events": [
-    {
-      "kind": "login",
-      "session_id": "sess-2026-0001",
-      "account_id": 1001001,
-      "character_id": 823712,
-      "started_at": "2026-11-22T08:00:00Z"
-    },
-    {
-      "kind": "logout",
-      "session_id": "sess-2026-0001",
-      "ended_at": "2026-11-22T10:00:00Z",
-      "end_reason": "normal"
-    }
-  ]
+  "action": "login",
+  "account_id": 10001,
+  "character_id": 823712,
+  "session_id": "sess-9f2c",
+  "timestamp": "2026-11-22T12:30:00Z"
 }
 ```
 
-**Response** `200 OK`——每个事件一个结果，按序返回：
+`logout` 可加 `end_reason`（`normal` / `timeout` / `kicked` / `crash`）。
+
+**Response** `200 OK`
 
 ```json
 {
   "server_id": "game-1001",
-  "results": [
-    { "session_id": "sess-2026-0001", "kind": "login",  "status": "applied" },
-    { "session_id": "sess-2026-0001", "kind": "logout", "status": "applied" }
-  ]
+  "character_id": 823712,
+  "presence_status": "online",
+  "presence": { "presence_status": "online", "active_session": { "session_id": "sess-9f2c" } }
 }
 ```
 
-**逐事件结果**（`status`）：
-
-| status | 含义 |
-| --- | --- |
-| `applied` | session 已开 / 已关；角色上线 / 下线 |
-| `already_applied` | 重复上报——投影状态已与上报一致（同 session 仍开着，或 session 已关）。重试批次安全 |
-| `rejected` | 非法流转或目标不存在（未知 session、角色不在索引、角色在另一 session 已在线） |
-
-`applied` 与 `already_applied` 都算接受。`rejected` 事件不会毒化批次：逐事件独立分类，部分冲突的批次仍返回 `200` 加逐事件结果。
-
-**结构错误整批先于任何事件返回 `400 INVALID_ARGUMENT`**：未知 `kind`、缺 `session_id`、`login` 缺 `account_id` / `character_id`、`logout` 缺 `ended_at`、`end_reason` 非法（必须为 `normal` / `timeout` / `kicked` / `crash`）。`started_at` 对 `login` 可选——缺省时 Atlas 自己盖登录时间。
-
-presence 流把每个已接受事件镜像到角色事件总线：`applied` / `already_applied` 的 `login` 发布 `character.login`（刷新 `last_login_at`），已接受的 `logout` 发布 `character.logout`（刷新 `last_logout_at`）。镜像是尽力而为——发布失败只记日志、绝不翻成错误响应。见 [sync.md](sync.md) §2。
+**错误**：400 上报非法、404 服 / 角色不存在、409 `PRESENCE_CONFLICT`（非法流转，如在另一个会话已在线时又 login）、
+401 服务 token 缺失或非法、403 IP 不在白名单。
 
 ---
 
@@ -377,28 +357,42 @@ GET /v1/discovery/servers?region=cn-east&status=online
   "level": 182,
   "class_id": 3,
   "avatar": "avatar_03",
-  "last_login_at": "2026-09-30T12:30:00Z",
-  "presence_status": "online"
+  "last_login_at": "2026-09-30T12:30:00Z"
 }
 ```
 
-`presence_status`（`unknown`/`online`/`offline`）恒在；`last_logout_at` 在角色至少关闭过一次会话后出现。presence 经 `POST /v1/registry/servers/{id}/presence` 上报、按服经 `GET /v1/directory/servers/{server_id}/presence` 查询。
-
 ---
 
-### GET /v1/directory/servers/{server_id}/characters
+### GET /v1/directory/characters/{character_id}/presence
 
-查询某服务器上的角色索引，主要用于运维与合服校验。
+角色在线查询——角色的在线状态，以及在线时的打开会话。角色不在索引时 404。见 [presence.md](presence.md §4)。
 
-**Query**：`?limit=`、`?cursor=`
+**Response** `200 OK`
+
+```json
+{
+  "presence_status": "online",
+  "active_session": {
+    "session_id": "sess-9f2c",
+    "account_id": 10001,
+    "character_id": 823712,
+    "server_id": "game-1001",
+    "started_at": "2026-11-22T12:30:00Z"
+  },
+  "character": { "character_id": 823712, "presence_status": "online" }
+}
+```
+
+离线时省略 `active_session`。
 
 ---
 
 ### GET /v1/directory/servers/{server_id}/presence
 
-某服在线名单 + 真在线计数（PP-3 查询 API）。名单只列当前持有未关 session 的角色（`presence_status = online`）；`online_count` 是存储层总数，**不随分页缩小**。
+某服在线名单与计数——某服的在线名单、实时计数与游标分页。
 
-**Query**：`?limit=`（默认 50，上限 200）、`?cursor=`（纯角色 ID——与 `GET /v1/directory/servers/{id}/characters` 同分页契约）。
+**Query**：`?limit=`（默认 50，最大 200）、`?cursor=`（续传 token：最后一个返回的
+`character_id`，最后一页也会带上）。
 
 **Response** `200 OK`
 
@@ -407,14 +401,20 @@ GET /v1/discovery/servers?region=cn-east&status=online
   "server_id": "game-1001",
   "online_count": 2,
   "characters": [
-    { "account_id": 1001001, "server_id": "game-1001", "character_id": 823712,
-      "name": "剑无尘", "level": 80, "presence_status": "online" }
+    { "character_id": 823712, "name": "剑无尘", "presence_status": "online" },
+    { "character_id": 823713, "name": "无尘", "presence_status": "online" }
   ],
-  "next_cursor": "823712"
+  "next_cursor": "823713"
 }
 ```
 
-无角色的服务器是空 `200`（`online_count: 0`、`characters: []`）——不是错误。
+---
+
+### GET /v1/directory/servers/{server_id}/characters
+
+查询某服务器上的角色索引，主要用于运维与合服校验。
+
+**Query**：`?limit=`、`?cursor=`
 
 ---
 
@@ -626,9 +626,8 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 
 角色索引检索。**Query**：`?q=`（名字子串）、`?server_id=`、`?account_id=`
 （玩家 ID，不透明引用）、`?metadata_key=` + `?metadata_value=`（业务概念
-过滤通道，如 `class=warrior`；平台不内建职业字段）、`?presence=`（在线状态：
-`online` / `offline` / `unknown`——`unknown` 表示 session 存储从未见过该角色）、
-`?min_level=`、`?max_level=`、`?limit=`、`?cursor=`。
+过滤通道，如 `class=warrior`；平台不内建职业字段）、`?min_level=`、
+`?max_level=`、`?limit=`、`?cursor=`。
 
 ### GET /v1/admin/diagnose/routing
 
@@ -963,7 +962,7 @@ X-Request-ID 是跨跳关联 id，不是 span 树。需要链路视图时，设 
 
 ## gRPC API
 
-REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Discovery 与 Routing 与 REST 端点一一对应；RegistryService 与 DirectoryService 镜像其 REST 对应面、唯 presence 端点除外；AdminService 覆盖 11 个 RPC（维护模式、开关、启停、统计、热力图、角色检索、迁移编排与回退）——而 presence 端点（`POST /v1/registry/servers/{id}/presence`、`GET /v1/directory/servers/{id}/presence`）、realms、shards、tags、维护窗口、公告、审计、跨服配置、diagnose、限流、序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
+REST 之外的第二种传输方式：五个服务与 REST 共用同一批内部 service，因此两条路径的行为（过滤、排序、事件发布、错误语义）保持一致。覆盖面有分工——Registry / Discovery / Directory / Routing 与 REST 端点一一对应；AdminService 覆盖 11 个 RPC（维护模式、开关、启停、统计、热力图、角色检索、迁移编排与回退），而 realms / shards / tags / 维护窗口 / 公告 / 审计 / 跨服配置 / diagnose / 限流 / 序列等扩展管理端点目前为 REST-only（索引见上 [Admin](#admin) 节）。
 
 - **监听地址**：`:9090`（`ATLAS_GRPC_ADDR` 可改；设为空字符串可关闭 gRPC）
 - **安全同源**：与 REST 同一套安全域、环境变量、审计环与限流桶——RegistryService 受 `ATLAS_REGISTRY_TOKENS` + IP 白名单、AdminService 受 `ATLAS_ADMIN_API_KEYS` + RBAC + IP 白名单保护，Public 三服务保持开放；未配置即开发开放；超限返回 `ResourceExhausted`（`RATE_LIMITED`）。传输安全可选：`ATLAS_GRPC_TLS_CERT`/`_KEY`（可加 `_CLIENT_CA` 升 mTLS），未配置为明文。详见[认证](#认证)与 [security.md](security.md)。

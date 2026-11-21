@@ -168,55 +168,38 @@ Difference from heartbeat timeout: `unregister` is a **proactive** shutdown — 
 
 ### POST /v1/registry/servers/{id}/presence
 
-Batch player presence report (login / logout events), authenticated like `heartbeat` on the registry listener channel (Bearer / X-Atlas-Token). The reporting server must already be registered — its ID is stamped from the authenticated channel, so a report can never claim sessions for another server.
+Report player presence (login / logout) for the reporting server. Rides the same
+registry trust zone as heartbeat. See [presence.md](presence.md) for the state
+machine and idempotency rules.
 
 **Request**
 
 ```json
 {
-  "events": [
-    {
-      "kind": "login",
-      "session_id": "sess-2026-0001",
-      "account_id": 1001001,
-      "character_id": 823712,
-      "started_at": "2026-11-22T08:00:00Z"
-    },
-    {
-      "kind": "logout",
-      "session_id": "sess-2026-0001",
-      "ended_at": "2026-11-22T10:00:00Z",
-      "end_reason": "normal"
-    }
-  ]
+  "action": "login",
+  "account_id": 10001,
+  "character_id": 823712,
+  "session_id": "sess-9f2c",
+  "timestamp": "2026-11-22T12:30:00Z"
 }
 ```
 
-**Response** `200 OK` — one outcome per event, in order:
+`end_reason` (`normal` / `timeout` / `kicked` / `crash`) is optional on `logout`.
+
+**Response** `200 OK`
 
 ```json
 {
   "server_id": "game-1001",
-  "results": [
-    { "session_id": "sess-2026-0001", "kind": "login",  "status": "applied" },
-    { "session_id": "sess-2026-0001", "kind": "logout", "status": "applied" }
-  ]
+  "character_id": 823712,
+  "presence_status": "online",
+  "presence": { "presence_status": "online", "active_session": { "session_id": "sess-9f2c" } }
 }
 ```
 
-**Per-event outcome** (`status`):
-
-| status | meaning |
-| --- | --- |
-| `applied` | The session was opened / closed; the character moved online / offline |
-| `already_applied` | Duplicate report — the projection already matches the reported state (same open session, or the session already closed). A retried batch is safe |
-| `rejected` | Invalid transition or missing target (unknown session, character not in the index, another session open for the character) |
-
-`applied` and `already_applied` both count as accepted. `rejected` events never poison the batch: every event is classified independently, so a partially-conflicting batch still yields `200` with per-event outcomes.
-
-**Structural errors fail the whole request with `400 INVALID_ARGUMENT`** before any event applies: an unknown `kind`, a missing `session_id`, a `login` without `account_id` / `character_id`, a `logout` without `ended_at`, or an invalid `end_reason` (must be `normal` / `timeout` / `kicked` / `crash`). `started_at` is optional for `login` — when absent Atlas stamps the open time itself.
-
-The presence flow mirrors each accepted event onto the character bus: an `applied`/`already_applied` `login` publishes `character.login` (refreshing `last_login_at`), an accepted `logout` publishes `character.logout` (refreshing `last_logout_at`). The mirror is best-effort — a publish failure is logged, never turned into an error response. See [sync.md](sync.md) §2.
+**Errors**: 400 invalid report, 404 server / character not found, 409 `PRESENCE_CONFLICT`
+(illegal transition — e.g. login while already online in a different session), 401 missing
+or invalid service token, 403 IP not whitelisted.
 
 ---
 
@@ -373,28 +356,43 @@ Fetch a single character's index record.
   "level": 182,
   "class_id": 3,
   "avatar": "avatar_03",
-  "last_login_at": "2026-09-30T12:30:00Z",
-  "presence_status": "online"
+  "last_login_at": "2026-09-30T12:30:00Z"
 }
 ```
 
-`presence_status` (`unknown` / `online` / `offline`) is always present; `last_logout_at` additionally appears once the character has closed at least one session. Presence is reported via `POST /v1/registry/servers/{id}/presence` and queried per server via `GET /v1/directory/servers/{server_id}/presence`.
-
 ---
 
-### GET /v1/directory/servers/{server_id}/characters
+### GET /v1/directory/characters/{character_id}/presence
 
-List a server's character index; mainly for operations and merge-server verification.
+The character's online state and, when online, its open session. `404` when the
+character is not in the index. See [presence.md](presence.md §4).
 
-**Query**: `?limit=`, `?cursor=`
+**Response** `200 OK`
+
+```json
+{
+  "presence_status": "online",
+  "active_session": {
+    "session_id": "sess-9f2c",
+    "account_id": 10001,
+    "character_id": 823712,
+    "server_id": "game-1001",
+    "started_at": "2026-11-22T12:30:00Z"
+  },
+  "character": { "character_id": 823712, "presence_status": "online" }
+}
+```
+
+`active_session` is omitted when the character is offline.
 
 ---
 
 ### GET /v1/directory/servers/{server_id}/presence
 
-The online roster of one server plus its true online count (PP-3 查询 API). The roster lists only characters currently holding an open session (`presence_status = online`); `online_count` is the store-level total and does **not** shrink with paging.
+A server's online roster (角色在线名单) with a live count and cursor pagination.
 
-**Query**: `?limit=` (default 50, cap 200), `?cursor=` (plain character ID — same pagination contract as `GET /v1/directory/servers/{id}/characters`).
+**Query**: `?limit=` (default 50, max 200), `?cursor=` (resume token: the last
+returned `character_id`, populated even on the final page).
 
 **Response** `200 OK`
 
@@ -403,14 +401,20 @@ The online roster of one server plus its true online count (PP-3 查询 API). Th
   "server_id": "game-1001",
   "online_count": 2,
   "characters": [
-    { "account_id": 1001001, "server_id": "game-1001", "character_id": 823712,
-      "name": "剑无尘", "level": 80, "presence_status": "online" }
+    { "character_id": 823712, "name": "Jian Wuchen", "presence_status": "online" },
+    { "character_id": 823713, "name": "Wuchen", "presence_status": "online" }
   ],
-  "next_cursor": "823712"
+  "next_cursor": "823713"
 }
 ```
 
-A server with no characters is an empty `200` (`online_count: 0`, `characters: []`) — not an error.
+---
+
+### GET /v1/directory/servers/{server_id}/characters
+
+List a server's character index; mainly for operations and merge-server verification.
+
+**Query**: `?limit=`, `?cursor=`
 
 ---
 
@@ -602,9 +606,8 @@ cursor pagination follows the same contract as the public list (next page takes 
 
 Character-index search. **Query**: `?q=` (name substring), `?server_id=`, `?account_id=`
 (player ID, opaque reference), `?metadata_key=` + `?metadata_value=` (a business-concept
-filter channel, e.g. `class=warrior`; the platform has no built-in class field), `?presence=`
-(online state: `online` / `offline` / `unknown` — `unknown` means the session store has never
-seen the character), `?min_level=`, `?max_level=`, `?limit=`, `?cursor=`.
+filter channel, e.g. `class=warrior`; the platform has no built-in class field), `?min_level=`,
+`?max_level=`, `?limit=`, `?cursor=`.
 
 ### GET /v1/admin/diagnose/routing
 
@@ -929,7 +932,7 @@ X-Request-ID is a cross-hop correlation id, not a span tree. When you need a tra
 
 ## gRPC API
 
-The second transport besides REST: the five services share the same internal services with REST, so both paths behave identically (filtering, ordering, event publishing, error semantics). Coverage is divided: Discovery and Routing map one-to-one to REST endpoints; RegistryService and DirectoryService mirror their REST counterparts except the presence endpoints; AdminService covers 11 RPCs (maintenance mode, enable/disable, stats, heatmap, character search, migration orchestration and rollback) — while the presence endpoints (`POST /v1/registry/servers/{id}/presence`, `GET /v1/directory/servers/{id}/presence`), realms, shards, tags, maintenance windows, announcements, audit, cross-server config, diagnose, rate limits and series endpoints are currently REST-only (see the [Admin](#admin) section above for the index).
+The second transport besides REST: the five services share the same internal services with REST, so both paths behave identically (filtering, ordering, event publishing, error semantics). Coverage is divided: Registry / Discovery / Directory / Routing map one-to-one to REST endpoints; AdminService covers 11 RPCs (maintenance mode, enable/disable, stats, heatmap, character search, migration orchestration and rollback), while realms / shards / tags / maintenance windows / announcements / audit / cross-server config / diagnose / rate limits / series endpoints are currently REST-only (see the [Admin](#admin) section above for the index).
 
 - **Listen address**: `:9090` (change via `ATLAS_GRPC_ADDR`; setting it to the empty string disables gRPC)
 - **Security parity**: the same security domains, environment variables, audit ring and rate-limit buckets as REST — RegistryService is protected by `ATLAS_REGISTRY_TOKENS` + IP allowlist, AdminService by `ATLAS_ADMIN_API_KEYS` + RBAC + IP allowlist, the three Public services stay open; unconfigured means open (dev mode); over-limit returns `ResourceExhausted` (`RATE_LIMITED`). Transport security is optional: `ATLAS_GRPC_TLS_CERT`/`_KEY` (add `_CLIENT_CA` for mTLS); unconfigured means plaintext. See [Authentication](#authentication) and [security.md](security.md).
