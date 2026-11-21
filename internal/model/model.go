@@ -437,6 +437,64 @@ type PlayerSession struct {
 	EndReason   SessionEndReason `json:"end_reason,omitempty"`
 }
 
+// PresenceEventKind discriminates the two kinds of event a game server can
+// report.
+type PresenceEventKind string
+
+const (
+	PresenceEventLogin  PresenceEventKind = "login"  // 开 session（角色上线）
+	PresenceEventLogout PresenceEventKind = "logout" // 关 session（角色下线）
+)
+
+// Valid reports whether k is a defined event kind.
+func (k PresenceEventKind) Valid() bool {
+	switch k {
+	case PresenceEventLogin, PresenceEventLogout:
+		return true
+	}
+	return false
+}
+
+// PresenceEvent is one login or logout event in a presence report.
+//
+// ServerID is intentionally not required from the caller: the report travels
+// the per-server registry channel, so the server id of the authenticated
+// listener is authoritative and the registry stamps it onto the event.
+type PresenceEvent struct {
+	Kind        PresenceEventKind `json:"kind"`
+	SessionID   string            `json:"session_id"`
+	AccountID   int64             `json:"account_id,omitempty"`
+	CharacterID int64             `json:"character_id"`
+	ServerID    string            `json:"server_id,omitempty"`
+	StartedAt   *time.Time        `json:"started_at,omitempty"`
+	EndedAt     *time.Time        `json:"ended_at,omitempty"`
+	EndReason   SessionEndReason  `json:"end_reason,omitempty"`
+}
+
+// PresenceReport is the body of the presence report endpoint (POST
+// /v1/registry/servers/{id}/presence). Events are applied in order; each
+// event yields its own outcome, so one malformed or conflicting event does
+// not poison the rest of the batch.
+type PresenceReport struct {
+	Events []PresenceEvent `json:"events"`
+}
+
+// Per-event outcomes of a presence report. PresenceApplied /
+// PresenceAlreadyApplied both count as accepted.
+const (
+	PresenceApplied        = "applied"         // 事件生效（开/关 session）
+	PresenceAlreadyApplied = "already_applied" // 重复上报，状态已符合，幂等成功
+	PresenceRejected       = "rejected"        // 非法流转或目标不存在
+)
+
+// PresenceResult reports the outcome of one PresenceEvent.
+type PresenceResult struct {
+	SessionID string            `json:"session_id"`
+	Kind      PresenceEventKind `json:"kind"`
+	Status    string            `json:"status"`
+	Detail    string            `json:"detail,omitempty"`
+}
+
 // MigrationStatus is the lifecycle state of a server migration.
 type MigrationStatus string
 

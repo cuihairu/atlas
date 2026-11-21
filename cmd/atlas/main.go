@@ -267,7 +267,9 @@ func main() {
 
 	// Create services.
 	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
-	regSvc := registry.New(serverStore, runtimeStore, logger).WithMaintenanceEnforce(cfg.MaintenanceEnforce)
+	regSvc := registry.New(serverStore, runtimeStore, logger).
+		WithMaintenanceEnforce(cfg.MaintenanceEnforce).
+		WithSessions(composite)
 	discSvc := discovery.New(serverStore, runtimeStore)
 	dirSvc := directory.New(charStore)
 

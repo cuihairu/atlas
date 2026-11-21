@@ -27,7 +27,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 	mem := memory.New()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	regSvc := registry.New(mem, mem, logger)
+	regSvc := registry.New(mem, mem, logger).WithSessions(mem)
 	discSvc := discovery.New(mem, mem)
 	dirSvc := directory.New(mem)
 	admSvc := admin.New(mem)

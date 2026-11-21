@@ -95,6 +95,7 @@ func TestRouteSurfacePinned(t *testing.T) {
 		"POST /v1/directory/characters",
 		"POST /v1/registry/servers/register",
 		"POST /v1/registry/servers/{id}/heartbeat",
+		"POST /v1/registry/servers/{id}/presence",
 		"POST /v1/registry/servers/{id}/unregister",
 		"PUT /v1/admin/crossserver/config",
 	}

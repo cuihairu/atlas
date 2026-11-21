@@ -127,6 +127,9 @@ func (h *Handler) registerRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/registry/servers/register", h.handleRegister)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/heartbeat", h.handleHeartbeat)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/unregister", h.handleUnregister)
+	// Presence reports ride the same registry channel and auth zone as
+	// heartbeat: game servers post login/logout events for their players.
+	mux.HandleFunc("POST /v1/registry/servers/{id}/presence", h.handlePresence)
 }
 
 // registerCrossServerPull mounts GET /v1/crossserver/config — the endpoint
@@ -365,6 +368,39 @@ func (h *Handler) handleUnregister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"server_id": id,
 		"status":    "offline",
+	})
+}
+
+// handlePresence applies a batch of player login/logout events posted by a
+// game server (PP-2). The whole request is 200 once each event is classified;
+// per-event outcomes are in the body (applied / already_applied / rejected),
+// so a retried or partially-conflicting batch never poisons the rest.
+func (h *Handler) handlePresence(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	var report model.PresenceReport
+	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
+		return
+	}
+
+	results, err := h.registry.ReportPresence(r.Context(), id, report)
+	if err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
+			return
+		}
+		if errors.Is(err, model.ErrInvalid) {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"server_id": id,
+		"results":   results,
 	})
 }
 
