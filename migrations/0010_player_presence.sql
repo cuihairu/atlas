@@ -8,8 +8,11 @@
 --
 -- player_sessions is the per-character login→logout history: one open row per
 -- character at a time (login opens, logout closes) plus the closed rows that
--- make the session timeline. (character_id, open) is unique so a replayed
--- login cannot open a second session for the same character.
+-- make the session timeline. The single-open-session rule is enforced by the
+-- store state machine — the login transaction checks the open row and treats a
+-- replayed login of the same session as an idempotent no-op, a login in a
+-- different session as a conflict, and a stray open row as a crash to heal —
+-- not by a DB uniqueness constraint.
 
 BEGIN;
 

@@ -365,7 +365,7 @@ Fetch a single character's index record.
 ### GET /v1/directory/characters/{character_id}/presence
 
 The character's online state and, when online, its open session. `404` when the
-character is not in the index. See [presence.md](presence.md §4).
+character is not in the index. See [presence.md §4](presence.md#_4-query-api).
 
 **Response** `200 OK`
 

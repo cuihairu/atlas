@@ -154,8 +154,14 @@ CREATE INDEX idx_char_presence   ON character_index (server_id, presence_status)
 **这是投影表，不是权威数据表。** 完整角色数据在游戏服务器的角色数据库中。见 [concepts.md §7](concepts.md#_7-character)。
 
 `presence_status` 取 `unknown` / `online` / `offline`；它**只**由在线状态状态机移动
-（[presence.md](presence.md §3)）——普通 upsert 或 patch 永远不碰它。
+（[presence.md §3](presence.md#_3-状态机)）——普通 upsert 或 patch 永远不碰它。
 角色在线 ⟺ 恰好有一条打开会话。
+
+主键选 `(account_id, server_id, character_id)` 三元组，因为：
+- 同一账号可在多个服务器有角色
+- `character_id` 全局唯一性由游戏服务器保证，但 Atlas 不依赖它作为主键，以容忍不同服务器 ID 空间冲突
+
+`idx_char_by_char_id` 用于 `GET /v1/directory/characters/{id}` 反查。
 
 ---
 
@@ -179,12 +185,6 @@ CREATE INDEX idx_session_open    ON player_sessions (character_id, started_at DE
 一次登录一行，登出时关闭。`end_reason` 为 `normal` / `timeout` / `kicked` / `crash`。
 打开行（`ended_at IS NULL`）即角色的活跃会话；Atlas 在下次登录时按 `crash` 治愈游离
 打开行。见 [presence.md](presence.md)。
-
-主键选 `(account_id, server_id, character_id)` 三元组，因为：
-- 同一账号可在多个服务器有角色
-- `character_id` 全局唯一性由游戏服务器保证，但 Atlas 不依赖它作为主键，以容忍不同服务器 ID 空间冲突
-
-`idx_char_by_char_id` 用于 `GET /v1/directory/characters/{id}` 反查。
 
 ---
 

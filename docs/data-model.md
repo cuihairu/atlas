@@ -154,8 +154,14 @@ CREATE INDEX idx_char_presence   ON character_index (server_id, presence_status)
 **This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#_7-character)
 
 `presence_status` is one of `unknown` / `online` / `offline`; it is moved **only** by the
-presence state machine ([presence.md](presence.md §3)) — never by a generic upsert or
+presence state machine ([presence.md §3](presence.md#_3-state-machine)) — never by a generic upsert or
 patch. A character is online ⟺ it has exactly one open session.
+
+The primary key is chosen as the `(account_id, server_id, character_id)` triple because:
+- The same account can have characters on multiple servers
+- The global uniqueness of `character_id` is guaranteed by the game server, but Atlas does not depend on it as the primary key, in order to tolerate ID space conflicts across different servers
+
+`idx_char_by_char_id` is used for the reverse lookup in `GET /v1/directory/characters/{id}`.
 
 ---
 
@@ -179,12 +185,6 @@ CREATE INDEX idx_session_open    ON player_sessions (character_id, started_at DE
 One row per login, closed on logout. `end_reason` is `normal` / `timeout` / `kicked` /
 `crash`. An open row (`ended_at IS NULL`) is the character's active session; Atlas heals
 a stray open row as `crash` on the next login. See [presence.md](presence.md).
-
-The primary key is chosen as the `(account_id, server_id, character_id)` triple because:
-- The same account can have characters on multiple servers
-- The global uniqueness of `character_id` is guaranteed by the game server, but Atlas does not depend on it as the primary key, in order to tolerate ID space conflicts across different servers
-
-`idx_char_by_char_id` is used for the reverse lookup in `GET /v1/directory/characters/{id}`.
 
 ---
 

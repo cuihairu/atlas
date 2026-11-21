@@ -365,7 +365,7 @@ GET /v1/discovery/servers?region=cn-east&status=online
 
 ### GET /v1/directory/characters/{character_id}/presence
 
-角色在线查询——角色的在线状态，以及在线时的打开会话。角色不在索引时 404。见 [presence.md](presence.md §4)。
+角色在线查询——角色的在线状态，以及在线时的打开会话。角色不在索引时 404。见 [presence.md §4](presence.md#_4-查询-api)。
 
 **Response** `200 OK`
 
