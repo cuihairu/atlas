@@ -185,7 +185,6 @@ Response `201 Created` (the full window object):
   "server_id": "game-1001",
   "start_at": "2026-10-08T18:00:00Z",
   "end_at": "2026-10-08T20:00:00Z",
-  "previous_status": "",
   "announcement_id": "ann-1759376400000000001",
   "created_at": "2026-10-05T09:30:00Z"
 }
@@ -193,7 +192,7 @@ Response `201 Created` (the full window object):
 
 | Field | Description |
 | --- | --- |
-| `previous_status` | The server's status before the window applied; empty until the window opens. Empty after applying means there is nothing to restore (see the boundary rules in §3.5) |
+| `previous_status` | The server's status before the window applied; the key is **absent** from the response until the window opens (`omitempty`), so absent reads as empty. Empty after applying means there is nothing to restore (see the boundary rules in §3.5) |
 | `announcement_id` | The ID of the maintenance announcement auto-created when `announce: true` (the default); the two are already linked |
 | `start_at` | May be omitted — omitting it means "start now", matching the common "maintain tonight until it's fixed" flow |
 

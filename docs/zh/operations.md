@@ -158,7 +158,6 @@ curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance-window
   "server_id": "game-1001",
   "start_at": "2026-10-08T18:00:00Z",
   "end_at": "2026-10-08T20:00:00Z",
-  "previous_status": "",
   "announcement_id": "ann-1759376400000000001",
   "created_at": "2026-10-05T09:30:00Z"
 }
@@ -166,7 +165,7 @@ curl -X POST http://localhost:8082/v1/admin/servers/game-1001/maintenance-window
 
 | 字段 | 说明 |
 | --- | --- |
-| `previous_status` | 窗口应用前服务器的状态;窗口开启前为空。应用后为空表示没有恢复目标(见 §3.4 边界规则) |
+| `previous_status` | 窗口应用前服务器的状态;窗口开启前该键**不在**响应中(`omitempty`),缺省读作空。应用后为空表示没有恢复目标(见 §3.4 边界规则) |
 | `announcement_id` | `announce: true`(缺省)时自动创建的维护公告 ID,两边已关联 |
 | `start_at` | 可省略——省略即"现在开始",对应"今晚维护到搞定为止"的常见流 |
 
