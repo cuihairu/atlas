@@ -280,13 +280,15 @@ func (s *Store) submit(ctx context.Context, ins *instruction) instructionResult 
 	// once Close holds the lock no new send can start, and before it does
 	// the lanes are guaranteed open.
 	s.closeMu.Lock()
-	var queued bool
+	var queued, closedNow bool
 	if !s.closed {
 		select {
 		case lane <- ins:
 			queued = true
 		default:
 		}
+	} else {
+		closedNow = true
 	}
 	s.closeMu.Unlock()
 
@@ -294,8 +296,18 @@ func (s *Store) submit(ctx context.Context, ins *instruction) instructionResult 
 		// Queue full — or the store is already closed and its lane
 		// appliers are gone. Both degrade to an inline synchronous apply
 		// (backpressure: the caller becomes the single writer for its own
-		// instruction).
+		// instruction). The closed case first waits for Close's drain:
+		// an instruction that landed in a lane before Close started must
+		// commit before any post-close write, or same-target ordering
+		// breaks across the close boundary — a post-close heartbeat could
+		// be overtaken by an older queued one, and a compare-and-set
+		// could fail against a state its predecessor never produced.
+		// closedNow=true means Close already closed the channels (both
+		// happen inside the same closeMu section), so the wait terminates.
 		s.backpressureSync.Add(1)
+		if closedNow {
+			s.wg.Wait()
+		}
 		s.applyBatch(ins)
 		return <-ins.out
 	}
@@ -647,9 +659,13 @@ func (s *Store) QueueStats() store.QueueStats {
 
 // Close drains and stops the lane appliers. Channels are closed under
 // closeMu so a concurrent submit can never send on a closed lane; submits
-// arriving after the close degrade to the inline apply path. Work already
-// buffered in the lanes is drained by runLane before it exits (close only
-// signals end-of-stream after the buffered items).
+// arriving after the close degrade to the inline apply path, but only
+// after waiting for this drain — an instruction already buffered in a lane
+// always commits before any post-close write, so same-target FIFO holds
+// across the close boundary (post-close writes still apply and stay
+// visible; memory stores serve reads after close). Work already buffered
+// in the lanes is drained by runLane before it exits (close only signals
+// end-of-stream after the buffered items).
 func (s *Store) Close() error {
 	s.closeOnce.Do(func() {
 		s.closeMu.Lock()

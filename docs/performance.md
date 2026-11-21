@@ -257,8 +257,16 @@ memory.go:128 et al), so read-after-write is still exact.
   the supply window: high-frequency writes to one entity are debounced inside a batch,
   and index maintenance happens once per batch.
 - **Backpressure**: when a lane is full at depth 4096, that instruction is written
-  **inline and synchronously** (the default branch of submit, queue.go:254) — the caller
+  **inline and synchronously** (the default branch of submit, queue.go:295) — the caller
   becomes its own single writer, so a write never fails and never queues forever.
+  **Close keeps same-target order**: `Close` itself waits for the drain, and a submit
+  that observes the closed store waits for the same drain before its inline apply
+  (queue.go:309) — anything already buffered in a lane commits before any post-close
+  write, so a post-close write can neither be overtaken by an older queued one nor
+  flip a queued compare-and-set's verdict, and post-close writes keep applying (and
+  reads keep serving) as before (queue.go:669, queue_test.go:380). The ordering is
+  pinned by TestCloseDrainPrecedesPostCloseWrite / TestCloseDrainOrderCAS
+  (queue_test.go:447, 522) — both go red against the unfixed inline path.
 - **Idempotency and replay**: an idempotency-key LRU of 1024 guards against retries and
   replays (queue.go:470-487); applied instructions land in a 1024-deep deep-copy capture
   ring — `ReplayInto` rebuilds write history in a sandbox, and `DryRun` pre-checks
