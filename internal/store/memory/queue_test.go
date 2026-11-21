@@ -401,3 +401,189 @@ func TestSubmitAfterCloseInline(t *testing.T) {
 		t.Errorf("second Close = %v, want nil (idempotent)", err)
 	}
 }
+
+// waitPickedUp blocks until exactly one more instruction has been enqueued
+// and its lane is empty again — the applier holds it and is blocked on the
+// store mutex the test holds, so it is queued-but-uncommittable.
+func waitPickedUp(t *testing.T, s *Store, pickedUp func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if pickedUp() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("lane applier did not pick up the buffered instruction in time")
+}
+
+// waitClosed blocks until a concurrent Close has linearized (s.closed set
+// under closeMu) — every submit from here on deterministically observes
+// the closed store.
+func waitClosed(t *testing.T, s *Store) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.closeMu.Lock()
+		closed := s.closed
+		s.closeMu.Unlock()
+		if closed {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("store did not observe the close in time")
+}
+
+// TestCloseDrainPrecedesPostCloseWrite pins the ordering half of the close
+// contract: an instruction that landed in a lane before Close must commit
+// before a write submitted after the close. The rtMu blocker parks the lane
+// applier mid-commit so the queued heartbeat stays in the channel; the
+// flushMu hold then parks it between batches (recordFlush runs after the
+// mutex release but before the next dequeue) — the exact window where the
+// unfixed inline path takes the free mutex and overtakes the queued write.
+// The fixed path is deterministic: the post-close submit waits for the whole
+// drain before applying.
+func TestCloseDrainPrecedesPostCloseWrite(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	if err := s.RegisterServer(ctx, &model.Server{ID: "srv-1", Name: "one", Region: "r"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Park the hot applier mid-commit: it dequeues the blocker heartbeat
+	// and blocks on rtMu inside applyHeartbeat (holding the store mutex).
+	s.rtMu.Lock()
+	before := s.QueueStats().Enqueued
+	blocker := make(chan instructionResult, 1)
+	go func() { blocker <- s.submit(ctx, hbInstr("srv-1", 9)) }()
+	waitPickedUp(t, s, func() bool {
+		st := s.QueueStats()
+		return st.Enqueued == before+1 && st.DepthHot == 0
+	})
+
+	// The queued heartbeat parks in the lane channel behind the blocker.
+	before2 := s.QueueStats().Enqueued
+	buffered := make(chan instructionResult, 1)
+	go func() { buffered <- s.submit(ctx, hbInstr("srv-1", 1)) }()
+	waitPickedUp(t, s, func() bool {
+		st := s.QueueStats()
+		return st.Enqueued == before2+1 && st.DepthHot == 1
+	})
+
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	waitClosed(t, s)
+
+	// Every submit from here on observes the closed store: the fixed path
+	// waits for the drain (blocker + queued heartbeat) before applying,
+	// the unfixed one goes inline and parks on the store mutex.
+	post := make(chan instructionResult, 1)
+	go func() { post <- s.submit(ctx, hbInstr("srv-1", 2)) }()
+
+	// Release rtMu: the applier finishes the blocker commit and parks in
+	// recordFlush. While flushMu is held the queued heartbeat cannot be
+	// dequeued, so anything the unfixed inline path commits in this
+	// window overtakes it. The fixed path cannot use the window at all
+	// (the post-close submit is still waiting for the drain).
+	s.flushMu.Lock()
+	s.rtMu.Unlock()
+	time.Sleep(250 * time.Millisecond)
+	s.flushMu.Unlock()
+
+	bres, pres, blres := <-buffered, <-post, <-blocker
+	if bres.err != nil || pres.err != nil || blres.err != nil {
+		t.Fatalf("submit errors: blocker=%v buffered=%v post=%v", blres.err, bres.err, pres.err)
+	}
+	if !(blres.appliedAt < bres.appliedAt && bres.appliedAt < pres.appliedAt) {
+		t.Errorf("commit order broken: blocker %d, queued %d, post-close %d (want strictly increasing — post-close write overtook a queued one)",
+			blres.appliedAt, bres.appliedAt, pres.appliedAt)
+	}
+	if err := <-closed; err != nil {
+		t.Fatalf("Close = %v", err)
+	}
+	rt, err := s.GetRuntime(ctx, "srv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Players != 2 {
+		t.Errorf("players = %d, want 2 (newest write wins, not the queued older one)", rt.Players)
+	}
+}
+
+// TestCloseDrainOrderCAS pins the same invariant for the compare-and-set
+// kind: the queued CAS must commit while its precondition still holds — a
+// post-close status write may not overtake it and make it fail against a
+// state it never queued against. The DeleteRuntime blocker parks the
+// control-lane applier on rtMu (applyDeleteRuntime) so the CAS stays in the
+// channel; the flushMu hold then parks it between batches while the
+// unfixed inline path lands the post-close status write first and flips
+// the CAS verdict.
+func TestCloseDrainOrderCAS(t *testing.T) {
+	s := New()
+	ctx := context.Background()
+	if err := s.RegisterServer(ctx, &model.Server{ID: "srv-1", Name: "one", Region: "r", Status: model.StatusOnline}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Park the control applier mid-commit inside applyDeleteRuntime's rtMu
+	// critical section (the runtime does not exist — the blocker's error
+	// result is discarded; parking is the point).
+	s.rtMu.Lock()
+	before := s.QueueStats().Enqueued
+	blocker := make(chan error, 1)
+	go func() { blocker <- s.DeleteRuntime(ctx, "rt-none") }()
+	waitPickedUp(t, s, func() bool {
+		st := s.QueueStats()
+		return st.Enqueued == before+1 && st.DepthControl == 0
+	})
+
+	// The CAS parks in the control channel behind the blocker.
+	before2 := s.QueueStats().Enqueued
+	matched := make(chan bool, 1)
+	go func() {
+		ok, err := s.UpdateServerStatusIf(ctx, "srv-1", model.StatusOnline, model.StatusDraining)
+		if err != nil {
+			t.Errorf("CAS error: %v", err)
+		}
+		matched <- ok
+	}()
+	waitPickedUp(t, s, func() bool {
+		st := s.QueueStats()
+		return st.Enqueued == before2+1 && st.DepthControl == 1
+	})
+
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	waitClosed(t, s)
+
+	post := make(chan error, 1)
+	go func() { post <- s.UpdateServerStatus(ctx, "srv-1", model.StatusOffline) }()
+
+	// While flushMu is held the queued CAS cannot be dequeued — the same
+	// overtake window as the heartbeat test above.
+	s.flushMu.Lock()
+	s.rtMu.Unlock()
+	time.Sleep(250 * time.Millisecond)
+	s.flushMu.Unlock()
+
+	if ok := <-matched; !ok {
+		t.Errorf("CAS matched = false, want true (post-close write overtook the queued CAS)")
+	}
+	if err := <-post; err != nil {
+		t.Fatalf("post-close status write = %v", err)
+	}
+	if err := <-blocker; err != nil {
+		t.Logf("blocker DeleteRuntime = %v (expected: runtime not found)", err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatalf("Close = %v", err)
+	}
+	srv, err := s.GetServer(ctx, "srv-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.Status != model.StatusOffline {
+		t.Errorf("status = %q, want offline (post-close write lands after the CAS)", srv.Status)
+	}
+}

@@ -15,12 +15,16 @@ import (
 
 // openReplayAdapter opens an adapter whose stream covers the dead-letter
 // subject (MaxDelivery > 0 extends the subject list at open).
+//
+// Fetch must be a generous budget: ReplayDeadLetters treats a fetch timeout
+// as "backlog drained", so a 20ms budget made that signal unreliable under
+// load and a non-empty backlog replayed as Found=0.
 func openReplayAdapter(t *testing.T) *Adapter {
 	t.Helper()
 	a, err := Open(Options{
 		URL:         startServer(t).ClientURL(),
 		MaxDelivery: 3,
-		Fetch:       20 * time.Millisecond,
+		Fetch:       500 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("open: %v", err)

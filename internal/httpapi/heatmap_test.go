@@ -87,14 +87,14 @@ func TestAdminLoadHeatmap(t *testing.T) {
 	if got.Players != 500 || got.Load != 0.5 {
 		t.Errorf("game-1001 live record lost the heartbeat: %+v", got)
 	}
-	// The sampled point lands in the last bucket: samples counted, load
-	// averaged, players carried.
+	// The sampled point lands in the last bucket. Bucket values are averaged
+	// over whatever the sampler caught — a tick between register and
+	// heartbeat adds an idle sample and pulls the mean below the heartbeat
+	// value — so pin only that the heartbeat flowed through the join (exact
+	// averages are pinned in the telemetry aggregator tests).
 	last := got.Buckets[len(got.Buckets)-1]
-	if last.Samples == 0 {
-		t.Fatalf("game-1001 last bucket has no samples: %+v", got.Buckets)
-	}
-	if last.Load != 0.5 || last.Players != 500 {
-		t.Errorf("last bucket = %+v, want the heartbeat values", last)
+	if last.Samples == 0 || last.Load <= 0 || last.Players <= 0 {
+		t.Errorf("game-1001 last bucket = %+v, want sampled, positive load and players", last)
 	}
 
 	// game-1002 never heartbeated: the probe still samples it from the
