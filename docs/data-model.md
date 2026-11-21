@@ -52,8 +52,8 @@ CREATE TABLE servers (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     tags        JSONB       NOT NULL DEFAULT '[]'::jsonb,  -- migrations/0005
-    notify_mode         VARCHAR(16)  NOT NULL DEFAULT '',  -- migrations/0006
-    notify_callback_url VARCHAR(512) NOT NULL DEFAULT '',
+    notify_mode         TEXT         NOT NULL DEFAULT '',  -- migrations/0006
+    notify_callback_url TEXT         NOT NULL DEFAULT '',
     weight      INT         NOT NULL DEFAULT 0,            -- migrations/0007
     reg_kind    TEXT        NOT NULL DEFAULT 'permanent',  -- migrations/0008
     reg_ttl_seconds INTEGER NOT NULL DEFAULT 0             -- migrations/0008
