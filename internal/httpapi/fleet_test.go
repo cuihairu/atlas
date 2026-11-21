@@ -340,7 +340,14 @@ func TestAdminDiagnoseRouting(t *testing.T) {
 		Diagnosis struct {
 			Stage    string `json:"stage"`
 			WinnerID string `json:"winner_id"`
-			Servers  []struct {
+			// Pinned lowercase: the dashboard's 请求参数 panel reads
+			// request.region/.account_id, so capitalized wire keys would
+			// blank the whole block.
+			Request struct {
+				Region    string `json:"region"`
+				AccountID int64  `json:"account_id"`
+			} `json:"request"`
+			Servers []struct {
 				Server  map[string]any `json:"server"`
 				Rank    int            `json:"rank"`
 				Owned   bool           `json:"owned"`
@@ -354,6 +361,9 @@ func TestAdminDiagnoseRouting(t *testing.T) {
 
 	if out.Diagnosis.Stage != "strict" {
 		t.Errorf("stage: %q, want strict", out.Diagnosis.Stage)
+	}
+	if out.Diagnosis.Request.Region != "cn-east" || out.Diagnosis.Request.AccountID != 42 {
+		t.Errorf("request: %+v, want lowercase wire keys the dashboard reads", out.Diagnosis.Request)
 	}
 	if out.Diagnosis.WinnerID != "game-1001" {
 		t.Errorf("winner: %q, want game-1001 (owned tiebreak)", out.Diagnosis.WinnerID)

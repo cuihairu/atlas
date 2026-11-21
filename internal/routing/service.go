@@ -32,15 +32,15 @@ const DefaultPreMaintenanceLead = 5 * time.Minute
 type Request struct {
 	// AccountID, when set, prefers servers where the account already owns
 	// a character.
-	AccountID int64
+	AccountID int64 `json:"account_id"`
 
 	// Region/Version/Platform are strict filters; empty means "any".
-	Region   string
-	Version  string
-	Platform string
+	Region   string `json:"region"`
+	Version  string `json:"version"`
+	Platform string `json:"platform"`
 
 	// Status defaults to online.
-	Status model.ServerStatus
+	Status model.ServerStatus `json:"status"`
 }
 
 // Service recommends a server for a player session.
