@@ -43,7 +43,7 @@
 ### 5. [低 · 技术债] antd `message` 静态调用不感知主题上下文 ✅已修
 - **现象**：控制台多处 `Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.`（本次复验截图亦复现）。
 - **定位**：`src/` 内使用 `message.xxx()` 静态调用的页面。
-- **修复**（commit `1c01ac3`）：组件内改用 `App.useApp()` 的 `message` 实例（Migrations / ServerDetail / Operations / Servers / CrossServer 五页共 16 处调用点）；非组件模块 `api/client.ts` 经新 `src/api/messageBus.ts` holder 注入（`<AntApp>` 内 `MessageBridge` 挂载时写入、卸载清空，挂载前退回静态兜底）。消除告警，message 感知主题上下文（深色档样式一致）。
+- **修复**（commit `1c01ac3`）：组件内改用 `App.useApp()` 的 `message` 实例（Migrations / ServerDetail / Operations / Servers / CrossServer 五页共 16 处调用点）；非组件模块 `src/api/client.ts` 经新 `src/api/messageBus.ts` holder 注入（`<AntApp>` 内 `MessageBridge` 挂载时写入、卸载清空，挂载前退回静态兜底）。消除告警，message 感知主题上下文（深色档样式一致）。
 
 ### 6. [信息] demo 站为陈旧构建 — 运维
 - **现象**：`atlas.cuihairu.site` 落后源码 163 个 commit（bundle 分析佐证），不含上述修复；`deploy-docker.yml` 为 `workflow_dispatch` 手动触发，非 CI 自动部署。
