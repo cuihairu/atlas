@@ -607,16 +607,10 @@ func (s *Store) applyDeleteCharacter(key string) error {
 	if !ok {
 		return fmt.Errorf("character %s: %w", key, store.ErrNotFound)
 	}
-	// Drop the character's session history too: a deleted character can never
-	// log in again, and leaving open rows would leak the online ⟺ session
-	// invariant (PP-1).
-	if activeID, ok := s.activeSession[ch.CharacterID]; ok {
-		s.closeSessionLocked(activeID, model.SessionEndCrash, time.Now())
-	}
-	for _, sid := range s.sessionsByChar[ch.CharacterID] {
-		delete(s.sessions, sid)
-	}
-	delete(s.sessionsByChar, ch.CharacterID)
+	// Sessions stay behind untouched: a deleted (or moved-away) character can
+	// be re-created and log in again, and the documented crash heal — the next
+	// login closes the stray open session as crash (docs/presence.md §3) —
+	// needs that stray to still be there. The SQL stores leave the rows too.
 	s.chIdx.remove(key, ch)
 	delete(s.characters, key)
 	return nil

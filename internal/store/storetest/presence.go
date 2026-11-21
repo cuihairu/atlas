@@ -127,7 +127,7 @@ func presence(t *testing.T, ctx context.Context, s Core) {
 	if err := s.UpsertCharacter(ctx, chEmpty); err != nil {
 		t.Fatalf("upsert 505: %v", err)
 	}
-	if _, err := s.Login(ctx, account, serverA, 505, "sess-505-a", loginAt); err != nil {
+	if _, err := s.Login(ctx, account, serverA, 505, "sess-505-e", loginAt); err != nil {
 		t.Fatalf("login 505: %v", err)
 	}
 	if err := s.Logout(ctx, account, serverA, 505, "", model.SessionEndTimeout, logoutAt); err != nil {
@@ -143,7 +143,7 @@ func presence(t *testing.T, ctx context.Context, s Core) {
 	if _, err := s.GetActivePlayerSession(ctx, 505); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("active session after empty logout = %v, want ErrNotFound", err)
 	}
-	closedEmpty, err := s.GetPlayerSession(ctx, "sess-505-a")
+	closedEmpty, err := s.GetPlayerSession(ctx, "sess-505-e")
 	if err != nil {
 		t.Fatalf("get closed empty-logout session: %v", err)
 	}
@@ -284,6 +284,61 @@ func presence(t *testing.T, ctx context.Context, s Core) {
 	}
 	if len(page2) != 1 || page2[0].CharacterID != 506 {
 		t.Errorf("page2 = %+v, want [506]", page2)
+	}
+
+	// Crash healing: deleting an online character leaves its open session
+	// behind (docs/presence.md §3); the next login closes the stray as crash
+	// before opening the fresh one, keeping the history self-consistent.
+	chGone := mk(serverA, 507, "presence-crash-heal")
+	if err := s.UpsertCharacter(ctx, chGone); err != nil {
+		t.Fatalf("upsert 507: %v", err)
+	}
+	if _, err := s.Login(ctx, account, serverA, 507, "sess-507-a", loginAt); err != nil {
+		t.Fatalf("login 507: %v", err)
+	}
+	if err := s.DeleteCharacter(ctx, account, serverA, 507); err != nil {
+		t.Fatalf("delete online 507: %v", err)
+	}
+	// Gone from the index, but the open session survives as a stray.
+	if _, err := s.GetCharacter(ctx, account, serverA, 507); !isNotFound(err) {
+		t.Errorf("get deleted 507 = %v, want ErrNotFound", err)
+	}
+	stray, err := s.GetActivePlayerSession(ctx, 507)
+	if err != nil {
+		t.Fatalf("stray session after delete: %v", err)
+	}
+	if stray.SessionID != "sess-507-a" {
+		t.Errorf("stray session = %q, want sess-507-a", stray.SessionID)
+	}
+	// A character.created replay re-creates the row as unknown.
+	if err := s.UpsertCharacter(ctx, chGone); err != nil {
+		t.Fatalf("re-upsert 507: %v", err)
+	}
+	// The next login heals: stray closed as crash, fresh session open.
+	if _, err := s.Login(ctx, account, serverA, 507, "sess-507-b", loginAt.Add(4*time.Millisecond)); err != nil {
+		t.Fatalf("re-login 507: %v", err)
+	}
+	closedHeal, err := s.GetPlayerSession(ctx, "sess-507-a")
+	if err != nil {
+		t.Fatalf("get healed session: %v", err)
+	}
+	if closedHeal.Open() || closedHeal.EndReason != model.SessionEndCrash {
+		t.Errorf("healed session = %+v, want ended with reason crash", closedHeal)
+	}
+	activeHeal, err := s.GetActivePlayerSession(ctx, 507)
+	if err != nil {
+		t.Fatalf("active session after heal: %v", err)
+	}
+	if activeHeal.SessionID != "sess-507-b" {
+		t.Errorf("active session after heal = %q, want sess-507-b", activeHeal.SessionID)
+	}
+	history, err = s.ListPlayerSessionsByCharacter(ctx, 507, 10)
+	if err != nil {
+		t.Fatalf("list sessions 507: %v", err)
+	}
+	if len(history) != 2 || history[0].SessionID != "sess-507-b" ||
+		history[1].SessionID != "sess-507-a" || history[1].EndReason != model.SessionEndCrash {
+		t.Errorf("healed history = %+v, want [sess-507-b open, sess-507-a crash]", history)
 	}
 }
 
