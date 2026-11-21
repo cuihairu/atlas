@@ -121,6 +121,36 @@ func presence(t *testing.T, ctx context.Context, s Core) {
 		t.Errorf("duplicate logout = %v, want nil", err)
 	}
 
+	// Logout with an empty session_id closes whatever is open
+	// (docs/presence.md §2).
+	chEmpty := mk(serverA, 505, "presence-empty-logout")
+	if err := s.UpsertCharacter(ctx, chEmpty); err != nil {
+		t.Fatalf("upsert 505: %v", err)
+	}
+	if _, err := s.Login(ctx, account, serverA, 505, "sess-505-a", loginAt); err != nil {
+		t.Fatalf("login 505: %v", err)
+	}
+	if err := s.Logout(ctx, account, serverA, 505, "", model.SessionEndTimeout, logoutAt); err != nil {
+		t.Fatalf("logout with empty session_id: %v", err)
+	}
+	gotEmpty, err := s.GetCharacter(ctx, account, serverA, 505)
+	if err != nil {
+		t.Fatalf("get 505: %v", err)
+	}
+	if gotEmpty.PresenceStatus != model.PresenceOffline {
+		t.Errorf("presence after empty logout = %q, want offline", gotEmpty.PresenceStatus)
+	}
+	if _, err := s.GetActivePlayerSession(ctx, 505); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("active session after empty logout = %v, want ErrNotFound", err)
+	}
+	closedEmpty, err := s.GetPlayerSession(ctx, "sess-505-a")
+	if err != nil {
+		t.Fatalf("get closed empty-logout session: %v", err)
+	}
+	if closedEmpty.Open() || closedEmpty.EndReason != model.SessionEndTimeout {
+		t.Errorf("empty-logout session = %+v, want ended with reason timeout", closedEmpty)
+	}
+
 	// Illegal: logout naming a session that is not the open one.
 	ch2 := mk(serverA, 502, "presence-two")
 	if err := s.UpsertCharacter(ctx, ch2); err != nil {
