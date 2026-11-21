@@ -100,6 +100,7 @@ func main() {
 	var (
 		serverStore    store.ServerStore
 		charStore      store.CharacterStore
+		sessionStore   store.PlayerSessionStore
 		runtimeStore   store.RuntimeStore
 		migrationStore store.MigrationStore
 		statsStore     store.StatsStore
@@ -119,6 +120,7 @@ func main() {
 		mem := memory.New()
 		serverStore = mem
 		charStore = mem
+		sessionStore = mem
 		runtimeStore = mem
 		migrationStore = mem
 		statsStore = mem
@@ -156,6 +158,7 @@ func main() {
 		pgPool = pool
 		serverStore = pg
 		charStore = pg
+		sessionStore = pg
 		migrationStore = pg
 		statsStore = pg
 		realmStore = pg
@@ -251,7 +254,7 @@ func main() {
 	composite := &compositeStore{
 		ServerStore:            serverStore,
 		CharacterStore:         charStore,
-		PlayerSessionStore:     charStore.(store.PlayerSessionStore),
+		PlayerSessionStore:     sessionStore,
 		RuntimeStore:           runtimeStore,
 		MigrationStore:         migrationStore,
 		StatsStore:             statsStore,
@@ -267,11 +270,9 @@ func main() {
 
 	// Create services.
 	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
-	regSvc := registry.New(serverStore, runtimeStore, logger).
-		WithMaintenanceEnforce(cfg.MaintenanceEnforce).
-		WithSessions(composite)
+	regSvc := registry.New(serverStore, runtimeStore, logger).WithMaintenanceEnforce(cfg.MaintenanceEnforce)
 	discSvc := discovery.New(serverStore, runtimeStore)
-	dirSvc := directory.New(charStore)
+	dirSvc := directory.New(charStore).WithPlayerSessions(sessionStore)
 
 	// Event adapter: transports character index writes into the directory
 	// projection (docs/sync.md §4).

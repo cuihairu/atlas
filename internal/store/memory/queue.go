@@ -81,8 +81,8 @@ const (
 	opUpsertCharacter
 	opUpdateCharacter
 	opDeleteCharacter
-	opCreateSession
-	opEndSession
+	opPlayerLogin
+	opPlayerLogout
 	opKindCount
 )
 
@@ -110,10 +110,10 @@ func (k opKind) String() string {
 		return "update_character"
 	case opDeleteCharacter:
 		return "delete_character"
-	case opCreateSession:
-		return "create_session"
-	case opEndSession:
-		return "end_session"
+	case opPlayerLogin:
+		return "player_login"
+	case opPlayerLogout:
+		return "player_logout"
 	}
 	return "unknown"
 }
@@ -159,9 +159,14 @@ type instruction struct {
 	char       *model.Character
 	charPatch  *store.CharacterPatch
 	charUpAt   time.Time
-	sess       *model.PlayerSession   // opCreateSession: the opened session
-	sessEndAt  time.Time              // opEndSession: the closing time
-	sessReason model.SessionEndReason // opEndSession: how it ended
+
+	// player presence (PP-1): the login/logout state-machine transitions.
+	// session is the login copyback target (the caller sees the stored row);
+	// sessionID / endReason / presenceAt carry the logout report.
+	session    *model.PlayerSession
+	sessionID  string
+	endReason  model.SessionEndReason
+	presenceAt time.Time
 
 	baseVersion uint64 // watermark snapshot taken at enqueue
 	idemKey     string // empty = always apply
@@ -171,9 +176,8 @@ type instruction struct {
 	// Capture/replay instructions carry nil.
 	out chan instructionResult
 
-	srvOut  *model.Server        // register copyback (caller sees the stored row)
-	charOut *model.Character     // upsert copyback
-	sessOut *model.PlayerSession // session copyback (create/end caller sees the stored row)
+	srvOut  *model.Server    // register copyback (caller sees the stored row)
+	charOut *model.Character // upsert copyback
 }
 
 type instructionResult struct {
@@ -203,9 +207,10 @@ type captureEntry struct {
 	charPatch  store.CharacterPatch
 	hasPatch   bool
 	charUpAt   time.Time
-	sess       *model.PlayerSession
-	sessEndAt  time.Time
-	sessReason model.SessionEndReason
+	session    *model.PlayerSession
+	sessionID  string
+	endReason  model.SessionEndReason
+	presenceAt time.Time
 }
 
 func (e captureEntry) instruction() *instruction {
@@ -224,9 +229,10 @@ func (e captureEntry) instruction() *instruction {
 		weightAt:   e.weightAt,
 		char:       e.char,
 		charUpAt:   e.charUpAt,
-		sess:       e.sess,
-		sessEndAt:  e.sessEndAt,
-		sessReason: e.sessReason,
+		session:    e.session,
+		sessionID:  e.sessionID,
+		endReason:  e.endReason,
+		presenceAt: e.presenceAt,
 	}
 	if e.hasPatch {
 		ins.charPatch = &e.charPatch
@@ -440,10 +446,7 @@ func (s *Store) applyBatchN(batch []*instruction) {
 	// One critical section for data + index (拍板①).
 	s.mu.Lock()
 	s.charMu.Lock()
-	// Counters are bumped before signal below, so a caller woken by its own
-	// result always observes the stats of its write (the loop must not bump
-	// them after waking, or a concurrent QueueStats read can miss them).
-	s.applied.Add(uint64(len(kept)))
+	byKind := make(map[opKind]int, 1)
 	lastApplied := uint64(0)
 	for _, ins := range kept {
 		if ins.idemKey != "" {
@@ -462,7 +465,7 @@ func (s *Store) applyBatchN(batch []*instruction) {
 		if ins.idemKey != "" && res.err == nil {
 			s.rememberIdempotent(ins.idemKey, res.appliedAt)
 		}
-		s.appliedByKind[ins.kind].Add(1)
+		byKind[ins.kind]++
 		s.captureAppend(ins)
 		lastApplied = res.appliedAt
 		s.signal(ins, res)
@@ -479,6 +482,10 @@ func (s *Store) applyBatchN(batch []*instruction) {
 
 	took := time.Since(start)
 	s.recordFlush(len(kept), merged, took)
+	for k, n := range byKind {
+		s.appliedByKind[k].Add(uint64(n))
+	}
+	s.applied.Add(uint64(len(kept)))
 }
 
 // signal wakes the waiter (never blocks: out is buffered size 1).
@@ -516,10 +523,10 @@ func (s *Store) applyOne(ins *instruction) instructionResult {
 		err = s.applyUpdateCharacter(ins)
 	case opDeleteCharacter:
 		err = s.applyDeleteCharacter(ins.target)
-	case opCreateSession:
-		err = s.applyCreateSession(ins)
-	case opEndSession:
-		err = s.applyEndSession(ins)
+	case opPlayerLogin:
+		err = s.applyPlayerLogin(ins)
+	case opPlayerLogout:
+		err = s.applyPlayerLogout(ins)
 	}
 	if err != nil {
 		return instructionResult{err: err, appliedAt: at}
@@ -589,12 +596,13 @@ func (s *Store) captureAppend(ins *instruction) {
 	case opUpdateCharacter:
 		e.charPatch = *ins.charPatch
 		e.hasPatch = true
-	case opCreateSession:
-		e.sess = cloneSession(ins.sess)
-	case opEndSession:
-		e.sess = cloneSession(ins.sess)
-		e.sessEndAt = ins.sessEndAt
-		e.sessReason = ins.sessReason
+	case opPlayerLogin:
+		e.session = cloneSession(ins.session)
+		e.presenceAt = ins.presenceAt
+	case opPlayerLogout:
+		e.sessionID = ins.sessionID
+		e.endReason = ins.endReason
+		e.presenceAt = ins.presenceAt
 	}
 	s.captureMu.Lock()
 	defer s.captureMu.Unlock()
@@ -631,6 +639,18 @@ func cloneCharacter(ch *model.Character) *model.Character {
 	if ch.LastLogoutAt != nil {
 		t := *ch.LastLogoutAt
 		cp.LastLogoutAt = &t
+	}
+	return &cp
+}
+
+func cloneSession(sess *model.PlayerSession) *model.PlayerSession {
+	if sess == nil {
+		return nil
+	}
+	cp := *sess
+	if sess.EndedAt != nil {
+		t := *sess.EndedAt
+		cp.EndedAt = &t
 	}
 	return &cp
 }

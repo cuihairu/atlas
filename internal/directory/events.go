@@ -167,7 +167,12 @@ func (s *Service) applyDeleted(ctx context.Context, e *event.Event) error {
 	return nil
 }
 
-// applyLogin refreshes last_login_at without touching other fields.
+// applyLogin marks the character online and opens its player session
+// (docs/presence.md §3). With a PlayerSessionStore attached the whole
+// transition is the store's state machine (idempotent re-reports, illegal
+// transitions rejected); without one (sharded CharacterStore-only setups)
+// it falls back to the legacy last_login_at refresh so older embedders keep
+// working.
 func (s *Service) applyLogin(ctx context.Context, e *event.Event) (*model.Character, error) {
 	if e.CharacterID <= 0 {
 		return nil, fmt.Errorf("%w: character_id must be > 0", model.ErrInvalid)
@@ -186,6 +191,26 @@ func (s *Service) applyLogin(ctx context.Context, e *event.Event) (*model.Charac
 	if !e.Timestamp.IsZero() {
 		at = e.Timestamp
 	}
+
+	if s.sessions != nil {
+		if e.SessionID == "" {
+			return nil, fmt.Errorf("%w: session_id is required for login", model.ErrInvalid)
+		}
+		// Ordering guard first: a stale re-delivered login must never open a
+		// session (or flip the character online) after a newer projection.
+		existing, err := s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+		if err == nil && hasNewerProjectionTimestamp(existing, at) {
+			return existing, nil
+		}
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return nil, fmt.Errorf("check login event ordering: %w", err)
+		}
+		if _, err := s.sessions.Login(ctx, accountID, serverID, e.CharacterID, e.SessionID, at); err != nil {
+			return nil, fmt.Errorf("login character: %w", err)
+		}
+		return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+	}
+
 	existing, err := s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
 	if err == nil && hasNewerProjectionTimestamp(existing, at) {
 		return existing, nil
@@ -200,10 +225,9 @@ func (s *Service) applyLogin(ctx context.Context, e *event.Event) (*model.Charac
 	return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
 }
 
-// applyLogout refreshes last_logout_at without touching other fields — the
-// counterpart of applyLogin (docs/sync.md §2): a logout event ages the
-// projection's presence timeline backwards to match the denormalized row the
-// session store already wrote.
+// applyLogout marks the character offline and closes its active session
+// (docs/presence.md §3). A re-reported logout on an already-offline character
+// is an idempotent no-op; a logout with no open session is rejected.
 func (s *Service) applyLogout(ctx context.Context, e *event.Event) (*model.Character, error) {
 	if e.CharacterID <= 0 {
 		return nil, fmt.Errorf("%w: character_id must be > 0", model.ErrInvalid)
@@ -218,23 +242,23 @@ func (s *Service) applyLogout(ctx context.Context, e *event.Event) (*model.Chara
 		accountID, serverID = existing.AccountID, existing.ServerID
 	}
 
-	at := time.Now()
+	endAt := time.Now()
 	if !e.Timestamp.IsZero() {
-		at = e.Timestamp
+		endAt = e.Timestamp
 	}
-	// Replay ordering: an old logout event must not clobber a newer logout
-	// time already projected (at-least-once transports re-deliver).
-	existing, err := s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
-	if err == nil && existing.LastLogoutAt != nil && existing.LastLogoutAt.After(at) {
-		return existing, nil
+	reason := e.EndReason
+	if reason == "" {
+		reason = model.SessionEndNormal
 	}
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("check logout event ordering: %w", err)
+
+	if s.sessions != nil {
+		if err := s.sessions.Logout(ctx, accountID, serverID, e.CharacterID, e.SessionID, reason, endAt); err != nil {
+			return nil, fmt.Errorf("logout character: %w", err)
+		}
+		return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
 	}
-	patch := store.CharacterPatch{LastLogoutAt: &at}
-	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, e.CharacterID, patch); err != nil {
-		return nil, fmt.Errorf("logout character: %w", err)
-	}
+
+	// No PlayerSessionStore: nothing to transition, return the current row.
 	return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
 }
 
@@ -293,6 +317,10 @@ func (s *Service) applyMoved(ctx context.Context, e *event.Event) (*model.Charac
 		Metadata:    src.Metadata,
 		LastLoginAt: src.LastLoginAt,
 	}
+	// Presence is NOT carried across a move: the character is leaving the old
+	// server, so its online state there is void. The destination row starts
+	// unknown; a stray open session from the old server is healed (closed as
+	// crash) by the next login (docs/presence.md §3).
 	if err := s.characters.UpsertCharacter(ctx, dst); err != nil {
 		return nil, fmt.Errorf("move character: %w", err)
 	}

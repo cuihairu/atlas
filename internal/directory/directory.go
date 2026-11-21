@@ -4,6 +4,7 @@ package directory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -14,15 +15,33 @@ import (
 	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
+// PresenceView is the 角色在线查询 response: the character row, its resolved
+// presence status, and the open session (nil when offline).
+type PresenceView struct {
+	Character      *model.Character     `json:"character"`
+	PresenceStatus model.PresenceStatus `json:"presence_status"`
+	ActiveSession  *model.PlayerSession `json:"active_session,omitempty"`
+}
+
 // Service manages the character index (projection).
 type Service struct {
 	characters store.CharacterStore
+	sessions   store.PlayerSessionStore
 	metrics    *metrics.Metrics
 }
 
 // New creates a new directory service.
 func New(characters store.CharacterStore) *Service {
 	return &Service{characters: characters}
+}
+
+// WithPlayerSessions attaches the player-session store used by the presence
+// login/logout state machine (docs/presence.md). Optional so stores that only
+// implement CharacterStore (the sharded store) keep working; without it the
+// directory falls back to the legacy last_login_at-only behavior.
+func (s *Service) WithPlayerSessions(sessions store.PlayerSessionStore) *Service {
+	s.sessions = sessions
+	return s
 }
 
 // WithMetrics attaches Prometheus instrumentation (optional). Write-path
@@ -141,41 +160,92 @@ func (s *Service) ListByServer(ctx context.Context, serverID string, limit int, 
 	return chars, nextCursor, nil
 }
 
-// PresenceByServer returns the online roster of a server alongside its true
-// online count (PP-3 查询 API). The roster is the presence-filtered page
-// (cursor-paginated by character ID like ListByServer); the count is
-// CountByServerPresence — NOT len(roster), which is one page and would
-// under-report the total whenever the roster has more than one page.
-//
-// The cursor the client passes is a plain character ID (same contract as
-// ListByServer); it is translated to the search cursor "serverID:charID"
-// before reaching the store, since the roster is pinned to one server.
-func (s *Service) PresenceByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, int64, string, error) {
-	ctx, span := atlastracing.Start(ctx, "directory.presence_by_server")
+// Presence query surface (PP-3, docs/presence.md §4). All read the player
+// session store; a service without one returns ErrNotFound so callers can
+// distinguish "offline / unknown" from "unsupported".
+
+// GetPresence returns the character's presence state and, when online, its
+// active session. Returns ErrNotFound when the character does not exist; when
+// the character is offline the session is nil and presence_status is
+// "offline".
+func (s *Service) GetPresence(ctx context.Context, characterID int64) (*PresenceView, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.get_presence")
 	defer span.End()
-
-	online := model.PresenceOnline
-	filter := store.CharacterSearchFilter{
-		ServerID: serverID,
-		Presence: &online,
-		Limit:    limit,
+	if s.sessions == nil {
+		return nil, fmt.Errorf("presence store not configured: %w", store.ErrNotFound)
 	}
-	if cursor != "" {
-		filter.Cursor = serverID + ":" + cursor
-	}
-
-	chars, _, err := s.characters.SearchCharacters(ctx, filter)
+	ch, err := s.characters.GetCharacterByCharacterID(ctx, characterID)
 	if err != nil {
-		return nil, 0, "", fmt.Errorf("presence roster: %w", err)
+		return nil, fmt.Errorf("get presence: %w", err)
 	}
-	count, err := s.characters.CountByServerPresence(ctx, serverID, online)
-	if err != nil {
-		return nil, 0, "", fmt.Errorf("presence count: %w", err)
+	sess, err := s.sessions.GetActivePlayerSession(ctx, characterID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("get presence: %w", err)
 	}
+	view := &PresenceView{
+		Character:      ch,
+		PresenceStatus: ch.PresenceStatus.Normalize(),
+	}
+	if sess != nil {
+		view.ActiveSession = sess
+	}
+	return view, nil
+}
 
-	nextCursor := ""
-	if len(chars) > 0 {
-		nextCursor = strconv.FormatInt(chars[len(chars)-1].CharacterID, 10)
+// ListOnlineByServer returns the online characters on a server (某服在线名单)
+// with cursor pagination, the "某服在线名单" query.
+func (s *Service) ListOnlineByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, string, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.list_online_by_server")
+	defer span.End()
+	if s.sessions == nil {
+		return nil, "", fmt.Errorf("presence store not configured: %w", store.ErrNotFound)
 	}
-	return chars, count, nextCursor, nil
+	chars, nextCursor, err := s.sessions.ListOnlineByServer(ctx, serverID, limit, cursor)
+	if err != nil {
+		return nil, "", fmt.Errorf("list online by server: %w", err)
+	}
+	return chars, nextCursor, nil
+}
+
+// CountOnlineByServer returns how many characters are online on a server.
+func (s *Service) CountOnlineByServer(ctx context.Context, serverID string) (int, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.count_online_by_server")
+	defer span.End()
+	if s.sessions == nil {
+		return 0, fmt.Errorf("presence store not configured: %w", store.ErrNotFound)
+	}
+	n, err := s.sessions.CountOnlineByServer(ctx, serverID)
+	if err != nil {
+		return 0, fmt.Errorf("count online by server: %w", err)
+	}
+	return n, nil
+}
+
+// GetPlayerSession returns a player session by ID, or ErrNotFound.
+func (s *Service) GetPlayerSession(ctx context.Context, sessionID string) (*model.PlayerSession, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.get_player_session")
+	defer span.End()
+	if s.sessions == nil {
+		return nil, fmt.Errorf("presence store not configured: %w", store.ErrNotFound)
+	}
+	sess, err := s.sessions.GetPlayerSession(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get player session: %w", err)
+	}
+	return sess, nil
+}
+
+// ListPlayerSessionsByCharacter returns a character's session history, newest
+// first, capped at limit (<= 0 means no cap).
+func (s *Service) ListPlayerSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.list_player_sessions")
+	defer span.End()
+	if s.sessions == nil {
+		return nil, fmt.Errorf("presence store not configured: %w", store.ErrNotFound)
+	}
+	sessions, err := s.sessions.ListPlayerSessionsByCharacter(ctx, characterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list player sessions: %w", err)
+	}
+	return sessions, nil
 }

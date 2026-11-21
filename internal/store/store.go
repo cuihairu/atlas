@@ -165,6 +165,53 @@ type CharacterStore interface {
 	SearchCharacters(ctx context.Context, filter CharacterSearchFilter) ([]*model.Character, string, error)
 }
 
+// PlayerSessionStore persists player login sessions (docs/presence.md §3).
+//
+// It is a separate interface from CharacterStore on purpose: presence is a
+// projection concern with its own atomicity contract (a login opens a session
+// AND flips the character online in one critical section / one transaction),
+// and the sharded CharacterStore (account-hash delegation) must not be forced
+// to re-home session state. Implementations pin the same state machine, so
+// the storetest contract keeps memory / PostgreSQL / MySQL from drifting:
+//
+//   - Login  transitions unknown|offline → online and opens the session.
+//     Re-reporting an already-open session (same session_id) is an idempotent
+//     no-op returning the existing session. Login while online in a
+//     DIFFERENT session is ErrConflict (the previous session must be closed
+//     first — reconnect flows go through Logout with reason=crash).
+//   - Logout transitions online → offline and closes the active session.
+//     Re-reporting logout when already offline is an idempotent no-op.
+//     Logout with no open session (never logged in) is ErrInvalid, and a
+//     session_id that is not the open one is ErrConflict.
+type PlayerSessionStore interface {
+	// Login opens sessionID for the character and marks it online. The
+	// returned session is the stored one (the caller's sessionID is carried
+	// back with the store-assigned fields filled in).
+	Login(ctx context.Context, accountID int64, serverID string, characterID int64, sessionID string, at time.Time) (*model.PlayerSession, error)
+
+	// Logout closes the character's active session and marks it offline.
+	// reason must be a valid SessionEndReason; endAt is stamped on the session.
+	Logout(ctx context.Context, accountID int64, serverID string, characterID int64, sessionID string, reason model.SessionEndReason, endAt time.Time) error
+
+	// GetActivePlayerSession returns the character's open (unended) session,
+	// or ErrNotFound when the character is offline / never logged in.
+	GetActivePlayerSession(ctx context.Context, characterID int64) (*model.PlayerSession, error)
+
+	// GetPlayerSession returns a session by its ID, or ErrNotFound.
+	GetPlayerSession(ctx context.Context, sessionID string) (*model.PlayerSession, error)
+
+	// ListPlayerSessionsByCharacter returns the character's sessions, newest
+	// first, capped at limit (<= 0 means no cap).
+	ListPlayerSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error)
+
+	// CountOnlineByServer returns how many characters are online on a server.
+	CountOnlineByServer(ctx context.Context, serverID string) (int, error)
+
+	// ListOnlineByServer returns the online characters on a server, ordered by
+	// character ID with cursor pagination (the "某服在线名单" query).
+	ListOnlineByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, string, error)
+}
+
 // MigrationStore persists server migration records.
 type MigrationStore interface {
 	// CreateMigration inserts a new migration record.

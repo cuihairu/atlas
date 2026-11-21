@@ -371,28 +371,44 @@ type Character struct {
 	Avatar      string            `json:"avatar,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	LastLoginAt *time.Time        `json:"last_login_at,omitempty"`
-	// PresenceStatus is the denormalized online/offline state maintained by
-	// the player-session store (PP): an open session ⇒ online, a closed
-	// session ⇒ offline. "unknown" is the default for rows created before
-	// the presence model existed.
+	// PresenceStatus is the observed online state of this character
+	// (PresenceUnknown until the game server reports one). The state machine
+	// and its idempotency rules are documented in docs/presence.md — the
+	// transition itself is always applied by the presence path, never by a
+	// plain CharacterPatch, so a stale projection writer cannot turn a
+	// character online or offline.
 	PresenceStatus PresenceStatus `json:"presence_status"`
-	// LastLogoutAt is the time the character's most recent session closed.
+	// LastLogoutAt records when the character last went offline. Nil until the
+	// first logout is reported.
 	LastLogoutAt *time.Time `json:"last_logout_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
-// PresenceStatus is a character's online/offline state as reported through
-// player sessions (login/logout events).
+// PresenceStatus is a character's observed online state
+// (docs/presence.md §2 玩家在线状态机).
+//
+// PresenceUnknown is the default for a character that has never reported
+// presence: the index row exists (a projection written by character.created)
+// but no game server has told Atlas either way. "Offline" is never guessed
+// from a missing report — a logout report is what moves unknown → offline.
 type PresenceStatus string
 
 const (
+	// PresenceUnknown means no presence report has arrived.
 	PresenceUnknown PresenceStatus = "unknown"
-	PresenceOnline  PresenceStatus = "online"
+	// PresenceOnline means the game server has an open session for the character.
+	PresenceOnline PresenceStatus = "online"
+	// PresenceOffline means a logout report closed the session.
 	PresenceOffline PresenceStatus = "offline"
 )
 
-// Valid reports whether s is one of the defined presence states.
+// AllPresenceStatuses lists every valid presence status.
+var AllPresenceStatuses = []PresenceStatus{
+	PresenceUnknown, PresenceOnline, PresenceOffline,
+}
+
+// Valid reports whether s is a recognised presence status.
 func (s PresenceStatus) Valid() bool {
 	switch s {
 	case PresenceUnknown, PresenceOnline, PresenceOffline:
@@ -401,17 +417,43 @@ func (s PresenceStatus) Valid() bool {
 	return false
 }
 
-// SessionEndReason says how a player session ended.
+// String implements fmt.Stringer.
+func (s PresenceStatus) String() string { return string(s) }
+
+// Normalize maps the zero value to PresenceUnknown. Rows written before
+// presence existed (and structs built without setting the field) carry no
+// explicit state; every read path must report unknown, never "", so callers
+// can switch on the field without a nil check.
+func (s PresenceStatus) Normalize() PresenceStatus {
+	if s == "" {
+		return PresenceUnknown
+	}
+	return s
+}
+
+// SessionEndReason is why a player session ended (docs/presence.md §3).
+// The reason is carried on the PlayerSession row so the session history is
+// self-describing — a crash is not the same as a kicked player.
 type SessionEndReason string
 
 const (
-	SessionEndNormal  SessionEndReason = "normal"  // 正常登出
-	SessionEndTimeout SessionEndReason = "timeout" // 会话超时
-	SessionEndKicked  SessionEndReason = "kicked"  // 被踢下线
-	SessionEndCrash   SessionEndReason = "crash"   // 游戏服异常断开
+	// SessionEndNormal is a clean player-initiated logout.
+	SessionEndNormal SessionEndReason = "normal"
+	// SessionEndTimeout is a server-side inactivity close.
+	SessionEndTimeout SessionEndReason = "timeout"
+	// SessionEndKicked is an operator or GM action.
+	SessionEndKicked SessionEndReason = "kicked"
+	// SessionEndCrash is a server or process failure; the session was never
+	// closed by a client.
+	SessionEndCrash SessionEndReason = "crash"
 )
 
-// Valid reports whether r is one of the defined end reasons.
+// SessionEndReasons lists every valid end reason.
+var SessionEndReasons = []SessionEndReason{
+	SessionEndNormal, SessionEndTimeout, SessionEndKicked, SessionEndCrash,
+}
+
+// Valid reports whether r is a recognised end reason.
 func (r SessionEndReason) Valid() bool {
 	switch r {
 	case SessionEndNormal, SessionEndTimeout, SessionEndKicked, SessionEndCrash:
@@ -420,80 +462,27 @@ func (r SessionEndReason) Valid() bool {
 	return false
 }
 
-// PlayerSession records one play session of one character: opened by a login
-// report, closed by a logout / timeout / kick / crash report. The open
-// session (EndedAt == nil) is exactly what marks the character online.
-//
-// AccountID is carried on the session (a superset of the minimum shape) so
-// the session store can key the character index row, whose composite key is
-// (account_id, server_id, character_id).
+// String implements fmt.Stringer.
+func (r SessionEndReason) String() string { return string(r) }
+
+// PlayerSession is one login→logout span of a character on a server
+// (docs/presence.md §3). An open session has EndedAt nil and an empty
+// EndReason; ending it stamps both atomically with the presence transition.
 type PlayerSession struct {
-	SessionID   string           `json:"session_id"`
-	AccountID   int64            `json:"account_id"`
-	CharacterID int64            `json:"character_id"`
-	ServerID    string           `json:"server_id"`
-	StartedAt   time.Time        `json:"started_at"`
-	EndedAt     *time.Time       `json:"ended_at,omitempty"`
-	EndReason   SessionEndReason `json:"end_reason,omitempty"`
+	SessionID string `json:"session_id"`
+	// CharacterID/ServerID identify the character the session belongs to.
+	CharacterID int64  `json:"character_id"`
+	ServerID    string `json:"server_id"`
+	// AccountID is the character's account — carried so a session can be
+	// scoped and listed without a character lookup.
+	AccountID int64            `json:"account_id"`
+	StartedAt time.Time        `json:"started_at"`
+	EndedAt   *time.Time       `json:"ended_at,omitempty"`
+	EndReason SessionEndReason `json:"end_reason,omitempty"`
 }
 
-// PresenceEventKind discriminates the two kinds of event a game server can
-// report.
-type PresenceEventKind string
-
-const (
-	PresenceEventLogin  PresenceEventKind = "login"  // 开 session（角色上线）
-	PresenceEventLogout PresenceEventKind = "logout" // 关 session（角色下线）
-)
-
-// Valid reports whether k is a defined event kind.
-func (k PresenceEventKind) Valid() bool {
-	switch k {
-	case PresenceEventLogin, PresenceEventLogout:
-		return true
-	}
-	return false
-}
-
-// PresenceEvent is one login or logout event in a presence report.
-//
-// ServerID is intentionally not required from the caller: the report travels
-// the per-server registry channel, so the server id of the authenticated
-// listener is authoritative and the registry stamps it onto the event.
-type PresenceEvent struct {
-	Kind        PresenceEventKind `json:"kind"`
-	SessionID   string            `json:"session_id"`
-	AccountID   int64             `json:"account_id,omitempty"`
-	CharacterID int64             `json:"character_id"`
-	ServerID    string            `json:"server_id,omitempty"`
-	StartedAt   *time.Time        `json:"started_at,omitempty"`
-	EndedAt     *time.Time        `json:"ended_at,omitempty"`
-	EndReason   SessionEndReason  `json:"end_reason,omitempty"`
-}
-
-// PresenceReport is the body of the presence report endpoint (POST
-// /v1/registry/servers/{id}/presence). Events are applied in order; each
-// event yields its own outcome, so one malformed or conflicting event does
-// not poison the rest of the batch.
-type PresenceReport struct {
-	Events []PresenceEvent `json:"events"`
-}
-
-// Per-event outcomes of a presence report. PresenceApplied /
-// PresenceAlreadyApplied both count as accepted.
-const (
-	PresenceApplied        = "applied"         // 事件生效（开/关 session）
-	PresenceAlreadyApplied = "already_applied" // 重复上报，状态已符合，幂等成功
-	PresenceRejected       = "rejected"        // 非法流转或目标不存在
-)
-
-// PresenceResult reports the outcome of one PresenceEvent.
-type PresenceResult struct {
-	SessionID string            `json:"session_id"`
-	Kind      PresenceEventKind `json:"kind"`
-	Status    string            `json:"status"`
-	Detail    string            `json:"detail,omitempty"`
-}
+// Open reports whether the session is still running (no logout recorded).
+func (s *PlayerSession) Open() bool { return s.EndedAt == nil }
 
 // MigrationStatus is the lifecycle state of a server migration.
 type MigrationStatus string
