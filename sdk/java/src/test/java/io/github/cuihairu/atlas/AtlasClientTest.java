@@ -288,6 +288,12 @@ class AtlasClientTest {
         Migration mig = c.createMigration(new CreateMigrationRequest(List.of("a"), "b"));
         assertEquals("m-1", mig.id);
         assertEquals("pending", mig.status);
+        // Pinned snake_case: without @SerializedName Gson emits
+        // sourceServers/targetServer, which the server rejects as an empty
+        // source_servers (INVALID_ARGUMENT) — the client could never create.
+        FakeAtlas.Recorded migReq = s.request("POST", Pattern.compile(".*/v1/admin/migrations"));
+        assertTrue(migReq.body().contains("\"source_servers\":[\"a\"]"));
+        assertTrue(migReq.body().contains("\"target_server\":\"b\""));
         assertEquals("completed", c.getMigration("m-1").status);
         assertEquals(1, c.listMigrations(10).size());
         assertEquals("rolled_back", c.rollbackMigration("m-1").status);
