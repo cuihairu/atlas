@@ -28,6 +28,7 @@ import (
 type Core interface {
 	store.ServerStore
 	store.CharacterStore
+	store.PlayerSessionStore
 	store.MigrationStore
 	store.StatsStore
 	store.RealmStore

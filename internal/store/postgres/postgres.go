@@ -314,7 +314,7 @@ ON CONFLICT (account_id, server_id, character_id) DO UPDATE SET
 
 func (s *Store) GetCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = $1 AND server_id = $2 AND character_id = $3
 `
@@ -327,7 +327,7 @@ WHERE account_id = $1 AND server_id = $2 AND character_id = $3
 
 func (s *Store) GetCharacterByCharacterID(ctx context.Context, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
 FROM character_index
 WHERE character_id = $1
 `
@@ -411,7 +411,7 @@ func (s *Store) DeleteCharacter(ctx context.Context, accountID int64, serverID s
 
 func (s *Store) ListCharactersByAccount(ctx context.Context, accountID int64) ([]*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
 FROM character_index
 WHERE account_id = $1
 ORDER BY server_id, character_id
@@ -434,7 +434,7 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	}
 
 	q := `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
 FROM character_index
 WHERE server_id = $1`
 	args := []any{serverID}
@@ -471,7 +471,7 @@ func (s *Store) SearchCharacters(ctx context.Context, filter store.CharacterSear
 		filter.Limit = 200
 	}
 
-	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata
+	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
 FROM character_index WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -536,6 +536,165 @@ FROM character_index WHERE 1=1`
 	}
 
 	return result, nextCursor, nil
+}
+
+// ---------------------------------------------------------------------------
+// PlayerSessionStore — presence, transactional with the character index
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateSession(ctx context.Context, sess *model.PlayerSession) error {
+	if sess.SessionID == "" || sess.CharacterID == 0 || sess.ServerID == "" {
+		return fmt.Errorf("%w: session id, character_id and server_id are required", store.ErrInvalid)
+	}
+	if sess.StartedAt.IsZero() {
+		sess.StartedAt = time.Now()
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Mark the character online first; 0 rows ⇒ the character is not in the
+	// index, so the whole session is refused (a session can only host an
+	// index entry — the same rule the memory store enforces).
+	tag, err := tx.Exec(ctx, `
+UPDATE character_index
+SET presence_status = 'online', updated_at = $4
+WHERE account_id = $1 AND server_id = $2 AND character_id = $3`,
+		sess.AccountID, sess.ServerID, sess.CharacterID, sess.StartedAt)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("session %s: character: %w", sess.SessionID, store.ErrNotFound)
+	}
+
+	// The partial unique index (one open session per character) turns a
+	// duplicate login report into a conflict — SQLSTATE 23505.
+	_, err = tx.Exec(ctx, `
+INSERT INTO player_sessions (session_id, account_id, character_id, server_id, started_at, end_reason)
+VALUES ($1, $2, $3, $4, $5, '')`,
+		sess.SessionID, sess.AccountID, sess.CharacterID, sess.ServerID, sess.StartedAt)
+	if err != nil {
+		var uniqErr *pgconn.PgError
+		if errors.As(err, &uniqErr) && uniqErr.Code == "23505" {
+			return fmt.Errorf("session %s: character %d: %w", sess.SessionID, sess.CharacterID, store.ErrConflict)
+		}
+		return fmt.Errorf("create session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error) {
+	if !reason.Valid() {
+		return nil, fmt.Errorf("%w: invalid end reason %q", store.ErrInvalid, reason)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("end session: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var sess model.PlayerSession
+	err = tx.QueryRow(ctx, `
+SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
+FROM player_sessions WHERE session_id = $1 FOR UPDATE`, sessionID).
+		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
+			&sess.StartedAt, &sess.EndedAt, &sess.EndReason)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
+		}
+		return nil, fmt.Errorf("end session: %w", err)
+	}
+	if sess.EndedAt != nil {
+		return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrConflict)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE player_sessions SET ended_at = $2, end_reason = $3 WHERE session_id = $1`,
+		sessionID, endedAt, string(reason)); err != nil {
+		return nil, fmt.Errorf("end session: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+UPDATE character_index
+SET presence_status = 'offline', last_logout_at = $4, updated_at = $4
+WHERE account_id = $1 AND server_id = $2 AND character_id = $3`,
+		sess.AccountID, sess.ServerID, sess.CharacterID, endedAt); err != nil {
+		return nil, fmt.Errorf("end session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("end session: %w", err)
+	}
+
+	sess.EndedAt = &endedAt
+	sess.EndReason = reason
+	return &sess, nil
+}
+
+func (s *Store) GetSession(ctx context.Context, sessionID string) (*model.PlayerSession, error) {
+	var sess model.PlayerSession
+	err := s.pool.QueryRow(ctx, `
+SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
+FROM player_sessions WHERE session_id = $1`, sessionID).
+		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
+			&sess.StartedAt, &sess.EndedAt, &sess.EndReason)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get session: %w", err)
+	}
+	return &sess, nil
+}
+
+func (s *Store) GetActiveSessionByCharacter(ctx context.Context, characterID int64) (*model.PlayerSession, error) {
+	var sess model.PlayerSession
+	err := s.pool.QueryRow(ctx, `
+SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
+FROM player_sessions
+WHERE character_id = $1 AND ended_at IS NULL
+ORDER BY started_at DESC
+LIMIT 1`, characterID).
+		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
+			&sess.StartedAt, &sess.EndedAt, &sess.EndReason)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("character %d: %w", characterID, store.ErrNotFound)
+		}
+		return nil, fmt.Errorf("get active session: %w", err)
+	}
+	return &sess, nil
+}
+
+func (s *Store) ListSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
+FROM player_sessions
+WHERE character_id = $1
+ORDER BY started_at DESC
+LIMIT $2`, characterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*model.PlayerSession, 0, limit)
+	for rows.Next() {
+		var sess model.PlayerSession
+		if err := rows.Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
+			&sess.StartedAt, &sess.EndedAt, &sess.EndReason); err != nil {
+			return nil, fmt.Errorf("list sessions: %w", err)
+		}
+		out = append(out, &sess)
+	}
+	return out, rows.Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -731,7 +890,8 @@ func scanCharacter(row scannable) (*model.Character, error) {
 	err := row.Scan(
 		&ch.AccountID, &ch.ServerID, &ch.CharacterID,
 		&ch.Name, &ch.Level, &ch.ClassID, &ch.Avatar,
-		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
+		&ch.LastLoginAt, &ch.PresenceStatus, &ch.LastLogoutAt,
+		&ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

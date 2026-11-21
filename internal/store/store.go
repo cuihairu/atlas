@@ -288,10 +288,41 @@ type CrossServerConfigStore interface {
 	GetCrossServerConfig(ctx context.Context) (*model.CrossServerConfig, error)
 }
 
+// PlayerSessionStore persists player presence sessions and maintains the
+// denormalized presence fields on the character index: opening a session
+// marks the character online, closing it marks the character offline with
+// LastLogoutAt = endedAt.
+type PlayerSessionStore interface {
+	// CreateSession opens a new session for a character and marks the
+	// character online. It fails with ErrNotFound when the character is not
+	// in the index and ErrConflict when the character already has an open
+	// session (the idempotency rule for duplicate login reports lives in the
+	// report handler — this is the strict store contract).
+	CreateSession(ctx context.Context, sess *model.PlayerSession) error
+
+	// EndSession closes an open session (EndedAt/EndReason) and marks the
+	// character offline with LastLogoutAt = endedAt. It fails with
+	// ErrNotFound when the session does not exist and ErrConflict when the
+	// session is already closed. Returns the stored, updated session.
+	EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error)
+
+	// GetSession returns a session by ID.
+	GetSession(ctx context.Context, sessionID string) (*model.PlayerSession, error)
+
+	// GetActiveSessionByCharacter returns the character's open session, or
+	// ErrNotFound when the character is not online.
+	GetActiveSessionByCharacter(ctx context.Context, characterID int64) (*model.PlayerSession, error)
+
+	// ListSessionsByCharacter returns the character's sessions, newest
+	// first. A zero or negative limit returns every session.
+	ListSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error)
+}
+
 // Store composes all storage interfaces.
 type Store interface {
 	ServerStore
 	CharacterStore
+	PlayerSessionStore
 	RuntimeStore
 	MigrationStore
 	StatsStore

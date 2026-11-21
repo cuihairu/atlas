@@ -136,6 +136,27 @@ data:
     );
     CREATE INDEX IF NOT EXISTS audit_log_recorded_at_idx ON audit_log (recorded_at);
     COMMIT;
+  0010_player_presence.sql: |
+    BEGIN;
+    ALTER TABLE character_index
+        ADD COLUMN IF NOT EXISTS presence_status TEXT NOT NULL DEFAULT 'unknown',
+        ADD COLUMN IF NOT EXISTS last_logout_at  TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_char_by_server_presence
+        ON character_index (server_id, presence_status);
+    CREATE TABLE IF NOT EXISTS player_sessions (
+        session_id    TEXT        PRIMARY KEY,
+        account_id    BIGINT      NOT NULL,
+        character_id  BIGINT      NOT NULL,
+        server_id     TEXT        NOT NULL,
+        started_at    TIMESTAMPTZ NOT NULL,
+        ended_at      TIMESTAMPTZ,
+        end_reason    TEXT        NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_by_character
+        ON player_sessions (character_id, started_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_session_open_per_character
+        ON player_sessions (character_id) WHERE ended_at IS NULL;
+    COMMIT;
 ---
 apiVersion: batch/v1
 kind: Job

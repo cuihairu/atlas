@@ -251,6 +251,7 @@ func main() {
 	composite := &compositeStore{
 		ServerStore:            serverStore,
 		CharacterStore:         charStore,
+		PlayerSessionStore:     charStore.(store.PlayerSessionStore),
 		RuntimeStore:           runtimeStore,
 		MigrationStore:         migrationStore,
 		StatsStore:             statsStore,
@@ -1045,6 +1046,7 @@ func redisURLParts(rawURL string) (addr, username, password string, db int) {
 type compositeStore struct {
 	store.ServerStore
 	store.CharacterStore
+	store.PlayerSessionStore
 	store.RuntimeStore
 	store.MigrationStore
 	store.StatsStore

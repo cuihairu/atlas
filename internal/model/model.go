@@ -371,8 +371,70 @@ type Character struct {
 	Avatar      string            `json:"avatar,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 	LastLoginAt *time.Time        `json:"last_login_at,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	// PresenceStatus is the denormalized online/offline state maintained by
+	// the player-session store (PP): an open session ⇒ online, a closed
+	// session ⇒ offline. "unknown" is the default for rows created before
+	// the presence model existed.
+	PresenceStatus PresenceStatus `json:"presence_status"`
+	// LastLogoutAt is the time the character's most recent session closed.
+	LastLogoutAt *time.Time `json:"last_logout_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// PresenceStatus is a character's online/offline state as reported through
+// player sessions (login/logout events).
+type PresenceStatus string
+
+const (
+	PresenceUnknown PresenceStatus = "unknown"
+	PresenceOnline  PresenceStatus = "online"
+	PresenceOffline PresenceStatus = "offline"
+)
+
+// Valid reports whether s is one of the defined presence states.
+func (s PresenceStatus) Valid() bool {
+	switch s {
+	case PresenceUnknown, PresenceOnline, PresenceOffline:
+		return true
+	}
+	return false
+}
+
+// SessionEndReason says how a player session ended.
+type SessionEndReason string
+
+const (
+	SessionEndNormal  SessionEndReason = "normal"  // 正常登出
+	SessionEndTimeout SessionEndReason = "timeout" // 会话超时
+	SessionEndKicked  SessionEndReason = "kicked"  // 被踢下线
+	SessionEndCrash   SessionEndReason = "crash"   // 游戏服异常断开
+)
+
+// Valid reports whether r is one of the defined end reasons.
+func (r SessionEndReason) Valid() bool {
+	switch r {
+	case SessionEndNormal, SessionEndTimeout, SessionEndKicked, SessionEndCrash:
+		return true
+	}
+	return false
+}
+
+// PlayerSession records one play session of one character: opened by a login
+// report, closed by a logout / timeout / kick / crash report. The open
+// session (EndedAt == nil) is exactly what marks the character online.
+//
+// AccountID is carried on the session (a superset of the minimum shape) so
+// the session store can key the character index row, whose composite key is
+// (account_id, server_id, character_id).
+type PlayerSession struct {
+	SessionID   string           `json:"session_id"`
+	AccountID   int64            `json:"account_id"`
+	CharacterID int64            `json:"character_id"`
+	ServerID    string           `json:"server_id"`
+	StartedAt   time.Time        `json:"started_at"`
+	EndedAt     *time.Time       `json:"ended_at,omitempty"`
+	EndReason   SessionEndReason `json:"end_reason,omitempty"`
 }
 
 // MigrationStatus is the lifecycle state of a server migration.

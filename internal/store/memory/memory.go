@@ -54,6 +54,18 @@ type Store struct {
 	realms     map[string]*model.Realm
 	shards     map[string]*model.Shard
 
+	// sessions is the player-session projection (PP): one row per play
+	// session. Presence is character-adjacent state, so the session maps
+	// share charMu with the character index (no third lock — no lock-order
+	// hazard with the batch critical section, which already holds charMu
+	// when session appliers run). activeByChar maps character_id → open
+	// session_id (the same "at most one open session" invariant the SQL
+	// partial unique index enforces); sessByChar keeps each character's
+	// sessions in started order so the newest-first list is a reverse scan.
+	sessions     map[string]*model.PlayerSession
+	activeByChar map[int64]string
+	sessByChar   map[int64][]string
+
 	srvIdx *serverIndex
 	chIdx  *charIndex
 
@@ -102,6 +114,9 @@ func New() *Store {
 		shards:        make(map[string]*model.Shard),
 		maintWindows:  make(map[string]*model.MaintenanceWindow),
 		announcements: make(map[string]*model.Announcement),
+		sessions:      make(map[string]*model.PlayerSession),
+		activeByChar:  make(map[int64]string),
+		sessByChar:    make(map[int64][]string),
 		srvIdx:        newServerIndex(),
 		chIdx:         newCharIndex(),
 		idem:          make(map[string]uint64),
@@ -551,6 +566,11 @@ func (s *Store) applyUpsertCharacter(ins *instruction) error {
 
 	ch.CreatedAt = now
 	ch.UpdatedAt = now
+	if ch.PresenceStatus == "" {
+		// Same default the SQL schema gives the column: a character the
+		// session store has never seen reads as "unknown", not "".
+		ch.PresenceStatus = model.PresenceUnknown
+	}
 	cp := *ch
 	s.characters[key] = &cp
 	s.chIdx.add(key, &cp)
@@ -594,6 +614,148 @@ func (s *Store) applyDeleteCharacter(key string) error {
 	s.chIdx.remove(key, ch)
 	delete(s.characters, key)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// PlayerSessionStore — presence rides the character index's lock domain
+// ---------------------------------------------------------------------------
+
+func (s *Store) CreateSession(ctx context.Context, sess *model.PlayerSession) error {
+	if sess.SessionID == "" || sess.CharacterID == 0 || sess.ServerID == "" {
+		return fmt.Errorf("%w: session id, character_id and server_id are required", store.ErrInvalid)
+	}
+	if sess.StartedAt.IsZero() {
+		sess.StartedAt = time.Now()
+	}
+	ins := &instruction{
+		kind:   opCreateSession,
+		target: charKey(sess.AccountID, sess.ServerID, sess.CharacterID),
+		sess:   sess,
+		out:    make(chan instructionResult, 1),
+	}
+	return s.submit(ctx, ins).err
+}
+
+func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error) {
+	if !reason.Valid() {
+		return nil, fmt.Errorf("%w: invalid end reason %q", store.ErrInvalid, reason)
+	}
+	// Resolve the character key for lane ordering: session writes for one
+	// character must ride the same lane as that character's index writes.
+	s.charMu.RLock()
+	cur, ok := s.sessions[sessionID]
+	s.charMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
+	}
+	ins := &instruction{
+		kind:       opEndSession,
+		target:     charKey(cur.AccountID, cur.ServerID, cur.CharacterID),
+		sess:       cur, // the live row; the applier re-reads it under the batch lock
+		sessEndAt:  endedAt,
+		sessReason: reason,
+		sessOut:    &model.PlayerSession{},
+		out:        make(chan instructionResult, 1),
+	}
+	if err := s.submit(ctx, ins).err; err != nil {
+		return nil, err
+	}
+	return ins.sessOut, nil
+}
+
+func (s *Store) GetSession(_ context.Context, sessionID string) (*model.PlayerSession, error) {
+	s.charMu.RLock()
+	defer s.charMu.RUnlock()
+	sess, ok := s.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
+	}
+	cp := *sess
+	return &cp, nil
+}
+
+func (s *Store) GetActiveSessionByCharacter(_ context.Context, characterID int64) (*model.PlayerSession, error) {
+	s.charMu.RLock()
+	defer s.charMu.RUnlock()
+	id, ok := s.activeByChar[characterID]
+	if !ok {
+		return nil, fmt.Errorf("character %d: %w", characterID, store.ErrNotFound)
+	}
+	cp := *s.sessions[id]
+	return &cp, nil
+}
+
+func (s *Store) ListSessionsByCharacter(_ context.Context, characterID int64, limit int) ([]*model.PlayerSession, error) {
+	s.charMu.RLock()
+	defer s.charMu.RUnlock()
+	ids := s.sessByChar[characterID]
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// sessByChar is kept in started order (oldest first); the list returns
+	// newest first. Cap after the reverse walk.
+	n := len(ids)
+	if limit > 0 && limit < n {
+		n = limit
+	}
+	out := make([]*model.PlayerSession, 0, n)
+	for i := len(ids) - 1; i >= 0 && len(out) < n; i-- {
+		cp := *s.sessions[ids[i]]
+		out = append(out, &cp)
+	}
+	return out, nil
+}
+
+func (s *Store) applyCreateSession(ins *instruction) error {
+	sess := ins.sess
+	chKey := charKey(sess.AccountID, sess.ServerID, sess.CharacterID)
+	ch, ok := s.characters[chKey]
+	if !ok {
+		return fmt.Errorf("session %s: character %s: %w", sess.SessionID, chKey, store.ErrNotFound)
+	}
+	if _, open := s.activeByChar[sess.CharacterID]; open {
+		return fmt.Errorf("session %s: character %d already has an open session: %w",
+			sess.SessionID, sess.CharacterID, store.ErrConflict)
+	}
+	cp := *sess
+	s.sessions[sess.SessionID] = &cp
+	s.activeByChar[sess.CharacterID] = sess.SessionID
+	s.sessByChar[sess.CharacterID] = append(s.sessByChar[sess.CharacterID], sess.SessionID)
+	ch.PresenceStatus = model.PresenceOnline
+	ch.UpdatedAt = sess.StartedAt
+	return nil
+}
+
+func (s *Store) applyEndSession(ins *instruction) error {
+	sess, ok := s.sessions[ins.sess.SessionID]
+	if !ok {
+		return fmt.Errorf("session %s: %w", ins.sess.SessionID, store.ErrNotFound)
+	}
+	if sess.EndedAt != nil {
+		return fmt.Errorf("session %s: %w", ins.sess.SessionID, store.ErrConflict)
+	}
+	endAt := ins.sessEndAt
+	sess.EndedAt = &endAt
+	sess.EndReason = ins.sessReason
+	delete(s.activeByChar, sess.CharacterID)
+	chKey := charKey(sess.AccountID, sess.ServerID, sess.CharacterID)
+	if ch, ok := s.characters[chKey]; ok {
+		ch.PresenceStatus = model.PresenceOffline
+		ch.LastLogoutAt = &endAt
+		ch.UpdatedAt = endAt
+	}
+	if ins.sessOut != nil {
+		*ins.sessOut = *sess
+	}
+	return nil
+}
+
+func cloneSession(sess *model.PlayerSession) *model.PlayerSession {
+	if sess == nil {
+		return nil
+	}
+	cp := *sess
+	return &cp
 }
 
 // ---------------------------------------------------------------------------

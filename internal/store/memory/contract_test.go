@@ -13,4 +13,5 @@ func TestContract(t *testing.T) {
 	defer s.Close() // stop the instruction lanes
 	storetest.Run(t, s, s)
 	storetest.RunRuntime(t, s)
+	storetest.RunSessions(t, s)
 }
