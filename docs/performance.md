@@ -231,27 +231,27 @@ an empty set).
 ### 8.2 The command-based write queue
 
 All hot writes are first wrapped in a **command envelope** `{kind, target, payload,
-base_version, idempotency_key}` (an `instruction`, queue.go:130); public method
+base_version, idempotency_key}` (an `instruction`, queue.go:140); public method
 signatures and synchronous semantics are unchanged — callers block until **their own**
 instruction commits (every write method is `return s.submit(ctx, ins).err`,
 memory.go:128 et al), so read-after-write is still exact.
 
 - **Lane separation**: 4 control lanes + 2 hot lanes, hashed per entity with FNV-1a
-  (queue.go:231, 282-284) — the same entity always lands in the same lane, FIFO with a
+  (queue.go:330, 337) — the same entity always lands in the same lane, FIFO with a
   single writer, so races are structurally impossible. Configuration changes (control
   lanes) never queue behind heartbeats (hot lanes), and a hot-lane backlog cannot take
-  down the control plane (`hot()`, queue.go:111).
-- **Merge rules hang off the type** (`mergeable()`, queue.go:119): only overwrite-style
+  down the control plane (`hot()`, queue.go:118).
+- **Merge rules hang off the type** (`mergeable()`, queue.go:129): only overwrite-style
   writes — heartbeat / server-status / server-tags — may merge; within one batch the
   same entity keeps the newest and the rest are superseded. Instructions handed back to
   the caller (register / character upsert) and order-sensitive ones (delete, character
   patch) never merge, never drop and never duplicate. **Superseded envelopes still get
   a batch commit receipt** (the superseded notification in applyBatchN, from
-  queue.go:350) — under last-writer-wins semantics this means "your write landed with
+  queue.go:458) — under last-writer-wins semantics this means "your write landed with
   the newer one"; callers are unaware of the merge. A regression test pins that
-  concurrent merging never swallows a receipt (queue_test.go:281).
+  concurrent merging never swallows a receipt (queue_test.go:284).
 - **The merge window follows supply**: keep draining a non-empty lane and commit as
-  soon as a drain comes up empty (`drainAvailable`, queue.go:317), batch cap 256. There
+  soon as a drain comes up empty (`drainAvailable`, queue.go:367), batch cap 256. There
   is no timed window — an idle single instruction commits immediately (no latency
   floor), and under a storm the batch naturally fills to its cap. The merge window *is*
   the supply window: high-frequency writes to one entity are debounced inside a batch,
@@ -268,17 +268,17 @@ memory.go:128 et al), so read-after-write is still exact.
   pinned by TestCloseDrainPrecedesPostCloseWrite / TestCloseDrainOrderCAS
   (queue_test.go:447, 522) — both go red against the unfixed inline path.
 - **Idempotency and replay**: an idempotency-key LRU of 1024 guards against retries and
-  replays (queue.go:470-487); applied instructions land in a 1024-deep deep-copy capture
+  replays (queue.go:525-542); applied instructions land in a 1024-deep deep-copy capture
   ring — `ReplayInto` rebuilds write history in a sandbox, and `DryRun` pre-checks
-  without touching production (queue.go:206, 221). Merge-semantics tests: merging loses
+  without touching production (queue.go:226, 241). Merge-semantics tests: merging loses
   nothing (enqueued = applied + merged + in-flight), same-entity ordering holds, and
-  idempotent replay is consistent (queue_test.go:25, 122, 230).
+  idempotent replay is consistent (queue_test.go:26, 86, 123).
 
 ### 8.3 Atomicity: data + index in one critical section (decided)
 
 **What was actually adopted: one lock, one critical section.** Each batch commit
 completes the data mutation and index maintenance together inside `mu + charMu`
-(applyBatchN, queue.go:340-395) — index and data can never lead each other, and a
+(applyBatchN, queue.go:390-467) — index and data can never lead each other, and a
 reader holding the corresponding read lock necessarily sees a consistent (data, index)
 pair. The three lock domains and their order: mu (servers+serverIndex) → charMu
 (characters+charIndex) → rtMu (runtimes), with no reverse acquisition path
@@ -298,14 +298,14 @@ per 256 instructions under a storm).
 ### 8.4 Version watermark
 
 Each applied instruction increments a monotonic watermark (`s.watermark.Add(1)`,
-queue.go:428). Visibility semantics: **the watermark a reader sees under the lock *is*
+queue.go:478). Visibility semantics: **the watermark a reader sees under the lock *is*
 the committed state**; a caller's write returning means its own instruction was applied
 (wait-for-receipt semantics, §8.2); a merged write returning means its successor was
 applied (state ≥ its own write). base_version is stamped at enqueue time; existing
 instruction types are all overwrite-and-swap by entity, so a mismatched watermark is
 absorbed by recomputation — future compare-and-set style instructions will be rejected
-here (errVersionConflict reserved, queue.go:62-67). The current watermark is exposed via
-`QueueStats.Watermark` (store.go:318-323).
+here (errVersionConflict reserved, queue.go:60-65). The current watermark is exposed via
+`QueueStats.Watermark` (store.go:337-340).
 
 ### 8.5 Before/after comparison (replicas measured in the same bench)
 
