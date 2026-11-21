@@ -6,6 +6,7 @@ const STATUS_MAP: Record<string, { color: string; label: string }> = {
   suspect: { color: 'gold', label: '可疑' },
   offline: { color: 'red', label: '离线' },
   draining: { color: 'purple', label: '排水中' },
+  disabled: { color: 'default', label: '停用' },
 };
 
 export default function StatusTag({ status }: { status: string }) {

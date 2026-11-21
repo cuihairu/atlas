@@ -19,7 +19,7 @@ import {
 } from '../api/client';
 import type { Server, AdminStats } from '../types';
 
-const STATUSES = ['online', 'maintenance', 'suspect', 'offline', 'draining', 'starting'];
+const STATUSES = ['online', 'maintenance', 'suspect', 'offline', 'draining', 'starting', 'disabled'];
 
 /** URL query 与筛选状态的映射：同步双向，外链可复现筛选。 */
 interface Filters {

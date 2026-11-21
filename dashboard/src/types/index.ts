@@ -27,7 +27,7 @@ export interface Server {
   platform?: string;
   realm_id?: string | null;
   shard_id?: string | null;
-  status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting';
+  status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting' | 'disabled';
   /** Player-facing responses expose only public tags. */
   tags?: ServerTag[];
   /** 运营路由权重（灰度放量 knob）：100 = 中性，>100 吸引流量，<100 抑制。 */
