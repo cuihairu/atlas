@@ -158,7 +158,9 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/directory/characters", h.handleCreateCharacter)
 	mux.HandleFunc("GET /v1/directory/accounts/{id}/characters", h.handleListCharactersByAccount)
 	mux.HandleFunc("GET /v1/directory/characters/{character_id}", h.handleGetCharacter)
+	mux.HandleFunc("GET /v1/directory/characters/{character_id}/presence", h.handleGetCharacterPresence)
 	mux.HandleFunc("GET /v1/directory/servers/{id}/characters", h.handleListCharactersByServer)
+	mux.HandleFunc("GET /v1/directory/servers/{id}/presence", h.handleListOnlineByServer)
 	mux.HandleFunc("PATCH /v1/directory/characters/{character_id}", h.handlePatchCharacter)
 	mux.HandleFunc("DELETE /v1/directory/characters/{character_id}", h.handleDeleteCharacter)
 }
@@ -735,6 +737,74 @@ func (h *Handler) handleListCharactersByServer(w http.ResponseWriter, r *http.Re
 		resp["next_cursor"] = nextCursor
 	}
 
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleGetCharacterPresence answers 角色在线查询
+// (PP-3, docs/presence.md §4): GET /v1/directory/characters/{character_id}/presence.
+func (h *Handler) handleGetCharacterPresence(w http.ResponseWriter, r *http.Request) {
+	charID, err := strconv.ParseInt(r.PathValue("character_id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid character_id")
+		return
+	}
+
+	view, err := h.directory.GetPresence(r.Context(), charID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "CHARACTER_NOT_FOUND", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// handleListOnlineByServer answers 某服在线名单与计数
+// (PP-3, docs/presence.md §4): GET /v1/directory/servers/{id}/presence.
+func (h *Handler) handleListOnlineByServer(w http.ResponseWriter, r *http.Request) {
+	serverID := r.PathValue("id")
+	q := r.URL.Query()
+
+	limit := 50
+	if l := q.Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid limit")
+			return
+		}
+		limit = n
+	}
+	cursor := q.Get("cursor")
+
+	count, err := h.directory.CountOnlineByServer(r.Context(), serverID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "PRESENCE_NOT_CONFIGURED", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	chars, nextCursor, err := h.directory.ListOnlineByServer(r.Context(), serverID, limit, cursor)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "PRESENCE_NOT_CONFIGURED", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	resp := map[string]any{
+		"server_id":    serverID,
+		"online_count": count,
+		"characters":   chars,
+	}
+	if nextCursor != "" {
+		resp["next_cursor"] = nextCursor
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

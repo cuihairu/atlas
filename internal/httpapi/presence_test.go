@@ -288,3 +288,200 @@ func TestPresenceRequiresAuth(t *testing.T) {
 		t.Errorf("valid token: expected 404 (server not registered), got %d", resp.StatusCode)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// PP-3 query surface
+// ---------------------------------------------------------------------------
+
+type characterPresence struct {
+	PresenceStatus string `json:"presence_status"`
+	ActiveSession  *struct {
+		SessionID string `json:"session_id"`
+	} `json:"active_session"`
+	Character *struct {
+		CharacterID int64 `json:"character_id"`
+	} `json:"character"`
+}
+
+// 角色在线查询: GET /v1/directory/characters/{character_id}/presence
+func TestPresenceCharacterQuery(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+	createTestCharacter(t, ts, "game-1001", 10001, 823712, "PresenceChar")
+
+	// Unknown character → 404.
+	resp := getJSON(t, ts, "/v1/directory/characters/999999/presence")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown char: expected 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Invalid character_id → 400.
+	resp = getJSON(t, ts, "/v1/directory/characters/abc/presence")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid char id: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Never-logged-in character → 200, presence unknown, no session.
+	resp = getJSON(t, ts, "/v1/directory/characters/823712/presence")
+	var body characterPresence
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode presence: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("presence: expected 200, got %d", resp.StatusCode)
+	}
+	if body.PresenceStatus != "unknown" || body.ActiveSession != nil || body.Character == nil {
+		t.Errorf("fresh presence = %+v, want unknown / no session / character", body)
+	}
+
+	// Login → online with the active session.
+	presenceURL(t, ts, "game-1001", loginReport(10001, 823712, "sess-a"))
+	resp = getJSON(t, ts, "/v1/directory/characters/823712/presence")
+	body = characterPresence{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode presence: %v", err)
+	}
+	resp.Body.Close()
+	if body.PresenceStatus != "online" {
+		t.Errorf("presence_status = %q, want online", body.PresenceStatus)
+	}
+	if body.ActiveSession == nil || body.ActiveSession.SessionID != "sess-a" {
+		t.Errorf("active_session = %+v, want sess-a", body.ActiveSession)
+	}
+
+	// Logout → offline, no session.
+	presenceURL(t, ts, "game-1001", logoutReport(10001, 823712, "sess-a", "normal"))
+	resp = getJSON(t, ts, "/v1/directory/characters/823712/presence")
+	body = characterPresence{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	resp.Body.Close()
+	if body.PresenceStatus != "offline" || body.ActiveSession != nil {
+		t.Errorf("after logout = %+v, want offline / no session", body)
+	}
+}
+
+// 某服在线名单与计数: GET /v1/directory/servers/{id}/presence
+func TestPresenceServerRoster(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+	registerTestServer(t, ts, "game-1002")
+
+	for _, c := range []struct {
+		server        string
+		account, char int64
+		name          string
+	}{
+		{"game-1001", 10001, 823712, "Alpha"},
+		{"game-1001", 10002, 823713, "Bravo"},
+		{"game-1001", 10003, 823714, "Charlie"},
+		{"game-1002", 10004, 823715, "Delta"},
+	} {
+		createTestCharacter(t, ts, c.server, c.account, c.char, c.name)
+	}
+
+	// Only Alpha and Charlie on game-1001 are online; Delta on game-1002 is online.
+	presenceURL(t, ts, "game-1001", loginReport(10001, 823712, "s1"))
+	presenceURL(t, ts, "game-1001", loginReport(10003, 823714, "s3"))
+	presenceURL(t, ts, "game-1002", loginReport(10004, 823715, "s4"))
+
+	resp := getJSON(t, ts, "/v1/directory/servers/game-1001/presence")
+	var roster struct {
+		ServerID    string `json:"server_id"`
+		OnlineCount int    `json:"online_count"`
+		Characters  []struct {
+			CharacterID int64 `json:"character_id"`
+		} `json:"characters"`
+		NextCursor string `json:"next_cursor"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&roster); err != nil {
+		t.Fatalf("decode roster: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("roster: expected 200, got %d", resp.StatusCode)
+	}
+	if roster.ServerID != "game-1001" || roster.OnlineCount != 2 || len(roster.Characters) != 2 {
+		t.Errorf("roster = %+v, want game-1001 with 2 online", roster)
+	}
+	gotIDs := []int64{roster.Characters[0].CharacterID, roster.Characters[1].CharacterID}
+	if gotIDs[0] != 823712 || gotIDs[1] != 823714 {
+		t.Errorf("roster ids = %v, want [823712, 823714]", gotIDs)
+	}
+	// The cursor is a resume token (last returned character_id), populated
+	// even on the final page: reading past it yields an empty roster.
+	if roster.NextCursor != "823714" {
+		t.Errorf("next_cursor = %q, want 823714 (resume token)", roster.NextCursor)
+	}
+	resp = getJSON(t, ts, "/v1/directory/servers/game-1001/presence?cursor="+roster.NextCursor)
+	roster = struct {
+		ServerID    string `json:"server_id"`
+		OnlineCount int    `json:"online_count"`
+		Characters  []struct {
+			CharacterID int64 `json:"character_id"`
+		} `json:"characters"`
+		NextCursor string `json:"next_cursor"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(&roster)
+	resp.Body.Close()
+	if len(roster.Characters) != 0 {
+		t.Errorf("roster after cursor = %+v, want empty", roster.Characters)
+	}
+
+	// The other server keeps its own roster.
+	resp = getJSON(t, ts, "/v1/directory/servers/game-1002/presence")
+	roster = struct {
+		ServerID    string `json:"server_id"`
+		OnlineCount int    `json:"online_count"`
+		Characters  []struct {
+			CharacterID int64 `json:"character_id"`
+		} `json:"characters"`
+		NextCursor string `json:"next_cursor"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(&roster)
+	resp.Body.Close()
+	if roster.OnlineCount != 1 || len(roster.Characters) != 1 || roster.Characters[0].CharacterID != 823715 {
+		t.Errorf("game-1002 roster = %+v, want [823715] online", roster)
+	}
+
+	// Cursor pagination walks the roster.
+	resp = getJSON(t, ts, "/v1/directory/servers/game-1001/presence?limit=1")
+	roster = struct {
+		ServerID    string `json:"server_id"`
+		OnlineCount int    `json:"online_count"`
+		Characters  []struct {
+			CharacterID int64 `json:"character_id"`
+		} `json:"characters"`
+		NextCursor string `json:"next_cursor"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(&roster)
+	resp.Body.Close()
+	if len(roster.Characters) != 1 || roster.Characters[0].CharacterID != 823712 || roster.NextCursor == "" {
+		t.Errorf("page1 = %+v, want [823712] with a cursor", roster)
+	}
+	resp = getJSON(t, ts, "/v1/directory/servers/game-1001/presence?limit=1&cursor="+roster.NextCursor)
+	roster = struct {
+		ServerID    string `json:"server_id"`
+		OnlineCount int    `json:"online_count"`
+		Characters  []struct {
+			CharacterID int64 `json:"character_id"`
+		} `json:"characters"`
+		NextCursor string `json:"next_cursor"`
+	}{}
+	json.NewDecoder(resp.Body).Decode(&roster)
+	resp.Body.Close()
+	if len(roster.Characters) != 1 || roster.Characters[0].CharacterID != 823714 {
+		t.Errorf("page2 = %+v, want [823714]", roster)
+	}
+
+	// Invalid limit → 400.
+	resp = getJSON(t, ts, "/v1/directory/servers/game-1001/presence?limit=0")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid limit: expected 400, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
