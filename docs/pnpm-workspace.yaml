@@ -1,6 +1,10 @@
-
-
 overrides:
-  vite@<6.4.4: 6.4.4
+  # 6.4.4 is vulnerable (GHSA-8g5g-mxqh-grgj, server.fs.deny bypassed with
+  # queries); 6.4.5 is the first patched release.
+  vite@<6.4.5: 6.4.5
   katex@<0.18.2: 0.18.2
   esbuild@<0.25.0: 0.25.0
+
+onlyBuiltDependencies:
+  # pnpm >=10 refuses to install until esbuild's postinstall is approved.
+  - esbuild
