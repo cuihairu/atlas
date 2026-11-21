@@ -275,7 +275,22 @@ func TestLoadSeriesScopes(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go sampler.Run(ctx)
 	defer cancel()
-	time.Sleep(20 * time.Millisecond)
+	// Wait for the sampler to actually tick: a fixed sleep returns as soon
+	// as it elapses, and under load the spawned goroutine can still be
+	// unscheduled — the handler then read an empty ring. Every ring the test
+	// asserts on must be primed, not just the fleet one.
+	waitForSink(t, "the sampler to prime every ring the test reads", func() bool {
+		for _, name := range []string{
+			"load.fleet.players", "load.fleet.load",
+			"load.server.srv-a.players", "load.server.srv-a.load",
+			"load.region.cn.players", "load.region.cn.load",
+		} {
+			if len(sampler.Series(name, time.Minute)) == 0 {
+				return false
+			}
+		}
+		return true
+	})
 
 	ts, _ := setupServerWithEvents(t, nil, func(h *Handler) {
 		h.WithTelemetry(sampler)
@@ -346,7 +361,11 @@ func TestBusSeriesWithCountingAdapter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go sampler.Run(ctx)
 	defer cancel()
-	time.Sleep(20 * time.Millisecond)
+	// Same guard as the load-series test above: a fixed sleep returns the
+	// moment it elapses, even if the sampler goroutine is still unscheduled.
+	waitForSink(t, "the sampler's first tick", func() bool {
+		return len(sampler.Series("bus.atlas.characters.depth", time.Minute)) > 0
+	})
 
 	ts, _ := setupServerWithEvents(t, counting, func(h *Handler) {
 		h.WithTelemetry(sampler)
