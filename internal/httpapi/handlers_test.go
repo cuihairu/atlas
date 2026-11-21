@@ -29,7 +29,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *memory.Store) {
 
 	regSvc := registry.New(mem, mem, logger).WithSessions(mem)
 	discSvc := discovery.New(mem, mem)
-	dirSvc := directory.New(mem)
+	dirSvc := directory.New(mem).WithPlayerSessions(mem)
 	admSvc := admin.New(mem)
 	events := httpadapter.New()
 	_ = events.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
