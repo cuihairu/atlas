@@ -112,3 +112,8 @@
 - [x] [M] 修正转发头仅作用于 REST 监听口的文档表述（docs/api.md:963、docs/security.md:214、docs/zh/security.md:124）——已修共 8 行：所列三处 + docs/zh/api.md:996/998 镜像 + docs/api.md 与 docs/zh/api.md 采样段，统一为「仅 REST 生效；gRPC 一律取传输层对端地址、从不读 XFF/X-Real-IP，代理后 gRPC 白名单看到的是代理 IP」；采样比率 (0,1] 外同步改为「启动即报错」（与 0708a67 行为一致）；commit 62730ba
 - [x] [m] 提交或还原 go.mod/go.sum 与 npm/pnpm 依赖漂移（go.mod:33）——已解：兄弟会话 checkpoint 8f2a5e3 收编全部依赖漂移并修复 UU 索引；本轮回检 git status 仅含本会话 8 个改动文件，正常 commit/push 恢复。**但 8f2a5e3 引入了新缺陷**：dashboard/package.json 与 package-lock.json 带 git stash 冲突标记提交进 main（48 处），Docker Image dashboard 腿红灯（run 43660236959 failure），已按 68d49de 还原至冲突前基线 e8b4e14（见「审核发现（已修复）」）
 - [x] [m] 后续证据锚定 commit + 工作树清洁度 + 依赖锁定状态（todo.md:30、31）——本轮结论锚定：代码 0708a67、文档 62730ba、依赖基线 8f2a5e3；go test ./... 39 包全绿基于该基线
+
+- [ ] PP-1 · P0 · 玩家在线状态数据模型：`Character` 加 `PresenceStatus(online/offline/unknown)`+`LastLogoutAt`；新增 `PlayerSession` 模型（session_id/character_id/server_id/started_at/ended_at/end_reason normal_timeout_kicked_crash）；migration+store(memory/queue) 同步；验收=单测覆盖状态流转与 session 生命周期。
+- [ ] PP-2 · P0 · 游戏服上报通道：复用 server heartbeat 认证通道，新增玩家 presence 上报端点（login/logout 事件，幂等，含 server 侧认证）；验收=handler 单测（含未认证拒绝/重复上报幂等/非法流转拒绝）。
+- [ ] PP-3 · P0 · 查询 API：角色在线查询/某服在线名单与计数/审计事件补 login/logout 类型；验收=httpapi 单测绿+全仓 go test 绿。
+- [ ] PP-4 · P1 · 文档同步：docs 面补 presence 上报协议说明与 API 参考；验收=docs 构建过。
