@@ -60,14 +60,29 @@ type CrossServerMatchDomain struct {
 	Params  map[string]string `json:"params,omitempty"`
 }
 
+// CrossPlayType is one row of the cross-server gameplay type table
+// (docs/config-center.md §2.2): the terminology-contract enum published by
+// operations, plus its runtime-ID prefix. Wire tags mirror
+// internal/model.CrossPlayType.
+type CrossPlayType struct {
+	ID          string `json:"id"`
+	Name        string `json:"name,omitempty"`
+	Summary     string `json:"summary,omitempty"`
+	Lifecycle   string `json:"lifecycle,omitempty"`   // persistent (default) | seasonal | ephemeral
+	Matchmaking bool   `json:"matchmaking,omitempty"` // matched through a match_domains pool
+	Ranking     bool   `json:"ranking,omitempty"`     // ranking data needs aggregating
+	IDPrefix    string `json:"id_prefix,omitempty"`   // runtime-ID type prefix (2-8 lowercase letters, unique)
+}
+
 // CrossServerSpec is the whole coordination document.
 type CrossServerSpec struct {
 	Topology struct {
 		Clusters []CrossServerCluster `json:"clusters"`
 	} `json:"topology"`
-	Groups       []CrossServerGroup       `json:"groups"`
-	Features     map[string]bool          `json:"features"`
-	MatchDomains []CrossServerMatchDomain `json:"match_domains"`
+	Groups         []CrossServerGroup       `json:"groups"`
+	Features       map[string]bool          `json:"features"`
+	MatchDomains   []CrossServerMatchDomain `json:"match_domains"`
+	CrossPlayTypes []CrossPlayType          `json:"crossplay_types"`
 }
 
 // CrossServerConfig is a versioned snapshot.

@@ -320,6 +320,48 @@ func TestFetchCrossServerConfigUnpublished(t *testing.T) {
 	}
 }
 
+// TestFetchCrossServerConfigCrossplayTypes pins the wire contract of the
+// fifth section. The server publishes crossplay_types with snake_case keys
+// (id_prefix / matchmaking / ranking / lifecycle); the SDK must surface the
+// full type table rather than silently dropping it — a Go struct missing the
+// field or using a wrong tag loses the section wholesale (the round-19 Java
+// @SerializedName class of bug).
+func TestFetchCrossServerConfigCrossplayTypes(t *testing.T) {
+	cs := newConfigServer()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/crossserver/config", cs.handle)
+	c, _ := newRESTClient(t, mux)
+
+	cs.publish(t, 7, "hash-7", map[string]any{
+		"topology":      map[string]any{"clusters": []map[string]any{{"id": "c1", "servers": []string{"g1"}}}},
+		"groups":        []map[string]any{},
+		"features":      map[string]bool{"arena": true},
+		"match_domains": []map[string]any{},
+		"crossplay_types": []map[string]any{
+			{"id": "battlefield", "name": "Cross-Server Battlefield", "summary": "PVP sessions",
+				"lifecycle": "seasonal", "matchmaking": true, "ranking": true, "id_prefix": "xb"},
+			{"id": "dungeon", "id_prefix": "xd"},
+		},
+	})
+
+	cfg, err := c.FetchCrossServerConfig(context.Background())
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	got := cfg.Spec.CrossPlayTypes
+	if len(got) != 2 {
+		t.Fatalf("CrossPlayTypes = %d entries, want 2 (section silently dropped?)", len(got))
+	}
+	bf := got[0]
+	if bf.ID != "battlefield" || bf.Name != "Cross-Server Battlefield" ||
+		bf.Lifecycle != "seasonal" || !bf.Matchmaking || !bf.Ranking || bf.IDPrefix != "xb" {
+		t.Errorf("battlefield row = %+v, want full snake_case wire contract (id_prefix/matchmaking/ranking)", bf)
+	}
+	if d := got[1]; d.ID != "dungeon" || d.IDPrefix != "xd" {
+		t.Errorf("dungeon row = %+v, want id=dungeon id_prefix=xd", d)
+	}
+}
+
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
