@@ -1,4 +1,4 @@
-.PHONY: build run test test-coverage lint docker docker-compose docs docs-dev docs-build clean perf-runner-smoke
+.PHONY: build run proto test test-coverage lint docker docker-compose docs docs-dev docs-build clean perf-runner-smoke
 
 VERSION := v0.1.1
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -11,6 +11,19 @@ build:
 
 run: build
 	ATLAS_STORE=memory ./bin/atlas
+
+# 再生成 api/pb（api/proto/atlas.proto 首注释与生成文件头都写「make proto」）。
+# 工具链必须与已提交文件头一致，否则 diff 会带版本噪声：
+#   protoc 3.21.12 · protoc-gen-go v1.36.12
+#     go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+#   protoc-gen-go-grpc v1.6.2
+#     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+# module= 前缀把 go_package 的模块路径剥掉，产物落 api/pb/（已验证与提交逐字节一致）。
+proto:
+	protoc --proto_path=. \
+		--go_out=module=github.com/cuihairu/atlas:. \
+		--go-grpc_out=module=github.com/cuihairu/atlas:. \
+		api/proto/atlas.proto
 
 # ================= 本地测试口径 (local testing scope) =================
 # CI 与本地开发按改动面三路分流——改一行文档不该全量编译：
