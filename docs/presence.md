@@ -93,6 +93,11 @@ For logout, add the reason:
 }
 ```
 
+`202` means **queued**, not accepted by the state machine: the checks that depend on
+current state (a conflicting login, a logout with no open session) run at consumption
+time and surface as handler failures — retried and dead-lettered per the adapter's
+delivery semantics ([sync.md §4](sync.md#_4-message-bus-selection)), not as a `409`.
+
 **Errors**
 
 | Code | HTTP | Case |
