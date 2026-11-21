@@ -116,4 +116,4 @@
 - [x] PP-1 · P0 · 玩家在线状态数据模型：`Character` 加 `PresenceStatus(online/offline/unknown)`+`LastLogoutAt`；新增 `PlayerSession` 模型（session_id/character_id/server_id/started_at/ended_at/end_reason normal_timeout_kicked_crash）；migration+store(memory/queue) 同步；验收=单测覆盖状态流转与 session 生命周期。commit badda9f
 - [x] PP-2 · P0 · 游戏服上报通道：复用 server heartbeat 认证通道，新增玩家 presence 上报端点（login/logout 事件，幂等，含 server 侧认证）；验收=handler 单测（含未认证拒绝/重复上报幂等/非法流转拒绝）。commit b7238dd
 - [x] PP-3 · P0 · 查询 API：角色在线查询/某服在线名单与计数/审计事件补 login/logout 类型；验收=httpapi 单测绿+全仓 go test 绿。commit e85bd48
-- [ ] PP-4 · P1 · 文档同步：docs 面补 presence 上报协议说明与 API 参考；验收=docs 构建过。
+- [x] PP-4 · P1 · 文档同步：docs 面补 presence 上报协议说明与 API 参考；验收=docs 构建过。commit 90b43e9
