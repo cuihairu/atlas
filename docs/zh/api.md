@@ -16,7 +16,7 @@ Atlas 的 API 分为六组，职责清晰互不重叠。
 
 `GET /v1/discovery/servers` 回答"有哪些服务器"，`GET /v1/routing/recommended` 回答"我该去哪个"。两者语义不同，不合并成一个接口。
 
-除 REST 外，同一套能力也以 gRPC 暴露（见下方 [gRPC API](#grpc-api)），proto 定义在 [`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)。
+除 REST 外，同一套能力也以 gRPC 暴露（见下方 [gRPC API](#grpc-api)），proto 定义在 [`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto)。例外是玩家在线状态——`POST /v1/registry/servers/{id}/presence`、`GET /v1/directory/characters/{character_id}/presence` 与 `GET /v1/directory/servers/{server_id}/presence` 为**仅 REST**（gRPC 无对应），见 [presence.md](presence.md)。
 
 ---
 

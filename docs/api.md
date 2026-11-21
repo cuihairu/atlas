@@ -16,7 +16,7 @@ Atlas exposes six API groups, each with a clear, non-overlapping responsibility.
 
 `GET /v1/discovery/servers` answers "which servers exist"; `GET /v1/routing/recommended` answers "where should I go". The two have different semantics and are deliberately not merged into one endpoint.
 
-Besides REST, the same capabilities are also exposed over gRPC (see [gRPC API](#grpc-api) below); the proto definition lives at [`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto).
+Besides REST, the same capabilities are also exposed over gRPC (see [gRPC API](#grpc-api) below); the proto definition lives at [`api/proto/atlas.proto`](https://github.com/cuihairu/atlas/blob/main/api/proto/atlas.proto). The exception is player presence — `POST /v1/registry/servers/{id}/presence`, `GET /v1/directory/characters/{character_id}/presence` and `GET /v1/directory/servers/{server_id}/presence` are **REST-only** (no gRPC counterpart), see [presence.md](presence.md).
 
 ---
 
