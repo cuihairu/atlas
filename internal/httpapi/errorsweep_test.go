@@ -99,7 +99,6 @@ func TestStoreFailureSweep(t *testing.T) {
 		{"characters by account", "GET", "/v1/directory/accounts/1/characters", "", 500},
 		{"character get", "GET", "/v1/directory/characters/1", "", 500},
 		{"characters by server", "GET", "/v1/directory/servers/srv-1/characters", "", 500},
-		{"server presence", "GET", "/v1/directory/servers/srv-1/presence", "", 500},
 		{"character patch", "PATCH", "/v1/directory/characters/1", `{"level":2}`, 500},
 		{"character delete", "DELETE", "/v1/directory/characters/1", "", 500},
 		{"admin maintenance", "POST", "/v1/admin/servers/srv-1/maintenance", "", 500},

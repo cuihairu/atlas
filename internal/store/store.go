@@ -45,10 +45,6 @@ type CharacterPatch struct {
 	Avatar      *string
 	Metadata    *map[string]string
 	LastLoginAt *time.Time
-	// LastLogoutAt records the latest logout (PP-3). The session store writes
-	// it on the denormalized row; the directory projection mirrors it so a
-	// character.logout event keeps the projection's last_logout_at in sync.
-	LastLogoutAt *time.Time
 }
 
 // CharacterSearchFilter controls which characters are returned by SearchCharacters.
@@ -62,10 +58,6 @@ type CharacterSearchFilter struct {
 	ServerID string
 	// AccountID filters by the opaque account reference (玩家 ID 搜索).
 	AccountID int64
-	// Presence filters by the denormalized online/offline state (PP-3
-	// query API). Nil means no presence predicate; a character the session
-	// store has never seen reads as "unknown" (see model.PresenceStatus).
-	Presence *model.PresenceStatus
 	// MetadataKey requires MetadataValue: the key=value pair filter.
 	MetadataKey   string
 	MetadataValue string
@@ -153,12 +145,6 @@ type CharacterStore interface {
 	// ListCharactersByServer returns characters on a given server, with
 	// cursor-based pagination.
 	ListCharactersByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, error)
-
-	// CountByServerPresence returns how many characters on a server hold the
-	// given presence status (PP-3 在线计数). Unlike the roster query this is
-	// not bounded by a page: it is the true total the presence endpoint
-	// reports next to the paginated roster.
-	CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error)
 
 	// SearchCharacters searches characters with filters and cursor pagination.
 	// Returns the matching characters and a cursor for the next page.
@@ -347,36 +333,6 @@ type CrossServerConfigStore interface {
 	// GetCrossServerConfig returns the current config (ErrNotFound before
 	// anything was ever saved).
 	GetCrossServerConfig(ctx context.Context) (*model.CrossServerConfig, error)
-}
-
-// PlayerSessionStore persists player presence sessions and maintains the
-// denormalized presence fields on the character index: opening a session
-// marks the character online, closing it marks the character offline with
-// LastLogoutAt = endedAt.
-type PlayerSessionStore interface {
-	// CreateSession opens a new session for a character and marks the
-	// character online. It fails with ErrNotFound when the character is not
-	// in the index and ErrConflict when the character already has an open
-	// session (the idempotency rule for duplicate login reports lives in the
-	// report handler — this is the strict store contract).
-	CreateSession(ctx context.Context, sess *model.PlayerSession) error
-
-	// EndSession closes an open session (EndedAt/EndReason) and marks the
-	// character offline with LastLogoutAt = endedAt. It fails with
-	// ErrNotFound when the session does not exist and ErrConflict when the
-	// session is already closed. Returns the stored, updated session.
-	EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error)
-
-	// GetSession returns a session by ID.
-	GetSession(ctx context.Context, sessionID string) (*model.PlayerSession, error)
-
-	// GetActiveSessionByCharacter returns the character's open session, or
-	// ErrNotFound when the character is not online.
-	GetActiveSessionByCharacter(ctx context.Context, characterID int64) (*model.PlayerSession, error)
-
-	// ListSessionsByCharacter returns the character's sessions, newest
-	// first. A zero or negative limit returns every session.
-	ListSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error)
 }
 
 // Store composes all storage interfaces.

@@ -228,62 +228,6 @@ func TestQueueReplayAndDryRun(t *testing.T) {
 	}
 }
 
-func TestQueueSessionReplay(t *testing.T) {
-	// Session ops flow through the same capture ring as every other write:
-	// DryRun must count them by kind and ReplayInto must reproduce the
-	// presence projection and the session history on a fresh store.
-	s := New()
-	defer s.Close()
-	ctx := context.Background()
-	acct := int64(4242)
-	if err := s.UpsertCharacter(ctx, &model.Character{
-		AccountID: acct, ServerID: "srv-1", CharacterID: 100, Name: "alice", Level: 1,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	started := time.Now()
-	if err := s.CreateSession(ctx, &model.PlayerSession{
-		SessionID: "sess-1", AccountID: acct, CharacterID: 100, ServerID: "srv-1",
-		StartedAt: started,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	ended := started.Add(time.Hour)
-	if _, err := s.EndSession(ctx, "sess-1", ended, model.SessionEndKicked); err != nil {
-		t.Fatal(err)
-	}
-
-	byKind, _, err := DryRun(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if byKind["create_session"] != 1 || byKind["end_session"] != 1 {
-		t.Errorf("applied by kind has create_session=%d end_session=%d, want 1/1",
-			byKind["create_session"], byKind["end_session"])
-	}
-
-	sandbox := New()
-	defer sandbox.Close()
-	if err := ReplayInto(sandbox, s); err != nil {
-		t.Fatal(err)
-	}
-	ch, err := sandbox.GetCharacterByCharacterID(ctx, 100)
-	if err != nil {
-		t.Fatalf("replayed character missing: %v", err)
-	}
-	if ch.PresenceStatus != model.PresenceOffline || ch.LastLogoutAt == nil || !ch.LastLogoutAt.Equal(ended) {
-		t.Errorf("replayed presence = %q logout=%v, want offline at %v",
-			ch.PresenceStatus, ch.LastLogoutAt, ended)
-	}
-	sess, err := sandbox.GetSession(ctx, "sess-1")
-	if err != nil {
-		t.Fatalf("replayed session missing: %v", err)
-	}
-	if sess.EndReason != model.SessionEndKicked || sess.EndedAt == nil || !sess.EndedAt.Equal(ended) {
-		t.Errorf("replayed session = %+v, want ended=%v reason=kicked", sess, ended)
-	}
-}
-
 func TestQueueBackpressureInline(t *testing.T) {
 	// A store with no lane consumers: the buffer fills, and the next
 	// submit degrades to an inline synchronous apply (backpressure path).
