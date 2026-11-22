@@ -136,33 +136,33 @@ byAccountServer / byCharID` 四张倒排。复合键 `accountID:serverID:charact
 ### 8.2 指令化写队列
 
 所有热写先封装为**指令信封** `{kind, target, payload, base_version, idempotency_key}`
-（`instruction`，queue.go:130），公开方法签名与同步语义不变——调用方阻塞到**本条**
-提交（各写方法都是 `return s.submit(ctx, ins).err`，memory.go:128 等），read-after-write
+（`instruction`，queue.go:146），公开方法签名与同步语义不变——调用方阻塞到**本条**
+提交（各写方法都是 `return s.submit(ctx, ins).err`，memory.go:145 等），read-after-write
 依旧精确。
 
-- **分道**：4 控制道 + 2 热道，按实体 FNV-1a 哈希（queue.go:231, 282-284）——同实体
+- **分道**：4 控制道 + 2 热道，按实体 FNV-1a 哈希（queue.go:346）——同实体
   恒落同道，FIFO 单写者，竞态在结构上不存在。配置变更（控制道）不排队在心跳
-  （热道）后面，热道积压拖不垮控制面（`hot()`，queue.go:111）。
-- **合并规则挂在类型上**（`mergeable()`，queue.go:119）：只有覆盖写语义的
+  （热道）后面，热道积压拖不垮控制面（`hot()`，queue.go:124）。
+- **合并规则挂在类型上**（`mergeable()`，queue.go:135）：只有覆盖写语义的
   heartbeat / server-status / server-tags 可合并——同批同实体留最新、多余的被
   「 supersede」；带调用方拷回的（register / 角色 upsert）与顺序敏感的（删除、
   角色 patch）永不合并、不丢不重。**被合并的信封也拿批次提交回执**（applyBatchN
-  的 superseded 通知，queue.go:350 起）——对 last-writer-wins 语义，"你的写已随
-  更新者落地"，调用方不感知合并；回归测试钉住并发合并不吞回执（queue_test.go:281）。
-- **合并窗随供给走**：道内非空续捞、捞空即提交（`drainAvailable`，queue.go:317），
+  的 superseded 通知，queue.go:476 起）——对 last-writer-wins 语义，"你的写已随
+  更新者落地"，调用方不感知合并；回归测试钉住并发合并不吞回执（queue_test.go:340）。
+- **合并窗随供给走**：道内非空续捞、捞空即提交（`drainAvailable`，queue.go:383），
   批量上限 256。没有定时窗——空闲单条立即提交（无延迟地板），风暴下天然攒满
   上限批。合并窗=供给窗口：同实体高频写在批内去抖，索引增量随批一次维护。
-- **背压**：道深 4096 满→该条**内联同步写**（submit 的 default 分支，queue.go:254）
+- **背压**：道深 4096 满→该条**内联同步写**（submit 的 default 分支，queue.go:312）
   ——调用方自己当自己的单写者，写绝不失败也绝不无限排队。
-- **幂等与回放**：幂等键 LRU 1024 防重试重放（queue.go:470-487）；已应用指令落
+- **幂等与回放**：幂等键 LRU 1024 防重试重放（queue.go:544-604）；已应用指令落
   1024 深拷贝 capture 环——`ReplayInto` 在沙箱重建写历史、`DryRun` 预检不动线上
-  （queue.go:206, 221）。合并语义测试：合并不丢（enqueued = applied + merged +
-  在途）、同实体不乱序、幂等重放一致（queue_test.go:25, 122, 230）。
+  （queue.go:242, 257）。合并语义测试：合并不丢（enqueued = applied + merged +
+  在途）、同实体不乱序、幂等重放一致（queue_test.go:26, 86, 123）。
 
 ### 8.3 原子性：data + index 同临界区（拍板）
 
 **实际采用：同一把锁同一个临界区**。每批提交在 `mu + charMu` 内一次完成数据变更
-与索引维护（applyBatchN，queue.go:340-395）——索引与数据永不互相领先，读侧持
+与索引维护（applyBatchN，queue.go:406-484）——索引与数据永不互相领先，读侧持
 对应读锁看到的必是一致的 (data, index) 对。三锁域与锁序：mu（servers+serverIndex）
 → charMu（characters+charIndex）→ rtMu（runtimes），无反向获取路径
 （memory.go:10-14, 47-48）。
@@ -176,12 +176,12 @@ O(1)/条（indexes.go:74, 92——变更前快照旧投影、只摘/挂变化的
 
 ### 8.4 版本水位
 
-每应用一条指令递增 monotonic 水位（`s.watermark.Add(1)`，queue.go:428）。可见性
+每应用一条指令递增 monotonic 水位（`s.watermark.Add(1)`，queue.go:493）。可见性
 语义：**读侧在锁内看到的水位即已提交状态**；调用方的写返回 = 本条已应用（等回执
 语义，§8.2）；被合并的写返回 = 其后继已应用（状态 ≥ 自己的写）。base_version 在
 入队时盖章；现有指令类型都是按实体覆盖交换的，水位不符即按重算消化——未来
-compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:62-67）。当前
-水位经 `QueueStats.Watermark` 暴露（store.go:318-323）。
+compare-and-set 类指令在此拒绝（errVersionConflict 预留，queue.go:60-63）。当前
+水位经 `QueueStats.Watermark` 暴露（store.go:380-385）。
 
 ### 8.5 前后对照（同 bench 内复刻实测）
 
@@ -276,9 +276,9 @@ status online 80%、public tags hot 25%；`limit=200`；单位 ns/op）：
    `flush_batch_size` / `flush_duration_seconds`（最近一批 gauge）与
    `capture_entries`。入队/合并速率按 PromQL 由 `*_total` 差分，不另设第二
    计数器。SQL 后端经转发快照报 `Enabled=false` 时整族不出序列——有指标即有队列。
-2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:218 路由、:1922
+2. **`GET /v1/admin/indexqueue/status`**（httpapi/handlers.go:222 路由、:2062
    handler）：返回同一快照原文。装饰层不藏快照——fleet 装饰器与 main 的
-   composite 都透传 `QueueStats`（fleet/track.go:75、main.go:912）；SQL 库的
+   composite 都透传 `QueueStats`（fleet/track.go:75、main.go:1074）；SQL 库的
    空快照（`Enabled=false`）与非 provider 一律 `503 INDEX_QUEUE_DISABLED`，
    不发空 200。curl 实证：memory 后端 200（watermark=enqueued=applied=4，
    recent_flushes 真实记录，临界区 ~7-17µs）；`/metrics` 上 12 条序列同水位。

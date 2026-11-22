@@ -21,7 +21,7 @@
 | 状态条件写 | Compare-and-set status transition | 只有服务器仍持有预期状态时才写入新状态，防止过期的健康扫描覆盖更新的决策。 | `internal/store/store.go:98`, `internal/store/store.go:108` |
 | 游标分页 | Cursor pagination | 存储列表返回有边界页和透明游标；单次调用共享上限为 200 行。 | `internal/store/store.go:78`, `internal/store/store.go:145` |
 | 运行时存储 | Runtime store | 专用于心跳和快照的易变状态边界；舰队统计除持久总数外还必须读取该状态。 | `internal/store/store.go:203`, `internal/store/store.go:218` |
-| 事件 | Event | 携带角色生命周期变更或配置更新信号的传输无关数据单元。 | `internal/event/adapter.go:17`, `internal/event/adapter.go:65` |
+| 事件 | Event | 携带角色生命周期变更或配置更新信号的传输无关数据单元。 | `internal/event/adapter.go:17`, `internal/event/adapter.go:69` |
 | 事件主题 | Event topic | 传输级路由键：角色事件使用 `atlas.characters`，配置信号使用 `atlas.config`。 | `internal/event/adapter.go:39`, `internal/event/adapter.go:108` |
 | 事件适配器 | Event adapter | 发布/订阅抽象，显式表达同步语义、确认机制和生命周期关闭。 | `internal/event/adapter.go:129` |
 | 死信主题 | Dead-letter topic | 以 `.dl` 结尾的同族主题；投递耗尽的事件复制到此，普通消费者不会无限重试。 | `internal/event/adapter.go:50` |
