@@ -98,6 +98,37 @@ func TestRESTLifecycle(t *testing.T) {
 	}
 }
 
+// TestCharacterPresenceFields pins the presence read path surfacing: the REST
+// character responses carry presence_status / last_logout_at
+// (docs/presence.md), and the SDK Character DTO must decode them rather than
+// silently drop them.
+func TestCharacterPresenceFields(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/directory/characters/{id}", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"account_id": 7, "server_id": "game-1", "character_id": 1001,
+			"name": "Hero", "level": 1,
+			"presence_status": "online",
+			"last_logout_at":  "2026-11-22T08:00:00Z",
+			"created_at":      "2026-11-01T00:00:00Z",
+			"updated_at":      "2026-11-22T08:01:00Z",
+		})
+	})
+	c, _ := newRESTClient(t, mux)
+	ctx := context.Background()
+
+	ch, err := c.GetCharacter(ctx, 1001)
+	if err != nil {
+		t.Fatalf("GetCharacter: %v", err)
+	}
+	if ch.PresenceStatus != "online" {
+		t.Errorf("PresenceStatus = %q, want online (presence read path must surface)", ch.PresenceStatus)
+	}
+	if ch.LastLogoutAt == nil || ch.LastLogoutAt.Format(time.RFC3339) != "2026-11-22T08:00:00Z" {
+		t.Errorf("LastLogoutAt = %v, want 2026-11-22T08:00:00Z", ch.LastLogoutAt)
+	}
+}
+
 // TestRetryOnTransient verifies 5xx responses are retried with backoff
 // while 4xx are not.
 func TestRetryOnTransient(t *testing.T) {
