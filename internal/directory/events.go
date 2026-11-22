@@ -252,6 +252,13 @@ func (s *Service) applyLogout(ctx context.Context, e *event.Event) (*model.Chara
 	}
 
 	if s.sessions != nil {
+		// Ordering guard (mirrors applyLogin): a stale re-delivered logout
+		// must never close a newer session. An empty session_id means "close
+		// whatever is open", so without this a retried logout delivered after
+		// a newer login would close that newer session instead.
+		if active, err := s.sessions.GetActivePlayerSession(ctx, e.CharacterID); err == nil && active.StartedAt.After(endAt) {
+			return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+		}
 		if err := s.sessions.Logout(ctx, accountID, serverID, e.CharacterID, e.SessionID, reason, endAt); err != nil {
 			return nil, fmt.Errorf("logout character: %w", err)
 		}
