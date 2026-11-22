@@ -667,6 +667,26 @@ Four things the live pass forced, all into the tool rather than around it:
   `coverage gap: N of M ticks missing`. Replay does not invent one: a recorded file
   carries no interval, so `--sample` only judges coverage when `--interval` is given, and
   shows raw counts otherwise.
+- **Drill windows are excluded, and the plateau is judged per steady segment.** A
+  drill-folded soak folds in replica-kills, and a replica kill restarts the process: a
+  fresh process trims its pools to real demand, so the fd level lands somewhere new and
+  the trailing quarter no longer compares to the leading quarter at all. That is the
+  drill's expected effect, not a leak, so a verdict that spans a drill boundary is
+  structurally a FAIL — the 100-scale drill-folded lab run surfaced exactly this (atlas2
+  `process_open_fds` −42.2% after its kill, verdict FAIL). `--drills` gives soakcheck the
+  drills.sh log (window open/close ISO timestamps) and `--grace` appends a recovery grace
+  after each close (default 2m): points inside a window are excluded, the remaining
+  points are grouped into steady segments, and each segment is judged on its own
+  leading-vs-trailing quarter. A one-time step at a drill boundary is not a failure;
+  what still fails is creep inside any segment, a drop inside a segment (an unplanned
+  crash is not at a window), and growth measured head-to-tail across the run. Drill
+  windows are planned holes, so coverage counts only ticks outside them.
+  A caveat this leaves open: a short lab window can still fail on the slow boot trim —
+  the process shedding the fds it opened during load ramp can take minutes, which is a
+  genuine non-plateau at the head of the run. Warm-up is point-based, so it does not
+  cover a multi-minute trim; at the §9 ≥24h acceptance window the trim is a few percent
+  of the leading quarter and passes. This is the same "a drop is not automatically a
+  restart" family as the boot herd, not a verdict-logic defect.
 
 Live-verified 2026-10-20 against the repaired HA stack, not acceptance evidence: 170s at a
 10s interval under 100 servers / 100 read rps / 1 char rps / an ops trickle every 10s —
@@ -685,7 +705,8 @@ size point to the shape the local runs used (read/char rps, ops cadence, read wo
 soakcheck warm-up); `--plan` prints the schedule and the exact commands without touching
 anything. The script never manages the stack lifecycle: preflight requires both replicas
 healthy in the compose project and every `--metrics` URL answering, and it leaves the stack
-as it found it. The process exits with soakcheck's verdict, replayed from the recorded TSV.
+as it found it. The process exits with soakcheck's verdict, replayed from the recorded TSV
+and handed the drill log, so the injected fault windows are excluded from the verdict.
 
 The live pass forced two things into the runner itself:
 

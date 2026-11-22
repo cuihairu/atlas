@@ -35,6 +35,7 @@ WARMUP="" # empty = the scale preset's default
 DRILLS_MODE="both"
 REPLICA_DOWN="30s"
 PG_DOWN="20s"
+GRACE="2m"
 METRICS="http://127.0.0.1:18082/metrics http://127.0.0.1:28082/metrics"
 PROJECT="${PROJECT:-atlas-ha}"
 PUBLIC="http://127.0.0.1:8080"
@@ -73,6 +74,8 @@ smoke drift tolerance and three warm-up ticks.
   --drills    mid-run faults folded in per §9: replica-kill at 1/3 (atlas1) and
               2/3 (atlas2) of the window, pg-outage at 1/2
   --down      replica-kill outage length   --pg-down: pg-outage outage length
+  --grace     recovery grace appended after each drill window before the
+              plateau verdict judges the series again (default 2m)
   --metrics   one URL per replica's admin /metrics (repeat the flag or pass a
               space-separated list; the sticky HAProxy front cannot stand in)
   --public / --registry / --admin   loadgen's base URLs (shipped-compose defaults)
@@ -92,6 +95,7 @@ while [ $# -gt 0 ]; do
     --drills) DRILLS_MODE="$2"; shift 2 ;;
     --down) REPLICA_DOWN="$2"; shift 2 ;;
     --pg-down) PG_DOWN="$2"; shift 2 ;;
+    --grace) GRACE="$2"; shift 2 ;;
     --metrics) shift; METRICS=""; while [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; do METRICS="$METRICS $1"; shift; done ;;
     --project) PROJECT="$2"; shift 2 ;;
     --public) PUBLIC="$2"; shift 2 ;;
@@ -149,6 +153,10 @@ case "$DRILLS_MODE" in
   both|replica-kill|pg-outage|none) ;;
   *) echo "unknown --drills $DRILLS_MODE (both|replica-kill|pg-outage|none)" >&2; exit 2 ;;
 esac
+case "$GRACE" in
+  [0-9]*h|[0-9]*m|[0-9]*s|[0-9]*) ;;
+  *) echo "invalid --grace (use 90s / 2m / 1h or plain seconds): $GRACE" >&2; exit 2 ;;
+esac
 
 DUR_S=$(to_seconds "$DURATION")
 IV_S=$(to_seconds "$INTERVAL")
@@ -162,6 +170,15 @@ KILL2=$(( 2 * DUR_S / 3 ))
 
 if [ -z "$OUT" ]; then
   OUT="soak-${SCALE}-$(date +%Y%m%dT%H%M%S)"
+fi
+
+# A drill-folded run hands the verdict the drill windows to exclude: the
+# plateau is judged per steady segment, so a one-time level step at a drill
+# boundary (a fresh process trimming its pools) is not read as a restart FAIL.
+# $OUT is settled before this, so a defaulted archive dir still gets its path.
+DRILL_ARGS=""
+if [ "$DRILLS_MODE" != "none" ]; then
+  DRILL_ARGS="--drills $OUT/drills.log --grace $GRACE"
 fi
 
 plan() {
@@ -182,7 +199,7 @@ loadgen
 soakcheck
   $SOAKCHECK --interval $INTERVAL --duration $DURATION --drift $DRIFT --warmup $WARMUP --out $OUT/soak.tsv --metrics $METRICS
 verdict
-  $SOAKCHECK --sample $OUT/soak.tsv --interval $INTERVAL --warmup $WARMUP
+  $SOAKCHECK --sample $OUT/soak.tsv --interval $INTERVAL --warmup $WARMUP $DRILL_ARGS
 EOF
 }
 
@@ -231,6 +248,12 @@ done
 
 plan > "$OUT/plan.txt"
 
+replay_args() { # drill windows, only when the drill log actually landed on disk
+  if [ -n "$DRILL_ARGS" ] && [ -f "$OUT/drills.log" ]; then
+    echo "$DRILL_ARGS"
+  fi
+}
+
 run_drill() { # offset then the drills.sh drill arguments
   local off="$1"; shift
   ( sleep "$off"
@@ -244,7 +267,7 @@ run_drill() { # offset then the drills.sh drill arguments
 on_interrupt() {
   log "interrupted; stopping drivers and taking the verdict from the recorded window"
   kill "${GEN_PID:-}" "${CHECK_PID:-}" 2>/dev/null || true
-  "$SOAKCHECK" --sample "$OUT/soak.tsv" --interval "$INTERVAL" --warmup "$WARMUP" > "$OUT/verdict.txt" 2>&1 || true
+  "$SOAKCHECK" --sample "$OUT/soak.tsv" --interval "$INTERVAL" --warmup "$WARMUP" $(replay_args) > "$OUT/verdict.txt" 2>&1 || true
   cat "$OUT/verdict.txt"
   exit 130
 }
@@ -280,9 +303,9 @@ wait "$GEN_PID" || log "WARNING loadgen exited non-zero (see $OUT/loadgen.log)"
 wait "$CHECK_PID" || log "WARNING soakcheck exited non-zero (see $OUT/soakcheck.log)"
 wait || log "WARNING a drill exited non-zero (see $OUT/drills.log)"
 
-log "verdict from the recorded window (replayable: $SOAKCHECK --sample $OUT/soak.tsv --interval $INTERVAL --warmup $WARMUP)"
+log "verdict from the recorded window (replayable: $SOAKCHECK --sample $OUT/soak.tsv --interval $INTERVAL --warmup $WARMUP $DRILL_ARGS)"
 set +e
-"$SOAKCHECK" --sample "$OUT/soak.tsv" --interval "$INTERVAL" --warmup "$WARMUP" 2>&1 | tee "$OUT/verdict.txt"
+"$SOAKCHECK" --sample "$OUT/soak.tsv" --interval "$INTERVAL" --warmup "$WARMUP" $(replay_args) 2>&1 | tee "$OUT/verdict.txt"
 rc=${PIPESTATUS[0]}
 set -e
 log "soak complete; verdict exit=$rc; archive in $OUT"

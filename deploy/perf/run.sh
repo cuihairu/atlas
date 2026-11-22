@@ -26,6 +26,7 @@ SEED="1"
 OUT=""
 KEEP="false"
 PLAN="false"
+GRACE="2m"
 METRICS="http://127.0.0.1:18082/metrics http://127.0.0.1:28082/metrics"
 PUBLIC="http://127.0.0.1:38080"
 REGISTRY="http://127.0.0.1:38081"
@@ -40,6 +41,8 @@ usage: run.sh [--scale smoke|100|1k|5k] [--duration 45s|24h] [--drills both|repl
   --scale smoke is the workstation gate: 3 nodes for 60s, no drills.
                 100/1k/5k preserve the §9 soak presets and are not smoke tests.
   --duration    smoke defaults to 60s; acceptance scales follow the §9 defaults.
+  --grace       recovery grace after each drill window, before the plateau
+                verdict judges the series again (default 2m)
   --out         archive directory (default: perf-<scale>-<timestamp>)
   --keep        leave the HA stack running after an acceptance run (never applies
                 to smoke; smoke always tears its stack down)
@@ -63,6 +66,7 @@ while [ $# -gt 0 ]; do
     --scale) SCALE="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --drills) DRILLS="$2"; shift 2 ;;
+    --grace) GRACE="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     --project) PROJECT="$2"; shift 2 ;;
     --file) COMPOSE_FILE="$2"; shift 2 ;;
@@ -135,7 +139,7 @@ PLAN_FILE="$OUT/plan.txt"
   echo "  metrics      $METRICS"
   echo "  endpoints    public $PUBLIC / registry $REGISTRY / admin $ADMIN"
   echo "  reports      loadgen.json endpoints.json endpoints.txt soak.tsv verdict.txt summary.json summary.txt"
-  echo "  soak command $SOAK --scale ${RUN_SCALE:-unset} --duration $DURATION --interval 5s --drift $RUN_DRIFT --warmup $RUN_WARMUP --drills $DRILLS --metrics $METRICS --project $PROJECT --file $COMPOSE_FILE --out $OUT --seed $SEED"
+  echo "  soak command $SOAK --scale ${RUN_SCALE:-unset} --duration $DURATION --interval 5s --drift $RUN_DRIFT --warmup $RUN_WARMUP --drills $DRILLS --grace $GRACE --metrics $METRICS --project $PROJECT --file $COMPOSE_FILE --out $OUT --seed $SEED"
   if [ "$SCALE" = smoke ]; then
     echo "smoke override"
     echo "  $SOAK substitutes loadgen -servers 3 -read-rps 5 while preserving the 60s telemetry window"
@@ -153,8 +157,14 @@ compose() {
 # even a bare `[` test — it yields 0, and the smoke gate would exit 0 on FAIL.
 run_soakcheck_verdict() {
   set +e
+  local replay_args=()
+  if [ "$DRILLS" != none ] && [ -f "$OUT/drills.log" ]; then
+    # The drill windows are the verdict's own exclusions: with them, a
+    # one-time level step at a drill boundary is not read as a restart FAIL.
+    replay_args=(--drills "$OUT/drills.log" --grace "$GRACE")
+  fi
   "$OUT/soakcheck" --sample "$OUT/soak.tsv" --interval 5s --drift "$RUN_DRIFT" \
-    --warmup "$RUN_WARMUP" 2>&1 | tee "$OUT/verdict.txt"
+    --warmup "$RUN_WARMUP" "${replay_args[@]}" 2>&1 | tee "$OUT/verdict.txt"
   smoke_verdict_rc=${PIPESTATUS[0]}
   set -e
 }
@@ -254,7 +264,7 @@ teardown() {
 
 if $PLAN; then
   "$SOAK" --plan --scale "$RUN_SCALE" --duration "$DURATION" --interval 5s --drift "$RUN_DRIFT" \
-    --warmup "$RUN_WARMUP" \
+    --warmup "$RUN_WARMUP" --grace "$GRACE" \
     --drills "$DRILLS" --metrics $METRICS --project "$PROJECT" --file "$COMPOSE_FILE" \
     --out "$OUT" --seed "$SEED" --public "$PUBLIC" --registry "$REGISTRY" --admin "$ADMIN" >> "$PLAN_FILE"
   cat "$PLAN_FILE"
@@ -270,7 +280,8 @@ if ! wait_healthy; then
 fi
 log "running acceptance pipeline"
 SOAK_ARGS=(--scale "$RUN_SCALE" --duration "$DURATION" --interval 5s --drift "$RUN_DRIFT"
-  --warmup "$RUN_WARMUP" --drills "$DRILLS" --metrics $METRICS --project "$PROJECT" --file "$COMPOSE_FILE"
+  --warmup "$RUN_WARMUP" --grace "$GRACE" --drills "$DRILLS" --metrics $METRICS
+  --project "$PROJECT" --file "$COMPOSE_FILE"
   --out "$OUT" --seed "$SEED" --public "$PUBLIC" --registry "$REGISTRY" --admin "$ADMIN")
 if [ "$SCALE" = smoke ]; then
   SOAK_ARGS+=(--override-smoke "servers=3 read-rps=5")

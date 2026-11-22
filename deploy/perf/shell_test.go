@@ -181,6 +181,48 @@ func TestRunnerVerdictContract(t *testing.T) {
 	}
 }
 
+func TestSoakPlanHandsDrillWindowsToTheVerdict(t *testing.T) {
+	bash(t)
+	// A drill-folded run must exclude the drill windows + grace from the
+	// verdict, or a replica restart reads as a negative-drift FAIL. The
+	// replay line carries --drills/--grace only when drills are folded in;
+	// a no-drills run keeps the plain whole-run verdict.
+	verdictLine := func(plan string) string {
+		for _, line := range strings.Split(plan, "\n") {
+			if strings.Contains(line, "--sample") {
+				return line
+			}
+		}
+		return ""
+	}
+	both, err := exec.Command("bash", script(t, "soak.sh"),
+		"--plan", "--scale", "100", "--duration", "40m", "--drills", "both").CombinedOutput()
+	if err != nil {
+		t.Fatalf("soak.sh --plan (drills both): %v\n%s", err, both)
+	}
+	if line := verdictLine(string(both)); !strings.Contains(line, "--drills ") || !strings.Contains(line, "--grace 2m") {
+		t.Errorf("drill-folded verdict line must carry --drills/--grace:\n%s", line)
+	}
+
+	none, err := exec.Command("bash", script(t, "soak.sh"),
+		"--plan", "--scale", "100", "--duration", "40m", "--drills", "none").CombinedOutput()
+	if err != nil {
+		t.Fatalf("soak.sh --plan (drills none): %v\n%s", err, none)
+	}
+	if line := verdictLine(string(none)); strings.Contains(line, "--drills ") || strings.Contains(line, "--grace") {
+		t.Errorf("no-drills verdict line must stay plain:\n%s", line)
+	}
+
+	grace, err := exec.Command("bash", script(t, "soak.sh"),
+		"--plan", "--scale", "100", "--duration", "40m", "--drills", "both", "--grace", "90s").CombinedOutput()
+	if err != nil {
+		t.Fatalf("soak.sh --plan (grace 90s): %v\n%s", err, grace)
+	}
+	if line := verdictLine(string(grace)); !strings.Contains(line, "--grace 90s") {
+		t.Errorf("--grace must pass through to the verdict line:\n%s", line)
+	}
+}
+
 func TestRunnerCapturesTheVerdictRcOnThePipelineLine(t *testing.T) {
 	bash(t)
 	src, err := os.ReadFile(script(t, "run.sh"))
