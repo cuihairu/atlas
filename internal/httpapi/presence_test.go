@@ -485,3 +485,63 @@ func TestPresenceServerRoster(t *testing.T) {
 	}
 	resp.Body.Close()
 }
+
+// A login for a character that is not in the index surfaces the store's
+// ErrNotFound through the event path as 404 CHARACTER_NOT_FOUND — distinct
+// from the SERVER_NOT_FOUND an unregistered path server yields (docs
+// presence.md §2 error table).
+func TestPresenceUnknownCharacterNotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+
+	resp := presenceURL(t, ts, "game-1001", loginReport(10001, 999999, "sess-x"))
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown character: expected 404, got %d", resp.StatusCode)
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	resp.Body.Close()
+	if body.Error.Code != "CHARACTER_NOT_FOUND" {
+		t.Errorf("error code = %q, want CHARACTER_NOT_FOUND", body.Error.Code)
+	}
+}
+
+// With an asynchronous adapter the report is queued, not applied: 202 with
+// {"status":"queued"} (docs presence.md §2) — the state-dependent checks run
+// at consumption time and surface as handler failures, not HTTP errors.
+func TestPresenceAsyncQueues(t *testing.T) {
+	ts, _ := setupServerWithEvents(t, &stubEventAdapter{sync: false}, nil)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+
+	// The async path never consults the store: character existence is only
+	// checked at consumption time, so the report queues regardless.
+	resp := presenceURL(t, ts, "game-1001", loginReport(10001, 823712, "sess-a"))
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("async login: expected 202, got %d", resp.StatusCode)
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode queued body: %v", err)
+	}
+	resp.Body.Close()
+	if body.Status != "queued" {
+		t.Errorf("status = %q, want queued", body.Status)
+	}
+
+	// Logout queues the same way.
+	resp = presenceURL(t, ts, "game-1001", logoutReport(10001, 823712, "sess-a", "normal"))
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("async logout: expected 202, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
