@@ -1,0 +1,100 @@
+{
+  "started_at": "2026-11-22T18:01:35.846068881+08:00",
+  "elapsed_sec": 1200.084778744,
+  "servers": 5000,
+  "streams": [
+    {
+      "name": "register",
+      "count": 5000,
+      "errors": 0,
+      "skipped": 221522,
+      "p50_ms": 211,
+      "p95_ms": 526,
+      "p99_ms": 752,
+      "max_ms": 1073,
+      "rps": 4.166372316823286
+    },
+    {
+      "name": "heartbeat",
+      "count": 544730,
+      "errors": 1330,
+      "skipped": 56671,
+      "p50_ms": 55,
+      "p95_ms": 645,
+      "p99_ms": 1161,
+      "max_ms": 4068,
+      "last_error": "Post \"http://127.0.0.1:38081/v1/registry/servers/loadgen-3170/heartbeat\": EOF",
+      "rps": 453.90959842862975
+    },
+    {
+      "name": "storm-register",
+      "count": 0,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0,
+      "rps": 0
+    },
+    {
+      "name": "read-list",
+      "count": 164112,
+      "errors": 570,
+      "skipped": 5684,
+      "p50_ms": 49,
+      "p95_ms": 214,
+      "p99_ms": 377,
+      "max_ms": 1628,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 136.75033873170062
+    },
+    {
+      "name": "read-detail",
+      "count": 98749,
+      "errors": 289,
+      "skipped": 3380,
+      "p50_ms": 38,
+      "p95_ms": 167,
+      "p99_ms": 321,
+      "max_ms": 1318,
+      "last_error": "Get \"http://127.0.0.1:38080/v1/discovery/servers/loadgen-2058\": EOF",
+      "rps": 82.28501998279654
+    },
+    {
+      "name": "read-recommend",
+      "count": 65928,
+      "errors": 231,
+      "skipped": 2318,
+      "p50_ms": 163,
+      "p95_ms": 398,
+      "p99_ms": 594,
+      "max_ms": 1752,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 54.93611882070512
+    },
+    {
+      "name": "char-write",
+      "count": 15531,
+      "errors": 65,
+      "skipped": 223,
+      "p50_ms": 48,
+      "p95_ms": 196,
+      "p99_ms": 396,
+      "max_ms": 1106,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 12.941585690516492
+    },
+    {
+      "name": "ops-stats",
+      "count": 82,
+      "errors": 0,
+      "skipped": 156,
+      "p50_ms": 4326,
+      "p95_ms": 4950,
+      "p99_ms": 5191,
+      "max_ms": 5191,
+      "rps": 0.06832850599590189
+    }
+  ]
+}

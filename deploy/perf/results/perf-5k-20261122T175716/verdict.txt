@@ -1,0 +1,11 @@
+soakcheck: excluding 3 drill window(s) from the verdict
+soakcheck: warm-up dropped the first 6 samples per series
+soakcheck plateau verdict
+source                       metric                         ticks            min            max    drift  verdict
+http://127.0.0.1:18082/metrics go_goroutines                 63/123           23.0          131.0   -20.5%  coverage gap: 60 of 123 ticks missing
+http://127.0.0.1:18082/metrics go_memstats_heap_inuse_bytes  63/123          2.07B          3.95B    -3.1%  coverage gap: 60 of 123 ticks missing
+http://127.0.0.1:18082/metrics process_open_fds              63/123           97.0          186.0    -1.9%  coverage gap: 60 of 123 ticks missing
+http://127.0.0.1:28082/metrics go_goroutines                 59/120           24.0          129.0   -28.0%  coverage gap: 61 of 120 ticks missing
+http://127.0.0.1:28082/metrics go_memstats_heap_inuse_bytes  59/120          2.14B          3.93B   +22.7%  coverage gap: 61 of 120 ticks missing
+http://127.0.0.1:28082/metrics process_open_fds              59/120           96.0          168.0   -12.9%  coverage gap: 61 of 120 ticks missing
+verdict: FAIL — at least one series is not a plateau

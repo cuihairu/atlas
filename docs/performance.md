@@ -458,12 +458,20 @@ representative deployment, the load model and the acceptance criteria — so tha
 it becomes a scheduling decision instead of a design exercise. Nothing here is a measured
 claim; [Benchmarks](/benchmarks) stays the only baseline until a run exists.
 
-> **Local evidence (not acceptance).** Two local-scale runs are archived under
+> **Local evidence (not acceptance).** Local-scale runs are archived under
 > `deploy/perf/results/` and are not acceptance evidence: `perf-100-acceptance-20261025`
 > (100-node, 60s window, drills folded in — verdict FAIL because heap +41.1%/+40.6% and
-> fd +33.3%/+32.9% are boot-transient, all six series plateau under `--warmup 2`) and
+> fd +33.3%/+32.9% are boot-transient, all six series plateau under `--warmup 2`),
 > `perf-1k-20261027T130504` (1k-node, 180s, 36/36 ticks, six series all plateau, PASS,
-> zero load errors). The ≥24h acceptance run remains pending a machine and a schedule.
+> zero load errors), `perf-100-20261122T145242` (100-node, 40m, drills folded in —
+> verdict FAIL on the replica-kill restart step; re-judged per steady segment with the
+> drill windows excluded, the restart step is the expected fresh-process pool trim and
+> no longer fails, leaving only the slow boot-trim soft spot) and `perf-5k-20261122T175716`
+> (5k-node, 20m, drills folded in — verdict FAIL on the coverage gate: roughly half the
+> ticks are missing because each replica's `/metrics` intermittently exceeds the 10s
+> scrape timeout while the box is CPU-saturated at 5k, the same saturation the 2026-10-20
+> 5k runs note; heap plateaus in a 2.5–3.8G band after the 5000-server ramp, no leak).
+> The ≥24h acceptance run remains pending a machine and a schedule.
 
 **Representative deployment.** The run uses the HA topology the repo already ships, not a
 bespoke rig: `deploy/docker-compose.ha.yaml` — 2 stateless Atlas replicas behind HAProxy

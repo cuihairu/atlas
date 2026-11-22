@@ -1,0 +1,6 @@
+class               count errors p95_ms p99_ms flows
+register             5000     0    526    752 register
+heartbeat          544730  1330    645   1161 heartbeat
+read               328789  1090    398    594 read-detail,read-list,read-recommend
+character-write     15531    65    196    396 char-write
+admin                  82     0   4950   5191 ops-stats

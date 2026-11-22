@@ -301,11 +301,17 @@ p95/p99、GC 行为、多小时运行对内存与文件描述符的影响（2026
 变成排期决定而不是重新设计。本节没有任何实测主张；实跑发生之前，[基准](/zh/benchmarks)
 仍是唯一基线。
 
-> **本地实证（非验收证据）**：`deploy/perf/results/` 归档两次本地尺度实跑，均不作验收
+> **本地实证（非验收证据）**：`deploy/perf/results/` 归档的本地尺度实跑均不作验收
 > 证据——`perf-100-acceptance-20261025`（100 档、60s 窗、演练折入；verdict FAIL 因
 > heap +41.1%/+40.6%、fd +33.3%/+32.9% 为 boot 蜂群瞬态，`--warmup 2` 下六序列全
-> plateau 可过）与 `perf-1k-20261027T130504`（1k 档、180s、36/36 tick、六序列全
-> plateau、PASS、零负载错误）。≥24h 验收实跑仍待指定机器与排期。
+> plateau 可过）、`perf-1k-20261027T130504`（1k 档、180s、36/36 tick、六序列全
+> plateau、PASS、零负载错误）、`perf-100-20261122T145242`（100 档、40m、演练折入；
+> verdict FAIL 在 replica-kill 重启阶跃上，排除演练窗按稳态段重判后，该阶跃属 fresh
+> 进程修剪连接池的预期效果、不再判败，残留为 boot 慢速修整软点）与
+> `perf-5k-20261122T175716`（5k 档、20m、演练折入；verdict FAIL 在覆盖度门——各副本
+> `/metrics` 在 5k 主机 CPU 饱和下间歇性超过 10s 抓取超时，约半个 tick 缺失，即
+> 2026-10-20 5k 实跑已记的同一饱和；heap 在 5000 服爬坡后于 2.5–3.8G 带内 plateau，
+> 无泄漏）。≥24h 验收实跑仍待指定机器与排期。
 
 **代表性部署**：用仓里现成的 HA 拓扑，不另搭台——`deploy/docker-compose.ha.yaml`：
 2 个无状态 Atlas 副本挂 HAProxy（公口 :8080、registry 心跳扇入 :8081）、PostgreSQL
