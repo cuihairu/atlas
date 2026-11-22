@@ -215,19 +215,21 @@ metadata 数据库。
 它**不是** "角色此时此刻在哪"——两者在未来会分叉成两个概念：
 
 ```text
-Locator（位置，未来可能，当前不实现）
-  ├── home_server     归属服务器（= 现在的 server_id）
-  ├── current_server  当前所在服（跨服活动时的临时所在）
-  ├── current_instance 当前实例 / 副本 / Zone
-  └── session         当前会话
+Locator（位置，概念预留）
+  ├── home_server       归属服务器（= server_id，已实现）
+  ├── current_server    当前所在服（= 活跃 session 的 server_id，已由 presence 落地）
+  ├── current_instance  当前实例 / 副本 / Zone（未实现，游戏侧自持）
+  └── session           当前会话（= player_sessions 开放行，已由 presence 落地）
 ```
 
-当前版本**只实现归属层**：`server_id` = 角色家服；跨服活动期间"角色
-此刻在哪"由游戏侧对局/匹配服务自持（见 config-center.md §2.1 运行时
-ID 边界），Atlas 不追踪。`character.login` / `character.moved` 事件在
-事件协议里已定义（sync.md 事件表），未来若需要"位置层"，在事件协议
-支持下扩展投影即达，**不改变现在的概念模型**——但"归属"与"位置"
-两个词从今天起就是两个概念，不再混用。
+当前版本实现**归属层 + 会话层**：`server_id` = 角色家服（归属）；presence 上报（PP-1..PP-3）新增
+`presence_status`（`unknown`/`online`/`offline`）与 `player_sessions`，其开放行携带角色活跃会话所在服——
+即草图里的 `session` 与 `current_server`。完整**实例位置**（`current_instance`/Zone，角色在跨服共享世界
+事件中的位置）仍由游戏侧对局/匹配服务自持（见 config-center.md §2.1 运行时 ID 边界），Atlas **不**追踪。
+`character.login` / `character.moved` 事件在事件协议里已定义（sync.md 事件表）；presence 上报直接驱动
+会话层（session 存储写 `player_sessions` 与 `presence_status`，login/logout 镜像刷 `last_login_at` /
+`last_logout_at`），未来若需要更深的"位置层"，在事件协议支持下扩展投影即达，**不改变现在的概念模型**——
+但"归属"与"位置"两个词从今天起就是两个概念，不再混用。
 
 ### 最重要的设计原则
 

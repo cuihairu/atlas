@@ -212,16 +212,16 @@ metadata database.
 It is **not** "where is the character right now"—the two will diverge into two concepts in the future:
 
 ```text
-Locator（位置，未来可能，当前不实现）
-  ├── home_server     归属服务器（= 现在的 server_id）
-  ├── current_server  当前所在服（跨服活动时的临时所在）
-  ├── current_instance 当前实例 / 副本 / Zone
-  └── session         当前会话
+Locator（位置，概念预留）
+  ├── home_server       归属服务器（= server_id，已实现）
+  ├── current_server    当前所在服（= 活跃 session 的 server_id，已由 presence 落地）
+  ├── current_instance  当前实例 / 副本 / Zone（未实现，游戏侧自持）
+  └── session           当前会话（= player_sessions 开放行，已由 presence 落地）
 ```
 
-The current version **implements only the ownership layer**: `server_id` = the character's home server; during cross-server events, "where the character is right now" is held by the game-side matchmaking/matching service (see config-center.md §2.1 runtime
-ID boundary), and Atlas does not track it. The `character.login` / `character.moved` events are already defined in
-the event protocol (sync.md event table); if a "location layer" is needed in the future, extending the projection with the support of the event protocol will suffice, **without changing the current conceptual model**—but from today on, "ownership" and "location"
+The current version implements the **ownership layer plus a session layer**: `server_id` = the character's home server (ownership); presence reports (PP-1..PP-3) add `presence_status` (`unknown` / `online` / `offline`) and `player_sessions`, whose open row carries the server hosting the character's active session — the `session` and `current_server` entries of the sketch. The full **instance position** (`current_instance` / Zone, where the character is inside a cross-server shared-world event) is still held by the game-side matchmaking/matching service (see config-center.md §2.1 runtime
+ID boundary), and Atlas does **not** track it. The `character.login` / `character.moved` events are defined in
+the event protocol (sync.md event table); presence reports drive the session layer directly (the session store writes `player_sessions` and `presence_status`, and the login/logout mirrors refresh `last_login_at` / `last_logout_at`). If a deeper "location layer" is needed in the future, extending the projection with the event protocol will suffice, **without changing the current conceptual model**—but from today on, "ownership" and "location"
 are two concepts and are no longer used interchangeably.
 
 ### The most important design principle
