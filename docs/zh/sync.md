@@ -80,12 +80,20 @@ flowchart LR
 | `character.updated` | 升级 / 改名 / 转职 | 变更字段 | 写端点 `PATCH /v1/directory/characters/{id}` |
 | `character.deleted` | 删除角色 | 主键三元组 | 写端点 `DELETE /v1/directory/characters/{id}` |
 | `character.moved` | 转服 | 主键 + `target_server` | **暂无内建触发源**（定义与消费已就绪，待迁移联动/事件化反向通道） |
-| `character.login` | 登录 | 主键，用于刷新 `last_login_at` | **暂无内建触发源**（同上） |
+| `character.login` | 登录 | 主键，用于刷新 `last_login_at` | presence 上报端点 `POST /v1/registry/servers/{id}/presence`（apply 的 `login` 事件即发布 `character.login`） |
+| `character.logout` | 登出 | 主键，用于刷新 `last_logout_at` | presence 上报端点 `POST /v1/registry/servers/{id}/presence`（apply 的 `logout` 事件即发布 `character.logout`） |
 
-> 五类事件 `ApplyEvent` 都能消费；但触发源只有写端点三个（created / updated /
-> deleted）。`moved` / `login` 目前**没有任何代码路径会产生它们**（预留的事件定义）：
-> 转服的数据转移由游戏服务器完成后走写端点 `PATCH` 更新索引（产生 `updated`
-> 事件），并不消费 `moved`——不要按事件表假设这两个事件会自动出现。
+> 六类事件 `ApplyEvent` 都能消费。触发源：三个写端点（created / updated /
+> deleted）加 presence 上报端点（login / logout）。`moved` 仍**没有任何代码路径会
+> 产生它**（预留的事件定义）：转服的数据转移由游戏服务器完成后走写端点 `PATCH`
+> 更新索引（产生 `updated` 事件），并不消费 `moved`。
+>
+> **Presence 镜像是尽力而为。** session 存储把 `presence_status` 与 `last_logout_at`
+> 直接写进反规范化行本身，所以镜像发布时在线状态与登出时间已提交（`last_login_at`
+> 只由 `character.login` 事件刷新——这正是它值得有触发源的原因）。`character.login` /
+> `character.logout` 发布失败只记日志、绝不把 presence 上报翻成错误；客户端重试
+> （命中 `already_applied`）会重发镜像。`rejected` 事件不发——投影不得为从未到达
+> 的状态记录时间线。
 
 ---
 

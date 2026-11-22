@@ -170,6 +170,60 @@ offline
 
 ---
 
+### POST /v1/registry/servers/{id}/presence
+
+玩家 presence 批量上报（login / logout 事件），与 `heartbeat` 同挂 registry 监听通道，Bearer / X-Atlas-Token 认证。上报服务器必须已注册——ID 由认证通道盖章，报告不可能冒认他服会话。
+
+**Request**
+
+```json
+{
+  "events": [
+    {
+      "kind": "login",
+      "session_id": "sess-2026-0001",
+      "account_id": 1001001,
+      "character_id": 823712,
+      "started_at": "2026-11-22T08:00:00Z"
+    },
+    {
+      "kind": "logout",
+      "session_id": "sess-2026-0001",
+      "ended_at": "2026-11-22T10:00:00Z",
+      "end_reason": "normal"
+    }
+  ]
+}
+```
+
+**Response** `200 OK`——每个事件一个结果，按序返回：
+
+```json
+{
+  "server_id": "game-1001",
+  "results": [
+    { "session_id": "sess-2026-0001", "kind": "login",  "status": "applied" },
+    { "session_id": "sess-2026-0001", "kind": "logout", "status": "applied" }
+  ]
+}
+```
+
+**逐事件结果**（`status`）：
+
+| status | 含义 |
+| --- | --- |
+| `applied` | session 已开 / 已关；角色上线 / 下线 |
+| `already_applied` | 重复上报——投影状态已与上报一致（同 session 仍开着，或 session 已关）。重试批次安全 |
+| `rejected` | 非法流转或目标不存在（未知 session、角色不在索引、角色在另一 session 已在线） |
+
+`applied` 与 `already_applied` 都算接受。`rejected` 事件不会毒化批次：逐事件独立分类，部分冲突的批次仍返回 `200` 加逐事件结果。
+
+**结构错误整批先于任何事件返回 `400 INVALID_ARGUMENT`**：未知 `kind`、缺 `session_id`、`login` 缺 `account_id` / `character_id`、`logout` 缺 `ended_at`、`end_reason` 非法（必须为 `normal` / `timeout` / `kicked` / `crash`）。`started_at` 对 `login` 可选——缺省时 Atlas 自己盖登录时间。
+
+presence 流把每个已接受事件镜像到角色事件总线：`applied` / `already_applied` 的 `login` 发布 `character.login`（刷新 `last_login_at`），已接受的 `logout` 发布 `character.logout`（刷新 `last_logout_at`）。镜像是尽力而为——发布失败只记日志、绝不翻成错误响应。见 [sync.md](sync.md) §2。
+
+---
+
 ## Discovery
 
 服务器发现。由**客户端与运维工具**调用。
@@ -334,6 +388,30 @@ GET /v1/discovery/servers?region=cn-east&status=online
 查询某服务器上的角色索引，主要用于运维与合服校验。
 
 **Query**：`?limit=`、`?cursor=`
+
+---
+
+### GET /v1/directory/servers/{server_id}/presence
+
+某服在线名单 + 真在线计数（PP-3 查询 API）。名单只列当前持有未关 session 的角色（`presence_status = online`）；`online_count` 是存储层总数，**不随分页缩小**。
+
+**Query**：`?limit=`（默认 50，上限 200）、`?cursor=`（纯角色 ID——与 `GET /v1/directory/servers/{id}/characters` 同分页契约）。
+
+**Response** `200 OK`
+
+```json
+{
+  "server_id": "game-1001",
+  "online_count": 2,
+  "characters": [
+    { "account_id": 1001001, "server_id": "game-1001", "character_id": 823712,
+      "name": "剑无尘", "level": 80, "presence_status": "online" }
+  ],
+  "next_cursor": "823712"
+}
+```
+
+无角色的服务器是空 `200`（`online_count: 0`、`characters: []`）——不是错误。
 
 ---
 
@@ -545,8 +623,9 @@ facet 计数与 `server_metadata_keys`）。聚合读自内存 fleet 索引—�
 
 角色索引检索。**Query**：`?q=`（名字子串）、`?server_id=`、`?account_id=`
 （玩家 ID，不透明引用）、`?metadata_key=` + `?metadata_value=`（业务概念
-过滤通道，如 `class=warrior`；平台不内建职业字段）、`?min_level=`、
-`?max_level=`、`?limit=`、`?cursor=`。
+过滤通道，如 `class=warrior`；平台不内建职业字段）、`?presence=`（在线状态：
+`online` / `offline` / `unknown`——`unknown` 表示 session 存储从未见过该角色）、
+`?min_level=`、`?max_level=`、`?limit=`、`?cursor=`。
 
 ### GET /v1/admin/diagnose/routing
 

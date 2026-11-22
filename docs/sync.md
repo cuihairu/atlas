@@ -89,14 +89,25 @@ consumer of the queue are Atlas (see §5 Write Path for details).
 | `character.updated` | Level up / name change / class change | Changed fields | Write endpoint `PATCH /v1/directory/characters/{id}` |
 | `character.deleted` | Character deleted | Primary key triple | Write endpoint `DELETE /v1/directory/characters/{id}` |
 | `character.moved` | Server transfer | Primary key + `target_server` | **No built-in trigger source yet** (definition and consumption are ready; awaiting migration linkage / an eventized reverse channel) |
-| `character.login` | Login | Primary key, used to refresh `last_login_at` | **No built-in trigger source yet** (same as above) |
+| `character.login` | Login | Primary key, used to refresh `last_login_at` | Presence report endpoint `POST /v1/registry/servers/{id}/presence` (a `login` event that applies publishes `character.login`) |
+| `character.logout` | Logout | Primary key, used to refresh `last_logout_at` | Presence report endpoint `POST /v1/registry/servers/{id}/presence` (a `logout` event that applies publishes `character.logout`) |
 
-> All five event types can be consumed by `ApplyEvent`; but the only trigger sources are the three
-> write endpoints (created / updated / deleted). `moved` / `login` currently **have no code path
-> that produces them** (reserved event definitions): the data transfer of a server transfer is
-> performed by the game server and then updates the index via the write endpoint `PATCH` (which
-> produces an `updated` event) — `moved` is not consumed. Do not assume from the event table that
-> these two events appear automatically.
+> All six event types can be consumed by `ApplyEvent`. Trigger sources: the three
+> write endpoints (created / updated / deleted) plus the presence report endpoint
+> (login / logout). `moved` still **has no code path that produces it** (reserved
+> event definition): the data transfer of a server transfer is performed by the
+> game server and then updates the index via the write endpoint `PATCH` (which
+> produces an `updated` event) — `moved` is not consumed.
+>
+> **Presence mirroring is best-effort.** The session store writes `presence_status`
+> and `last_logout_at` on the denormalized row itself, so the online state and the
+> logout timestamp are already committed by the time the mirror publishes
+> (`last_login_at` is refreshed only by the `character.login` event — that is what
+> makes it worth a trigger). A `character.login` / `character.logout` publish that
+> fails is logged and never turns the presence report into an error; the client's
+> retry (which hits `already_applied`) re-publishes it. A `rejected` event publishes
+> nothing — the projection must not record a timeline for a state that was never
+> reached.
 
 ---
 

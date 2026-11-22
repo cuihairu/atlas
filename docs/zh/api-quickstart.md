@@ -365,6 +365,7 @@ curl -X POST http://localhost:8081/v1/registry/servers/game-1002/unregister -H '
 | Registry | `POST` | `/v1/registry/servers/register` | :8081 | 注册（幂等） |
 | Registry | `POST` | `/v1/registry/servers/{id}/heartbeat` | :8081 | 心跳 |
 | Registry | `POST` | `/v1/registry/servers/{id}/unregister` | :8081 | 主动下线 |
+| Registry | `POST` | `/v1/registry/servers/{id}/presence` | :8081 | 玩家 login/logout 批量上报 |
 | Discovery | `GET` | `/v1/discovery/servers` | :8080 | 列表（筛选 + 分页） |
 | Discovery | `GET` | `/v1/discovery/servers/{id}` | :8080 | 详情 |
 | Discovery | `GET` | `/v1/discovery/announcements` | :8080 | 生效中的公告 |
@@ -372,6 +373,7 @@ curl -X POST http://localhost:8081/v1/registry/servers/game-1002/unregister -H '
 | Directory | `GET` | `/v1/directory/accounts/{id}/characters` | :8080 | 账号跨服角色 |
 | Directory | `GET` | `/v1/directory/characters/{id}` | :8080 | 单角色 |
 | Directory | `GET` | `/v1/directory/servers/{id}/characters` | :8080 | 服务器角色列表 |
+| Directory | `GET` | `/v1/directory/servers/{id}/presence` | :8080 | 服务器在线名单 + 计数 |
 | Directory | `PATCH` / `DELETE` | `/v1/directory/characters/{id}` | :8080 | 改 / 删 |
 | Routing | `GET` | `/v1/routing/recommended` | :8080 | 接入推荐 |
 | Admin | `POST` | `/v1/admin/realms` / `/v1/admin/shards` | :8082 | 大区 / 分服档案 |

@@ -166,6 +166,60 @@ Difference from heartbeat timeout: `unregister` is a **proactive** shutdown — 
 
 ---
 
+### POST /v1/registry/servers/{id}/presence
+
+Batch player presence report (login / logout events), authenticated like `heartbeat` on the registry listener channel (Bearer / X-Atlas-Token). The reporting server must already be registered — its ID is stamped from the authenticated channel, so a report can never claim sessions for another server.
+
+**Request**
+
+```json
+{
+  "events": [
+    {
+      "kind": "login",
+      "session_id": "sess-2026-0001",
+      "account_id": 1001001,
+      "character_id": 823712,
+      "started_at": "2026-11-22T08:00:00Z"
+    },
+    {
+      "kind": "logout",
+      "session_id": "sess-2026-0001",
+      "ended_at": "2026-11-22T10:00:00Z",
+      "end_reason": "normal"
+    }
+  ]
+}
+```
+
+**Response** `200 OK` — one outcome per event, in order:
+
+```json
+{
+  "server_id": "game-1001",
+  "results": [
+    { "session_id": "sess-2026-0001", "kind": "login",  "status": "applied" },
+    { "session_id": "sess-2026-0001", "kind": "logout", "status": "applied" }
+  ]
+}
+```
+
+**Per-event outcome** (`status`):
+
+| status | meaning |
+| --- | --- |
+| `applied` | The session was opened / closed; the character moved online / offline |
+| `already_applied` | Duplicate report — the projection already matches the reported state (same open session, or the session already closed). A retried batch is safe |
+| `rejected` | Invalid transition or missing target (unknown session, character not in the index, another session open for the character) |
+
+`applied` and `already_applied` both count as accepted. `rejected` events never poison the batch: every event is classified independently, so a partially-conflicting batch still yields `200` with per-event outcomes.
+
+**Structural errors fail the whole request with `400 INVALID_ARGUMENT`** before any event applies: an unknown `kind`, a missing `session_id`, a `login` without `account_id` / `character_id`, a `logout` without `ended_at`, or an invalid `end_reason` (must be `normal` / `timeout` / `kicked` / `crash`). `started_at` is optional for `login` — when absent Atlas stamps the open time itself.
+
+The presence flow mirrors each accepted event onto the character bus: an `applied`/`already_applied` `login` publishes `character.login` (refreshing `last_login_at`), an accepted `logout` publishes `character.logout` (refreshing `last_logout_at`). The mirror is best-effort — a publish failure is logged, never turned into an error response. See [sync.md](sync.md) §2.
+
+---
+
 ## Discovery
 
 Server discovery. Called by **clients and operations tools**.
@@ -330,6 +384,30 @@ Fetch a single character's index record.
 List a server's character index; mainly for operations and merge-server verification.
 
 **Query**: `?limit=`, `?cursor=`
+
+---
+
+### GET /v1/directory/servers/{server_id}/presence
+
+The online roster of one server plus its true online count (PP-3 查询 API). The roster lists only characters currently holding an open session (`presence_status = online`); `online_count` is the store-level total and does **not** shrink with paging.
+
+**Query**: `?limit=` (default 50, cap 200), `?cursor=` (plain character ID — same pagination contract as `GET /v1/directory/servers/{id}/characters`).
+
+**Response** `200 OK`
+
+```json
+{
+  "server_id": "game-1001",
+  "online_count": 2,
+  "characters": [
+    { "account_id": 1001001, "server_id": "game-1001", "character_id": 823712,
+      "name": "剑无尘", "level": 80, "presence_status": "online" }
+  ],
+  "next_cursor": "823712"
+}
+```
+
+A server with no characters is an empty `200` (`online_count: 0`, `characters: []`) — not an error.
 
 ---
 
@@ -521,8 +599,9 @@ cursor pagination follows the same contract as the public list (next page takes 
 
 Character-index search. **Query**: `?q=` (name substring), `?server_id=`, `?account_id=`
 (player ID, opaque reference), `?metadata_key=` + `?metadata_value=` (a business-concept
-filter channel, e.g. `class=warrior`; the platform has no built-in class field), `?min_level=`,
-`?max_level=`, `?limit=`, `?cursor=`.
+filter channel, e.g. `class=warrior`; the platform has no built-in class field), `?presence=`
+(online state: `online` / `offline` / `unknown` — `unknown` means the session store has never
+seen the character), `?min_level=`, `?max_level=`, `?limit=`, `?cursor=`.
 
 ### GET /v1/admin/diagnose/routing
 

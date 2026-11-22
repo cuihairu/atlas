@@ -365,6 +365,7 @@ It no longer shows up in the `?status=online` list afterwards. The full lifecycl
 | Registry | `POST` | `/v1/registry/servers/register` | :8081 | Register (idempotent) |
 | Registry | `POST` | `/v1/registry/servers/{id}/heartbeat` | :8081 | Heartbeat |
 | Registry | `POST` | `/v1/registry/servers/{id}/unregister` | :8081 | Voluntary shutdown |
+| Registry | `POST` | `/v1/registry/servers/{id}/presence` | :8081 | Player login/logout batch report |
 | Discovery | `GET` | `/v1/discovery/servers` | :8080 | List (filters + pagination) |
 | Discovery | `GET` | `/v1/discovery/servers/{id}` | :8080 | Details |
 | Discovery | `GET` | `/v1/discovery/announcements` | :8080 | Active announcements |
@@ -372,6 +373,7 @@ It no longer shows up in the `?status=online` list afterwards. The full lifecycl
 | Directory | `GET` | `/v1/directory/accounts/{id}/characters` | :8080 | Account cross-server characters |
 | Directory | `GET` | `/v1/directory/characters/{id}` | :8080 | Single character |
 | Directory | `GET` | `/v1/directory/servers/{id}/characters` | :8080 | Server character list |
+| Directory | `GET` | `/v1/directory/servers/{id}/presence` | :8080 | Server online roster + count |
 | Directory | `PATCH` / `DELETE` | `/v1/directory/characters/{id}` | :8080 | Update / delete |
 | Routing | `GET` | `/v1/routing/recommended` | :8080 | Server recommendation |
 | Admin | `POST` | `/v1/admin/realms` / `/v1/admin/shards` | :8082 | Realm / shard records |
