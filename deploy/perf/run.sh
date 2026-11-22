@@ -105,7 +105,17 @@ fi
 RUN_WARMUP=3
 RUN_DRIFT=0.75
 if [ "$SCALE" != smoke ]; then
-  RUN_WARMUP=0
+  # Acceptance scales keep the §9 preset warm-up (soak.sh: 100→2, 1k→4, 5k→6)
+  # instead of 0: zero drops no samples, so in a short lab window the
+  # population ramp lands in the leading quarter and every ramping series is
+  # judged "monotonic growth" — the recorded perf-100-acceptance FAIL was
+  # exactly that artifact (fds tick 1 = 19 pre-ramp, heap still populating).
+  # Over the §9 24h window the dropped warm-up ticks are negligible either way.
+  case "$SCALE" in
+    100) RUN_WARMUP=2 ;;
+    1k)  RUN_WARMUP=4 ;;
+    5k)  RUN_WARMUP=6 ;;
+  esac
   RUN_DRIFT=0.20
 fi
 case "$OUT" in /*) ;; *) OUT="$PWD/$OUT" ;; esac
