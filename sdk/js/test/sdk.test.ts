@@ -337,6 +337,37 @@ test("directory listing", async () => {
   }
 });
 
+test("character presence fields", async () => {
+  // presence read path must surface: parseCharacter decodes
+  // presence_status / last_logout_at instead of dropping them.
+  const s = await FakeAtlas.start();
+  s.routes.push([
+    "GET",
+    /\/v1\/directory\/characters\/1001$/,
+    () => [
+      200,
+      {
+        account_id: 7,
+        server_id: "game-1",
+        character_id: 1001,
+        name: "Hero",
+        level: 1,
+        presence_status: "online",
+        last_logout_at: "2026-11-22T08:00:00Z",
+      },
+    ],
+  ]);
+  const c = clientFor(s);
+  try {
+    const ch = await c.getCharacter(1001);
+    assert.equal(ch.presenceStatus, "online");
+    assert.equal(ch.lastLogoutAt?.toISOString(), "2026-11-22T08:00:00.000Z");
+  } finally {
+    c.close();
+    s.close();
+  }
+});
+
 test("recommend", async () => {
   const s = await FakeAtlas.start();
   const seen: Record<string, string> = {};

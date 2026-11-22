@@ -88,6 +88,10 @@ export interface Character {
   avatar: string;
   metadata: Record<string, string>;
   lastLoginAt?: Date;
+  /** Observed online state (unknown | online | offline), present on read
+   * endpoints that resolve a character; REST-only. */
+  presenceStatus?: string;
+  lastLogoutAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -210,6 +214,8 @@ export function parseCharacter(d?: Raw): Character {
     avatar: d?.avatar ?? "",
     metadata: d?.metadata ?? {},
     lastLoginAt: parseDate(d?.last_login_at),
+    presenceStatus: d?.presence_status ?? undefined,
+    lastLogoutAt: parseDate(d?.last_logout_at),
     createdAt: parseDate(d?.created_at),
     updatedAt: parseDate(d?.updated_at),
   };

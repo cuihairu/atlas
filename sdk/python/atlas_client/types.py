@@ -171,6 +171,8 @@ class Character:
     avatar: str = ""
     metadata: Dict[str, str] = field(default_factory=dict)
     last_login_at: Optional[datetime] = None
+    presence_status: str = ""
+    last_logout_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -186,6 +188,8 @@ class Character:
             avatar=d.get("avatar", ""),
             metadata=d.get("metadata") or {},
             last_login_at=_parse_time(d.get("last_login_at")),
+            presence_status=d.get("presence_status", ""),
+            last_logout_at=_parse_time(d.get("last_logout_at")),
             created_at=_parse_time(d.get("created_at")),
             updated_at=_parse_time(d.get("updated_at")),
         )

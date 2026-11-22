@@ -19,6 +19,7 @@ from atlas_client import (
     AtlasAsyncClient,
     AtlasClient,
     AtlasError,
+    Character,
     CharacterFilter,
     CreateCharacterRequest,
     CreateMigrationRequest,
@@ -583,3 +584,17 @@ def test_default_headers_async() -> None:
     s.close()
     req = body_of(s, "GET", r"/v1/admin/stats")
     assert req["headers"].get("X-Request-ID") == "py-async-1"
+
+
+def test_character_presence_fields() -> None:
+    """presence read path must surface: Character.from_dict decodes
+    presence_status / last_logout_at instead of dropping them."""
+    ch = Character.from_dict({
+        "account_id": 7, "server_id": "game-1", "character_id": 1001,
+        "name": "Hero", "level": 1,
+        "presence_status": "online",
+        "last_logout_at": "2026-11-22T08:00:00Z",
+    })
+    assert ch.presence_status == "online"
+    assert ch.last_logout_at is not None
+    assert ch.last_logout_at.isoformat().startswith("2026-11-22T08:00:00")
