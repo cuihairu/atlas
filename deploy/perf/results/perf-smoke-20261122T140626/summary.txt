@@ -1,0 +1,11 @@
+perf runner summary — perf-smoke-20261122T140626
+verdict: PASS — every series holds a plateau
+char-write         count=      59 p95=  172ms p99= 1123ms errors=0 skipped=0
+heartbeat          count=      20 p95=   27ms p99=   62ms errors=0 skipped=0
+ops-stats          count=       5 p95= 1406ms p99= 1406ms errors=0 skipped=0
+read-detail        count=      78 p95=   45ms p99= 1956ms errors=0 skipped=0
+read-list          count=     169 p95=   59ms p99=  882ms errors=0 skipped=0
+read-recommend     count=      48 p95=   40ms p99=   98ms errors=0 skipped=0
+register           count=       3 p95=   67ms p99=   67ms errors=0 skipped=0
+storm-register     count=       0 p95=    0ms p99=    0ms errors=0 skipped=0
+errors=0 skipped=0

@@ -13,9 +13,6 @@
 
 x-atlas-common: &atlas-common
   image: ghcr.io/cuihairu/atlas:latest
-  build:
-    context: ..
-    dockerfile: deployments/docker/Dockerfile
   depends_on:
     migrate:
       condition: service_completed_successfully
@@ -61,8 +58,16 @@ services:
     # shell vars need $$f — a bare $f is interpolated by compose itself.
     entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
 
+  # Only atlas1 carries build:. Both replicas share one image tag, so building
+  # on both would race BuildKit's "naming to" (one export wins the tag, the
+  # sibling errors "already exists" and cancels the stack — seen on the perf
+  # runner's first fresh build). Compose completes every build before creating
+  # containers, so atlas2's pull_policy: never finds the freshly built image.
   atlas1:
     <<: *atlas-common
+    build:
+      context: ..
+      dockerfile: deployments/docker/Dockerfile
     environment:
       <<: *atlas-env
       ATLAS_HTTP_ADDR: ":8080"
@@ -74,6 +79,10 @@ services:
 
   atlas2:
     <<: *atlas-common
+    # Never pull the GHCR nightly as atlas2's image: a locally built atlas1
+    # is the source of truth for this lab stack, and a pulled tag could be a
+    # different commit than the source tree under test.
+    pull_policy: never
     environment:
       <<: *atlas-env
       ATLAS_HTTP_ADDR: ":8080"
