@@ -374,6 +374,11 @@ func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID s
 		args = append(args, *patch.LastLoginAt)
 		n++
 	}
+	if patch.LastLogoutAt != nil {
+		setClauses = append(setClauses, fmt.Sprintf("last_logout_at = $%d", n))
+		args = append(args, *patch.LastLogoutAt)
+		n++
+	}
 
 	if len(setClauses) == 0 {
 		return nil // nothing to update
@@ -459,6 +464,20 @@ WHERE server_id = $1`
 	return scanCharacters(rows)
 }
 
+// CountByServerPresence counts characters on serverID holding the given
+// presence status (PP-3 在线计数). The partial index idx_char_by_server_presence
+// (migration 0010) makes the online lookup an index-only count.
+func (s *Store) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
+	var n int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM character_index WHERE server_id = $1 AND presence_status = $2`,
+		serverID, presence).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count characters by server presence: %w", err)
+	}
+	return n, nil
+}
+
 // ---------------------------------------------------------------------------
 // SearchCharacters
 // ---------------------------------------------------------------------------
@@ -489,6 +508,11 @@ FROM character_index WHERE 1=1`
 	if filter.AccountID != 0 {
 		q += fmt.Sprintf(" AND account_id = $%d", n)
 		args = append(args, filter.AccountID)
+		n++
+	}
+	if filter.Presence != nil {
+		q += fmt.Sprintf(" AND presence_status = $%d", n)
+		args = append(args, *filter.Presence)
 		n++
 	}
 	if filter.MetadataKey != "" {

@@ -28,6 +28,10 @@ const (
 	EventCharacterMoved EventType = "character.moved"
 	// EventCharacterLogin fires on login, refreshing last_login_at.
 	EventCharacterLogin EventType = "character.login"
+	// EventCharacterLogout fires on logout, refreshing last_logout_at.
+	// It is the counterpart of character.login: without it the projection
+	// only ever aged forwards (docs/sync.md §2).
+	EventCharacterLogout EventType = "character.logout"
 
 	// EventConfigUpdated signals that the cross-server coordination config
 	// changed (config center, docs/config-center.md). It carries only the
@@ -110,7 +114,7 @@ type Event struct {
 func TopicFor(t EventType) (string, error) {
 	switch t {
 	case EventCharacterCreated, EventCharacterUpdated, EventCharacterDeleted,
-		EventCharacterMoved, EventCharacterLogin:
+		EventCharacterMoved, EventCharacterLogin, EventCharacterLogout:
 		return TopicCharacters, nil
 	case EventConfigUpdated:
 		return TopicConfig, nil

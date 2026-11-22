@@ -542,6 +542,23 @@ func (s *Store) ListCharactersByServer(_ context.Context, serverID string, limit
 	return result, nil
 }
 
+// CountByServerPresence returns the count of characters on serverID holding
+// the given presence status (PP-3 在线计数). O(k) over the server's own rows
+// through the byServer index.
+func (s *Store) CountByServerPresence(_ context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
+	s.charMu.RLock()
+	defer s.charMu.RUnlock()
+
+	keys := s.chIdx.byServer[serverID]
+	var n int64
+	for key := range keys {
+		if s.characters[key].PresenceStatus == presence {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // ── queue-side primitives (locks held by the applier) ──────────────────
 
 func (s *Store) applyUpsertCharacter(ins *instruction) error {
@@ -601,6 +618,9 @@ func (s *Store) applyUpdateCharacter(ins *instruction) error {
 	}
 	if patch.LastLoginAt != nil {
 		ch.LastLoginAt = patch.LastLoginAt
+	}
+	if patch.LastLogoutAt != nil {
+		ch.LastLogoutAt = patch.LastLogoutAt
 	}
 	ch.UpdatedAt = ins.charUpAt
 	return nil
@@ -1060,6 +1080,9 @@ func matchCharacter(ch *model.Character, f store.CharacterSearchFilter) bool {
 		return false
 	}
 	if f.MaxLevel != nil && ch.Level > *f.MaxLevel {
+		return false
+	}
+	if f.Presence != nil && ch.PresenceStatus != *f.Presence {
 		return false
 	}
 	return true

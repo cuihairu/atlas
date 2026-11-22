@@ -2,18 +2,22 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/cuihairu/atlas/internal/admin"
 	"github.com/cuihairu/atlas/internal/crossserver"
 	"github.com/cuihairu/atlas/internal/directory"
 	"github.com/cuihairu/atlas/internal/discovery"
+	"github.com/cuihairu/atlas/internal/event"
 	httpadapter "github.com/cuihairu/atlas/internal/event/http"
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/registry"
@@ -274,6 +278,121 @@ func TestPresenceServerNotFound(t *testing.T) {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+// recordingAdapter captures the event types published through it so tests can
+// assert the presence flow mirrors character.login / character.logout onto
+// the bus (PP-3). The wrapped http adapter stays synchronous, so a published
+// event is applied before Publish returns.
+type recordingAdapter struct {
+	event.EventAdapter
+	mu    sync.Mutex
+	types []event.EventType
+}
+
+func (r *recordingAdapter) Publish(ctx context.Context, e *event.Event) error {
+	r.mu.Lock()
+	r.types = append(r.types, e.Type)
+	r.mu.Unlock()
+	return r.EventAdapter.Publish(ctx, e)
+}
+
+func (r *recordingAdapter) snapshot() []event.EventType {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]event.EventType, len(r.types))
+	copy(out, r.types)
+	return out
+}
+
+// setupRecordingServer wires the production service stack over a recording
+// adapter (the same shape as setupTestServer but with the events handle
+// exposed for assertions).
+func setupRecordingServer(t *testing.T) (*httptest.Server, *recordingAdapter) {
+	t.Helper()
+	mem := memory.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	regSvc := registry.New(mem, mem, logger).WithSessions(mem)
+	discSvc := discovery.New(mem, mem)
+	dirSvc := directory.New(mem)
+	admSvc := admin.New(mem)
+	events := &recordingAdapter{EventAdapter: httpadapter.New()}
+	_ = events.Subscribe(context.Background(), event.TopicCharacters, func(_ context.Context, e *event.Event) error {
+		_, err := dirSvc.ApplyEvent(context.Background(), e)
+		return err
+	})
+
+	rtSvc := routing.New(mem, mem, mem, mem)
+	crossSvc := crossserver.New(mem, mem, events, logger)
+	handler := New(regSvc, discSvc, dirSvc, admSvc, rtSvc, crossSvc, mem, events, logger)
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	return httptest.NewServer(mux), events
+}
+
+// TestPresenceMirrorsLoginLogoutEvents pins that the presence flow gives
+// character.login and character.logout their documented trigger source
+// (docs/sync.md §2): an applied login publishes character.login, an applied
+// logout publishes character.logout. A duplicate report (already_applied)
+// publishes again — that is the retry-recovery path for a mirror lost to a
+// transient failure on the first attempt.
+func TestPresenceMirrorsLoginLogoutEvents(t *testing.T) {
+	ts, rec := setupRecordingServer(t)
+	defer ts.Close()
+	registerTestServer(t, ts, "game-1001")
+	const (
+		acct = 2001004
+		chID = 9001004
+	)
+	seedChar(t, ts, acct, chID, "game-1001")
+
+	before := len(rec.snapshot())
+
+	// Applied login → character.login.
+	resp := postJSON(t, ts, "/v1/registry/servers/game-1001/presence",
+		model.PresenceReport{Events: []model.PresenceEvent{loginEvent("mir-1", acct, chID)}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("login: expected 200, got %d", resp.StatusCode)
+	}
+	decodePresence(t, resp)
+	if got := rec.snapshot()[before:]; len(got) != 1 || got[0] != event.EventCharacterLogin {
+		t.Fatalf("after login mirror = %v, want [character.login]", got)
+	}
+
+	// Duplicate login (still open → already_applied) re-publishes
+	// character.login: the retry-recovery path for a lost mirror.
+	resp = postJSON(t, ts, "/v1/registry/servers/game-1001/presence",
+		model.PresenceReport{Events: []model.PresenceEvent{loginEvent("mir-1", acct, chID)}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("re-login: expected 200, got %d", resp.StatusCode)
+	}
+	if got := decodePresence(t, resp); len(got.Results) != 1 || got.Results[0].Status != model.PresenceAlreadyApplied {
+		t.Fatalf("re-login results = %+v, want already_applied", got.Results)
+	}
+	all := rec.snapshot()
+	loginCount := 0
+	for _, ty := range all {
+		if ty == event.EventCharacterLogin {
+			loginCount++
+		}
+	}
+	if loginCount != 2 {
+		t.Fatalf("character.login published %d times, want 2 (applied + already_applied retry mirror)", loginCount)
+	}
+
+	// Applied logout → character.logout.
+	before = len(rec.snapshot())
+	resp = postJSON(t, ts, "/v1/registry/servers/game-1001/presence",
+		model.PresenceReport{Events: []model.PresenceEvent{logoutEvent("mir-1", model.SessionEndNormal)}})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("logout: expected 200, got %d", resp.StatusCode)
+	}
+	decodePresence(t, resp)
+	if got := rec.snapshot()[before:]; len(got) != 1 || got[0] != event.EventCharacterLogout {
+		t.Fatalf("after logout mirror = %v, want [character.logout]", got)
+	}
 }
 
 // postJSONAuth posts with a Bearer token (registry auth-zone tests).

@@ -140,3 +140,42 @@ func (s *Service) ListByServer(ctx context.Context, serverID string, limit int, 
 
 	return chars, nextCursor, nil
 }
+
+// PresenceByServer returns the online roster of a server alongside its true
+// online count (PP-3 查询 API). The roster is the presence-filtered page
+// (cursor-paginated by character ID like ListByServer); the count is
+// CountByServerPresence — NOT len(roster), which is one page and would
+// under-report the total whenever the roster has more than one page.
+//
+// The cursor the client passes is a plain character ID (same contract as
+// ListByServer); it is translated to the search cursor "serverID:charID"
+// before reaching the store, since the roster is pinned to one server.
+func (s *Service) PresenceByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, int64, string, error) {
+	ctx, span := atlastracing.Start(ctx, "directory.presence_by_server")
+	defer span.End()
+
+	online := model.PresenceOnline
+	filter := store.CharacterSearchFilter{
+		ServerID: serverID,
+		Presence: &online,
+		Limit:    limit,
+	}
+	if cursor != "" {
+		filter.Cursor = serverID + ":" + cursor
+	}
+
+	chars, _, err := s.characters.SearchCharacters(ctx, filter)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("presence roster: %w", err)
+	}
+	count, err := s.characters.CountByServerPresence(ctx, serverID, online)
+	if err != nil {
+		return nil, 0, "", fmt.Errorf("presence count: %w", err)
+	}
+
+	nextCursor := ""
+	if len(chars) > 0 {
+		nextCursor = strconv.FormatInt(chars[len(chars)-1].CharacterID, 10)
+	}
+	return chars, count, nextCursor, nil
+}

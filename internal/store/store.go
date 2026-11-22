@@ -45,6 +45,10 @@ type CharacterPatch struct {
 	Avatar      *string
 	Metadata    *map[string]string
 	LastLoginAt *time.Time
+	// LastLogoutAt records the latest logout (PP-3). The session store writes
+	// it on the denormalized row; the directory projection mirrors it so a
+	// character.logout event keeps the projection's last_logout_at in sync.
+	LastLogoutAt *time.Time
 }
 
 // CharacterSearchFilter controls which characters are returned by SearchCharacters.
@@ -58,6 +62,10 @@ type CharacterSearchFilter struct {
 	ServerID string
 	// AccountID filters by the opaque account reference (玩家 ID 搜索).
 	AccountID int64
+	// Presence filters by the denormalized online/offline state (PP-3
+	// query API). Nil means no presence predicate; a character the session
+	// store has never seen reads as "unknown" (see model.PresenceStatus).
+	Presence *model.PresenceStatus
 	// MetadataKey requires MetadataValue: the key=value pair filter.
 	MetadataKey   string
 	MetadataValue string
@@ -145,6 +153,12 @@ type CharacterStore interface {
 	// ListCharactersByServer returns characters on a given server, with
 	// cursor-based pagination.
 	ListCharactersByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, error)
+
+	// CountByServerPresence returns how many characters on a server hold the
+	// given presence status (PP-3 在线计数). Unlike the roster query this is
+	// not bounded by a page: it is the true total the presence endpoint
+	// reports next to the paginated roster.
+	CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error)
 
 	// SearchCharacters searches characters with filters and cursor pagination.
 	// Returns the matching characters and a cursor for the next page.

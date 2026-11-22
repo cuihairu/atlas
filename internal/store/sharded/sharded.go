@@ -137,6 +137,21 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	return merged, nil
 }
 
+// CountByServerPresence sums the count over every shard: a server's characters
+// are scattered across shards, so the true online total is the sum — never a
+// single shard's number.
+func (s *Store) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
+	var n int64
+	for _, sh := range s.shards {
+		part, err := sh.CountByServerPresence(ctx, serverID, presence)
+		if err != nil {
+			return 0, fmt.Errorf("count characters by server presence %s: %w", serverID, err)
+		}
+		n += part
+	}
+	return n, nil
+}
+
 // SearchCharacters fans the filter out to every shard and merges the pages by
 // the global cursor order (server_id, character_id). Passing the cursor and
 // limit to each shard is correct because an item's rank within its shard is

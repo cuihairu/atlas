@@ -161,6 +161,7 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/directory/accounts/{id}/characters", h.handleListCharactersByAccount)
 	mux.HandleFunc("GET /v1/directory/characters/{character_id}", h.handleGetCharacter)
 	mux.HandleFunc("GET /v1/directory/servers/{id}/characters", h.handleListCharactersByServer)
+	mux.HandleFunc("GET /v1/directory/servers/{id}/presence", h.handleServerPresence)
 	mux.HandleFunc("PATCH /v1/directory/characters/{character_id}", h.handlePatchCharacter)
 	mux.HandleFunc("DELETE /v1/directory/characters/{character_id}", h.handleDeleteCharacter)
 }
@@ -396,6 +397,63 @@ func (h *Handler) handlePresence(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
+	}
+
+	// Mirror every accepted transition onto the character event bus
+	// (docs/sync.md §2): character.login refreshes last_login_at,
+	// character.logout refreshes last_logout_at in the projection. The
+	// session store writes presence_status/last_logout_at directly, but the
+	// last-login/last-logout timeline of the projection is driven by these
+	// events — this is their built-in trigger source.
+	//
+	// already_applied publishes too, not only applied: a duplicate report
+	// re-fires the mirror, so a mirror lost to a transient failure on the
+	// first attempt is recovered by the client's retry. rejected publishes
+	// nothing — the projection must not record a timeline for a state that
+	// was never reached.
+	//
+	// The mirror is best-effort: the session outcomes above are authoritative
+	// and already committed, so a failed mirror is logged, never turned into
+	// an error response (a logout report identifies the character by session,
+	// so a resolution miss simply skips the mirror).
+	for i := range results {
+		if results[i].Status == model.PresenceRejected {
+			continue
+		}
+		ev := report.Events[i]
+		evtType := event.EventCharacterLogin
+		if ev.Kind == model.PresenceEventLogout {
+			evtType = event.EventCharacterLogout
+		}
+		// A logout report carries session_id, not the composite key; resolve
+		// the character so the event can reach the projection. Login reports
+		// always carry account_id + character_id.
+		acctID, charID := ev.AccountID, ev.CharacterID
+		if charID == 0 {
+			sess, serr := h.store.GetSession(r.Context(), ev.SessionID)
+			if serr != nil {
+				h.logger.Warn("presence mirror: session resolve failed",
+					"session_id", ev.SessionID, "error", serr)
+				continue
+			}
+			acctID, charID = sess.AccountID, sess.CharacterID
+		}
+		evt := &event.Event{
+			Type:        evtType,
+			AccountID:   acctID,
+			ServerID:    id, // authoritative from the registry channel
+			CharacterID: charID,
+		}
+		if ev.StartedAt != nil {
+			evt.Timestamp = *ev.StartedAt
+		}
+		if ev.EndedAt != nil {
+			evt.Timestamp = *ev.EndedAt
+		}
+		if err := h.events.Publish(r.Context(), evt); err != nil {
+			h.logger.Warn("presence mirror publish failed",
+				"type", evtType, "session_id", ev.SessionID, "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -652,6 +710,42 @@ func (h *Handler) handleListCharactersByServer(w http.ResponseWriter, r *http.Re
 
 	resp := map[string]any{
 		"characters": chars,
+	}
+	if nextCursor != "" {
+		resp["next_cursor"] = nextCursor
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleServerPresence answers GET /v1/directory/servers/{id}/presence (PP-3
+// 查询 API): the online roster of one server with the true online count.
+// The roster is presence-filtered and cursor-paginated (plain character-ID
+// cursor, same contract as GET /v1/directory/servers/{id}/characters); the
+// count is a store-level total, so it does not shrink with paging.
+func (h *Handler) handleServerPresence(w http.ResponseWriter, r *http.Request) {
+	serverID := r.PathValue("id")
+	q := r.URL.Query()
+
+	limit := 50
+	if l := q.Get("limit"); l != "" {
+		n, err := strconv.Atoi(l)
+		if err == nil && n > 0 {
+			limit = n
+		}
+	}
+	cursor := q.Get("cursor")
+
+	chars, onlineCount, nextCursor, err := h.directory.PresenceByServer(r.Context(), serverID, limit, cursor)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+
+	resp := map[string]any{
+		"server_id":    serverID,
+		"online_count": onlineCount,
+		"characters":   chars,
 	}
 	if nextCursor != "" {
 		resp["next_cursor"] = nextCursor
@@ -1242,6 +1336,16 @@ func (h *Handler) handleAdminSearchCharacters(w http.ResponseWriter, r *http.Req
 			return
 		}
 		filter.AccountID = n
+	}
+	// 在线状态过滤 (PP-3 查询 API): online / offline / unknown. Absent =
+	// no predicate.
+	if p := q.Get("presence"); p != "" {
+		ps := model.PresenceStatus(p)
+		if !ps.Valid() {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", fmt.Sprintf("invalid presence %q", p))
+			return
+		}
+		filter.Presence = &ps
 	}
 	if minStr := q.Get("min_level"); minStr != "" {
 		n, err := strconv.Atoi(minStr)

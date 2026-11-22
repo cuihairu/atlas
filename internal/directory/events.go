@@ -35,6 +35,8 @@ func (s *Service) ApplyEvent(ctx context.Context, e *event.Event) (*model.Charac
 		return nil, s.applyDeleted(ctx, e)
 	case event.EventCharacterLogin:
 		return s.applyLogin(ctx, e)
+	case event.EventCharacterLogout:
+		return s.applyLogout(ctx, e)
 	case event.EventCharacterMoved:
 		return s.applyMoved(ctx, e)
 	default:
@@ -194,6 +196,44 @@ func (s *Service) applyLogin(ctx context.Context, e *event.Event) (*model.Charac
 	patch := store.CharacterPatch{LastLoginAt: &at}
 	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, e.CharacterID, patch); err != nil {
 		return nil, fmt.Errorf("login character: %w", err)
+	}
+	return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+}
+
+// applyLogout refreshes last_logout_at without touching other fields — the
+// counterpart of applyLogin (docs/sync.md §2): a logout event ages the
+// projection's presence timeline backwards to match the denormalized row the
+// session store already wrote.
+func (s *Service) applyLogout(ctx context.Context, e *event.Event) (*model.Character, error) {
+	if e.CharacterID <= 0 {
+		return nil, fmt.Errorf("%w: character_id must be > 0", model.ErrInvalid)
+	}
+
+	accountID, serverID := e.AccountID, e.ServerID
+	if accountID <= 0 || serverID == "" {
+		existing, err := s.characters.GetCharacterByCharacterID(ctx, e.CharacterID)
+		if err != nil {
+			return nil, fmt.Errorf("logout character: %w", err)
+		}
+		accountID, serverID = existing.AccountID, existing.ServerID
+	}
+
+	at := time.Now()
+	if !e.Timestamp.IsZero() {
+		at = e.Timestamp
+	}
+	// Replay ordering: an old logout event must not clobber a newer logout
+	// time already projected (at-least-once transports re-deliver).
+	existing, err := s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
+	if err == nil && existing.LastLogoutAt != nil && existing.LastLogoutAt.After(at) {
+		return existing, nil
+	}
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("check logout event ordering: %w", err)
+	}
+	patch := store.CharacterPatch{LastLogoutAt: &at}
+	if err := s.characters.UpdateCharacter(ctx, accountID, serverID, e.CharacterID, patch); err != nil {
+		return nil, fmt.Errorf("logout character: %w", err)
 	}
 	return s.characters.GetCharacter(ctx, accountID, serverID, e.CharacterID)
 }

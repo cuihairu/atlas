@@ -211,6 +211,12 @@ func (f *failingStore) SearchCharacters(ctx context.Context, filter store.Charac
 	return nil, "", f.fail()
 }
 
+func (f *failingStore) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
+	_ = ctx
+	_, _ = serverID, presence
+	return 0, f.fail()
+}
+
 func (f *failingStore) UpdateCharacter(ctx context.Context, accountID int64, serverID string, characterID int64, patch store.CharacterPatch) error {
 	_ = ctx
 	return f.fail()

@@ -222,4 +222,107 @@ func RunSessions(t *testing.T, s Core) {
 			t.Fatalf("bogus end reason: err = %v, want ErrInvalid", err)
 		}
 	})
+
+	// PresenceQuery pins the PP-3 read side: the presence predicate on
+	// SearchCharacters and CountByServerPresence must agree with the
+	// denormalized presence the session store maintains — across every store.
+	t.Run("PresenceQuery", func(t *testing.T) {
+		ctx := context.Background()
+		uid := seq.Add(1)
+		acct := 910000000000000 + uid
+		srv := fmt.Sprintf("game-presq-%d", uid)
+		seed := func(charID int64, name string) *model.Character {
+			t.Helper()
+			c := &model.Character{
+				AccountID:   acct,
+				ServerID:    srv,
+				CharacterID: charID,
+				Name:        name,
+				Level:       1,
+			}
+			c.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+			c.UpdatedAt = c.CreatedAt
+			if err := s.UpsertCharacter(ctx, c); err != nil {
+				t.Fatalf("seed %s: %v", name, err)
+			}
+			return c
+		}
+		chA := seed(810000000000000+uid, "presq-a") // will report presence
+		seed(810000000000001+uid, "presq-b")        // never seen → unknown
+
+		online := model.PresenceOnline
+		offline := model.PresenceOffline
+		unknown := model.PresenceUnknown
+
+		count := func(p model.PresenceStatus) int64 {
+			t.Helper()
+			n, err := s.CountByServerPresence(ctx, srv, p)
+			if err != nil {
+				t.Fatalf("count %s: %v", p, err)
+			}
+			return n
+		}
+		search := func(p *model.PresenceStatus) []*model.Character {
+			t.Helper()
+			got, _, err := s.SearchCharacters(ctx, store.CharacterSearchFilter{ServerID: srv, Presence: p})
+			if err != nil {
+				t.Fatalf("search presence %v: %v", p, err)
+			}
+			return got
+		}
+
+		// Before any report: both unknown, nothing online/offline.
+		if n := count(unknown); n != 2 {
+			t.Errorf("count unknown = %d, want 2", n)
+		}
+		if n := count(online); n != 0 {
+			t.Errorf("count online = %d, want 0", n)
+		}
+		if got := search(&online); len(got) != 0 {
+			t.Errorf("search online = %d rows, want 0", len(got))
+		}
+		if got := search(nil); len(got) != 2 {
+			t.Errorf("search without predicate = %d rows, want 2 (nil Presence means no filter)", len(got))
+		}
+
+		// One login: exactly chA online, chB still unknown.
+		if err := s.CreateSession(ctx, &model.PlayerSession{
+			SessionID:   fmt.Sprintf("pq-s1-%d", uid),
+			AccountID:   acct,
+			CharacterID: chA.CharacterID,
+			ServerID:    srv,
+			StartedAt:   time.Now(),
+		}); err != nil {
+			t.Fatalf("open session: %v", err)
+		}
+		if n := count(online); n != 1 {
+			t.Errorf("count online after login = %d, want 1", n)
+		}
+		if n := count(unknown); n != 1 {
+			t.Errorf("count unknown after login = %d, want 1", n)
+		}
+		got := search(&online)
+		if len(got) != 1 || got[0].CharacterID != chA.CharacterID {
+			t.Errorf("search online = %+v, want exactly presq-a", got)
+		}
+
+		// One logout: the counts move to offline; filter follows.
+		if _, err := s.EndSession(ctx, fmt.Sprintf("pq-s1-%d", uid), time.Now(), model.SessionEndNormal); err != nil {
+			t.Fatalf("end session: %v", err)
+		}
+		if n := count(online); n != 0 {
+			t.Errorf("count online after logout = %d, want 0", n)
+		}
+		if n := count(offline); n != 1 {
+			t.Errorf("count offline after logout = %d, want 1", n)
+		}
+		if got := search(&offline); len(got) != 1 || got[0].CharacterID != chA.CharacterID {
+			t.Errorf("search offline = %+v, want exactly presq-a", got)
+		}
+
+		// A server with no characters counts zero for every status.
+		if n2, err := s.CountByServerPresence(ctx, srv+"-empty", online); err != nil || n2 != 0 {
+			t.Errorf("count on empty server = %d, %v; want 0, nil", n2, err)
+		}
+	})
 }

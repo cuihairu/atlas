@@ -362,6 +362,10 @@ func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID s
 		setClauses = append(setClauses, "last_login_at = ?")
 		args = append(args, *patch.LastLoginAt)
 	}
+	if patch.LastLogoutAt != nil {
+		setClauses = append(setClauses, "last_logout_at = ?")
+		args = append(args, *patch.LastLogoutAt)
+	}
 
 	if len(setClauses) == 0 {
 		return nil
@@ -445,6 +449,20 @@ WHERE server_id = ?`
 	return scanCharacters(rows)
 }
 
+// CountByServerPresence counts characters on serverID holding the given
+// presence status (PP-3 在线计数). The partial index idx_char_by_server_presence
+// (migration 0010) makes the online lookup an index-only count.
+func (s *Store) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM character_index WHERE server_id = ? AND presence_status = ?`,
+		serverID, presence).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count characters by server presence: %w", err)
+	}
+	return n, nil
+}
+
 // ---------------------------------------------------------------------------
 // SearchCharacters
 // ---------------------------------------------------------------------------
@@ -472,6 +490,10 @@ FROM character_index WHERE 1=1`
 	if filter.AccountID != 0 {
 		q += " AND account_id = ?"
 		args = append(args, filter.AccountID)
+	}
+	if filter.Presence != nil {
+		q += " AND presence_status = ?"
+		args = append(args, *filter.Presence)
 	}
 	if filter.MetadataKey != "" {
 		// MySQL JSON paths cannot be parameterized — only identifier-safe

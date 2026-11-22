@@ -628,6 +628,10 @@ func cloneCharacter(ch *model.Character) *model.Character {
 		t := *ch.LastLoginAt
 		cp.LastLoginAt = &t
 	}
+	if ch.LastLogoutAt != nil {
+		t := *ch.LastLogoutAt
+		cp.LastLogoutAt = &t
+	}
 	return &cp
 }
 
