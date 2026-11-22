@@ -1,0 +1,100 @@
+{
+  "started_at": "2026-11-22T14:53:38.464259341+08:00",
+  "elapsed_sec": 2399.999635542,
+  "servers": 100,
+  "streams": [
+    {
+      "name": "register",
+      "count": 100,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 398,
+      "p95_ms": 994,
+      "p99_ms": 1329,
+      "max_ms": 1331,
+      "rps": 0.041666672994063465
+    },
+    {
+      "name": "heartbeat",
+      "count": 24181,
+      "errors": 233,
+      "skipped": 5,
+      "p50_ms": 4,
+      "p95_ms": 28,
+      "p99_ms": 66,
+      "max_ms": 805,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 10.075418196694486
+    },
+    {
+      "name": "storm-register",
+      "count": 0,
+      "errors": 0,
+      "skipped": 0,
+      "p50_ms": 0,
+      "p95_ms": 0,
+      "p99_ms": 0,
+      "max_ms": 0,
+      "rps": 0
+    },
+    {
+      "name": "read-list",
+      "count": 115999,
+      "errors": 1117,
+      "skipped": 80,
+      "p50_ms": 23,
+      "p95_ms": 55,
+      "p99_ms": 86,
+      "max_ms": 454,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 48.33292400638368
+    },
+    {
+      "name": "read-detail",
+      "count": 69437,
+      "errors": 681,
+      "skipped": 49,
+      "p50_ms": 16,
+      "p95_ms": 45,
+      "p99_ms": 69,
+      "max_ms": 435,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 28.932087726887847
+    },
+    {
+      "name": "read-recommend",
+      "count": 46916,
+      "errors": 443,
+      "skipped": 39,
+      "p50_ms": 18,
+      "p95_ms": 47,
+      "p99_ms": 71,
+      "max_ms": 509,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 19.548336301894814
+    },
+    {
+      "name": "char-write",
+      "count": 2360,
+      "errors": 23,
+      "skipped": 3,
+      "p50_ms": 12,
+      "p95_ms": 54,
+      "p99_ms": 251,
+      "max_ms": 1938,
+      "last_error": "atlas: HTTP_500: 500 Internal Server Error",
+      "rps": 0.9833334826598977
+    },
+    {
+      "name": "ops-stats",
+      "count": 237,
+      "errors": 0,
+      "skipped": 2,
+      "p50_ms": 28,
+      "p95_ms": 55,
+      "p99_ms": 75,
+      "max_ms": 125,
+      "rps": 0.0987500149959304
+    }
+  ]
+}

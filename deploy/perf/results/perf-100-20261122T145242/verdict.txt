@@ -1,0 +1,10 @@
+soakcheck: warm-up dropped the first 2 samples per series
+soakcheck plateau verdict
+source                       metric                         ticks            min            max    drift  verdict
+http://127.0.0.1:18082/metrics go_goroutines                467/478           18.0           36.0    +7.0%  plateau
+http://127.0.0.1:18082/metrics go_memstats_heap_inuse_bytes 467/478         23.14M        102.38M    -0.2%  plateau
+http://127.0.0.1:18082/metrics process_open_fds             467/478           18.0           69.0   -16.9%  plateau
+http://127.0.0.1:28082/metrics go_goroutines                467/478           18.0           33.0    -6.8%  plateau
+http://127.0.0.1:28082/metrics go_memstats_heap_inuse_bytes 467/478         35.07M        102.66M    -3.7%  plateau
+http://127.0.0.1:28082/metrics process_open_fds             467/478           18.0           75.0   -42.2%  drop above tolerance (restart, crash, or a transient in the leading quarter)
+verdict: FAIL — at least one series is not a plateau

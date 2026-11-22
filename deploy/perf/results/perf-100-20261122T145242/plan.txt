@@ -1,0 +1,17 @@
+soak plan
+  scale        100 (100 servers, 100 read rps, 1 char rps, ops 10s, 16 read workers)
+  window       40m (2400s), soakcheck every 5s (5s), drift 0.20, warm-up 2
+  metrics       http://127.0.0.1:18082/metrics http://127.0.0.1:28082/metrics
+  endpoints    public http://127.0.0.1:38080 / registry http://127.0.0.1:38081 / admin http://127.0.0.1:38882
+  drills       both (replica-kill --down 30s, pg-outage --pg-down 20s)
+  archive      /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242
+drill schedule (offsets into the window)
+  t=800s  replica-kill atlas1
+  t=1200s  pg-outage
+  t=1600s  replica-kill atlas2
+loadgen
+  /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/loadgen -servers 100 -duration 40m -read-rps 100 -read-workers 16 -char-rps 1 -ops-every 10s -admin http://127.0.0.1:38882 -registry http://127.0.0.1:38081 -public http://127.0.0.1:38080 -seed 1 -report /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/loadgen.json
+soakcheck
+  /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/soakcheck --interval 5s --duration 40m --drift 0.20 --warmup 2 --out /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/soak.tsv --metrics  http://127.0.0.1:18082/metrics http://127.0.0.1:28082/metrics
+verdict
+  /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/soakcheck --sample /home/cui/workspaces/atlas/deploy/perf/results/perf-100-20261122T145242/soak.tsv --interval 5s --warmup 2
