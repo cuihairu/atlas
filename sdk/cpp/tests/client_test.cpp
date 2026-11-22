@@ -97,6 +97,20 @@ struct TestServer {
                 "application/json");
         });
 
+        srv.Get(R"(/v1/directory/characters/([^/]+))", [&](const httplib::Request& req, httplib::Response& res) {
+            if (req.matches[1] == "1001") {
+                res.set_content(
+                    R"({"account_id":7,"server_id":"game-1","character_id":1001,"name":"Hero",)"
+                    R"("level":1,"presence_status":"online",)"
+                    R"("last_logout_at":"2026-11-22T08:00:00Z"})",
+                    "application/json");
+                return;
+            }
+            res.status = 404;
+            res.set_content(R"({"error":{"code":"CHARACTER_NOT_FOUND","message":"not found"}})",
+                            "application/json");
+        });
+
         srv.Post(R"(/v1/admin/servers/([^/]+)/weight)", [&](const httplib::Request& req, httplib::Response& res) {
             auto body = nlohmann::json::parse(req.body);
             int w = body.value("weight", -1);
@@ -266,6 +280,16 @@ void TestSetWeight(TestServer& ts) {
     CHECK(invalid);
 }
 
+void TestCharacterPresence(TestServer& ts) {
+    // presence read path must surface: GetCharacter decodes
+    // presence_status / last_logout_at instead of dropping them.
+    atlas::Client c(TestOptions("http://127.0.0.1:" + std::to_string(ts.port)));
+    auto ch = c.GetCharacter(1001);
+    CHECK(ch.presence_status == "online");
+    CHECK(ch.last_logout_at.has_value());
+    CHECK(ch.last_logout_at.value().time_since_epoch().count() != 0);
+}
+
 } // namespace
 
 int main() {
@@ -275,6 +299,7 @@ int main() {
     TestAutoHeartbeat(ts);
     TestDefaultHeaders(ts);
     TestSetWeight(ts);
+    TestCharacterPresence(ts);
     if (failures == 0) {
         std::cout << "all atlas cpp sdk tests passed\n";
         return 0;

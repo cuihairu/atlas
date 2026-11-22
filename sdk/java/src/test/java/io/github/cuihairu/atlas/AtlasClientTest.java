@@ -210,6 +210,22 @@ class AtlasClientTest {
         assertEquals(Map.of("limit", "2", "cursor", "cursor-1"), seen[0]);
     }
 
+    @Test
+    void characterPresenceFields() throws IOException {
+        // presence read path must surface: getCharacter decodes
+        // presence_status / last_logout_at instead of dropping them.
+        start();
+        s.routes.add(FakeAtlas.route("GET", "/v1/directory/characters/1001",
+                r -> FakeAtlas.reply(200, "{\"account_id\":7,\"server_id\":\"game-1\","
+                        + "\"character_id\":1001,\"name\":\"Hero\",\"level\":1,"
+                        + "\"presence_status\":\"online\","
+                        + "\"last_logout_at\":\"2026-11-22T08:00:00Z\"}")));
+
+        Character ch = c.getCharacter(1001);
+        assertEquals("online", ch.presenceStatus);
+        assertEquals(Instant.parse("2026-11-22T08:00:00Z"), ch.lastLogoutAt);
+    }
+
     // ── Routing ──
 
     @Test

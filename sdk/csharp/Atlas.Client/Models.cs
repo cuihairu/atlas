@@ -116,6 +116,9 @@ public sealed class Character
     public string? Avatar { get; set; }
     public Dictionary<string, string>? Metadata { get; set; }
     public DateTimeOffset? LastLoginAt { get; set; }
+    /// <summary>Observed online state (unknown | online | offline); REST-only.</summary>
+    public string PresenceStatus { get; set; } = "";
+    public DateTimeOffset? LastLogoutAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

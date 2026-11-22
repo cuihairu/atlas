@@ -192,6 +192,9 @@ struct Character {
     std::string avatar;
     std::map<std::string, std::string> metadata;
     std::optional<TimePoint> last_login_at;
+    /** Observed online state (unknown | online | offline); REST-only. */
+    std::string presence_status;
+    std::optional<TimePoint> last_logout_at;
     TimePoint created_at{};
     TimePoint updated_at{};
 };
@@ -207,6 +210,10 @@ inline void from_json(const nlohmann::json& j, Character& c) {
     if (j.contains("metadata") && j["metadata"].is_object()) j["metadata"].get_to(c.metadata);
     if (j.contains("last_login_at") && j["last_login_at"].is_string()) {
         c.last_login_at = ParseTime(j["last_login_at"].get<std::string>());
+    }
+    c.presence_status = j.value("presence_status", "");
+    if (j.contains("last_logout_at") && j["last_logout_at"].is_string()) {
+        c.last_logout_at = ParseTime(j["last_logout_at"].get<std::string>());
     }
     if (j.contains("created_at")) c.created_at = ParseTime(j["created_at"].get<std::string>()).value_or(TimePoint{});
     if (j.contains("updated_at")) c.updated_at = ParseTime(j["updated_at"].get<std::string>()).value_or(TimePoint{});
