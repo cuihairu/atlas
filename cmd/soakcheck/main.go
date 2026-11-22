@@ -49,6 +49,8 @@ func main() {
 	warmup := flag.Int("warmup", 0, "drop the first N samples per series before judging (keeps the boot herd out of the plateau window)")
 	out := flag.String("out", "", "append sampled series here as TSV, replayable via --sample")
 	sample := flag.String("sample", "", "re-verify a sample file instead of scraping")
+	drills := flag.String("drills", "", "drills.sh log with window open/close ISO timestamps; each window plus --grace is excluded from the plateau verdict")
+	grace := flag.Duration("grace", 2*time.Minute, "recovery grace appended after every drill window before the series is judged again")
 	flag.Var(&urls, "metrics", "metrics URL, repeated or space-separated (one per replica; pass this flag last)")
 	flag.Parse()
 
@@ -72,6 +74,12 @@ func main() {
 		}
 	})
 
+	windows, err := loadWindows(*drills, *grace)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "soakcheck: %v\n", err)
+		os.Exit(2)
+	}
+
 	if *sample != "" {
 		f, err := os.Open(*sample)
 		if err != nil {
@@ -88,7 +96,7 @@ func main() {
 		if intervalSet {
 			replayInterval = *interval
 		}
-		os.Exit(verdict(samples, *drift, *warmup, replayInterval, "", ""))
+		os.Exit(verdict(samples, *drift, *warmup, replayInterval, "", "", windows))
 	}
 
 	if len(urls) == 0 {
@@ -123,7 +131,7 @@ func main() {
 	samples := scrape(ctx, urls, *interval, *timeout, record)
 	fmt.Fprintf(os.Stderr, "soakcheck: %s sampled %d points over %s\n",
 		time.Now().Format(time.RFC3339), len(samples), time.Since(start).Round(time.Second))
-	os.Exit(verdict(samples, *drift, *warmup, *interval, start.Format(time.RFC3339), time.Now().Format(time.RFC3339)))
+	os.Exit(verdict(samples, *drift, *warmup, *interval, start.Format(time.RFC3339), time.Now().Format(time.RFC3339), windows))
 }
 
 // scrape ticks until ctx is done, taking one scrape of every URL per tick.
@@ -180,16 +188,38 @@ func fetch(client *http.Client, u string) (map[string]float64, error) {
 	return ParseMetrics(resp.Body)
 }
 
+// loadWindows reads the drills log into the spans the verdict must not judge.
+// An empty path means no drills folded into the run, so the plain whole-run
+// verdict is the right shape.
+func loadWindows(path string, grace time.Duration) ([]Window, error) {
+	if path == "" {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open drills log: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	wins, err := ParseDrillWindows(f, grace)
+	if err != nil {
+		return nil, fmt.Errorf("read drills log: %w", err)
+	}
+	return wins, nil
+}
+
 // verdict runs the plateau check over every series and returns the process
 // code: 0 all pass, 1 any series fails the plateau or is too thin to judge,
 // 2 no samples at all (nothing was reachable).
-func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, winStart, winEnd string) int {
+func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, winStart, winEnd string, windows []Window) int {
 	if winStart != "" {
 		_, _ = fmt.Fprintf(os.Stdout, "window %s .. %s\n", winStart, winEnd)
 	}
 	if len(samples) == 0 {
 		fmt.Fprintln(os.Stderr, "soakcheck: no samples (no replica answered, or the window is shorter than two ticks)")
 		return 2
+	}
+	if len(windows) > 0 {
+		fmt.Fprintf(os.Stderr, "soakcheck: excluding %d drill window(s) from the verdict\n", len(windows))
 	}
 	series := GroupSamples(samples)
 	if warmup > 0 {
@@ -199,8 +229,8 @@ func verdict(samples []Sample, drift float64, warmup int, interval time.Duration
 	pass := true
 	var vs []Verdict
 	for _, s := range series {
-		v := Check(s.Source, s.Metric, s.Points, drift)
-		v, _ = AssessCoverage(v, interval, s.Points)
+		v := CheckWithWindows(s.Source, s.Metric, s.Points, drift, windows)
+		v, _ = AssessCoverage(v, interval, s.Points, windows)
 		if !v.OK {
 			pass = false
 		}

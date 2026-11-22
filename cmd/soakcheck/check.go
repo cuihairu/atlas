@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -88,12 +89,7 @@ func Check(src, metric string, pts []Point, drift float64) Verdict {
 		v.Note = fmt.Sprintf("insufficient samples (%d < %d)", len(pts), minSamples)
 		return v
 	}
-	q := len(pts) / 4
-	if q < 2 {
-		q = 2
-	}
-	first := mean(vals(pts[:len(pts)-3*q]))
-	last := mean(vals(pts[len(pts)-q:]))
+	first, last := quarterMeans(pts)
 	if first == 0 {
 		v.Plateau = false
 		v.Note = "leading quarter is zero; drift is not definable"
@@ -115,20 +111,233 @@ func Check(src, metric string, pts []Point, drift float64) Verdict {
 	return v
 }
 
+// quarterMeans returns the leading-quarter and trailing-quarter means. The
+// quarters are positional, not time-based: the criterion is "is the tail at the
+// same level as the head", so both are measured over whatever the run recorded.
+func quarterMeans(pts []Point) (first, last float64) {
+	q := len(pts) / 4
+	if q < 2 {
+		q = 2
+	}
+	return mean(vals(pts[:len(pts)-3*q])), mean(vals(pts[len(pts)-q:]))
+}
+
+// Window is a span of a run the plateau verdict does not judge: one drill's
+// perturbation (outage window open .. stack back to healthy) plus a recovery
+// grace after it. Points inside a Window are excluded from the verdict.
+type Window struct {
+	Start, End time.Time
+}
+
+// ParseDrillWindows reads a drills.sh log and returns the perturbation spans.
+// Each "outage window open" line opens a span and each "stack back to healthy"
+// line closes the current one; a span left open at EOF is closed at the last
+// timestamp the log shows. grace is appended after every close, so a Window
+// covers the perturbation plus the settling the plateau must not judge across.
+// Lines without a leading RFC3339 timestamp are skipped, so a log that also
+// carries non-drill chatter stays parseable.
+func ParseDrillWindows(r io.Reader, grace time.Duration) ([]Window, error) {
+	var wins []Window
+	var open *time.Time
+	last := time.Time{}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) < 2 {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339, f[0])
+		if err != nil {
+			continue
+		}
+		last = ts
+		rest := strings.Join(f[1:], " ")
+		switch {
+		case strings.Contains(rest, "outage window open"):
+			t := ts
+			open = &t
+		case strings.Contains(rest, "stack back to healthy"):
+			if open != nil {
+				wins = append(wins, Window{Start: *open, End: ts.Add(grace)})
+				open = nil
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	if open != nil && last.After(*open) {
+		// A run that ends mid-drill still gets its window recorded, so the
+		// verdict never judges a span it cannot trust to be steady.
+		wins = append(wins, Window{Start: *open, End: last.Add(grace)})
+	}
+	sort.Slice(wins, func(i, j int) bool { return wins[i].Start.Before(wins[j].Start) })
+	return wins, nil
+}
+
+// inWindow reports whether t falls inside any of the windows.
+func inWindow(t time.Time, wins []Window) bool {
+	for _, w := range wins {
+		if !t.Before(w.Start) && !t.After(w.End) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitByWindows removes points inside any window and groups the rest into
+// contiguous steady segments. Crossing a window — entering it or jumping past
+// its end in one scrape gap — closes the current segment, so no comparison ever
+// straddles a drill boundary.
+func splitByWindows(pts []Point, wins []Window) [][]Point {
+	if len(wins) == 0 {
+		return [][]Point{pts}
+	}
+	var segs [][]Point
+	var cur []Point
+	wi := 0
+	for _, p := range pts {
+		for wi < len(wins) && p.At.After(wins[wi].End) {
+			if len(cur) > 0 {
+				segs = append(segs, cur)
+				cur = nil
+			}
+			wi++
+		}
+		if wi < len(wins) && !p.At.Before(wins[wi].Start) {
+			if len(cur) > 0 {
+				segs = append(segs, cur)
+				cur = nil
+			}
+			continue
+		}
+		cur = append(cur, p)
+	}
+	if len(cur) > 0 {
+		segs = append(segs, cur)
+	}
+	return segs
+}
+
+// CheckWithWindows is Check for a run with fault drills folded in (§9): points
+// inside a drill window (perturbation + recovery grace) are excluded, and the
+// plateau is judged within each steady segment the windows leave behind. A
+// one-time level step at a drill boundary is the drill's expected effect — a
+// fresh process trims its pools to real demand — so a negative cross-run drift
+// is not a failure there. What still fails: creep inside any steady segment, a
+// drop inside a segment (an unplanned crash is not at a window), and growth
+// across the whole run measured head-to-tail.
+func CheckWithWindows(src, metric string, pts []Point, drift float64, wins []Window) Verdict {
+	if len(wins) == 0 {
+		return Check(src, metric, pts, drift)
+	}
+	segs := splitByWindows(pts, wins)
+	v := Verdict{Source: src, Metric: metric, Samples: 0, Plateau: true}
+	var judged []Point
+	for _, seg := range segs {
+		judged = append(judged, seg...)
+	}
+	v.Samples = len(judged)
+	if v.Samples == 0 {
+		v.Plateau = false
+		v.Note = fmt.Sprintf("insufficient samples (all %d points inside drill windows)", len(pts))
+		return v
+	}
+	for i, p := range judged {
+		if i == 0 || p.Value < v.Min {
+			v.Min = p.Value
+		}
+		if i == 0 || p.Value > v.Max {
+			v.Max = p.Value
+		}
+	}
+	var firstMean, lastMean float64
+	haveFirst := false
+	failed := false
+	for i, seg := range segs {
+		if len(seg) < minSamples {
+			continue // too thin to judge; the sample count on the row says so
+		}
+		first, last := quarterMeans(seg)
+		if first == 0 {
+			v.Plateau = false
+			v.OK = false
+			v.Note = fmt.Sprintf("leading quarter is zero in steady segment %d", i+1)
+			return v
+		}
+		if !haveFirst {
+			firstMean, haveFirst = first, true
+		}
+		lastMean = last
+		d := (last - first) / first
+		if d > drift {
+			failed = true
+			if v.Note == "" {
+				v.Note = fmt.Sprintf("monotonic growth above tolerance in steady segment %d", i+1)
+			}
+		} else if d < -drift {
+			failed = true
+			if v.Note == "" {
+				v.Note = fmt.Sprintf("drop above tolerance in steady segment %d (restart, crash, or a transient in the leading quarter)", i+1)
+			}
+		}
+	}
+	if !haveFirst {
+		v.Plateau = false
+		v.Note = fmt.Sprintf("insufficient samples (%d points split into %d segments, none judgeable)", len(pts), len(segs))
+		return v
+	}
+	v.FirstMean = firstMean
+	v.LastMean = lastMean
+	v.Drift = (lastMean - firstMean) / firstMean
+	if v.Drift > drift {
+		// Growth that survives every restart is a leak no segment boundary hid.
+		failed = true
+		if v.Note == "" {
+			v.Note = "growth across the run above tolerance"
+		}
+	}
+	if failed {
+		v.Plateau = false
+	} else {
+		v.Note = fmt.Sprintf("plateau across %d steady segments (drill windows excluded)", len(segs))
+	}
+	v.OK = v.Plateau
+	return v
+}
+
 // AssessCoverage checks that the series actually covers the window the plateau
 // verdict was taken over: interval ticks predict the expected count, and a hole
 // bigger than the tolerance means part of the soak was never observed. One tick
 // of tolerance absorbs a run that ended between ticks, and the floor rises to
 // 5% for long runs where the last scrape can legitimately slip past the window.
-func AssessCoverage(v Verdict, interval time.Duration, pts []Point) (Verdict, Coverage) {
+// Drill windows count as planned holes: the ticks they cover are neither
+// predicted nor observed, so a folded-in drill does not read as a gap.
+func AssessCoverage(v Verdict, interval time.Duration, pts []Point, wins []Window) (Verdict, Coverage) {
 	if interval <= 0 || len(pts) < 2 {
 		return v, Coverage{}
 	}
-	expected := 1 + int(pts[len(pts)-1].At.Sub(pts[0].At)/interval)
+	expected := 0
+	for k := 0; ; k++ {
+		t := pts[0].At.Add(time.Duration(k) * interval)
+		if t.After(pts[len(pts)-1].At) {
+			break
+		}
+		if !inWindow(t, wins) {
+			expected++
+		}
+	}
+	observed := 0
+	for _, p := range pts {
+		if !inWindow(p.At, wins) {
+			observed++
+		}
+	}
 	if expected < 1 {
 		expected = 1
 	}
-	missing := expected - len(pts)
+	missing := expected - observed
 	v.Expected = expected
 	if missing < 0 {
 		missing = 0
