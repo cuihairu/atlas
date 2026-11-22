@@ -557,7 +557,7 @@ func (s *Store) CreateSession(ctx context.Context, sess *model.PlayerSession) er
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // commit below decides the outcome; a rollback after commit is a no-op
 
 	// Mark the character online first; 0 rows ⇒ the character is not in the
 	// index, so the session is refused (same rule as memory/postgres).
@@ -608,7 +608,7 @@ func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt time.T
 	if err != nil {
 		return nil, fmt.Errorf("end session: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck // commit below decides the outcome; a rollback after commit is a no-op
 
 	var sess model.PlayerSession
 	var ended sql.NullTime
@@ -697,7 +697,7 @@ LIMIT ?`, characterID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // read errors surface via rows.Err() after the loop
 	out := make([]*model.PlayerSession, 0, limit)
 	for rows.Next() {
 		var sess model.PlayerSession
