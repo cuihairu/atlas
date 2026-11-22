@@ -231,46 +231,46 @@ an empty set).
 ### 8.2 The command-based write queue
 
 All hot writes are first wrapped in a **command envelope** `{kind, target, payload,
-base_version, idempotency_key}` (an `instruction`, queue.go:140); public method
+base_version, idempotency_key}` (an `instruction`, queue.go:146); public method
 signatures and synchronous semantics are unchanged — callers block until **their own**
 instruction commits (every write method is `return s.submit(ctx, ins).err`,
-memory.go:128 et al), so read-after-write is still exact.
+memory.go:145 et al), so read-after-write is still exact.
 
 - **Lane separation**: 4 control lanes + 2 hot lanes, hashed per entity with FNV-1a
-  (queue.go:330, 337) — the same entity always lands in the same lane, FIFO with a
+  (queue.go:346) — the same entity always lands in the same lane, FIFO with a
   single writer, so races are structurally impossible. Configuration changes (control
   lanes) never queue behind heartbeats (hot lanes), and a hot-lane backlog cannot take
-  down the control plane (`hot()`, queue.go:118).
-- **Merge rules hang off the type** (`mergeable()`, queue.go:129): only overwrite-style
+  down the control plane (`hot()`, queue.go:124).
+- **Merge rules hang off the type** (`mergeable()`, queue.go:135): only overwrite-style
   writes — heartbeat / server-status / server-tags — may merge; within one batch the
   same entity keeps the newest and the rest are superseded. Instructions handed back to
   the caller (register / character upsert) and order-sensitive ones (delete, character
   patch) never merge, never drop and never duplicate. **Superseded envelopes still get
   a batch commit receipt** (the superseded notification in applyBatchN, from
-  queue.go:458) — under last-writer-wins semantics this means "your write landed with
+  queue.go:476) — under last-writer-wins semantics this means "your write landed with
   the newer one"; callers are unaware of the merge. A regression test pins that
-  concurrent merging never swallows a receipt (queue_test.go:284).
+  concurrent merging never swallows a receipt (queue_test.go:340).
 - **The merge window follows supply**: keep draining a non-empty lane and commit as
-  soon as a drain comes up empty (`drainAvailable`, queue.go:367), batch cap 256. There
+  soon as a drain comes up empty (`drainAvailable`, queue.go:383), batch cap 256. There
   is no timed window — an idle single instruction commits immediately (no latency
   floor), and under a storm the batch naturally fills to its cap. The merge window *is*
   the supply window: high-frequency writes to one entity are debounced inside a batch,
   and index maintenance happens once per batch.
 - **Backpressure**: when a lane is full at depth 4096, that instruction is written
-  **inline and synchronously** (the default branch of submit, queue.go:295) — the caller
+  **inline and synchronously** (the default branch of submit, queue.go:312) — the caller
   becomes its own single writer, so a write never fails and never queues forever.
   **Close keeps same-target order**: `Close` itself waits for the drain, and a submit
   that observes the closed store waits for the same drain before its inline apply
-  (queue.go:309) — anything already buffered in a lane commits before any post-close
+  (queue.go:325) — anything already buffered in a lane commits before any post-close
   write, so a post-close write can neither be overtaken by an older queued one nor
   flip a queued compare-and-set's verdict, and post-close writes keep applying (and
-  reads keep serving) as before (queue.go:669, queue_test.go:380). The ordering is
+  reads keep serving) as before (queue.go:698, queue_test.go:436). The ordering is
   pinned by TestCloseDrainPrecedesPostCloseWrite / TestCloseDrainOrderCAS
-  (queue_test.go:447, 522) — both go red against the unfixed inline path.
+  (queue_test.go:507, 582) — both go red against the unfixed inline path.
 - **Idempotency and replay**: an idempotency-key LRU of 1024 guards against retries and
-  replays (queue.go:525-542); applied instructions land in a 1024-deep deep-copy capture
+  replays (queue.go:544-604); applied instructions land in a 1024-deep deep-copy capture
   ring — `ReplayInto` rebuilds write history in a sandbox, and `DryRun` pre-checks
-  without touching production (queue.go:226, 241). Merge-semantics tests: merging loses
+  without touching production (queue.go:242, 257). Merge-semantics tests: merging loses
   nothing (enqueued = applied + merged + in-flight), same-entity ordering holds, and
   idempotent replay is consistent (queue_test.go:26, 86, 123).
 
@@ -278,7 +278,7 @@ memory.go:128 et al), so read-after-write is still exact.
 
 **What was actually adopted: one lock, one critical section.** Each batch commit
 completes the data mutation and index maintenance together inside `mu + charMu`
-(applyBatchN, queue.go:390-467) — index and data can never lead each other, and a
+(applyBatchN, queue.go:406-484) — index and data can never lead each other, and a
 reader holding the corresponding read lock necessarily sees a consistent (data, index)
 pair. The three lock domains and their order: mu (servers+serverIndex) → charMu
 (characters+charIndex) → rtMu (runtimes), with no reverse acquisition path
@@ -298,14 +298,14 @@ per 256 instructions under a storm).
 ### 8.4 Version watermark
 
 Each applied instruction increments a monotonic watermark (`s.watermark.Add(1)`,
-queue.go:478). Visibility semantics: **the watermark a reader sees under the lock *is*
+queue.go:493). Visibility semantics: **the watermark a reader sees under the lock *is*
 the committed state**; a caller's write returning means its own instruction was applied
 (wait-for-receipt semantics, §8.2); a merged write returning means its successor was
 applied (state ≥ its own write). base_version is stamped at enqueue time; existing
 instruction types are all overwrite-and-swap by entity, so a mismatched watermark is
 absorbed by recomputation — future compare-and-set style instructions will be rejected
-here (errVersionConflict reserved, queue.go:60-65). The current watermark is exposed via
-`QueueStats.Watermark` (store.go:337-340).
+here (errVersionConflict reserved, queue.go:60-63). The current watermark is exposed via
+`QueueStats.Watermark` (store.go:380-385).
 
 ### 8.5 Before/after comparison (replicas measured in the same bench)
 
@@ -426,10 +426,10 @@ readers** (the no-drift contract in store.go's header comment):
    PromQL rather than a second set of counters. When SQL backends report
    `Enabled=false` through the forwarded snapshot, the entire family is not emitted —
    if the metric exists, there is a queue.
-2. **`GET /v1/admin/indexqueue/status`** (httpapi/handlers.go:218 routing, :1922
+2. **`GET /v1/admin/indexqueue/status`** (httpapi/handlers.go:222 routing, :2062
    handler): returns the same snapshot verbatim. The decoration layer does not hide the
    snapshot — the fleet decorator and main's composite both pass `QueueStats` through
-   (fleet/track.go:75, main.go:912); the SQL stores' empty snapshot
+   (fleet/track.go:75, main.go:1074); the SQL stores' empty snapshot
    (`Enabled=false`) and non-providers return `503 INDEX_QUEUE_DISABLED` rather than an
    empty 200. Verified with curl: memory backend returns 200 (watermark=enqueued=applied=4,
    genuine `recent_flushes` records, critical sections ~7-17µs); `/metrics` shows 12

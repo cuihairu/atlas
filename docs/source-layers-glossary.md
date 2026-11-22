@@ -22,7 +22,7 @@ directory layout. Paths are repository-relative source anchors.
 | 状态条件写 | Compare-and-set status transition | A status write applies only when the server still holds the expected status, preventing stale health sweeps from overwriting newer decisions. | `internal/store/store.go:98`, `internal/store/store.go:108` |
 | 游标分页 | Cursor pagination | Store lists return bounded pages plus an opaque cursor; the shared cap is 200 rows per call. | `internal/store/store.go:78`, `internal/store/store.go:145` |
 | 运行时存储 | Runtime store | The dedicated volatility boundary for heartbeats and snapshots; fleet statistics require reading this state in addition to persistent totals. | `internal/store/store.go:203`, `internal/store/store.go:218` |
-| 事件 | Event | The transport-neutral unit carrying character lifecycle changes or a config-update signal. | `internal/event/adapter.go:17`, `internal/event/adapter.go:65` |
+| 事件 | Event | The transport-neutral unit carrying character lifecycle changes or a config-update signal. | `internal/event/adapter.go:17`, `internal/event/adapter.go:69` |
 | 事件主题 | Event topic | A transport-level routing key: character events use `atlas.characters`; config signals use `atlas.config`. | `internal/event/adapter.go:39`, `internal/event/adapter.go:108` |
 | 事件适配器 | Event adapter | Publish/subscribe abstraction with explicit synchronous semantics, acknowledgement, and lifecycle close. | `internal/event/adapter.go:129` |
 | 死信主题 | Dead-letter topic | A sibling topic suffixed `.dl` where an exhausted event is copied so normal consumers cannot retry it forever. | `internal/event/adapter.go:50` |
