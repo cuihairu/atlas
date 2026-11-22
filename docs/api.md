@@ -373,9 +373,12 @@ Fetch a single character's index record.
   "level": 182,
   "class_id": 3,
   "avatar": "avatar_03",
-  "last_login_at": "2026-09-30T12:30:00Z"
+  "last_login_at": "2026-09-30T12:30:00Z",
+  "presence_status": "online"
 }
 ```
+
+`presence_status` (`unknown` / `online` / `offline`) is always present; `last_logout_at` additionally appears once the character has closed at least one session. Presence is reported via `POST /v1/registry/servers/{id}/presence` and queried per server via `GET /v1/directory/servers/{server_id}/presence`.
 
 ---
 

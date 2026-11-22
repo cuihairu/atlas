@@ -6,7 +6,7 @@ Atlas 的存储按**访问模式**分两层：注册表 / 角色目录等持久�
 | 存储 | 承载内容 | 访问模式 |
 | --- | --- | --- |
 | **Redis** | 心跳时间戳、`status`、`load`、`players` | 高频写、高频读、可丢失 |
-| **PostgreSQL** | `servers`、`realms`、`shards`、`character_index`、`migrations` | 低频写、事务性、需持久 |
+| **PostgreSQL** | `servers`、`realms`、`shards`、`character_index`、`player_sessions`、`migrations` | 低频写、事务性、需持久 |
 
 ---
 
@@ -137,6 +137,8 @@ CREATE TABLE character_index (
     avatar        TEXT        NOT NULL DEFAULT '',
     metadata      JSONB       NOT NULL DEFAULT '{}',
     last_login_at TIMESTAMPTZ,
+    presence_status TEXT      NOT NULL DEFAULT 'unknown',
+    last_logout_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -146,6 +148,7 @@ CREATE TABLE character_index (
 CREATE INDEX idx_char_by_account ON character_index (account_id);
 CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
+CREATE INDEX idx_char_by_server_presence ON character_index (server_id, presence_status);
 ```
 
 **这是投影表，不是权威数据表。** 完整角色数据在游戏服务器的角色数据库中。见 [concepts.md §7](concepts.md#_7-character)。
@@ -155,6 +158,31 @@ CREATE INDEX idx_char_by_server  ON character_index (server_id);
 - `character_id` 全局唯一性由游戏服务器保证，但 Atlas 不依赖它作为主键，以容忍不同服务器 ID 空间冲突
 
 `idx_char_by_char_id` 用于 `GET /v1/directory/characters/{id}` 反查。
+
+反规范化在线投影也在这里：`presence_status`（`unknown`/`online`/`offline`）与 `last_logout_at` 由 session 存储在 presence 上报落地时直接写入（`character.login` 事件刷新 `last_login_at`），`idx_char_by_server_presence` 支撑按服在线名单（`GET /v1/directory/servers/{id}/presence`）。
+
+---
+
+### player_sessions
+
+```sql
+CREATE TABLE player_sessions (
+    session_id    TEXT        PRIMARY KEY,
+    account_id    BIGINT      NOT NULL,
+    character_id  BIGINT      NOT NULL,
+    server_id     TEXT        NOT NULL,
+    started_at    TIMESTAMPTZ NOT NULL,
+    ended_at      TIMESTAMPTZ,
+    end_reason    TEXT        NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_session_by_character ON player_sessions (character_id, started_at DESC);
+CREATE UNIQUE INDEX uq_session_open_per_character ON player_sessions (character_id) WHERE ended_at IS NULL;
+```
+
+**追加式游玩会话历史**，由 presence 上报（`POST /v1/registry/servers/{id}/presence`）投影：`login` 开一行（`ended_at` 为 NULL），`logout` 关闭它。一个角色的已关闭会话历史按最新优先经 `idx_session_by_character` 读取。偏唯一索引 `uq_session_open_per_character` 强制「一个角色至多一个 OPEN 会话」的不变量——存储在写锁下也做同样检查，索引是兜底而非执行点。`end_reason`（`normal`/`timeout`/`kicked`/`crash`，开放期间为 `''`）由应用层校验（`model.SessionEndReason.Valid`），不由 DB CHECK 承担，以保持迁移在 PG/MySQL 语法间可移植。
+
+> **MySQL 变体：** MySQL 无偏唯一索引，迁移 0010 用存储生成列 `open_flag`（`IF(ended_at IS NULL, 1, NULL) STORED`，经 `UNIQUE (character_id, open_flag)` 按角色唯一——MySQL 把 NULL 视为互不相同，故已关闭行永不冲突）模拟同一不变量，机制不同、语义相同。
 
 ---
 

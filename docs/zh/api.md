@@ -377,9 +377,12 @@ GET /v1/discovery/servers?region=cn-east&status=online
   "level": 182,
   "class_id": 3,
   "avatar": "avatar_03",
-  "last_login_at": "2026-09-30T12:30:00Z"
+  "last_login_at": "2026-09-30T12:30:00Z",
+  "presence_status": "online"
 }
 ```
+
+`presence_status`（`unknown`/`online`/`offline`）恒在；`last_logout_at` 在角色至少关闭过一次会话后出现。presence 经 `POST /v1/registry/servers/{id}/presence` 上报、按服经 `GET /v1/directory/servers/{server_id}/presence` 查询。
 
 ---
 

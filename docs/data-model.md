@@ -6,7 +6,7 @@ Atlas's storage is divided into two layers by **access pattern**: persistent sta
 | Storage | Content carried | Access pattern |
 | --- | --- | --- |
 | **Redis** | Heartbeat timestamp, `status`, `load`, `players` | High-frequency writes, high-frequency reads, lossy |
-| **PostgreSQL** | `servers`, `realms`, `shards`, `character_index`, `migrations` | Low-frequency writes, transactional, requires persistence |
+| **PostgreSQL** | `servers`, `realms`, `shards`, `character_index`, `player_sessions`, `migrations` | Low-frequency writes, transactional, requires persistence |
 
 ---
 
@@ -137,6 +137,8 @@ CREATE TABLE character_index (
     avatar        TEXT        NOT NULL DEFAULT '',
     metadata      JSONB       NOT NULL DEFAULT '{}',
     last_login_at TIMESTAMPTZ,
+    presence_status TEXT      NOT NULL DEFAULT 'unknown',
+    last_logout_at  TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -146,6 +148,7 @@ CREATE TABLE character_index (
 CREATE INDEX idx_char_by_account ON character_index (account_id);
 CREATE INDEX idx_char_by_char_id ON character_index (character_id);
 CREATE INDEX idx_char_by_server  ON character_index (server_id);
+CREATE INDEX idx_char_by_server_presence ON character_index (server_id, presence_status);
 ```
 
 **This is a projection table, not an authoritative data table.** The complete character data is in the game server's character database. See [concepts.md §7](concepts.md#_7-character)
@@ -155,6 +158,31 @@ The primary key is chosen as the `(account_id, server_id, character_id)` triple 
 - The global uniqueness of `character_id` is guaranteed by the game server, but Atlas does not depend on it as the primary key, in order to tolerate ID space conflicts across different servers
 
 `idx_char_by_char_id` is used for the reverse lookup in `GET /v1/directory/characters/{id}`.
+
+The denormalized presence projection lives here too: `presence_status` (`unknown` / `online` / `offline`) and `last_logout_at` are written directly by the session store when presence reports are applied (the `character.login` event refreshes `last_login_at`), and `idx_char_by_server_presence` serves the per-server online roster (`GET /v1/directory/servers/{id}/presence`).
+
+---
+
+### player_sessions
+
+```sql
+CREATE TABLE player_sessions (
+    session_id    TEXT        PRIMARY KEY,
+    account_id    BIGINT      NOT NULL,
+    character_id  BIGINT      NOT NULL,
+    server_id     TEXT        NOT NULL,
+    started_at    TIMESTAMPTZ NOT NULL,
+    ended_at      TIMESTAMPTZ,
+    end_reason    TEXT        NOT NULL DEFAULT ''
+);
+
+CREATE INDEX idx_session_by_character ON player_sessions (character_id, started_at DESC);
+CREATE UNIQUE INDEX uq_session_open_per_character ON player_sessions (character_id) WHERE ended_at IS NULL;
+```
+
+**Append-style play session history**, projected from presence reports (`POST /v1/registry/servers/{id}/presence`): a `login` opens a row (`ended_at` NULL), a `logout` closes it. The closed-session history of one character is read newest-first via `idx_session_by_character`. The partial unique index `uq_session_open_per_character` enforces the invariant that a character has **at most one OPEN session** — the store also checks it under its write lock, so the index is the backstop, not the enforcement point. `end_reason` (`normal` / `timeout` / `kicked` / `crash`, `''` while open) is validated in the application layer (`model.SessionEndReason.Valid`), not by a DB CHECK, so the migration stays portable across PG/MySQL.
+
+> **MySQL variant:** MySQL has no partial index, so migration 0010 emulates the open-session invariant with a stored generated column `open_flag` (`IF(ended_at IS NULL, 1, NULL) STORED`, unique per character via `UNIQUE (character_id, open_flag)` — MySQL treats NULL as unique, so closed rows never collide) — same invariant, different mechanism.
 
 ---
 
