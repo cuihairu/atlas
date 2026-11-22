@@ -283,6 +283,22 @@ public sealed class AtlasClientTests
         Assert.Contains("cursor=c1", req.Query);
     }
 
+    [Fact]
+    public async Task GetCharacter_SurfacesPresenceFields()
+    {
+        // presence read path must surface: GetCharacterAsync decodes
+        // presence_status / last_logout_at instead of dropping them.
+        using var fake = new FakeAtlas();
+        fake.On(r => r is { Method: "GET", Path: "/v1/directory/characters/1001" },
+            """{"account_id":42,"server_id":"game-1","character_id":1001,"name":"Hero","level":1,"presence_status":"online","last_logout_at":"2026-11-22T08:00:00Z"}""");
+
+        using var client = Client(fake.BaseUrl);
+        var ch = await client.GetCharacterAsync(1001);
+
+        Assert.Equal("online", ch.PresenceStatus);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-22T08:00:00Z"), ch.LastLogoutAt);
+    }
+
     // ── Routing ─────────────────────────────────────────────────
 
     [Fact]

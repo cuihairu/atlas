@@ -36,6 +36,13 @@ public class Character {
     @SerializedName("last_login_at")
     public Instant lastLoginAt;
 
+    /** Observed online state (unknown | online | offline); REST-only. */
+    @SerializedName("presence_status")
+    public String presenceStatus = "";
+
+    @SerializedName("last_logout_at")
+    public Instant lastLogoutAt;
+
     @SerializedName("created_at")
     public Instant createdAt;
 
