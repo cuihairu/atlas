@@ -1,0 +1,11 @@
+perf runner summary — perf-100-20261122T145242
+verdict: FAIL — at least one series is not a plateau
+char-write         count=    2360 p95=   54ms p99=  251ms errors=23 skipped=3
+heartbeat          count=   24181 p95=   28ms p99=   66ms errors=233 skipped=5
+ops-stats          count=     237 p95=   55ms p99=   75ms errors=0 skipped=2
+read-detail        count=   69437 p95=   45ms p99=   69ms errors=681 skipped=49
+read-list          count=  115999 p95=   55ms p99=   86ms errors=1117 skipped=80
+read-recommend     count=   46916 p95=   47ms p99=   71ms errors=443 skipped=39
+register           count=     100 p95=  994ms p99= 1329ms errors=0 skipped=0
+storm-register     count=       0 p95=    0ms p99=    0ms errors=0 skipped=0
+errors=2497 skipped=178
