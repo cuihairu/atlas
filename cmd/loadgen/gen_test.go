@@ -111,9 +111,13 @@ func newTestEngine(t *testing.T, cfg Config, base string) (*Engine, *fakeAtlas) 
 }
 
 func TestEngineDrivesAllStreams(t *testing.T) {
+	// Counts are per-stream minimums over the whole window, so a starved
+	// tick eats margin: at 500ms one missed heartbeat cadence dropped a
+	// 3-server fleet below the floor under parallel-suite load. The 1s
+	// budget doubles every margin for the same assertions.
 	cfg := Config{
 		Servers:     3,
-		Duration:    500 * time.Millisecond,
+		Duration:    1 * time.Second,
 		Heartbeat:   80 * time.Millisecond,
 		ReadRPS:     60,
 		CharRPS:     10,
