@@ -9,6 +9,7 @@ import (
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
 	"github.com/cuihairu/atlas/internal/store/memory"
+	"github.com/cuihairu/atlas/internal/store/storetest"
 )
 
 func newSharded(t *testing.T, n int) *Store {
@@ -514,4 +515,19 @@ func TestSharded_LimitClamps(t *testing.T) {
 	if gotSearch != 200 {
 		t.Errorf("search limit 9999 → shard limit %d, want 200", gotSearch)
 	}
+}
+
+// TestContractSessions runs the shared session contract against the sharded
+// wrapper over memory shards. The full contract suite structurally cannot
+// run here (the wrapper is not a full Core), but the session projection —
+// the presence surface it routes per-shard and fans out on read — must not
+// drift from the reference implementations.
+func TestContractSessions(t *testing.T) {
+	s := newSharded(t, 4)
+	for _, sh := range s.Shards() {
+		if ms, ok := sh.(*memory.Store); ok {
+			defer ms.Close() // stop the instruction lanes
+		}
+	}
+	storetest.RunSessions(t, s)
 }

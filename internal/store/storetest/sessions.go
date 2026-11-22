@@ -14,11 +14,22 @@ import (
 // RunSessions is the behavioral contract for the player-session projection
 // (PP): session lifecycle (open → online, close → offline) and the
 // denormalized presence fields on the character index. Every store must
-// satisfy it — the same suite runs against memory, PostgreSQL and MySQL.
+// satisfy it — the same suite runs against memory, PostgreSQL, MySQL and
+// the sharded wrapper.
 //
 // The suite seeds its own character under a unique account and keeps all
 // state scoped to that character, so subtests stay order-independent.
-func RunSessions(t *testing.T, s Core) {
+
+// sessionStore is the surface RunSessions needs: the character projection it
+// seeds plus the session store it exercises. It is narrower than Core so the
+// sharded store (a CharacterStore + PlayerSessionStore wrapper, not a full
+// Core) can also run the suite.
+type sessionStore interface {
+	store.CharacterStore
+	store.PlayerSessionStore
+}
+
+func RunSessions(t *testing.T, s sessionStore) {
 	t.Helper()
 	t.Run("SessionLifecycle", func(t *testing.T) {
 		ctx := context.Background()
