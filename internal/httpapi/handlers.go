@@ -127,8 +127,6 @@ func (h *Handler) registerRegistryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/registry/servers/register", h.handleRegister)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/heartbeat", h.handleHeartbeat)
 	mux.HandleFunc("POST /v1/registry/servers/{id}/unregister", h.handleUnregister)
-	// Presence reports ride the same registry channel and auth zone as
-	// heartbeat: game servers post login/logout events for their players.
 	mux.HandleFunc("POST /v1/registry/servers/{id}/presence", h.handlePresence)
 }
 
@@ -160,8 +158,9 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/directory/characters", h.handleCreateCharacter)
 	mux.HandleFunc("GET /v1/directory/accounts/{id}/characters", h.handleListCharactersByAccount)
 	mux.HandleFunc("GET /v1/directory/characters/{character_id}", h.handleGetCharacter)
+	mux.HandleFunc("GET /v1/directory/characters/{character_id}/presence", h.handleGetCharacterPresence)
 	mux.HandleFunc("GET /v1/directory/servers/{id}/characters", h.handleListCharactersByServer)
-	mux.HandleFunc("GET /v1/directory/servers/{id}/presence", h.handleServerPresence)
+	mux.HandleFunc("GET /v1/directory/servers/{id}/presence", h.handleListOnlineByServer)
 	mux.HandleFunc("PATCH /v1/directory/characters/{character_id}", h.handlePatchCharacter)
 	mux.HandleFunc("DELETE /v1/directory/characters/{character_id}", h.handleDeleteCharacter)
 }
@@ -372,93 +371,109 @@ func (h *Handler) handleUnregister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePresence applies a batch of player login/logout events posted by a
-// game server (PP-2). The whole request is 200 once each event is classified;
-// per-event outcomes are in the body (applied / already_applied / rejected),
-// so a retried or partially-conflicting batch never poisons the rest.
+// presenceReport is the game server's presence report
+// (PP-2, docs/presence.md §3). The reporting server's identity is the path
+// {id}: a game server may only report presence for its own server, so
+// server_id is deliberately not accepted in the body.
+type presenceReport struct {
+	Action      string                 `json:"action"`
+	AccountID   int64                  `json:"account_id"`
+	CharacterID int64                  `json:"character_id"`
+	SessionID   string                 `json:"session_id"`
+	EndReason   model.SessionEndReason `json:"end_reason,omitempty"`
+	Timestamp   *time.Time             `json:"timestamp,omitempty"`
+}
+
+// handlePresence is the presence reporting endpoint for game servers
+// (PP-2, docs/presence.md §3): POST /v1/registry/servers/{id}/presence. It
+// shares the registry trust zone with register / heartbeat / unregister, so
+// it inherits RegistryAuth (service token + optional IP whitelist) and the
+// game server's token must belong to a registered server. Reports publish
+// character.login / character.logout events; the store's state machine makes
+// a re-report of an open session an idempotent no-op and rejects illegal
+// transitions with 409.
 func (h *Handler) handlePresence(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var report model.PresenceReport
-	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+	var req presenceReport
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid JSON body")
 		return
 	}
 
-	results, err := h.registry.ReportPresence(r.Context(), id, report)
-	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
+	switch req.Action {
+	case "login", "logout":
+	default:
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"action must be \"login\" or \"logout\"")
+		return
+	}
+	// Validate before enqueueing: asynchronous adapters would otherwise
+	// accept reports that only fail at consumption time.
+	if req.AccountID <= 0 || req.CharacterID <= 0 {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"account_id and character_id are required")
+		return
+	}
+	if req.Action == "login" && req.SessionID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			"session_id is required for login")
+		return
+	}
+	if req.EndReason != "" && !req.EndReason.Valid() {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT",
+			fmt.Sprintf("invalid end_reason %q", req.EndReason))
+		return
+	}
+
+	// The reporting server must be registered: a token alone does not name a
+	// server, and the path id is the only identity a report may claim.
+	if _, err := h.store.GetServer(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "SERVER_NOT_FOUND", fmt.Sprintf("server %s not found", id))
-			return
-		}
-		if errors.Is(err, model.ErrInvalid) {
-			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
 
-	// Mirror every accepted transition onto the character event bus
-	// (docs/sync.md §2): character.login refreshes last_login_at,
-	// character.logout refreshes last_logout_at in the projection. The
-	// session store writes presence_status/last_logout_at directly, but the
-	// last-login/last-logout timeline of the projection is driven by these
-	// events — this is their built-in trigger source.
-	//
-	// already_applied publishes too, not only applied: a duplicate report
-	// re-fires the mirror, so a mirror lost to a transient failure on the
-	// first attempt is recovered by the client's retry. rejected publishes
-	// nothing — the projection must not record a timeline for a state that
-	// was never reached.
-	//
-	// The mirror is best-effort: the session outcomes above are authoritative
-	// and already committed, so a failed mirror is logged, never turned into
-	// an error response (a logout report identifies the character by session,
-	// so a resolution miss simply skips the mirror).
-	for i := range results {
-		if results[i].Status == model.PresenceRejected {
-			continue
-		}
-		ev := report.Events[i]
-		evtType := event.EventCharacterLogin
-		if ev.Kind == model.PresenceEventLogout {
-			evtType = event.EventCharacterLogout
-		}
-		// A logout report carries session_id, not the composite key; resolve
-		// the character so the event can reach the projection. Login reports
-		// always carry account_id + character_id.
-		acctID, charID := ev.AccountID, ev.CharacterID
-		if charID == 0 {
-			sess, serr := h.store.GetSession(r.Context(), ev.SessionID)
-			if serr != nil {
-				h.logger.Warn("presence mirror: session resolve failed",
-					"session_id", ev.SessionID, "error", serr)
-				continue
-			}
-			acctID, charID = sess.AccountID, sess.CharacterID
-		}
-		evt := &event.Event{
-			Type:        evtType,
-			AccountID:   acctID,
-			ServerID:    id, // authoritative from the registry channel
-			CharacterID: charID,
-		}
-		if ev.StartedAt != nil {
-			evt.Timestamp = *ev.StartedAt
-		}
-		if ev.EndedAt != nil {
-			evt.Timestamp = *ev.EndedAt
-		}
-		if err := h.events.Publish(r.Context(), evt); err != nil {
-			h.logger.Warn("presence mirror publish failed",
-				"type", evtType, "session_id", ev.SessionID, "error", err)
-		}
+	at := time.Now()
+	if req.Timestamp != nil {
+		at = *req.Timestamp
+	}
+	evt := &event.Event{
+		AccountID:   req.AccountID,
+		ServerID:    id,
+		CharacterID: req.CharacterID,
+		SessionID:   req.SessionID,
+		EndReason:   req.EndReason,
+		Timestamp:   at,
+	}
+	if req.Action == "login" {
+		evt.Type = event.EventCharacterLogin
+	} else {
+		evt.Type = event.EventCharacterLogout
+	}
+	if err := h.events.Publish(r.Context(), evt); err != nil {
+		h.writeEventError(w, err)
+		return
 	}
 
+	if !h.events.Synchronous() {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+		return
+	}
+
+	view, err := h.directory.GetPresence(r.Context(), req.CharacterID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"server_id": id,
-		"results":   results,
+		"server_id":       id,
+		"character_id":    req.CharacterID,
+		"presence_status": view.PresenceStatus,
+		"presence":        view,
 	})
 }
 
@@ -646,6 +661,13 @@ func (h *Handler) writeEventError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "CHARACTER_NOT_FOUND", err.Error())
 		return
 	}
+	if errors.Is(err, store.ErrConflict) {
+		// A presence report that loses the state-machine race (login while
+		// online in a different session, logout of a session that is not the
+		// open one) is a conflict, not a server fault.
+		writeError(w, http.StatusConflict, "PRESENCE_CONFLICT", err.Error())
+		return
+	}
 	writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 }
 
@@ -718,39 +740,71 @@ func (h *Handler) handleListCharactersByServer(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleServerPresence answers GET /v1/directory/servers/{id}/presence (PP-3
-// 查询 API): the online roster of one server with the true online count.
-// The roster is presence-filtered and cursor-paginated (plain character-ID
-// cursor, same contract as GET /v1/directory/servers/{id}/characters); the
-// count is a store-level total, so it does not shrink with paging.
-func (h *Handler) handleServerPresence(w http.ResponseWriter, r *http.Request) {
+// handleGetCharacterPresence answers 角色在线查询
+// (PP-3, docs/presence.md §4): GET /v1/directory/characters/{character_id}/presence.
+func (h *Handler) handleGetCharacterPresence(w http.ResponseWriter, r *http.Request) {
+	charID, err := strconv.ParseInt(r.PathValue("character_id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid character_id")
+		return
+	}
+
+	view, err := h.directory.GetPresence(r.Context(), charID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "CHARACTER_NOT_FOUND", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// handleListOnlineByServer answers 某服在线名单与计数
+// (PP-3, docs/presence.md §4): GET /v1/directory/servers/{id}/presence.
+func (h *Handler) handleListOnlineByServer(w http.ResponseWriter, r *http.Request) {
 	serverID := r.PathValue("id")
 	q := r.URL.Query()
 
 	limit := 50
 	if l := q.Get("limit"); l != "" {
 		n, err := strconv.Atoi(l)
-		if err == nil && n > 0 {
-			limit = n
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid limit")
+			return
 		}
+		limit = n
 	}
 	cursor := q.Get("cursor")
 
-	chars, onlineCount, nextCursor, err := h.directory.PresenceByServer(r.Context(), serverID, limit, cursor)
+	count, err := h.directory.CountOnlineByServer(r.Context(), serverID)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "PRESENCE_NOT_CONFIGURED", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	chars, nextCursor, err := h.directory.ListOnlineByServer(r.Context(), serverID, limit, cursor)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "PRESENCE_NOT_CONFIGURED", err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
 		return
 	}
 
 	resp := map[string]any{
 		"server_id":    serverID,
-		"online_count": onlineCount,
+		"online_count": count,
 		"characters":   chars,
 	}
 	if nextCursor != "" {
 		resp["next_cursor"] = nextCursor
 	}
-
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -1336,16 +1390,6 @@ func (h *Handler) handleAdminSearchCharacters(w http.ResponseWriter, r *http.Req
 			return
 		}
 		filter.AccountID = n
-	}
-	// 在线状态过滤 (PP-3 查询 API): online / offline / unknown. Absent =
-	// no predicate.
-	if p := q.Get("presence"); p != "" {
-		ps := model.PresenceStatus(p)
-		if !ps.Valid() {
-			writeError(w, http.StatusBadRequest, "INVALID_ARGUMENT", fmt.Sprintf("invalid presence %q", p))
-			return
-		}
-		filter.Presence = &ps
 	}
 	if minStr := q.Get("min_level"); minStr != "" {
 		n, err := strconv.Atoi(minStr)

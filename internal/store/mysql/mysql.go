@@ -286,8 +286,8 @@ func (s *Store) UpsertCharacter(ctx context.Context, ch *model.Character) error 
 	ch.UpdatedAt = now
 
 	const q = `
-INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO character_index (account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
     name          = VALUES(name),
     level         = VALUES(level),
@@ -301,6 +301,7 @@ ON DUPLICATE KEY UPDATE
 		ch.AccountID, ch.ServerID, ch.CharacterID,
 		ch.Name, ch.Level, ch.ClassID, ch.Avatar,
 		ch.LastLoginAt, ch.CreatedAt, ch.UpdatedAt, metadataJSON(ch.Metadata),
+		ch.PresenceStatus.Normalize(), ch.LastLogoutAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert character: %w", err)
@@ -310,7 +311,7 @@ ON DUPLICATE KEY UPDATE
 
 func (s *Store) GetCharacter(ctx context.Context, accountID int64, serverID string, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at
 FROM character_index
 WHERE account_id = ? AND server_id = ? AND character_id = ?
 `
@@ -323,7 +324,7 @@ WHERE account_id = ? AND server_id = ? AND character_id = ?
 
 func (s *Store) GetCharacterByCharacterID(ctx context.Context, characterID int64) (*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at
 FROM character_index
 WHERE character_id = ?
 `
@@ -361,10 +362,6 @@ func (s *Store) UpdateCharacter(ctx context.Context, accountID int64, serverID s
 	if patch.LastLoginAt != nil {
 		setClauses = append(setClauses, "last_login_at = ?")
 		args = append(args, *patch.LastLoginAt)
-	}
-	if patch.LastLogoutAt != nil {
-		setClauses = append(setClauses, "last_logout_at = ?")
-		args = append(args, *patch.LastLogoutAt)
 	}
 
 	if len(setClauses) == 0 {
@@ -404,7 +401,7 @@ func (s *Store) DeleteCharacter(ctx context.Context, accountID int64, serverID s
 
 func (s *Store) ListCharactersByAccount(ctx context.Context, accountID int64) ([]*model.Character, error) {
 	const q = `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at
 FROM character_index
 WHERE account_id = ?
 ORDER BY server_id, character_id
@@ -427,7 +424,7 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	}
 
 	q := `
-SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
+SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at
 FROM character_index
 WHERE server_id = ?`
 	args := []any{serverID}
@@ -449,20 +446,6 @@ WHERE server_id = ?`
 	return scanCharacters(rows)
 }
 
-// CountByServerPresence counts characters on serverID holding the given
-// presence status (PP-3 在线计数). The partial index idx_char_by_server_presence
-// (migration 0010) makes the online lookup an index-only count.
-func (s *Store) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
-	var n int64
-	err := s.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM character_index WHERE server_id = ? AND presence_status = ?`,
-		serverID, presence).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("count characters by server presence: %w", err)
-	}
-	return n, nil
-}
-
 // ---------------------------------------------------------------------------
 // SearchCharacters
 // ---------------------------------------------------------------------------
@@ -475,7 +458,7 @@ func (s *Store) SearchCharacters(ctx context.Context, filter store.CharacterSear
 		filter.Limit = 200
 	}
 
-	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, presence_status, last_logout_at, created_at, updated_at, metadata
+	q := `SELECT account_id, server_id, character_id, name, level, class_id, avatar, last_login_at, created_at, updated_at, metadata, presence_status, last_logout_at
 FROM character_index WHERE 1=1`
 	args := []any{}
 
@@ -490,10 +473,6 @@ FROM character_index WHERE 1=1`
 	if filter.AccountID != 0 {
 		q += " AND account_id = ?"
 		args = append(args, filter.AccountID)
-	}
-	if filter.Presence != nil {
-		q += " AND presence_status = ?"
-		args = append(args, *filter.Presence)
 	}
 	if filter.MetadataKey != "" {
 		// MySQL JSON paths cannot be parameterized — only identifier-safe
@@ -540,174 +519,6 @@ FROM character_index WHERE 1=1`
 	}
 
 	return result, nextCursor, nil
-}
-
-// ---------------------------------------------------------------------------
-// PlayerSessionStore — presence, transactional with the character index
-// ---------------------------------------------------------------------------
-
-func (s *Store) CreateSession(ctx context.Context, sess *model.PlayerSession) error {
-	if sess.SessionID == "" || sess.CharacterID == 0 || sess.ServerID == "" {
-		return fmt.Errorf("%w: session id, character_id and server_id are required", store.ErrInvalid)
-	}
-	if sess.StartedAt.IsZero() {
-		sess.StartedAt = time.Now()
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("create session: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // commit below decides the outcome; a rollback after commit is a no-op
-
-	// Mark the character online first; 0 rows ⇒ the character is not in the
-	// index, so the session is refused (same rule as memory/postgres).
-	res, err := tx.ExecContext(ctx, `
-UPDATE character_index
-SET presence_status = 'online', updated_at = ?
-WHERE account_id = ? AND server_id = ? AND character_id = ?`,
-		sess.StartedAt, sess.AccountID, sess.ServerID, sess.CharacterID)
-	if err != nil {
-		return fmt.Errorf("create session: %w", err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("session %s: character: %w", sess.SessionID, store.ErrNotFound)
-	}
-
-	// Explicit open-session check under FOR UPDATE keeps the friendly error
-	// path driver-independent; the generated-column unique key
-	// (character_id, open_flag) is the backstop for true races.
-	var openID string
-	err = tx.QueryRowContext(ctx, `
-SELECT session_id FROM player_sessions
-WHERE character_id = ? AND ended_at IS NULL
-FOR UPDATE`, sess.CharacterID).Scan(&openID)
-	if err == nil {
-		return fmt.Errorf("session %s: character %d: %w (open %s)", sess.SessionID, sess.CharacterID, store.ErrConflict, openID)
-	}
-	if err != sql.ErrNoRows {
-		return fmt.Errorf("create session: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO player_sessions (session_id, account_id, character_id, server_id, started_at, end_reason)
-VALUES (?, ?, ?, ?, ?, '')`,
-		sess.SessionID, sess.AccountID, sess.CharacterID, sess.ServerID, sess.StartedAt); err != nil {
-		return fmt.Errorf("create session: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("create session: %w", err)
-	}
-	return nil
-}
-
-func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error) {
-	if !reason.Valid() {
-		return nil, fmt.Errorf("%w: invalid end reason %q", store.ErrInvalid, reason)
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("end session: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // commit below decides the outcome; a rollback after commit is a no-op
-
-	var sess model.PlayerSession
-	var ended sql.NullTime
-	err = tx.QueryRowContext(ctx, `
-SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
-FROM player_sessions WHERE session_id = ? FOR UPDATE`, sessionID).
-		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
-			&sess.StartedAt, &ended, &sess.EndReason)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
-		}
-		return nil, fmt.Errorf("end session: %w", err)
-	}
-	if ended.Valid {
-		return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrConflict)
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-UPDATE player_sessions SET ended_at = ?, end_reason = ? WHERE session_id = ?`,
-		endedAt, string(reason), sessionID); err != nil {
-		return nil, fmt.Errorf("end session: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE character_index
-SET presence_status = 'offline', last_logout_at = ?, updated_at = ?
-WHERE account_id = ? AND server_id = ? AND character_id = ?`,
-		endedAt, endedAt, sess.AccountID, sess.ServerID, sess.CharacterID); err != nil {
-		return nil, fmt.Errorf("end session: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("end session: %w", err)
-	}
-
-	endedCopy := endedAt
-	sess.EndedAt = &endedCopy
-	sess.EndReason = reason
-	return &sess, nil
-}
-
-func (s *Store) GetSession(ctx context.Context, sessionID string) (*model.PlayerSession, error) {
-	var sess model.PlayerSession
-	err := s.db.QueryRowContext(ctx, `
-SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
-FROM player_sessions WHERE session_id = ?`, sessionID).
-		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
-			&sess.StartedAt, &sess.EndedAt, &sess.EndReason)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
-		}
-		return nil, fmt.Errorf("get session: %w", err)
-	}
-	return &sess, nil
-}
-
-func (s *Store) GetActiveSessionByCharacter(ctx context.Context, characterID int64) (*model.PlayerSession, error) {
-	var sess model.PlayerSession
-	err := s.db.QueryRowContext(ctx, `
-SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
-FROM player_sessions
-WHERE character_id = ? AND ended_at IS NULL
-ORDER BY started_at DESC
-LIMIT 1`, characterID).
-		Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
-			&sess.StartedAt, &sess.EndedAt, &sess.EndReason)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("character %d: %w", characterID, store.ErrNotFound)
-		}
-		return nil, fmt.Errorf("get active session: %w", err)
-	}
-	return &sess, nil
-}
-
-func (s *Store) ListSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := s.db.QueryContext(ctx, `
-SELECT session_id, account_id, character_id, server_id, started_at, ended_at, end_reason
-FROM player_sessions
-WHERE character_id = ?
-ORDER BY started_at DESC
-LIMIT ?`, characterID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
-	}
-	defer rows.Close() //nolint:errcheck // read errors surface via rows.Err() after the loop
-	out := make([]*model.PlayerSession, 0, limit)
-	for rows.Next() {
-		var sess model.PlayerSession
-		if err := rows.Scan(&sess.SessionID, &sess.AccountID, &sess.CharacterID, &sess.ServerID,
-			&sess.StartedAt, &sess.EndedAt, &sess.EndReason); err != nil {
-			return nil, fmt.Errorf("list sessions: %w", err)
-		}
-		out = append(out, &sess)
-	}
-	return out, rows.Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -915,11 +726,12 @@ func scanServer(row scannable) (*model.Server, error) {
 func scanCharacter(row scannable) (*model.Character, error) {
 	var ch model.Character
 	var metaRaw sql.NullString
+	var presence sql.NullString
 	err := row.Scan(
 		&ch.AccountID, &ch.ServerID, &ch.CharacterID,
 		&ch.Name, &ch.Level, &ch.ClassID, &ch.Avatar,
-		&ch.LastLoginAt, &ch.PresenceStatus, &ch.LastLogoutAt,
-		&ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
+		&ch.LastLoginAt, &ch.CreatedAt, &ch.UpdatedAt, &metaRaw,
+		&presence, &ch.LastLogoutAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -927,6 +739,7 @@ func scanCharacter(row scannable) (*model.Character, error) {
 		}
 		return nil, err
 	}
+	ch.PresenceStatus = model.PresenceStatus(presence.String).Normalize()
 	if metaRaw.Valid && len(metaRaw.String) > 2 { // skip '' / '{}'
 		if err := json.Unmarshal([]byte(metaRaw.String), &ch.Metadata); err != nil {
 			return nil, fmt.Errorf("decode character %d metadata: %w", ch.CharacterID, err)

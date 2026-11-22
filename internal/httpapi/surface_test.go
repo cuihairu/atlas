@@ -73,6 +73,7 @@ func TestRouteSurfacePinned(t *testing.T) {
 		"GET /v1/crossserver/config",
 		"GET /v1/directory/accounts/{id}/characters",
 		"GET /v1/directory/characters/{character_id}",
+		"GET /v1/directory/characters/{character_id}/presence",
 		"GET /v1/directory/servers/{id}/characters",
 		"GET /v1/directory/servers/{id}/presence",
 		"GET /v1/discovery/announcements",

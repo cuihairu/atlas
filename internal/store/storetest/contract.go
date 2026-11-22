@@ -72,6 +72,7 @@ func Run(t *testing.T, s Core, rt store.RuntimeStore) {
 	t.Run("Servers", func(t *testing.T) { servers(t, ctx, s) })
 	t.Run("StatusCAS", func(t *testing.T) { statusCAS(t, ctx, s) })
 	t.Run("Characters", func(t *testing.T) { characters(t, ctx, s) })
+	t.Run("Presence", func(t *testing.T) { presence(t, ctx, s) })
 	t.Run("Migrations", func(t *testing.T) { migrations(t, ctx, s) })
 	t.Run("Maintenance", func(t *testing.T) { maintenance(t, ctx, s) })
 	t.Run("Announcements", func(t *testing.T) { announcements(t, ctx, s) })

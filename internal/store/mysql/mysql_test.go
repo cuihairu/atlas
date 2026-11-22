@@ -108,7 +108,6 @@ func openTestStore(t *testing.T) (*Store, *memory.Store) {
 func TestContract(t *testing.T) {
 	s, rt := openTestStore(t)
 	storetest.Run(t, s, rt)
-	storetest.RunSessions(t, s)
 }
 
 // TestStatsRuntimeMerge pins the WithRuntime wiring: heartbeat players reach

@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/cuihairu/atlas/internal/model"
 )
 
 // EventType identifies a character lifecycle event (docs/sync.md §2).
@@ -26,11 +28,12 @@ const (
 	EventCharacterDeleted EventType = "character.deleted"
 	// EventCharacterMoved fires when a character migrates between servers.
 	EventCharacterMoved EventType = "character.moved"
-	// EventCharacterLogin fires on login, refreshing last_login_at.
+	// EventCharacterLogin fires on login: it opens a player session and flips
+	// the character online (docs/presence.md §3). SessionID identifies the
+	// session; re-reporting an open session is idempotent.
 	EventCharacterLogin EventType = "character.login"
-	// EventCharacterLogout fires on logout, refreshing last_logout_at.
-	// It is the counterpart of character.login: without it the projection
-	// only ever aged forwards (docs/sync.md §2).
+	// EventCharacterLogout fires on logout: it closes the active session and
+	// flips the character offline. EndReason carries why it ended.
 	EventCharacterLogout EventType = "character.logout"
 
 	// EventConfigUpdated signals that the cross-server coordination config
@@ -104,6 +107,15 @@ type Event struct {
 	// addressed (no live server is affected); subscribers treat that as
 	// "nothing to do" — a server that boots later does its startup pull.
 	ConfigServers []string `json:"config_servers,omitempty"`
+
+	// SessionID identifies the player session a login/logout event belongs
+	// to (docs/presence.md §3). A login re-report carrying the same open
+	// session is idempotent; a logout naming a session that is not the open
+	// one is rejected. Empty on logout means "close whatever is open".
+	SessionID string `json:"session_id,omitempty"`
+	// EndReason is the logout end reason (normal/timeout/kicked/crash).
+	// Ignored on non-logout events.
+	EndReason model.SessionEndReason `json:"end_reason,omitempty"`
 
 	// Timestamp is the producer-side occurrence time.
 	Timestamp time.Time `json:"timestamp,omitempty"`

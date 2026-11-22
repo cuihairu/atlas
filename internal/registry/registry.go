@@ -73,10 +73,7 @@ func regKindOf(req RegisterRequest) string {
 type Service struct {
 	servers store.ServerStore
 	runtime store.RuntimeStore
-	// sessions is the player-session projection (PP). Set via WithSessions;
-	// when nil, presence reports are rejected as unsupported.
-	sessions store.PlayerSessionStore
-	logger   *slog.Logger
+	logger  *slog.Logger
 	// maintenanceEnforce is the 维护中 policy for registration gating
 	// ("block" rejects 创角, "warn" allows it with a notice). See
 	// WithMaintenanceEnforce.
@@ -93,14 +90,6 @@ func New(servers store.ServerStore, runtime store.RuntimeStore, logger *slog.Log
 		runtime: runtime,
 		logger:  logger,
 	}
-}
-
-// WithSessions attaches the player-session projection so the registry can
-// apply presence reports (PP-2). Optional: without it the presence endpoint
-// reports 501-like rejection for every event.
-func (s *Service) WithSessions(sessions store.PlayerSessionStore) *Service {
-	s.sessions = sessions
-	return s
 }
 
 // WithMetrics attaches Prometheus instrumentation (optional). Registry
@@ -340,140 +329,6 @@ func (s *Service) Unregister(ctx context.Context, serverID string) error {
 	}
 
 	s.logger.Info("server unregistered", "server_id", serverID)
-	return nil
-}
-
-// ReportPresence applies a batch of player login/logout events reported by
-// one game server (PP-2). The server must already exist — the same trust
-// anchor as heartbeat — and its id (from the authenticated registry
-// listener) is stamped onto every event, so a report cannot claim sessions
-// for another server.
-//
-// Events apply in order and each yields its own outcome:
-//
-//	applied          the session was opened / closed
-//	already_applied  a duplicate report: the projection already matches the
-//	                 reported state (same open session / session closed), so
-//	                 a retried batch is safe
-//	rejected         an invalid transition or missing target (unknown
-//	                 session, character not in the index, another session
-//	                 open for the character)
-//
-// Structural errors (unknown kind, missing ids, bad end reason) fail the
-// whole request with ErrInvalid — a malformed batch must not half-apply.
-func (s *Service) ReportPresence(ctx context.Context, serverID string, report model.PresenceReport) ([]model.PresenceResult, error) {
-	t0 := time.Now()
-	defer func() { s.metrics.ObserveRegistryWrite("presence", time.Since(t0)) }()
-	ctx, span := atlastracing.Start(ctx, "registry.presence")
-	defer span.End()
-
-	if s.sessions == nil {
-		return nil, fmt.Errorf("presence store not wired")
-	}
-
-	// Same trust anchor as heartbeat: the reporting server must exist.
-	if _, err := s.servers.GetServer(ctx, serverID); err != nil {
-		return nil, fmt.Errorf("presence for unknown server %s: %w", serverID, err)
-	}
-
-	for i := range report.Events {
-		if err := validatePresenceEvent(&report.Events[i]); err != nil {
-			return nil, fmt.Errorf("presence event %d: %w", i, err)
-		}
-	}
-
-	results := make([]model.PresenceResult, 0, len(report.Events))
-	for _, ev := range report.Events {
-		results = append(results, s.applyPresenceEvent(ctx, serverID, ev))
-	}
-	return results, nil
-}
-
-// applyPresenceEvent runs one validated event through the session projection
-// and classifies the outcome. It never returns an error: conflicts and
-// missing targets are per-event outcomes, not request failures.
-func (s *Service) applyPresenceEvent(ctx context.Context, serverID string, ev model.PresenceEvent) model.PresenceResult {
-	res := model.PresenceResult{SessionID: ev.SessionID, Kind: ev.Kind}
-
-	switch ev.Kind {
-	case model.PresenceEventLogin:
-		var started time.Time
-		if ev.StartedAt != nil {
-			started = *ev.StartedAt
-		} // zero → the store stamps now
-		err := s.sessions.CreateSession(ctx, &model.PlayerSession{
-			SessionID:   ev.SessionID,
-			AccountID:   ev.AccountID,
-			CharacterID: ev.CharacterID,
-			ServerID:    serverID, // authoritative from the channel
-			StartedAt:   started,
-		})
-		switch {
-		case err == nil:
-			res.Status = model.PresenceApplied
-		case errors.Is(err, store.ErrConflict):
-			// Same session already open → duplicate report (idempotent);
-			// a different open session → real transition conflict.
-			if active, aerr := s.sessions.GetActiveSessionByCharacter(ctx, ev.CharacterID); aerr == nil && active.SessionID == ev.SessionID {
-				res.Status = model.PresenceAlreadyApplied
-				res.Detail = "session already open"
-			} else {
-				res.Status = model.PresenceRejected
-				res.Detail = "character already online in another session"
-			}
-		case errors.Is(err, store.ErrNotFound):
-			res.Status = model.PresenceRejected
-			res.Detail = "character not in index"
-		default:
-			res.Status = model.PresenceRejected
-			res.Detail = err.Error()
-		}
-
-	case model.PresenceEventLogout:
-		_, err := s.sessions.EndSession(ctx, ev.SessionID, *ev.EndedAt, ev.EndReason)
-		switch {
-		case err == nil:
-			res.Status = model.PresenceApplied
-		case errors.Is(err, store.ErrConflict):
-			res.Status = model.PresenceAlreadyApplied
-			res.Detail = "session already closed"
-		case errors.Is(err, store.ErrNotFound):
-			res.Status = model.PresenceRejected
-			res.Detail = "unknown session"
-		default:
-			res.Status = model.PresenceRejected
-			res.Detail = err.Error()
-		}
-	}
-	return res
-}
-
-// validatePresenceEvent checks the structural shape of one event. State
-// transitions are not checked here — the projection reports them per event.
-// The error wraps model.ErrInvalid so the handler answers 400.
-func validatePresenceEvent(ev *model.PresenceEvent) error {
-	if !ev.Kind.Valid() {
-		return fmt.Errorf("unknown presence event kind %q: %w", ev.Kind, model.ErrInvalid)
-	}
-	if ev.SessionID == "" {
-		return fmt.Errorf("session_id required: %w", model.ErrInvalid)
-	}
-	switch ev.Kind {
-	case model.PresenceEventLogin:
-		if ev.AccountID <= 0 {
-			return fmt.Errorf("account_id required for login: %w", model.ErrInvalid)
-		}
-		if ev.CharacterID <= 0 {
-			return fmt.Errorf("character_id required for login: %w", model.ErrInvalid)
-		}
-	case model.PresenceEventLogout:
-		if ev.EndedAt == nil {
-			return fmt.Errorf("ended_at required for logout: %w", model.ErrInvalid)
-		}
-		if !ev.EndReason.Valid() {
-			return fmt.Errorf("invalid end_reason %q: %w", ev.EndReason, model.ErrInvalid)
-		}
-	}
 	return nil
 }
 

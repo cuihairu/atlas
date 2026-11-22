@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/cuihairu/atlas/internal/model"
 	"github.com/cuihairu/atlas/internal/store"
@@ -21,18 +20,6 @@ import (
 
 // compile-time interface check
 var _ store.CharacterStore = (*Store)(nil)
-var _ store.PlayerSessionStore = (*Store)(nil)
-
-// ps unwraps a backing shard as a PlayerSessionStore. Every shard Atlas
-// builds (memory / PostgreSQL / MySQL) implements it; a shard that does not
-// is a wiring bug, reported as an error rather than a silent no-op.
-func (s *Store) ps(sh store.CharacterStore) (store.PlayerSessionStore, error) {
-	ps, ok := sh.(store.PlayerSessionStore)
-	if !ok {
-		return nil, fmt.Errorf("sharded: shard %T does not implement PlayerSessionStore", sh)
-	}
-	return ps, nil
-}
 
 // Store is a character index spread across N shards. All shards must be
 // non-nil and independent; routing is delegated to the strategy.
@@ -137,21 +124,6 @@ func (s *Store) ListCharactersByServer(ctx context.Context, serverID string, lim
 	return merged, nil
 }
 
-// CountByServerPresence sums the count over every shard: a server's characters
-// are scattered across shards, so the true online total is the sum — never a
-// single shard's number.
-func (s *Store) CountByServerPresence(ctx context.Context, serverID string, presence model.PresenceStatus) (int64, error) {
-	var n int64
-	for _, sh := range s.shards {
-		part, err := sh.CountByServerPresence(ctx, serverID, presence)
-		if err != nil {
-			return 0, fmt.Errorf("count characters by server presence %s: %w", serverID, err)
-		}
-		n += part
-	}
-	return n, nil
-}
-
 // SearchCharacters fans the filter out to every shard and merges the pages by
 // the global cursor order (server_id, character_id). Passing the cursor and
 // limit to each shard is correct because an item's rank within its shard is
@@ -205,97 +177,4 @@ func merge(pages [][]*model.Character, less func(a, b *model.Character) bool) []
 	}
 	sort.Slice(merged, func(i, j int) bool { return less(merged[i], merged[j]) })
 	return merged
-}
-
-// ---------------------------------------------------------------------------
-// PlayerSessionStore — sessions co-locate with their character's shard
-// ---------------------------------------------------------------------------
-
-// CreateSession routes by the session's account: the session lands on the
-// same shard as its character's index row, so the presence update is a
-// single-shard hop.
-func (s *Store) CreateSession(ctx context.Context, sess *model.PlayerSession) error {
-	ps, err := s.ps(s.ShardFor(sess.AccountID))
-	if err != nil {
-		return err
-	}
-	return ps.CreateSession(ctx, sess)
-}
-
-// EndSession probes shard by shard: only the shard holding the session
-// succeeds, every other reports ErrNotFound. A non-not-found error (e.g. the
-// conflict raised by the shard that actually holds it) is returned as-is.
-func (s *Store) EndSession(ctx context.Context, sessionID string, endedAt time.Time, reason model.SessionEndReason) (*model.PlayerSession, error) {
-	for _, sh := range s.shards {
-		ps, err := s.ps(sh)
-		if err != nil {
-			return nil, err
-		}
-		sess, err := ps.EndSession(ctx, sessionID, endedAt, reason)
-		if err == nil {
-			return sess, nil
-		}
-		if !store.IsNotFound(err) {
-			return nil, err
-		}
-	}
-	return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
-}
-
-func (s *Store) GetSession(ctx context.Context, sessionID string) (*model.PlayerSession, error) {
-	for _, sh := range s.shards {
-		ps, err := s.ps(sh)
-		if err != nil {
-			return nil, err
-		}
-		sess, err := ps.GetSession(ctx, sessionID)
-		if err == nil {
-			return sess, nil
-		}
-		if !store.IsNotFound(err) {
-			return nil, err
-		}
-	}
-	return nil, fmt.Errorf("session %s: %w", sessionID, store.ErrNotFound)
-}
-
-func (s *Store) GetActiveSessionByCharacter(ctx context.Context, characterID int64) (*model.PlayerSession, error) {
-	for _, sh := range s.shards {
-		ps, err := s.ps(sh)
-		if err != nil {
-			return nil, err
-		}
-		sess, err := ps.GetActiveSessionByCharacter(ctx, characterID)
-		if err == nil {
-			return sess, nil
-		}
-		if !store.IsNotFound(err) {
-			return nil, err
-		}
-	}
-	return nil, fmt.Errorf("character %d: %w", characterID, store.ErrNotFound)
-}
-
-// ListSessionsByCharacter fans out and merges by started_at descending. A
-// character lives on exactly one shard, so only one shard contributes; the
-// merge keeps the implementation correct even if a character were ever
-// spread across shards.
-func (s *Store) ListSessionsByCharacter(ctx context.Context, characterID int64, limit int) ([]*model.PlayerSession, error) {
-	var all []*model.PlayerSession
-	for _, sh := range s.shards {
-		ps, err := s.ps(sh)
-		if err != nil {
-			return nil, err
-		}
-		sess, err := ps.ListSessionsByCharacter(ctx, characterID, limit)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, sess...)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].StartedAt.After(all[j].StartedAt) })
-	if limit > 0 && len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
 }
