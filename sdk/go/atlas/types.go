@@ -123,7 +123,7 @@ type Character struct {
 	LastLoginAt *time.Time        `json:"last_login_at,omitempty"`
 	// PresenceStatus is the observed online state (unknown | online | offline),
 	// populated on read endpoints that resolve a character. The presence
-	// feature (docs/presence.md) is REST-only, so gRPC responses omit it.
+	// feature (docs/api.md §Presence) is REST-only, so gRPC responses omit it.
 	PresenceStatus string     `json:"presence_status,omitempty"`
 	LastLogoutAt   *time.Time `json:"last_logout_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
