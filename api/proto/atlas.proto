@@ -65,6 +65,23 @@ message RegisterRequest {
   // Arbitrary key-value pairs (engine hints, cluster / zone / language
   // markers — see model.Server.Metadata).
   map<string, string> metadata = 11;
+  // Cross-server config change notification declaration (subscribe |
+  // callback | poll, see docs/config-center.md). Callback mode requires an
+  // absolute http(s) URL in notify_callback_url.
+  string notify_mode = 12;
+  string notify_callback_url = 13;
+  // Seeds the initial player count (runtime data), so a server that
+  // re-registers mid-session (Atlas restart) does not report 0 players
+  // until its next heartbeat.
+  int32 players = 14;
+  // Game server process start time (RFC 3339). Empty means "now" — the
+  // registration time is used.
+  string started_at = 15;
+  // Registration lifecycle class (docs/lifecycle.md §3.1): "permanent"
+  // (default) never auto-expires; "temporary" is reclaimed once
+  // registration time + ttl_seconds passes.
+  string reg_kind = 16;
+  int32 ttl_seconds = 17;
 }
 
 message RegisterResponse {

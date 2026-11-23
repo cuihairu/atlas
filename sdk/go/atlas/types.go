@@ -71,12 +71,25 @@ type RegisterRequest struct {
 	Platform string   `json:"platform"`
 	Endpoint Endpoint `json:"endpoint"`
 	Capacity int      `json:"capacity"`
+	// Metadata carries arbitrary key-value pairs (engine hints, cluster /
+	// zone / language markers). Re-registration replaces the whole map:
+	// undeclared keys are dropped.
+	Metadata map[string]string `json:"metadata,omitempty"`
 	// NotifyMode declares how this server receives cross-server config
 	// change signals: subscribe | callback | poll (config.go).
 	NotifyMode string `json:"notify_mode,omitempty"`
 	// NotifyCallbackURL is required with NotifyModeCallback: the absolute
 	// http(s) URL Atlas POSTs the change signal to.
 	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
+	// RegKind declares the registration lifecycle class explicitly
+	// (RegPermanent / RegTemporary): "permanent" never auto-expires;
+	// "temporary" is reclaimed once TTLSeconds passes (docs/lifecycle.md
+	// §3.1). Omitted means permanent.
+	RegKind string `json:"reg_kind,omitempty"`
+	// TTLSeconds is the absolute lifetime of a RegTemporary registration,
+	// counted from the registration time. Must be > 0 with RegKind
+	// RegTemporary; ignored for permanent registrations.
+	TTLSeconds int `json:"ttl_seconds,omitempty"`
 }
 
 // RegisterResult is the response to Register.

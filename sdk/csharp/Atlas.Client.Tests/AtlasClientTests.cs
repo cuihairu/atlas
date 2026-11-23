@@ -32,7 +32,11 @@ public sealed class AtlasClientTests
         using var client = Client(fake.BaseUrl, registryToken: "svc-token");
         var res = await client.RegisterAsync(new RegisterRequest(
             "game-1", "Game 1", "cn-east", new Endpoint { Host = "10.0.0.1", Port = 30001 }, 2000)
-        { Type = "game", Version = "1.0.0" });
+        {
+            Type = "game", Version = "1.0.0", Metadata = new() { ["env"] = "staging" },
+            NotifyMode = "callback", NotifyCallbackUrl = "https://cfg.example.com/hook",
+            RegKind = "temporary", TtlSeconds = 3600,
+        });
 
         Assert.Equal("starting", res.Status);
         var req = fake.Requests.Single();
@@ -42,6 +46,10 @@ public sealed class AtlasClientTests
         Assert.Contains("\"server_id\":\"game-1\"", req.Body);
         Assert.Contains("\"endpoint\":{\"host\":\"10.0.0.1\",\"port\":30001}", req.Body);
         Assert.Contains("\"capacity\":2000", req.Body);
+        Assert.Contains("\"notify_mode\":\"callback\"", req.Body);
+        Assert.Contains("\"notify_callback_url\":\"https://cfg.example.com/hook\"", req.Body);
+        Assert.Contains("\"reg_kind\":\"temporary\"", req.Body);
+        Assert.Contains("\"ttl_seconds\":3600", req.Body);
     }
 
     [Fact]

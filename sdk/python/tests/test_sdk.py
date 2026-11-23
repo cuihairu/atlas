@@ -138,11 +138,17 @@ def test_registry_lifecycle() -> None:
     try:
         reg = c.register(RegisterRequest(
             server_id="game-1", name="Test", region="cn-east", capacity=100,
-            endpoint=Endpoint(host="10.0.0.1", port=30001)))
+            endpoint=Endpoint(host="10.0.0.1", port=30001),
+            notify_mode="callback", notify_callback_url="https://cfg.example.com/hook",
+            reg_kind="temporary", ttl_seconds=3600))
         assert (reg.server_id, reg.status) == ("game-1", "online")
         sent = body_of(s, "POST", r"/v1/registry/servers/register")
         assert sent["headers"]["Authorization"] == "Bearer reg-token"
         assert sent["body"]["capacity"] == 100
+        assert sent["body"]["notify_mode"] == "callback"
+        assert sent["body"]["notify_callback_url"] == "https://cfg.example.com/hook"
+        assert sent["body"]["reg_kind"] == "temporary"
+        assert sent["body"]["ttl_seconds"] == 3600
 
         hb = c.heartbeat("game-1", HeartbeatRequest(players=7, load=0.3))
         assert hb.next_heartbeat_in == 10

@@ -42,9 +42,11 @@ func newRESTClient(t *testing.T, h http.Handler) (*Client, *httptest.Server) {
 // over HTTP, asserting paths, auth headers and query building.
 func TestRESTLifecycle(t *testing.T) {
 	var gotAuth, gotPath, gotQuery atomic.Value
+	var gotBody map[string]any
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/registry/servers/register", func(w http.ResponseWriter, r *http.Request) {
 		gotAuth.Store(r.Header.Get("Authorization"))
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
 		json.NewEncoder(w).Encode(map[string]any{"server_id": "game-1", "status": "online"}) //nolint:errcheck
 	})
 	mux.HandleFunc("GET /v1/discovery/servers", func(w http.ResponseWriter, r *http.Request) {
@@ -66,12 +68,31 @@ func TestRESTLifecycle(t *testing.T) {
 	c, _ := newRESTClient(t, mux)
 	ctx := context.Background()
 
-	res, err := c.Register(ctx, RegisterRequest{ServerID: "game-1", Name: "Test", Capacity: 100})
+	res, err := c.Register(ctx, RegisterRequest{
+		ServerID: "game-1", Name: "Test", Capacity: 100,
+		Metadata:          map[string]string{"cluster": "ea"},
+		NotifyMode:        "callback",
+		NotifyCallbackURL: "https://cfg.example.com/hook",
+		RegKind:           RegTemporary,
+		TTLSeconds:        3600,
+	})
 	if err != nil || res.ServerID != "game-1" {
 		t.Fatalf("Register: res=%+v err=%v", res, err)
 	}
 	if gotAuth.Load() != "Bearer reg-token" {
 		t.Errorf("expected registry bearer token, got %q", gotAuth.Load())
+	}
+	// The register body must carry the register-parity fields (reg_kind /
+	// ttl_seconds / metadata / notify declaration), mirroring the REST
+	// register contract — a dropped field here is the silent-drop defect
+	// family the SDK audits guard against.
+	for _, k := range []string{"reg_kind", "ttl_seconds", "metadata", "notify_mode", "notify_callback_url"} {
+		if _, ok := gotBody[k]; !ok {
+			t.Errorf("register body missing %q (body=%v)", k, gotBody)
+		}
+	}
+	if gotBody["reg_kind"] != "temporary" || gotBody["ttl_seconds"] != float64(3600) {
+		t.Errorf("register body reg_kind/ttl_seconds = %v/%v, want temporary/3600", gotBody["reg_kind"], gotBody["ttl_seconds"])
 	}
 
 	servers, err := c.ListServers(ctx, ServerFilter{Region: "cn-east", Status: "online"})
@@ -203,7 +224,7 @@ func TestAutoHeartbeat(t *testing.T) {
 }
 
 // newGRPCClient starts the real Atlas gRPC server on a random TCP port.
-func newGRPCClient(t *testing.T) *Client {
+func newGRPCClient(t *testing.T) (*Client, *memory.Store) {
 	t.Helper()
 	mem := memory.New()
 	adapter := httpadapter.New()
@@ -238,13 +259,13 @@ func newGRPCClient(t *testing.T) *Client {
 		t.Fatalf("New grpc: %v", err)
 	}
 	t.Cleanup(func() { c.Close() })
-	return c
+	return c, mem
 }
 
 // TestGRPLLifecycle runs the same core flow over gRPC against the real
 // server implementation — proving both transports behave alike.
 func TestGRPLLifecycle(t *testing.T) {
-	c := newGRPCClient(t)
+	c, _ := newGRPCClient(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -286,6 +307,47 @@ func TestGRPLLifecycle(t *testing.T) {
 	apiErr, ok := err.(*Error)
 	if !ok || apiErr.Code != "NotFound" {
 		t.Errorf("expected *Error code NotFound, got %#v", err)
+	}
+}
+
+// TestGRPCRegisterMetaFields pins the register-parity fields over gRPC end
+// to end: the proto RegisterRequest carries the notify declaration, metadata
+// and the registration lifecycle class (api/proto/atlas.proto
+// RegisterRequest), so a gRPC-transport game server can declare them. The
+// SDK used to reject the notify declaration on the gRPC transport outright
+// ("requires the REST transport") and silently dropped metadata / reg_kind /
+// ttl_seconds — both fail loudly or silently instead of registering with the
+// declaration the caller asked for.
+func TestGRPCRegisterMetaFields(t *testing.T) {
+	c, mem := newGRPCClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := c.Register(ctx, RegisterRequest{
+		ServerID: "game-meta", Name: "G", Region: "cn-east", Capacity: 100,
+		Endpoint:          Endpoint{Host: "10.0.0.9", Port: 30009},
+		Metadata:          map[string]string{"cluster": "ea"},
+		NotifyMode:        NotifyModeCallback,
+		NotifyCallbackURL: "https://cfg.example.com/hook",
+		RegKind:           RegTemporary,
+		TTLSeconds:        3600,
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	srv, err := mem.GetServer(ctx, "game-meta")
+	if err != nil {
+		t.Fatalf("GetServer: %v", err)
+	}
+	if srv.NotifyMode != NotifyModeCallback || srv.NotifyCallbackURL != "https://cfg.example.com/hook" {
+		t.Errorf("notify = %q/%q, want %q/https://cfg.example.com/hook",
+			srv.NotifyMode, srv.NotifyCallbackURL, NotifyModeCallback)
+	}
+	if srv.RegKind != RegTemporary || srv.RegTTLSeconds != 3600 {
+		t.Errorf("lifecycle = %q/%d, want %q/3600", srv.RegKind, srv.RegTTLSeconds, RegTemporary)
+	}
+	if got := srv.Metadata["cluster"]; got != "ea" {
+		t.Errorf("metadata[cluster] = %q, want ea", got)
 	}
 }
 

@@ -23,6 +23,18 @@ public class RegisterRequest {
     @SerializedName("shard_id")
     public String shardId;
     public Map<String, String> metadata;
+    /** cross-server config notify declaration: subscribe | callback | poll */
+    @SerializedName("notify_mode")
+    public String notifyMode;
+    /** required with notifyMode "callback": the absolute http(s) URL */
+    @SerializedName("notify_callback_url")
+    public String notifyCallbackUrl;
+    /** registration lifecycle class: "permanent" (default) | "temporary" */
+    @SerializedName("reg_kind")
+    public String regKind;
+    /** lifetime of a RegTemporary registration, counted from registration */
+    @SerializedName("ttl_seconds")
+    public Integer ttlSeconds;
 
     public RegisterRequest() {}
 

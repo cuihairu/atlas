@@ -64,14 +64,23 @@ class AtlasClientTest {
         s.routes.add(FakeAtlas.route("POST", "/v1/registry/servers/game-1/unregister",
                 r -> FakeAtlas.reply(200, "{\"server_id\":\"game-1\",\"status\":\"offline\"}")));
 
-        RegisterResult reg = c.register(new RegisterRequest(
-                "game-1", "Test", "cn-east", new Endpoint("10.0.0.1", 30001), 100));
+        RegisterRequest req = new RegisterRequest(
+                "game-1", "Test", "cn-east", new Endpoint("10.0.0.1", 30001), 100);
+        req.notifyMode = "callback";
+        req.notifyCallbackUrl = "https://cfg.example.com/hook";
+        req.regKind = "temporary";
+        req.ttlSeconds = 3600;
+        RegisterResult reg = c.register(req);
         assertEquals("game-1", reg.serverId);
         assertEquals("online", reg.status);
         FakeAtlas.Recorded sent = s.request("POST", Pattern.compile(".*/servers/register"));
         assertEquals("Bearer reg-token", sent.headers().get("authorization"));
         assertTrue(sent.body().contains("\"capacity\":100"));
         assertTrue(sent.body().contains("\"type\":\"game\""));
+        assertTrue(sent.body().contains("\"notify_mode\":\"callback\""));
+        assertTrue(sent.body().contains("\"notify_callback_url\":\"https://cfg.example.com/hook\""));
+        assertTrue(sent.body().contains("\"reg_kind\":\"temporary\""));
+        assertTrue(sent.body().contains("\"ttl_seconds\":3600"));
 
         HeartbeatResult hb = c.heartbeat("game-1", new HeartbeatRequest(7, 0.3));
         assertEquals(10, hb.nextHeartbeatIn);

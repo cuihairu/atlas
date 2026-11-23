@@ -132,6 +132,10 @@ test("registry lifecycle", async () => {
       region: "cn-east",
       capacity: 100,
       endpoint: { host: "10.0.0.1", port: 30001 },
+      notifyMode: "callback",
+      notifyCallbackUrl: "https://cfg.example.com/hook",
+      regKind: "temporary",
+      ttlSeconds: 3600,
     } satisfies RegisterRequest);
     assert.equal(reg.serverId, "game-1");
     assert.equal(reg.status, "online");
@@ -147,6 +151,10 @@ test("registry lifecycle", async () => {
       platform: "",
       endpoint: { host: "10.0.0.1", port: 30001 },
       capacity: 100,
+      notify_mode: "callback",
+      notify_callback_url: "https://cfg.example.com/hook",
+      reg_kind: "temporary",
+      ttl_seconds: 3600,
     });
 
     const hb = await c.heartbeat("game-1", { players: 7, load: 0.3 });
