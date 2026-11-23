@@ -388,7 +388,24 @@ type RegisterRequest struct {
 	Capacity int32                  `protobuf:"varint,10,opt,name=capacity,proto3" json:"capacity,omitempty"`
 	// Arbitrary key-value pairs (engine hints, cluster / zone / language
 	// markers — see model.Server.Metadata).
-	Metadata      map[string]string `protobuf:"bytes,11,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Metadata map[string]string `protobuf:"bytes,11,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Cross-server config change notification declaration (subscribe |
+	// callback | poll, see docs/config-center.md). Callback mode requires an
+	// absolute http(s) URL in notify_callback_url.
+	NotifyMode        string `protobuf:"bytes,12,opt,name=notify_mode,json=notifyMode,proto3" json:"notify_mode,omitempty"`
+	NotifyCallbackUrl string `protobuf:"bytes,13,opt,name=notify_callback_url,json=notifyCallbackUrl,proto3" json:"notify_callback_url,omitempty"`
+	// Seeds the initial player count (runtime data), so a server that
+	// re-registers mid-session (Atlas restart) does not report 0 players
+	// until its next heartbeat.
+	Players int32 `protobuf:"varint,14,opt,name=players,proto3" json:"players,omitempty"`
+	// Game server process start time (RFC 3339). Empty means "now" — the
+	// registration time is used.
+	StartedAt string `protobuf:"bytes,15,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// Registration lifecycle class (docs/lifecycle.md §3.1): "permanent"
+	// (default) never auto-expires; "temporary" is reclaimed once
+	// registration time + ttl_seconds passes.
+	RegKind       string `protobuf:"bytes,16,opt,name=reg_kind,json=regKind,proto3" json:"reg_kind,omitempty"`
+	TtlSeconds    int32  `protobuf:"varint,17,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -498,6 +515,48 @@ func (x *RegisterRequest) GetMetadata() map[string]string {
 		return x.Metadata
 	}
 	return nil
+}
+
+func (x *RegisterRequest) GetNotifyMode() string {
+	if x != nil {
+		return x.NotifyMode
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetNotifyCallbackUrl() string {
+	if x != nil {
+		return x.NotifyCallbackUrl
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetPlayers() int32 {
+	if x != nil {
+		return x.Players
+	}
+	return 0
+}
+
+func (x *RegisterRequest) GetStartedAt() string {
+	if x != nil {
+		return x.StartedAt
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetRegKind() string {
+	if x != nil {
+		return x.RegKind
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetTtlSeconds() int32 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
 }
 
 type RegisterResponse struct {
@@ -2997,7 +3056,7 @@ const file_api_proto_atlas_proto_rawDesc = "" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xee\x04\n" +
 	"\x0fRegisterRequest\x12\x1b\n" +
 	"\tserver_id\x18\x01 \x01(\tR\bserverId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -3010,7 +3069,16 @@ const file_api_proto_atlas_proto_rawDesc = "" +
 	"\bendpoint\x18\t \x01(\v2\x12.atlas.v1.EndpointR\bendpoint\x12\x1a\n" +
 	"\bcapacity\x18\n" +
 	" \x01(\x05R\bcapacity\x12C\n" +
-	"\bmetadata\x18\v \x03(\v2'.atlas.v1.RegisterRequest.MetadataEntryR\bmetadata\x1a;\n" +
+	"\bmetadata\x18\v \x03(\v2'.atlas.v1.RegisterRequest.MetadataEntryR\bmetadata\x12\x1f\n" +
+	"\vnotify_mode\x18\f \x01(\tR\n" +
+	"notifyMode\x12.\n" +
+	"\x13notify_callback_url\x18\r \x01(\tR\x11notifyCallbackUrl\x12\x18\n" +
+	"\aplayers\x18\x0e \x01(\x05R\aplayers\x12\x1d\n" +
+	"\n" +
+	"started_at\x18\x0f \x01(\tR\tstartedAt\x12\x19\n" +
+	"\breg_kind\x18\x10 \x01(\tR\aregKind\x12\x1f\n" +
+	"\vttl_seconds\x18\x11 \x01(\x05R\n" +
+	"ttlSeconds\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"<\n" +

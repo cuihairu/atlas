@@ -2,6 +2,10 @@ package grpc
 
 import (
 	"context"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/cuihairu/atlas/api/pb"
 	"github.com/cuihairu/atlas/internal/model"
@@ -11,13 +15,18 @@ import (
 // Register mirrors POST /v1/registry/servers/register.
 func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
 	regReq := registry.RegisterRequest{
-		ID:       req.ServerId,
-		Name:     req.Name,
-		Type:     req.Type,
-		Region:   req.Region,
-		Version:  req.Version,
-		Platform: req.Platform,
-		Capacity: int(req.Capacity),
+		ID:                req.ServerId,
+		Name:              req.Name,
+		Type:              req.Type,
+		Region:            req.Region,
+		Version:           req.Version,
+		Platform:          req.Platform,
+		Capacity:          int(req.Capacity),
+		NotifyMode:        req.NotifyMode,
+		NotifyCallbackURL: req.NotifyCallbackUrl,
+		Players:           int(req.Players),
+		RegKind:           req.RegKind,
+		TTLSeconds:        int(req.TtlSeconds),
 	}
 	if req.RealmId != "" {
 		regReq.RealmID = &req.RealmId
@@ -29,6 +38,13 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 		regReq.Endpoint = model.Endpoint{Host: req.Endpoint.Host, Port: int(req.Endpoint.Port)}
 	}
 	regReq.Metadata = req.Metadata
+	if req.StartedAt != "" {
+		t, err := time.Parse(time.RFC3339, req.StartedAt)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "started_at: %v", err)
+		}
+		regReq.StartedAt = &t
+	}
 
 	srv, err := s.registry.Register(ctx, regReq)
 	if err != nil {
