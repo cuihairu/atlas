@@ -527,3 +527,47 @@ func TestCheckWithWindowsWithoutWindowsMatchesCheck(t *testing.T) {
 		t.Fatalf("no windows must reproduce the plain verdict: got %q/%v/%v want %q/%v/%v", got.Note, got.Drift, got.OK, want.Note, want.Drift, want.OK)
 	}
 }
+
+func TestCoverageByCadencePassesSlowButComplete(t *testing.T) {
+	// A scrape that takes longer than the configured interval still observes the
+	// whole window: a 10s cadence on a 5s interval must not read as a gap.
+	pts := every(10*time.Second, 40, func(int) float64 { return 100 })
+	got, cov := AssessCoverageByCadence(Check("a", "go_goroutines", pts, 0.20), pts, nil)
+	if cov.Missing != 0 || !got.OK || !got.Plateau {
+		t.Fatalf("slow-but-complete scrapes are not blindness: missing %d ok %v %q", cov.Missing, got.OK, got.Note)
+	}
+}
+
+func TestCoverageByCadenceFailsAHole(t *testing.T) {
+	// A 60s hole amid a 10s cadence is a stretch no sample observed: points at
+	// 0..90s, then a jump to 150s, then 10s cadence to 190s.
+	hole := every(10*time.Second, 10, func(int) float64 { return 100 })
+	hole = append(hole, every(10*time.Second, 5, func(int) float64 { return 100 })...)
+	for i := range hole {
+		if i >= 10 {
+			hole[i].At = hole[i].At.Add(150 * time.Second)
+		}
+	}
+	got, cov := AssessCoverageByCadence(Check("a", "go_goroutines", hole, 0.20), hole, nil)
+	if cov.Missing == 0 || got.OK || got.Plateau {
+		t.Fatalf("a real hole must fail: missing %d ok %v %q", cov.Missing, got.OK, got.Note)
+	}
+}
+
+func TestCoverageByCadenceIgnoresDrillWindows(t *testing.T) {
+	// The gap that crosses a planned drill window is neither blindness nor a
+	// sample to count, so a folded-in drill must not fail the run.
+	pts := every(10*time.Second, 60, func(int) float64 { return 100 })
+	wins := []Window{{Start: time.Unix(300, 0), End: time.Unix(360, 0)}} // ticks 30..36
+	got, cov := AssessCoverageByCadence(CheckWithWindows("a", "go_goroutines", pts, 0.20, wins), pts, wins)
+	if cov.Missing != 0 || !got.OK {
+		t.Fatalf("planned drill windows must not read as a coverage hole: missing %d ok %v %q", cov.Missing, got.OK, got.Note)
+	}
+}
+
+func TestCoverageByCadenceNeedsTwoPoints(t *testing.T) {
+	pts := every(time.Minute, 20, func(int) float64 { return 100 })
+	if _, out := AssessCoverageByCadence(Check("a", "go_goroutines", pts, 0.20), pts[:1], nil); out.Expected != 0 {
+		t.Fatalf("one point cannot span a window: %+v", out)
+	}
+}

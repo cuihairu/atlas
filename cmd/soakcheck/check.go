@@ -186,6 +186,18 @@ func inWindow(t time.Time, wins []Window) bool {
 	return false
 }
 
+// gapSpansWindow reports whether a planned drill window sits between two
+// observations. Both endpoints sit outside every window (the window's own points
+// are filtered first), so any window the gap reaches lies strictly inside it.
+func gapSpansWindow(a, b time.Time, wins []Window) bool {
+	for _, w := range wins {
+		if w.Start.After(a) && w.End.Before(b) {
+			return true
+		}
+	}
+	return false
+}
+
 // splitByWindows removes points inside any window and groups the rest into
 // contiguous steady segments. Crossing a window — entering it or jumping past
 // its end in one scrape gap — closes the current segment, so no comparison ever
@@ -350,6 +362,64 @@ func AssessCoverage(v Verdict, interval time.Duration, pts []Point, wins []Windo
 		v.Plateau = false
 		v.OK = false
 		v.Note = fmt.Sprintf("coverage gap: %d of %d ticks missing", missing, expected)
+	}
+	return v, Coverage{Expected: expected, Missing: missing, Note: v.Note}
+}
+
+// holeFactor decides when a gap reads as blindness rather than a slow scrape:
+// at the achieved cadence one slipped scrape doubles the gap and two missed
+// ones triple it, so only a gap beyond three cadences marks a stretch of the
+// run that no sample ever observed.
+const holeFactor = 3
+
+// AssessCoverageByCadence checks coverage by the cadence the soak actually
+// achieved instead of the configured interval. When every scrape is slow but
+// all of them succeed, the series lands at a uniform cadence far coarser than
+// the configured one — the window was still observed end to end, so judging it
+// against the configured grid invents a gap out of thin air. What disqualifies
+// a plateau verdict is a stretch that no sample observed, so a gap larger than
+// holeFactor times the achieved (median) cadence fails the verdict while a
+// uniformly slow run does not. Drill windows are planned holes: gaps crossing
+// one are neither evidence of blindness nor counted.
+func AssessCoverageByCadence(v Verdict, pts []Point, wins []Window) (Verdict, Coverage) {
+	byTime := append([]Point(nil), pts...)
+	sort.Slice(byTime, func(i, j int) bool { return byTime[i].At.Before(byTime[j].At) })
+	obs := byTime[:0]
+	for _, p := range byTime {
+		if !inWindow(p.At, wins) {
+			obs = append(obs, p)
+		}
+	}
+	if len(obs) < 2 {
+		return v, Coverage{}
+	}
+	gaps := make([]time.Duration, 0, len(obs)-1)
+	for i := 1; i < len(obs); i++ {
+		if gapSpansWindow(obs[i-1].At, obs[i].At, wins) {
+			continue // the drill, not blindness, explains this gap
+		}
+		gaps = append(gaps, obs[i].At.Sub(obs[i-1].At))
+	}
+	sort.Slice(gaps, func(i, j int) bool { return gaps[i] < gaps[j] })
+	median := gaps[len(gaps)/2]
+	if median <= 0 {
+		return v, Coverage{} // coincident timestamps carry no cadence to judge
+	}
+	hole := time.Duration(holeFactor) * median
+	missing := 0
+	for _, g := range gaps {
+		if g > hole {
+			// Ticks the configured cadence would have fired while this gap was
+			// open, less the one scrape that did land.
+			missing += int(g/median) - 1
+		}
+	}
+	expected := len(obs) + missing
+	v.Expected = expected
+	if missing > 0 {
+		v.Plateau = false
+		v.OK = false
+		v.Note = fmt.Sprintf("coverage hole: %d ticks unobserved on a %s cadence", missing, median.Round(time.Second))
 	}
 	return v, Coverage{Expected: expected, Missing: missing, Note: v.Note}
 }

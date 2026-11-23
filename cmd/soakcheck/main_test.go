@@ -144,7 +144,7 @@ func TestSoakcheckRejectsStrayArguments(t *testing.T) {
 }
 
 func TestVerdictExitCodes(t *testing.T) {
-	if got := verdict(nil, 0.20, 0, 0, "", "", nil); got != 2 {
+	if got := verdict(nil, 0.20, 0, 0, false, "", "", nil); got != 2 {
 		t.Fatalf("no samples: exit %d, want 2", got)
 	}
 
@@ -155,13 +155,13 @@ func TestVerdictExitCodes(t *testing.T) {
 		}
 		return out
 	}
-	if got := verdict(mk(10, func(int) float64 { return 100 }), 0.20, 0, 0, "", "", nil); got != 0 {
+	if got := verdict(mk(10, func(int) float64 { return 100 }), 0.20, 0, 0, false, "", "", nil); got != 0 {
 		t.Fatalf("a plateau: exit %d, want 0", got)
 	}
-	if got := verdict(mk(10, func(i int) float64 { return 100 + float64(i)*20 }), 0.20, 0, 0, "", "", nil); got != 1 {
+	if got := verdict(mk(10, func(i int) float64 { return 100 + float64(i)*20 }), 0.20, 0, 0, false, "", "", nil); got != 1 {
 		t.Fatalf("a leak: exit %d, want 1", got)
 	}
-	if got := verdict(mk(4, func(int) float64 { return 100 }), 0.20, 0, 0, "", "", nil); got != 1 {
+	if got := verdict(mk(4, func(int) float64 { return 100 }), 0.20, 0, 0, false, "", "", nil); got != 1 {
 		t.Fatalf("too few samples: exit %d, want 1", got)
 	}
 
@@ -172,10 +172,10 @@ func TestVerdictExitCodes(t *testing.T) {
 		}
 		return 22
 	})
-	if got := verdict(boot, 0.20, 0, 0, "", "", nil); got != 1 {
+	if got := verdict(boot, 0.20, 0, 0, false, "", "", nil); got != 1 {
 		t.Fatalf("boot transient, cold: exit %d, want 1", got)
 	}
-	if got := verdict(boot, 0.20, 1, 0, "", "", nil); got != 0 {
+	if got := verdict(boot, 0.20, 1, 0, false, "", "", nil); got != 0 {
 		t.Fatalf("boot transient, warmed up: exit %d, want 0", got)
 	}
 
@@ -187,10 +187,10 @@ func TestVerdictExitCodes(t *testing.T) {
 		}
 		return out
 	}
-	if got := verdict(mkEvery(time.Minute, 20), 0.20, 0, time.Minute, "", "", nil); got != 0 {
+	if got := verdict(mkEvery(time.Minute, 20), 0.20, 0, time.Minute, false, "", "", nil); got != 0 {
 		t.Fatalf("a fully covered plateau: exit %d, want 0", got)
 	}
-	if got := verdict(mkEvery(3*time.Minute, 20), 0.20, 0, time.Minute, "", "", nil); got != 1 {
+	if got := verdict(mkEvery(3*time.Minute, 20), 0.20, 0, time.Minute, false, "", "", nil); got != 1 {
 		t.Fatalf("a covered-by-a-third plateau: exit %d, want 1", got)
 	}
 }

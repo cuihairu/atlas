@@ -51,6 +51,7 @@ func main() {
 	sample := flag.String("sample", "", "re-verify a sample file instead of scraping")
 	drills := flag.String("drills", "", "drills.sh log with window open/close ISO timestamps; each window plus --grace is excluded from the plateau verdict")
 	grace := flag.Duration("grace", 2*time.Minute, "recovery grace appended after every drill window before the series is judged again")
+	cadence := flag.Bool("coverage-by-cadence", false, "judge coverage by the achieved sampling cadence instead of --interval: slow-but-complete scrapes pass, only holes larger than 3x the median gap fail")
 	flag.Var(&urls, "metrics", "metrics URL, repeated or space-separated (one per replica; pass this flag last)")
 	flag.Parse()
 
@@ -96,7 +97,7 @@ func main() {
 		if intervalSet {
 			replayInterval = *interval
 		}
-		os.Exit(verdict(samples, *drift, *warmup, replayInterval, "", "", windows))
+		os.Exit(verdict(samples, *drift, *warmup, replayInterval, *cadence, "", "", windows))
 	}
 
 	if len(urls) == 0 {
@@ -131,7 +132,7 @@ func main() {
 	samples := scrape(ctx, urls, *interval, *timeout, record)
 	fmt.Fprintf(os.Stderr, "soakcheck: %s sampled %d points over %s\n",
 		time.Now().Format(time.RFC3339), len(samples), time.Since(start).Round(time.Second))
-	os.Exit(verdict(samples, *drift, *warmup, *interval, start.Format(time.RFC3339), time.Now().Format(time.RFC3339), windows))
+	os.Exit(verdict(samples, *drift, *warmup, *interval, *cadence, start.Format(time.RFC3339), time.Now().Format(time.RFC3339), windows))
 }
 
 // scrape ticks until ctx is done, taking one scrape of every URL per tick.
@@ -210,7 +211,7 @@ func loadWindows(path string, grace time.Duration) ([]Window, error) {
 // verdict runs the plateau check over every series and returns the process
 // code: 0 all pass, 1 any series fails the plateau or is too thin to judge,
 // 2 no samples at all (nothing was reachable).
-func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, winStart, winEnd string, windows []Window) int {
+func verdict(samples []Sample, drift float64, warmup int, interval time.Duration, cadence bool, winStart, winEnd string, windows []Window) int {
 	if winStart != "" {
 		_, _ = fmt.Fprintf(os.Stdout, "window %s .. %s\n", winStart, winEnd)
 	}
@@ -230,7 +231,11 @@ func verdict(samples []Sample, drift float64, warmup int, interval time.Duration
 	var vs []Verdict
 	for _, s := range series {
 		v := CheckWithWindows(s.Source, s.Metric, s.Points, drift, windows)
-		v, _ = AssessCoverage(v, interval, s.Points, windows)
+		if cadence {
+			v, _ = AssessCoverageByCadence(v, s.Points, windows)
+		} else {
+			v, _ = AssessCoverage(v, interval, s.Points, windows)
+		}
 		if !v.OK {
 			pass = false
 		}
