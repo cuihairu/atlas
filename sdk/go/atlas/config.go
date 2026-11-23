@@ -35,6 +35,17 @@ const (
 	NotifyModePoll = "poll"
 )
 
+// Registration lifecycle classes a server declares at register time
+// (RegisterRequest.RegKind). See docs/lifecycle.md §3.1.
+const (
+	// RegPermanent never auto-expires; deletion goes through the admin
+	// delete endpoint. It is also the default when RegKind is omitted.
+	RegPermanent = "permanent"
+	// RegTemporary is reclaimed automatically once registration time +
+	// TTLSeconds has passed.
+	RegTemporary = "temporary"
+)
+
 // CrossServerCluster is one cluster in the cross-server topology.
 type CrossServerCluster struct {
 	ID      string   `json:"id"`
