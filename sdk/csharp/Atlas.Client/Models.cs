@@ -72,6 +72,15 @@ public sealed class RegisterRequest
     public string Platform { get; set; } = "";
     public Endpoint Endpoint { get; set; } = new();
     public int Capacity { get; set; }
+    public Dictionary<string, string>? Metadata { get; set; }
+    /// <summary>Cross-server config notify declaration: subscribe | callback | poll.</summary>
+    public string? NotifyMode { get; set; }
+    /// <summary>Required with NotifyMode "callback": the absolute http(s) URL.</summary>
+    public string? NotifyCallbackUrl { get; set; }
+    /// <summary>Registration lifecycle class: "permanent" (default) | "temporary".</summary>
+    public string? RegKind { get; set; }
+    /// <summary>Lifetime of a RegTemporary registration, counted from registration.</summary>
+    public int? TtlSeconds { get; set; }
 }
 
 /// <summary>RegisterResult is the response to Register.</summary>

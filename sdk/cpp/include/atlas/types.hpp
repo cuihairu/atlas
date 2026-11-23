@@ -133,6 +133,15 @@ struct RegisterRequest {
     Endpoint endpoint;
     int capacity = 0;
     std::map<std::string, std::string> metadata;
+    // Cross-server config notify declaration: subscribe | callback | poll;
+    // callback mode requires notify_callback_url.
+    std::string notify_mode;
+    std::string notify_callback_url;
+    // Registration lifecycle class (docs/lifecycle.md §3.1): "permanent"
+    // (default) never auto-expires; "temporary" is reclaimed once
+    // ttl_seconds passes.
+    std::string reg_kind;
+    int ttl_seconds = 0;
 
     nlohmann::json ToJSON() const {
         nlohmann::json j{{"server_id", server_id}, {"name", name}, {"type", type},
@@ -141,6 +150,10 @@ struct RegisterRequest {
         if (realm_id) j["realm_id"] = *realm_id;
         if (shard_id) j["shard_id"] = *shard_id;
         if (!metadata.empty()) j["metadata"] = metadata;
+        if (!notify_mode.empty()) j["notify_mode"] = notify_mode;
+        if (!notify_callback_url.empty()) j["notify_callback_url"] = notify_callback_url;
+        if (!reg_kind.empty()) j["reg_kind"] = reg_kind;
+        if (ttl_seconds != 0) j["ttl_seconds"] = ttl_seconds;
         return j;
     }
 };

@@ -22,6 +22,7 @@ struct TestServer {
     int port = 0;
 
     std::atomic<int> register_auth_ok{0};
+    std::atomic<int> register_meta_ok{0};
     std::atomic<int> heartbeat_count{0};
     std::atomic<int> last_players{0};
     std::atomic<int> last_weight{-1};
@@ -38,6 +39,11 @@ struct TestServer {
         srv.Post("/v1/registry/servers/register", [&](const httplib::Request& req, httplib::Response& res) {
             if (req.get_header_value("Authorization") == "Bearer reg-token") register_auth_ok++;
             nlohmann::json body = nlohmann::json::parse(req.body);
+            if (body.value("notify_mode", "") == "callback" &&
+                body.value("notify_callback_url", "") == "https://cfg.example.com/hook" &&
+                body.value("reg_kind", "") == "temporary" && body.value("ttl_seconds", 0) == 3600) {
+                register_meta_ok++;
+            }
             if (body.value("server_id", "") != "game-1") {
                 res.status = 400;
                 res.set_content(R"({"error":{"code":"INVALID_ARGUMENT","message":"server_id"}})",
@@ -179,10 +185,15 @@ void TestLifecycle(TestServer& ts) {
         r.name = "Test";
         r.capacity = 100;
         r.endpoint = {"10.0.0.1", 30001};
+        r.notify_mode = "callback";
+        r.notify_callback_url = "https://cfg.example.com/hook";
+        r.reg_kind = "temporary";
+        r.ttl_seconds = 3600;
         return r;
     }());
     CHECK(reg.server_id == "game-1");
     CHECK(ts.register_auth_ok.load() == 1);
+    CHECK(ts.register_meta_ok.load() == 1);
 
     auto hb = c.Heartbeat("game-1", {5, 0.25});
     CHECK(hb.status == "online");

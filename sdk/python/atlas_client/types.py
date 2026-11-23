@@ -108,6 +108,15 @@ class RegisterRequest:
     realm_id: Optional[str] = None
     shard_id: Optional[str] = None
     metadata: Dict[str, str] = field(default_factory=dict)
+    # Cross-server config notify declaration: subscribe | callback | poll;
+    # callback mode requires notify_callback_url.
+    notify_mode: str = ""
+    notify_callback_url: str = ""
+    # Registration lifecycle class (docs/lifecycle.md §3.1): "permanent"
+    # (default) never auto-expires; "temporary" is reclaimed once
+    # ttl_seconds passes.
+    reg_kind: str = ""
+    ttl_seconds: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -126,6 +135,14 @@ class RegisterRequest:
             d["shard_id"] = self.shard_id
         if self.metadata:
             d["metadata"] = self.metadata
+        if self.notify_mode:
+            d["notify_mode"] = self.notify_mode
+        if self.notify_callback_url:
+            d["notify_callback_url"] = self.notify_callback_url
+        if self.reg_kind:
+            d["reg_kind"] = self.reg_kind
+        if self.ttl_seconds:
+            d["ttl_seconds"] = self.ttl_seconds
         return d
 
 

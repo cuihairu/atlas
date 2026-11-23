@@ -50,6 +50,14 @@ export interface RegisterRequest {
   realmId?: string;
   shardId?: string;
   metadata?: Record<string, string>;
+  /** cross-server config notify declaration: subscribe | callback | poll */
+  notifyMode?: string;
+  /** required with notifyMode "callback": the absolute http(s) URL */
+  notifyCallbackUrl?: string;
+  /** registration lifecycle class: "permanent" (default) | "temporary" */
+  regKind?: string;
+  /** lifetime of a RegTemporary registration, counted from registration */
+  ttlSeconds?: number;
 }
 
 export interface RegisterResult {
@@ -275,6 +283,10 @@ export function registerBody(req: RegisterRequest): Raw {
   if (req.realmId) d.realm_id = req.realmId;
   if (req.shardId) d.shard_id = req.shardId;
   if (req.metadata) d.metadata = req.metadata;
+  if (req.notifyMode) d.notify_mode = req.notifyMode;
+  if (req.notifyCallbackUrl) d.notify_callback_url = req.notifyCallbackUrl;
+  if (req.regKind) d.reg_kind = req.regKind;
+  if (req.ttlSeconds) d.ttl_seconds = req.ttlSeconds;
   return d;
 }
 
