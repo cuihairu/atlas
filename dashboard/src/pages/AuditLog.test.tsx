@@ -52,7 +52,8 @@ describe('AuditLog 操作审计', () => {
   it('只读请求没有变更体，写请求按 JSON 展开', async () => {
     render(<AuditLog />)
     await screen.findByText('/v1/admin/servers/game-1001/weight')
-    // GET 行没有 body 列（列在有 body 的行渲染为空），POST 行给出可读 JSON
+    // GET rows have no body cell (the column renders empty on rows that have a
+    // body); POST rows show readable JSON
     expect(screen.getByText(/"weight": 200/)).toBeTruthy()
   })
 

@@ -65,7 +65,7 @@ export default function ServerDetail() {
     try {
       const [s, c, tags] = await Promise.all([
         getServer(id),
-        // 次要请求失败只降级（空列表），不能拖垮整页。
+        // Secondary request failures only degrade (empty list); they must not take down the whole page.
         listCharactersByServer(id).catch(() => [] as Character[]),
         getServerTags(id).catch(() => ({ server_id: id, tags: [] as ServerTag[] })),
       ]);
@@ -74,7 +74,8 @@ export default function ServerDetail() {
       setAdminTags(tags.tags);
       setWeight(s.weight ?? 0);
     } catch {
-      // 主请求失败：客户端已弹错，server 保持 null，渲染层落到错误面板。
+      // Primary request failed: the client already showed an error and server
+      // stays null, so the render layer falls through to the error panel.
     } finally {
       setLoading(false);
     }
@@ -152,7 +153,8 @@ export default function ServerDetail() {
 
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '120px auto' }} />;
 
-  // 加载结束但 server 仍为空 = 主请求失败：给错误面板（重试/返回），不再停在加载态。
+  // Loading finished but server is still empty = primary request failed:
+  // show the error panel (retry/back) instead of staying in the loading state.
   if (!server) {
     return (
       <Result
@@ -220,7 +222,7 @@ export default function ServerDetail() {
             </Descriptions.Item>
           )}
         </Descriptions>
-        {/* 时间三件套（item 9）：开服时间 / 最近心跳 / 在线时长（人性化）。 */}
+        {/* Time trio (item 9): start time / last heartbeat / human-readable uptime. */}
         <Descriptions column={{ xs: 1, sm: 3 }} style={{ marginTop: 8 }} size="small">
           <Descriptions.Item label={t('serverStarted')}>
             {server.started_at ? new Date(server.started_at).toLocaleString(timeLocale()) : '—'}
@@ -229,7 +231,7 @@ export default function ServerDetail() {
             {server.last_seen_at ? new Date(server.last_seen_at).toLocaleString(timeLocale()) : '—'}
           </Descriptions.Item>
           <Descriptions.Item label={t('onlineDuration')}>
-            {/* 在线时长 = 开服 → 最近心跳（无心跳则到当前时刻）。 */}
+            {/* Uptime = server start → last heartbeat (or now if no heartbeat yet). */}
             {humanDuration(server.started_at, server.last_seen_at ?? undefined)}
           </Descriptions.Item>
         </Descriptions>

@@ -30,7 +30,7 @@ export interface Server {
   status: 'online' | 'maintenance' | 'suspect' | 'offline' | 'draining' | 'starting' | 'disabled';
   /** Player-facing responses expose only public tags. */
   tags?: ServerTag[];
-  /** 运营路由权重（灰度放量 knob）：100 = 中性，>100 吸引流量，<100 抑制。 */
+  /** Operational routing weight (canary rollout knob): 100 = neutral, >100 attracts traffic, <100 suppresses it. */
   weight?: number;
   players: number;
   capacity: number;
@@ -38,15 +38,15 @@ export interface Server {
   endpoint?: ServerEndpoint;
   created_at?: string;
   updated_at?: string;
-  /** 开服时间（进程本次启动），详情页在线时长从这里起算。 */
+  /** Server start time (this process run); the detail page counts uptime from here. */
   started_at?: string;
-  /** 最近心跳时间；空 = 尚无心跳。 */
+  /** Last heartbeat time; empty = no heartbeat yet. */
   last_seen_at?: string | null;
-  /** 注册元数据（平台不解释内容，只透传与过滤）。 */
+  /** Registration metadata (the platform does not interpret contents, only passes them through and filters on them). */
   metadata?: Record<string, string>;
 }
 
-/** 在线时长人性化：3天2小时 / 45分钟（item 9 口径）。 */
+/** Human-readable uptime: 3 days 2 hours / 45 minutes (item 9 semantics). */
 export function humanDuration(fromISO?: string | null, toISO?: string | null): string {
   if (!fromISO) return '—';
   const from = new Date(fromISO).getTime();
@@ -96,12 +96,12 @@ export interface AdminStats {
   servers_by_status: Record<string, number>;
   servers_by_region: Record<string, number>;
   servers_by_version?: Record<string, number>;
-  /** 筛选条 facets（fleet 聚合，item 12 裁决：所有视图读同一聚合）。 */
+  /** Filter-bar facets (fleet aggregation, item 12 decision: all views read the same aggregate). */
   servers_by_type?: Record<string, number>;
   servers_by_realm?: Record<string, number>;
   servers_by_shard?: Record<string, number>;
   servers_by_tag?: Record<string, number>;
-  /** 舰队里出现过的 metadata 键（供筛选下拉）。 */
+  /** Metadata keys seen across the fleet (for the filter dropdown). */
   server_metadata_keys?: string[];
 }
 
@@ -112,31 +112,32 @@ export interface Character {
   name: string;
   level: number;
   class_id: string;
-  /** Go 侧序列化为 last_login_at（此前前端误写 last_login，恒渲染 -）。 */
+  /** The Go side serializes this as last_login_at (the frontend previously wrote last_login by mistake, which always rendered "-"). */
   last_login_at?: string | null;
   metadata?: Record<string, string>;
 }
 
-// ── 玩家视角排查（/v1/admin/diagnose/routing）───────────────────────
-// 与 Go routing.Diagnosis / ServerVerdict 同构：recommend 同一条管线的
-// 中间结果摊开（排序 / 逐维判定 / 归因），不另设判据。
+// ── Player-perspective diagnosis (/v1/admin/diagnose/routing) ───────
+// Isomorphic to Go routing.Diagnosis / ServerVerdict: lays out the
+// intermediate results of the same recommend pipeline (ranking /
+// per-dimension verdict / attribution) instead of defining new criteria.
 
 export interface DiagnosisServerVerdict {
-  /** 内嵌完整服务器记录（与列表同构）。 */
+  /** Embedded full server record (same shape as the list). */
   server: Server | null;
-  /** 候选池排序位（1 起）；0 = 未入候选（看 reason）。 */
+  /** Position in the candidate pool ranking (1-based); 0 = not in candidates (see reason). */
   rank: number;
   matched_strict: boolean;
   matched_fallback: boolean;
   owned: boolean;
-  /** 活动中或 Lead 内开始的维护窗口（窗口排除判定）。 */
+  /** A maintenance window that is active or starts within the Lead (window exclusion verdict). */
   maintenance_window?: MaintenanceWindow;
-  /** 运营路由权重（0 = 未设置，同中性）。 */
+  /** Operational routing weight (0 = unset, same as neutral). */
   weight?: number;
-  /** 有效负载 = load × 100 / weight（weight >0 且 ≠100 时才有意义）。 */
+  /** Effective load = load × 100 / weight (only meaningful when weight > 0 and ≠ 100). */
   effective_load?: number;
   eligible: boolean;
-  /** 未入候选时的拒绝原因（region=na (需要 eu)）或冠军归因。 */
+  /** Rejection reason when not in candidates (region=na (needs eu)) or attribution for the winner. */
   reason?: string;
 }
 
@@ -148,14 +149,14 @@ export interface RoutingDiagnosis {
     status?: string;
     account_id?: number;
   };
-  /** strict（过滤器命中）/ fallback（仅状态兜底）/ none（全空）。 */
+  /** strict (filter hit) / fallback (status-only fallback) / none (all empty). */
   stage: 'strict' | 'fallback' | 'none';
   servers: DiagnosisServerVerdict[];
   winner_id?: string;
   winner_reason?: string;
 }
 
-// ── 网关/系统配置只读页（/v1/admin/rate-limits）─────────────────────
+// ── Gateway/system config read-only page (/v1/admin/rate-limits) ────
 
 export interface RateLimitRuleView {
   prefix: string;
@@ -171,7 +172,7 @@ export interface RateLimitStats {
   rejected_by_client: Record<string, number>;
 }
 
-// ── 负载时间视图 / 消息总线曲线（/v1/admin/load-series · bus-series）──
+// ── Load time view / message bus series (/v1/admin/load-series · bus-series) ──
 
 export type SeriesWindow = '5m' | '10m' | '30m' | '1h' | '10h';
 
@@ -187,7 +188,7 @@ export interface LoadSeriesResponse {
   points: LoadSeriesPoint[];
 }
 
-// ── 服务器热力图（/v1/admin/load-heatmap · GetLoadHeatmap）──
+// ── Server heatmap (/v1/admin/load-heatmap · GetLoadHeatmap) ──
 
 export type HeatmapWindow = '1h' | '24h';
 
@@ -241,17 +242,18 @@ export interface CharacterSearchResponse {
   next_cursor?: string;
 }
 
-// ── Admin 操作审计（GET /v1/admin/audit）─────────────────────────────
-// 服务端环形缓冲最近 N 条（ATLAS_AUDIT_MAX，默认 1000），REST 与 gRPC
-// 写操作共用一个环（httpapi.AuditLog.Record 两侧汇流）。
+// ── Admin operation audit (GET /v1/admin/audit) ──────────────────────
+// Server-side ring buffer of the latest N entries (ATLAS_AUDIT_MAX, default
+// 1000); REST and gRPC write operations share one ring (both feed into
+// httpapi.AuditLog.Record).
 export interface AuditEntry {
   time: string;
-  /** "role:证书指纹" 或 "role:api-key"（httpapi.Actor.String）。 */
+  /** "role:certificate fingerprint" or "role:api-key" (httpapi.Actor.String). */
   actor: string;
   method: string;
   path: string;
   status: number;
-  /** 变更记录：仅 mutating 方法有，截断到 ATLAS_AUDIT_MAX_BODY。 */
+  /** Change record: only mutating methods have one, truncated to ATLAS_AUDIT_MAX_BODY. */
   body?: unknown;
   query?: string;
 }
@@ -275,7 +277,7 @@ export interface MigrationListResponse {
   migrations: Migration[];
   next_cursor?: string;
 }
-// ── 公告与维护窗口（/v1/admin/announcements · maintenance-windows）────
+// ── Announcements and maintenance windows (/v1/admin/announcements · maintenance-windows) ──
 
 export type AnnouncementLevel = 'info' | 'warning' | 'critical';
 
@@ -309,17 +311,17 @@ export interface MaintenanceWindowListResponse {
   maintenance_windows: MaintenanceWindow[];
 }
 
-/** 舰队级批量窗口模板：一份时段铺到 server_ids，错峰 stagger / 预览 dry_run。 */
+/** Fleet-level batch window template: one time span spread over server_ids, with staggered offsets / dry_run preview. */
 export interface MaintenanceWindowBatchRequest {
   server_ids: string[];
-  /** 缺省取当前时刻。 */
+  /** Defaults to the current time. */
   start_at?: string;
   end_at: string;
-  /** 第 i 台的窗口整体后移 i × stagger_seconds（滚动维护）；0 = 同时。 */
+  /** The i-th server's window shifts back by i × stagger_seconds (rolling maintenance); 0 = simultaneous. */
   stagger_seconds?: number;
-  /** 缺省 true：每台自动创建并关联一条 warning 公告。 */
+  /** Defaults to true: each server automatically gets one associated warning announcement created. */
   announce?: boolean;
-  /** 只校验并返回计划中的窗口（id 为预览值），不落库。 */
+  /** Only validate and return the planned windows (ids are preview values); nothing is persisted. */
   dry_run?: boolean;
 }
 
@@ -328,13 +330,13 @@ export interface MaintenanceWindowBatchFailure {
   error: string;
 }
 
-/** 批量是部分成功语义：成功进 windows，未知/非法服务器逐台进 failed。 */
+/** The batch is partially-successful semantics: successful ones go into windows, unknown/invalid servers each go into failed. */
 export interface MaintenanceWindowBatchResponse {
   windows: MaintenanceWindow[];
   failed: MaintenanceWindowBatchFailure[];
 }
 
-// ── 跨服配置中心（/v1/admin/crossserver/config）──────────────────────
+// ── Cross-server config center (/v1/admin/crossserver/config) ────────
 
 export interface CrossServerCluster {
   id: string;
@@ -357,8 +359,9 @@ export interface CrossServerMatchDomain {
   params?: Record<string, string>;
 }
 
-// 跨服玩法类型表（crossplay_types）一行：与 Go model.CrossPlayType 同构。
-// lifecycle 缺省 persistent；id_prefix 是该类型运行时 ID 前缀（唯一）。
+// One row of the crossplay types table (crossplay_types): isomorphic to Go
+// model.CrossPlayType. lifecycle defaults to persistent; id_prefix is the
+// runtime ID prefix for that type (unique).
 export interface CrossPlayType {
   id: string;
   name?: string;
@@ -402,9 +405,9 @@ export interface CrossServerSaveResponse {
   notify: CrossServerNotifyResult;
 }
 
-// ── 指令队列状态（/v1/admin/indexqueue/status）────────────────────────
-// 仅内存存储实现 store.QueueStatusProvider；SQL 存储返回 503。
-// 字段对应 Go internal/store/store.go 的 QueueStats 结构体。
+// ── Index queue status (/v1/admin/indexqueue/status) ─────────────────
+// Only the in-memory store implements store.QueueStatusProvider; SQL stores
+// return 503. Fields mirror the QueueStats struct in Go internal/store/store.go.
 
 export interface FlushRecord {
   at: string;

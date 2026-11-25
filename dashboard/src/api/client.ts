@@ -37,10 +37,12 @@ import type {
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 const ADMIN_BASE = (import.meta.env.VITE_ADMIN_API_BASE || '').replace(/\/$/, '');
 
-// ── 管理台会话（API Key 登录） ───────────────────────────────────────
-// 后端管理口没有用户体系，鉴权是 Bearer API Key（按角色 admin/operator/
-// viewer 授权，viewer 只读）。"账号/密码"里的密码就是发给这个账号的 key：
-// 演示账号 demo 的密钥见 README「演示站点」。会话存 localStorage，仅本浏览器。
+// ── Admin console session (API Key login) ────────────────────────────
+// The backend admin endpoint has no user system; auth is a Bearer API Key
+// (role-scoped admin/operator/viewer, viewer read-only). The "password" in
+// account/password is the key issued to that account: the key for the demo
+// account "demo" is in the README's "demo site" section. Sessions live in
+// localStorage, i.e. this browser only.
 const KEY_STORAGE = 'atlas.adminKey';
 const ACCOUNT_STORAGE = 'atlas.adminAccount';
 
@@ -78,8 +80,10 @@ export function clearAdminSession(): void {
   }
 }
 
-// 探测会话是否可访问管理口：200 = 通过（含服务端未启用鉴权的部署），
-// 401/403 = 未登录或密钥失效；网络等其它错误按通过处理，避免误锁在登录页。
+// Probe whether the session can reach the admin endpoint: 200 = pass
+// (including deployments where the server has auth disabled),
+// 401/403 = not logged in or the key is stale; network and other errors are
+// treated as pass to avoid wrongly locking the user on the login page.
 export async function probeAdmin(key = getAdminKey()): Promise<'ok' | 'unauthorized'> {
   try {
     const headers: Record<string, string> = {};
@@ -95,8 +99,8 @@ async function request<T>(path: string, init?: RequestInit, base = API_BASE): Pr
   const url = `${base}${path}`;
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    // 管理口调用带会话密钥（按路径判定：三个 base 都可能承载 /v1/admin，
-    // 反代按路径分流到管理监听口）
+    // Admin calls carry the session key (decided by path: all three bases
+    // may carry /v1/admin, and the reverse proxy routes by path to the admin listener)
     const key = getAdminKey();
     if (key && url.includes('/v1/admin')) headers['Authorization'] = `Bearer ${key}`;
     const res = await fetch(url, {
@@ -110,7 +114,8 @@ async function request<T>(path: string, init?: RequestInit, base = API_BASE): Pr
     return (await res.json()) as T;
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    // 优先用 App 上下文实例（感知主题）；挂载前（MessageBridge 未就绪）退回静态兜底
+    // Prefer the App-context instance (theme-aware); before mount (MessageBridge
+    // not ready) fall back to the static one
     const apiMessage = getAppMessage();
     if (apiMessage) apiMessage.error(`${t('requestFailed')}: ${msg}`);
     else staticMessage.error(`${t('requestFailed')}: ${msg}`);
@@ -162,9 +167,11 @@ export function getStats(): Promise<AdminStats> {
   return request('/v1/admin/stats', undefined, ADMIN_BASE);
 }
 
-// 管理台舰队列表（/v1/admin/servers）：完整筛选条（状态/区域/类型/
-// realm/shard/版本/平台/标记 + ID 子串 + metadata 键值对），读 fleet 聚合
-// 索引——与总览数字同源（item 12 裁决）。含心跳/元数据等管理面字段。
+// Admin console fleet list (/v1/admin/servers): full filter bar (status/region/
+// type/realm/shard/version/platform/tag + ID substring + metadata key-value
+// pairs), reading the fleet aggregate index — same source as the overview
+// numbers (item 12 decision). Includes admin-plane fields such as heartbeat
+// and metadata.
 export function adminListServers(params?: {
   id?: string;
   status?: string;
@@ -183,7 +190,7 @@ export function adminListServers(params?: {
   return request(`/v1/admin/servers${qs(params ?? {})}`, undefined, ADMIN_BASE);
 }
 
-// 玩家视角排查（/v1/admin/diagnose/routing）：recommend 同管线中间结果。
+// Player-perspective diagnosis (/v1/admin/diagnose/routing): intermediate results of the same recommend pipeline.
 export function diagnoseRouting(params: {
   account_id?: string;
   region?: string;
@@ -193,12 +200,12 @@ export function diagnoseRouting(params: {
   return request(`/v1/admin/diagnose/routing${qs(params)}`, undefined, ADMIN_BASE);
 }
 
-// 网关/系统配置只读页：解析后的限流规则 + 429 计数。
+// Gateway/system config read-only page: parsed rate-limit rules + 429 counts.
 export function getRateLimits(): Promise<RateLimitStats> {
   return request('/v1/admin/rate-limits', undefined, ADMIN_BASE);
 }
 
-// 负载时间视图（概览）：players / load 双线，窗口分层 5m–10h。
+// Load time view (overview): players / load dual lines, window tiers 5m-10h.
 export function getLoadSeries(params: {
   window?: SeriesWindow;
   server_id?: string;
@@ -207,12 +214,12 @@ export function getLoadSeries(params: {
   return request(`/v1/admin/load-series${qs(params)}`, undefined, ADMIN_BASE);
 }
 
-// 服务器热力图：每台存活服务器一行的分桶负载均值（近 1h/24h）。
+// Server heatmap: one row per live server, bucketed mean load (last 1h/24h).
 export function getLoadHeatmap(params: { window?: HeatmapWindow }): Promise<LoadHeatmapResponse> {
   return request(`/v1/admin/load-heatmap${qs(params)}`, undefined, ADMIN_BASE);
 }
 
-// 消息总线曲线：每主题积压深度 + 生产/消费速率。
+// Message bus series: per-topic backlog depth + produce/consume rates.
 export function getBusSeries(params: { window?: SeriesWindow }): Promise<BusSeriesResponse> {
   return request(`/v1/admin/bus-series${qs(params)}`, undefined, ADMIN_BASE);
 }
@@ -238,7 +245,7 @@ export function removeServerTag(
   return request(`/v1/admin/servers/${id}/tags/${code}`, { method: 'DELETE' }, ADMIN_BASE);
 }
 
-/** 设置路由权重（0..1000，0 清除=中性）。 */
+/** Set the routing weight (0..1000, 0 clears = neutral). */
 export function setServerWeight(
   id: string,
   weight: number,
@@ -268,9 +275,9 @@ export function serverDisable(id: string): Promise<void> {
 export function searchCharacters(params: {
   q?: string;
   server_id?: string;
-  /** 玩家 ID 搜索：不透明 account 引用（平台不解释口径）。 */
+  /** Player ID search: opaque account reference (the platform does not interpret it). */
   account_id?: string;
-  /** 元数据键值过滤（class 等业务概念走这里，平台不内建）。 */
+  /** Metadata key-value filtering (business concepts such as class go here; not built into the platform). */
   metadata_key?: string;
   metadata_value?: string;
   min_level?: number;
@@ -308,7 +315,7 @@ export function getMigration(id: string): Promise<Migration> {
 export function rollbackMigration(id: string): Promise<void> {
   return request(`/v1/admin/migrations/${id}/rollback`, { method: 'POST' });
 }
-// ── 公告与维护窗口 ────────────────────────────────────────────────────
+// ── Announcements and maintenance windows ────────────────────────────
 
 export function listAnnouncements(params?: {
   server_id?: string;
@@ -355,7 +362,7 @@ export function deleteMaintenanceWindow(id: string): Promise<void> {
   return request(`/v1/admin/maintenance-windows/${id}`, { method: 'DELETE' }, ADMIN_BASE);
 }
 
-/** 舰队级批量窗口：一份模板铺到多台，部分成功语义（成功进 windows，未知/非法进 failed）。 */
+/** Fleet-level batch windows: one template spread across multiple servers, partial-success semantics (successes go into windows, unknown/invalid into failed). */
 export function createMaintenanceWindowsBatch(
   body: MaintenanceWindowBatchRequest,
 ): Promise<MaintenanceWindowBatchResponse> {
@@ -365,14 +372,14 @@ export function createMaintenanceWindowsBatch(
   }, ADMIN_BASE);
 }
 
-// ── Admin 操作审计 ───────────────────────────────────────────────────
+// ── Admin operation audit ────────────────────────────────────────────
 
-/** 最近 N 条 Admin 操作（服务端环形缓冲，缺省 50 条）。 */
+/** Latest N admin operations (server-side ring buffer, 50 by default). */
 export function listAuditEntries(params?: { limit?: number }): Promise<AuditListResponse> {
   return request(`/v1/admin/audit${qs(params ?? {})}`, undefined, ADMIN_BASE);
 }
 
-// ── 跨服配置中心 ─────────────────────────────────────────────────────
+// ── Cross-server config center ───────────────────────────────────────
 
 export function getCrossServerConfig(): Promise<CrossServerConfig> {
   return request('/v1/admin/crossserver/config', undefined, ADMIN_BASE);
@@ -385,7 +392,7 @@ export function updateCrossServerConfig(spec: CrossServerSpec): Promise<CrossSer
   }, ADMIN_BASE);
 }
 
-// ── 指令队列状态（/v1/admin/indexqueue/status）──────────────────────────
+// ── Index queue status (/v1/admin/indexqueue/status) ─────────────────
 
 export function getIndexQueueStatus(): Promise<IndexQueueStatus> {
   return request('/v1/admin/indexqueue/status', undefined, ADMIN_BASE);

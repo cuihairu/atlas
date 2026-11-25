@@ -1,6 +1,8 @@
-// 公告与计划维护：面向玩家的公告（全局 / 服务器级）与声明式维护窗口。
-// 窗口到点自动把 auto-managed 服务器切到维护、窗口结束恢复原状态；
-// 创建时缺省联动一条覆盖同时段的 warning 公告（announcement_id 关联）。
+// Announcements and scheduled maintenance: player-facing announcements
+// (global / per-server) and declarative maintenance windows. When a window
+// comes due, auto-managed servers are switched to maintenance automatically
+// and restored when the window ends; on creation a warning announcement
+// covering the same time span is linked by default (via announcement_id).
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Form, Input, Select, Switch, Space, Tag,
@@ -58,7 +60,7 @@ export default function Operations() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // ── 公告 ───────────────────────────────────────────────────────────
+  // ── Announcements ──────────────────────────────────────────────────
 
   const submitAnnouncement = async () => {
     const v = await annForm.validateFields();
@@ -88,7 +90,7 @@ export default function Operations() {
     await fetchAll();
   };
 
-  // ── 维护窗口 ───────────────────────────────────────────────────────
+  // ── Maintenance windows ────────────────────────────────────────────
 
   const submitWindow = async () => {
     const v = await winForm.validateFields();
@@ -115,22 +117,24 @@ export default function Operations() {
     await fetchAll();
   };
 
-  // ── 舰队批量窗口 ───────────────────────────────────────────────────
-  // 预览（dry_run）与真实创建走同一条提交路径：结果留在弹窗里逐台列出，
-  // 运营确认无误再关；部分成功不静默——失败台数单独提示。
+  // ── Fleet batch windows ────────────────────────────────────────────
+  // Preview (dry_run) and real creation use the same submit path: results
+  // stay in the modal listed per server until the operator confirms they
+  // are correct; partial success is not silent — the failed count is
+  // reported separately.
 
   const submitWindowsBatch = async () => {
     let v: BatchFormValues & { range: [Dayjs, Dayjs] };
     try {
       v = await batchForm.validateFields();
     } catch {
-      return; // 校验失败就地红字提示，不发请求
+      return; // Validation errors are shown inline; no request is sent
     }
     setSaving(true);
     try {
       const result = await submitBatch(v, v.range);
       setBatchResult(result);
-      if (v.dry_run) return; // 预览不落库，不刷新列表
+      if (v.dry_run) return; // Preview does not persist anything, so no list refresh
       if (result.failed.length > 0) {
         message.warning(`${t('winBatchPartialMsg')}: ${result.failed.length}`);
       } else {

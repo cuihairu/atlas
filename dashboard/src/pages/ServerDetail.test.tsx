@@ -65,10 +65,12 @@ describe('ServerDetail 详情页数据加载', () => {
 
     renderPage()
 
-    // 错误面板：标题 + 说明 + 重试/返回按钮都要在，且不是永久转圈。
+    // Error panel: title + hint + retry/back buttons must all be present, and
+    // it must not spin forever.
     expect(await screen.findByText(t('loadFailed'))).toBeTruthy()
     expect(screen.getByText(t('loadFailedHint'))).toBeTruthy()
-    // antd 给两字中文按钮插空格（「重 试」），可访问名按可容忍空白的正则匹配。
+    // antd inserts a space between the two characters of a CJK button label,
+    // so the accessible name is matched with a whitespace-tolerant regex.
     const retryName = new RegExp([...t('retry')].join('\\s*'))
     expect(screen.getByRole('button', { name: retryName })).toBeTruthy()
     expect(screen.getByRole('button', { name: t('backToServers') })).toBeTruthy()
@@ -81,7 +83,7 @@ describe('ServerDetail 详情页数据加载', () => {
     renderPage()
 
     expect(await screen.findByText('Alpha')).toBeTruthy()
-    // 角色列表数量降级为 0，页面不再整体卡在 Spin。
+    // Character list count degrades to 0; the page no longer gets stuck in a Spin.
     expect(await screen.findByText(`${t('characterList')} (0)`)).toBeTruthy()
   })
 
@@ -95,8 +97,9 @@ describe('ServerDetail 详情页数据加载', () => {
 })
 
 describe('ServerDetail 路由权重', () => {
-  // 权重 Tag 是页面上唯一的 ant-tag 且内容唯一（tier 下拉里也有「中性」二字），
-  // 用 class 收窄到 Tag 元素。
+  // The weight Tag is the only ant-tag on the page with unique content (the
+  // tier dropdown also contains the word "neutral"), so narrow to Tag elements
+  // by class.
   const weightTag = async () => {
     const tags = await screen.findAllByText(t('weightNeutral'))
     return tags.find((el) => el.className.includes('ant-tag'))

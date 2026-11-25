@@ -19,7 +19,8 @@ const listAnnouncements = vi.mocked(client.listAnnouncements)
 const listMaintenanceWindows = vi.mocked(client.listMaintenanceWindows)
 const createMaintenanceWindowsBatch = vi.mocked(client.createMaintenanceWindowsBatch)
 
-// antd 在中文按钮文案之间插空格，可访问名要用容忍空白的正则。
+// antd inserts spaces between the characters of CJK button labels, so
+// accessible names need a whitespace-tolerant regex.
 const loose = (key: Parameters<typeof t>[0]) => new RegExp([...t(key)].join('\\s*'))
 
 beforeEach(() => {

@@ -1,7 +1,9 @@
-// 网关/系统配置只读页（item 8）：解析后的限流生效规则（前缀最长匹配、
-// 每客户端令牌桶）与默认规则 + 429 RATE_LIMITED 按 端点规则 / 客户端 IP
-// 的计数。只读——配置本身走环境变量（ATLAS_RATE_LIMITS /
-// ATLAS_RATE_LIMIT_DEFAULT）+ 重启生效，本页不提供任何写入口。
+// Gateway/system config read-only page (item 8): parsed effective rate-limit
+// rules (longest-prefix match, per-client token bucket) plus the default rule
+// and 429 RATE_LIMITED counts by endpoint rule / client IP. Read-only — the
+// config itself comes from environment variables (ATLAS_RATE_LIMITS /
+// ATLAS_RATE_LIMIT_DEFAULT) and takes effect after a restart; this page
+// offers no write path.
 import { useEffect, useState, useCallback } from 'react';
 import { Card, Table, Tag, Alert, Descriptions, Typography } from 'antd';
 import { useLang, t } from '../i18n';

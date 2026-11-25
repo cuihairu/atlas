@@ -1,7 +1,8 @@
-// Admin 操作审计流（GET /v1/admin/audit）：谁、什么时候、对哪个路径做了什么
-// 改动、结果如何。写操作带变更体（body），读操作只有路径与查询串。
-// 服务端是环形缓冲（ATLAS_AUDIT_MAX，默认 1000 条），重启即丢——这里如实
-// 呈现"最近 N 条"，不假装是持久化审计归档。
+// Admin operation audit stream (GET /v1/admin/audit): who changed what, when,
+// on which path, and with what result. Write operations carry a change body;
+// read operations only have path and query string. On the server this is a
+// ring buffer (ATLAS_AUDIT_MAX, default 1000 entries) lost on restart — shown
+// honestly as "latest N entries", not passed off as a persistent audit archive.
 import { useEffect, useState, useCallback } from 'react';
 import { Card, Table, Button, Space, Tag, Result, Typography, Select, Tooltip } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
@@ -27,7 +28,8 @@ function statusColor(s: number): string {
   return 'green';
 }
 
-/** 变更体：对象原样格式化，非 JSON（服务端兜底成字符串的坏载荷）也照显。 */
+/** Change body: objects are formatted as-is; non-JSON payloads (bad payloads
+ * the server stringified as a fallback) are still shown verbatim. */
 function bodyText(body: unknown): string | null {
   if (body == null) return null;
   if (typeof body === 'string') return body;

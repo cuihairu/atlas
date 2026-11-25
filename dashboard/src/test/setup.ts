@@ -1,7 +1,8 @@
 import { vi } from 'vitest'
 
-// antd 内部用 matchMedia（响应式观察）与 ResizeObserver（rc-resize-observer
-// 驱动 Table/Descriptions 布局），jsdom 两个都没实现，补最小空实现。
+// antd internally uses matchMedia (responsive observation) and ResizeObserver
+// (drives Table/Descriptions layout via rc-resize-observer); jsdom implements
+// neither, so supply minimal no-op implementations.
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = ((query: string) => ({
     matches: false,

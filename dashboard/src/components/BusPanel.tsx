@@ -1,7 +1,8 @@
-// 消息总线积压面板（item 13）：每主题积压深度曲线 + 生产/消费速率与
-// 累计量。深度超过红色阈值（默认 1000）时曲线标注告警红线。数据来自
-// 事件适配器的逐主题计数 + 环形采样曲线；与 /metrics Prometheus 口径
-// 同源（同一计数器）。
+// Message bus backlog panel (item 13): per-topic backlog depth curves +
+// produce/consume rates and cumulative totals. When depth exceeds the red
+// threshold (default 1000), the chart marks an alert threshold line. Data
+// comes from the event adapter's per-topic counts + ring-buffer sampling
+// curves; same source of truth as the /metrics Prometheus counters.
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Card, Segmented, Table, Tag, Tooltip, InputNumber, Typography } from 'antd';
 import { Line } from '@ant-design/charts';
@@ -38,7 +39,8 @@ export default function BusPanel() {
     return () => clearInterval(id);
   }, [fetch]);
 
-  // 深度曲线：各主题一条线（kind=topic）；超阈值点位标红由红线注释表达。
+  // Depth curves: one line per topic (kind=topic); points above the threshold
+  // are marked in red via the threshold-line annotation.
   const depthData = topics.flatMap((tp) =>
     (tp.depth ?? []).map((p) => ({
       time: new Date(p.t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }),
@@ -128,7 +130,7 @@ export default function BusPanel() {
             point={{ size: 0 }}
             axis={{ x: { labelAutoRotate: false, labelAutoHide: true } }}
             legend={{ position: 'top' }}
-            // 红色告警阈值线（item 13）：深度越线一眼可见。
+            // Red alert threshold line (item 13): depth overruns are visible at a glance.
             annotations={[{
               type: 'lineY',
               yField: threshold,

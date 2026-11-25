@@ -78,17 +78,17 @@ export default function Overview() {
         <ServerMap />
       </div>
 
-      {/* 负载时间视图（item 11）：窗口分层 + 舰队/区域/单服下钻。 */}
+      {/* Load time view (item 11): window tiers + fleet/region/server drill-down. */}
       <div style={{ marginTop: 24 }}>
         <LoadTimeView />
       </div>
 
-      {/* 消息总线积压（item 13）：深度曲线 + 生产/消费速率。 */}
+      {/* Message bus backlog (item 13): depth curves + produce/consume rates. */}
       <div style={{ marginTop: 24 }}>
         <BusPanel />
       </div>
 
-      {/* 存储队列（TODO v0.2 ④）：压力灯 + 水位 + 最近 flush；SQL 存储显示未启用。 */}
+      {/* Index queue (TODO v0.2 item 4): pressure light + watermark + latest flush; SQL stores show as disabled. */}
       <div style={{ marginTop: 24 }}>
         <QueueStatusCard />
       </div>

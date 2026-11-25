@@ -1,6 +1,8 @@
-// 角色搜索（管理台）：角色名 / 服务器 / 玩家 ID（不透明 account 引用）/
-// 元数据键值对 / 等级区间。职业等游戏业务概念不内建筛选（平台去硬编码
-// 裁决，item 10）：用元数据过滤表达，如 class=warrior、vip_level=6。
+// Character search (admin console): by character name / server / player ID
+// (opaque account reference) / metadata key-value pairs / level range. Game
+// business concepts such as class are not built-in filters (the platform
+// avoids hardcoding them, item 10): express them via metadata filters, e.g.
+// class=warrior, vip_level=6.
 import { useState } from 'react';
 import { Form, Input, InputNumber, Button, Table, Card, Space, Typography } from 'antd';
 import { useLang, t } from '../i18n';

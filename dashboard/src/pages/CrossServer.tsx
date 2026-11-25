@@ -1,8 +1,11 @@
-// 跨服配置中心：管理台编辑跨服协调配置（拓扑 / 参与分组 / 玩法开关 /
-// 匹配域 / 玩法类型表），保存即发布新版本（version/hash），变更按通知-
-// 拉取语义扩散。幂等保存（内容未变）不升版本、不发信号——保存结果里
-// 直接可见。类型表是舰队级声明（docs/config-center.md §2.2），任何改动
-// 都以 targets=["*"] 全局扩散。
+// Cross-server config center: the admin console edits the cross-server
+// coordination config (topology / participating groups / feature toggles /
+// match domains / crossplay type table); saving publishes a new version
+// (version/hash) and changes propagate with notify-pull semantics. An
+// idempotent save (content unchanged) neither bumps the version nor sends a
+// signal — visible directly in the save result. The type table is a
+// fleet-level declaration (docs/config-center.md §2.2); any change to it
+// propagates globally with targets=["*"].
 import { useEffect, useState, useCallback } from 'react';
 import {
   Card, Table, Button, Space, Tag, Input, Switch, Select, Modal, Form,
@@ -24,19 +27,23 @@ const emptySpec = (): CrossServerSpec => ({
   groups: [],
   features: {},
   match_domains: [],
-  // 类型表随全文发布一起扩散——服务端对 crossplay_types 变更按
-  // targets=["*"] 全局下发（舰队级声明），这里保存同样整段透传。
+  // The type table propagates together with the full config — the server
+  // delivers crossplay_types changes with targets=["*"] (fleet-level
+  // declaration); saving here likewise passes the whole section through.
   crossplay_types: [],
 });
 
-/** 类型行客户端校验镜像服务端 model.ValidateCrossServerSpec 的口径：
- * ID 与 id_prefix 全表唯一、ID 走 [a-z0-9._-] 首字符字母数字、前缀
- * 2–8 位小写字母；lifecycle 枚举交给下拉框。空值即「未填」，服务端
- * 缺省 persistent，客户端不替它做决定（往返不改动已发布内容）。 */
+/** Client-side validation for type rows mirrors the server's
+ * model.ValidateCrossServerSpec rules: ID and id_prefix are unique across the
+ * table, IDs match [a-z0-9._-] with an alphanumeric first character, prefixes
+ * are 2-8 lowercase letters; the lifecycle enum is handled by the dropdown.
+ * Empty means "not specified" — the server defaults to persistent, and the
+ * client does not decide for it (a round-trip leaves published content
+ * untouched). */
 const TYPE_ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const TYPE_PREFIX_RE = /^[a-z]{2,8}$/;
 
-/** id 列表编辑用自由输入 tags（逗号/回车分隔）。 */
+/** ID list editing via free-form input tags (separated by comma/Enter). */
 function ServerIdsInput({ value, onChange }: { value?: string[]; onChange?: (v: string[]) => void }) {
   return (
     <Select
@@ -50,9 +57,11 @@ function ServerIdsInput({ value, onChange }: { value?: string[]; onChange?: (v: 
   );
 }
 
-/** 七类玩法参考表（item 6）：与 docs/config-center.md §2.2 的七类简介
- * 同源——一句话定义 / 参与形态 / 典型配置 / 生命周期。静态术语参考，
- * 供运营填写类型表时对齐口径；不随 spec 保存。 */
+/** Reference table of seven crossplay types (item 6): same source as the
+ * seven-type overview in docs/config-center.md §2.2 — one-line definition /
+ * participation shape / typical config / lifecycle. A static terminology
+ * reference to help operators align wording when filling in the type table;
+ * not saved with the spec. */
 const SEVEN_TYPES: {
   id: string;
   name: string;
@@ -139,7 +148,7 @@ export default function CrossServer() {
       setMeta({ version: cfg.version, hash: cfg.hash, updated_at: cfg.updated_at });
       setDirty(false);
     } catch {
-      // request() 已提示错误
+      // request() has already shown the error
     } finally {
       setLoading(false);
     }
@@ -160,13 +169,13 @@ export default function CrossServer() {
         message.success(t('csPublished') + ` v${res.config.version}`);
       }
     } catch {
-      // 校验失败等错误由 request() 提示
+      // Validation and other errors are surfaced by request()
     } finally {
       setSaving(false);
     }
   };
 
-  // ── 集群 ───────────────────────────────────────────────────────────
+  // ── Clusters ───────────────────────────────────────────────────────
 
   const editCluster = (c?: CrossServerCluster) => {
     const target = c ?? { id: '', name: '', region: '', status: '', servers: [] };
@@ -190,7 +199,7 @@ export default function CrossServer() {
     setDirty(true);
   };
 
-  // ── 分组 ───────────────────────────────────────────────────────────
+  // ── Groups ─────────────────────────────────────────────────────────
 
   const editGroup = (g?: CrossServerGroup) => {
     const target = g ?? { id: '', name: '', servers: [] };
@@ -216,7 +225,7 @@ export default function CrossServer() {
     setDirty(true);
   };
 
-  // ── 匹配域 ─────────────────────────────────────────────────────────
+  // ── Match domains ──────────────────────────────────────────────────
 
   const editDomain = (d?: CrossServerMatchDomain) => {
     const target = d ?? { id: '', name: '', servers: [], params: {} };
@@ -258,7 +267,7 @@ export default function CrossServer() {
     setDirty(true);
   };
 
-  // ── 玩法开关 ───────────────────────────────────────────────────────
+  // ── Feature toggles ────────────────────────────────────────────────
 
   const toggleFeature = (key: string, on: boolean) => {
     setSpec((s) => ({ ...s, features: { ...s.features, [key]: on } }));
@@ -286,7 +295,7 @@ export default function CrossServer() {
     setDirty(true);
   };
 
-  // ── 玩法类型表 ─────────────────────────────────────────────────────
+  // ── Crossplay type table ───────────────────────────────────────────
 
   const editType = (tp?: CrossPlayType) => {
     const target = tp ?? { id: '' };
@@ -305,8 +314,10 @@ export default function CrossServer() {
   const saveType = async () => {
     const v = await typeForm.validateFields();
     const row: CrossPlayType = { id: v.id };
-    // 与服务端 omitempty 同口径：空串/关掉的开关不落段，保存往返
-    // 不会把「未声明」改写成「显式空值」（hash 才对得上、幂等才成立）。
+    // Match the server's omitempty semantics: empty strings and switched-off
+    // flags are left out of the payload, so a save round-trip does not rewrite
+    // "unspecified" into "explicitly empty" (only then does the hash match and
+    // idempotence hold).
     if (v.name) row.name = v.name;
     if (v.summary) row.summary = v.summary;
     if (v.lifecycle) row.lifecycle = v.lifecycle;
@@ -329,7 +340,7 @@ export default function CrossServer() {
     setDirty(true);
   };
 
-  /** 类型 ID 唯一性（编辑行豁免自己，与 id_prefix 同款口径）。 */
+  /** Type ID uniqueness (the row being edited is exempt from itself, same rule as id_prefix). */
   const uniqueTypeId = (_: unknown, value: string) => {
     if (!value || !TYPE_ID_RE.test(value)) return Promise.resolve();
     const clash = spec.crossplay_types.some(
@@ -338,7 +349,7 @@ export default function CrossServer() {
     return clash ? Promise.reject(new Error(t('csTypeIdTaken'))) : Promise.resolve();
   };
 
-  /** id_prefix 全表唯一（编辑行豁免自己）——前缀歧义会断日志回溯。 */
+  /** id_prefix unique across the table (the row being edited is exempt from itself) — prefix ambiguity breaks log tracing. */
   const uniqueTypePrefix = (_: unknown, value: string) => {
     if (!value) return Promise.resolve();
     if (!TYPE_PREFIX_RE.test(value)) return Promise.reject(new Error(t('csTypePrefixPattern')));
@@ -356,7 +367,7 @@ export default function CrossServer() {
       title: t('csTypeLifecycle'),
       dataIndex: 'lifecycle',
       width: 110,
-      // 服务端缺省 persistent，未声明按缺省渲染。
+      // The server defaults to persistent; render unspecified values as the default.
       render: (v: string) => (
         <Tag color={v === 'seasonal' ? 'gold' : v === 'ephemeral' ? 'purple' : 'green'}>
           {v || 'persistent'}

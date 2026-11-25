@@ -1,8 +1,10 @@
-// 玩家视角排查（item 7，排查/诊断菜单）：输入玩家账号 ID（可选带上
-// 客户端过滤条件复现推荐请求），页面展示这条管线会怎么决策——推荐
-// 冠军、匹配阶段、逐台判定（排序/命中/可入选/归因）与该账号的目录
-// 条目。后端是同一条 Recommend 管线摊开中间结果（/v1/admin/diagnose/
-// routing），本页不另写判据。
+// Player-perspective diagnosis (item 7, diagnose menu): enter a player's
+// account ID (optionally with client-side filters to reproduce the recommend
+// request) and the page shows how the pipeline would decide — the recommend
+// winner, match stage, per-server verdicts (rank / hit / eligibility /
+// attribution) and that account's directory entries. The backend is the same
+// Recommend pipeline with its intermediate results laid open
+// (/v1/admin/diagnose/routing); this page defines no criteria of its own.
 import { useState } from 'react';
 import {
   Card, Form, Input, Button, Table, Tag, Descriptions, Result, Space, Typography, Alert, Tooltip,
@@ -33,7 +35,7 @@ export default function PlayerDiagnose() {
       setCharacters(res.characters ?? []);
       setSearched(true);
     } catch {
-      // request() 已提示
+      // request() has already shown it
     } finally {
       setLoading(false);
     }

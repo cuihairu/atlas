@@ -19,9 +19,11 @@ import { setAppMessage } from './api/messageBus';
 import { useLang, antdLocale, t } from './i18n';
 import { useTheme } from './theme';
 
-// 会话守卫：进管理台前探一次管理口。401 → 跳登录页；200（已登录或该
-// 部署未启用鉴权）→ 放行。只在挂载时探测一次：页内导航不再闪屏，登出/
-// 重登会令本组件重新挂载从而复检。
+// Session guard: probe the admin endpoint once before entering the console.
+// 401 → go to the login page; 200 (already logged in, or the deployment has
+// auth disabled) → let through. Probed only once on mount: in-app navigation
+// no longer flashes, and logout/re-login remounts this component so the
+// check runs again.
 function RequireAuth() {
   const [verdict, setVerdict] = useState<'checking' | 'ok' | 'login'>('checking');
   useEffect(() => {
@@ -38,8 +40,9 @@ function RequireAuth() {
   return <Outlet />;
 }
 
-// 把 App.useApp() 的 message 实例经 holder 注入，供非组件模块（api/client.ts）
-// 使用；消除 antd 静态 message 不感知主题上下文的告警与深色档样式错位。
+// Inject the App.useApp() message instance through the holder for
+// non-component modules (api/client.ts); removes antd's warning about the
+// theme-unaware static message and the dark-mode style mismatch.
 function MessageBridge() {
   const { message } = AntApp.useApp();
   useEffect(() => {
@@ -49,7 +52,8 @@ function MessageBridge() {
   return null;
 }
 
-// 未匹配路由兜底：不再静默渲染空白内容区（曾出现在 demo 站的 /heatmap 直接访问）。
+// Fallback for unmatched routes: no longer silently renders an empty content
+// area (previously seen on the demo site when visiting /heatmap directly).
 function NotFound() {
   const navigate = useNavigate();
   return (

@@ -1,6 +1,8 @@
-// 负载时间视图（item 11）：players / load 双线，窗口分层 5m/10m/30m/1h/10h，
-// 支持全舰队 → 区域 → 单服下钻（server_id > region > fleet 优先级）。
-// 数据来自后端内存环形采样（15s 采样 / ≥10h 保留），切换窗口/范围即时重拉。
+// Load time view (item 11): players / load dual lines, window tiers
+// 5m/10m/30m/1h/10h, with fleet → region → single-server drill-down
+// (precedence: server_id > region > fleet). Data comes from the backend's
+// in-memory ring sampling (15s resolution / >=10h retention); switching the
+// window or scope refetches immediately.
 import { useEffect, useState, useCallback } from 'react';
 import { Card, Segmented, Select, Input, Empty } from 'antd';
 import { Line } from '@ant-design/charts';
@@ -17,7 +19,7 @@ export default function LoadTimeView() {
   const [regions, setRegions] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 窗口选项里的文案走 t()，切语言时由 useLang 触发重渲染重建。
+  // Window option labels go through t(); useLang triggers a re-render on language switch, rebuilding them.
   const windowOptions = [
     { label: t('win5m'), value: '5m' as SeriesWindow },
     { label: t('win10m'), value: '10m' as SeriesWindow },
@@ -48,7 +50,7 @@ export default function LoadTimeView() {
 
   useEffect(() => {
     fetch();
-    // 轻轮询：采样 15s 一格，30s 刷新跟得上又不刷屏。
+    // Light polling: samples are 15s buckets; a 30s refresh keeps up without flooding.
     const id = setInterval(fetch, 30_000);
     return () => clearInterval(id);
   }, [fetch]);

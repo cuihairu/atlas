@@ -1,10 +1,16 @@
-// 舰队级批量维护窗口：一份时段模板铺到多台服务器（POST
-// /v1/admin/maintenance-windows/batch）。三个运维语义在这里收口：
-//   - 错峰：第 i 台的窗口整体后移 i × stagger_seconds，滚动维护；
-//   - 预览：dry_run 只校验并返回计划中的窗口，不落库；
-//   - 部分成功：未知/非法服务器逐台进 failed，其余照常创建。
-// 表单值 → 请求体的拼装与结果渲染抽到这里，便于不依赖 antd 表单单测
-// （RangePicker 的取值交互在 jsdom 里不可靠，逻辑单测比 UI 单测稳）。
+// Fleet-level batch maintenance windows: one time-span template spread
+// across multiple servers (POST /v1/admin/maintenance-windows/batch). Three
+// operational semantics converge here:
+//   - stagger: the i-th server's window shifts back by i × stagger_seconds,
+//     rolling maintenance;
+//   - preview: dry_run only validates and returns the planned windows,
+//     nothing is persisted;
+//   - partial success: unknown/invalid servers each go into failed, the rest
+//     are created as usual.
+// Assembling form values into the request body, and rendering the result, is
+// extracted here so it can be unit-tested without antd forms (RangePicker
+// value interaction is unreliable in jsdom, and logic tests are steadier than
+// UI tests).
 import { Table, Tag, Alert, Typography } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import { t } from '../i18n';
@@ -19,9 +25,11 @@ export interface BatchFormValues {
 }
 
 /**
- * 表单值 → 批量请求体。服务器 ID 去空白、去空项、去重保序；缺省项与后端
- * 口径一致（announce=true / stagger=0 / dry_run=false），前端显式下发以免
- * 依赖服务端缺省。错峰取整秒，避免浮点下发。
+ * Form values → batch request body. Server IDs are trimmed, empty entries
+ * dropped, and duplicates removed while preserving order; defaults match the
+ * backend's semantics (announce=true / stagger=0 / dry_run=false), and the
+ * frontend sends them explicitly so it does not rely on server-side defaults.
+ * Stagger is rounded down to whole seconds to avoid sending floats.
  */
 export function buildBatchRequest(
   values: BatchFormValues,
@@ -46,7 +54,8 @@ export function buildBatchRequest(
   };
 }
 
-/** 调批量端点并补齐缺省字段（后端两数组恒返回，防御旧版本回退）。 */
+/** Call the batch endpoint and fill in missing fields (the backend always
+ * returns both arrays; this guards against older-version responses). */
 export async function submitBatch(
   values: BatchFormValues,
   range: [Dayjs, Dayjs],
@@ -68,7 +77,8 @@ function fmtTime(v?: string | null): string {
   return dayjs(v).format('MM-DD HH:mm');
 }
 
-/** 批量结果：成功与失败合到一张表，运营一眼看清哪台没排上。 */
+/** Batch outcome: successes and failures combined in one table so operators
+ * can see at a glance which servers were not scheduled. */
 export function BatchOutcome({
   result,
   dryRun,

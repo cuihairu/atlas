@@ -1,8 +1,10 @@
-// 服务器列表（管理台）：完整筛选条（状态/区域/类型/realm/shard/版本/
-// 平台/标记 + 服务器 ID 子串 + metadata 键值对），facets 来自总览同一份
-// fleet 聚合（item 12 裁决：不许各页各自现查现算）。筛选状态同步进
-// URL query（可分享链接）。数据走 /v1/admin/servers：比公网发现口多
-// 最近心跳 / 元数据等管理面字段（item 9）。
+// Server list (admin console): full filter bar (status/region/type/realm/
+// shard/version/platform/tag + server ID substring + metadata key-value
+// pairs), with facets from the same fleet aggregate as the overview
+// (item 12 decision: pages must not each query and compute on their own).
+// Filter state syncs into the URL query (links are shareable). Data comes
+// from /v1/admin/servers: more admin-plane fields than the public discovery
+// endpoint, e.g. last heartbeat / metadata (item 9).
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Table, Button, Space, Select, Input, Progress, Popconfirm, Card, Typography, App } from 'antd';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,7 +23,8 @@ import type { Server, AdminStats } from '../types';
 
 const STATUSES = ['online', 'maintenance', 'suspect', 'offline', 'draining', 'starting', 'disabled'];
 
-/** URL query 与筛选状态的映射：同步双向，外链可复现筛选。 */
+/** Mapping between URL query and filter state: two-way sync so external
+ * links can reproduce a filter. */
 interface Filters {
   id?: string;
   status?: string;
@@ -98,7 +101,8 @@ export default function Servers() {
     fetch();
   }, [fetch]);
 
-  // facet 选项来自 fleet 聚合（与总览同源）；无统计时退化为常见枚举。
+  // Facet options come from the fleet aggregate (same source as the overview);
+  // when stats are absent, degrade to the common enums.
   const facetOptions = (m?: Record<string, number>, fallback: string[] = []) =>
     (m && Object.keys(m).length > 0 ? Object.keys(m) : fallback)
       .sort()

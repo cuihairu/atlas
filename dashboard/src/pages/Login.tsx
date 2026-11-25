@@ -6,8 +6,9 @@ import { probeAdmin, setAdminSession } from '../api/client';
 import { t } from '../i18n';
 import { useTheme } from '../theme';
 
-// 管理台登录：后端鉴权是 Bearer API Key（按角色授权，演示账号为 viewer
-// 只读），表单里的"密码"就是该账号的密钥——通过后才落会话。
+// Admin console login: backend auth is a Bearer API Key (role-scoped; the
+// demo account is viewer, read-only). The "password" in the form is that
+// account's key — the session is stored only after it passes.
 export default function Login() {
   const navigate = useNavigate();
   const mode = useTheme();

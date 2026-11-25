@@ -134,7 +134,7 @@ const zh = {
   noTags: '暂无标记',
   confirmRemoveTag: '移除标记「{name}」？',
   tagHint: '预设标记自带文案与档位; 自定义标记默认内部, 勾选「对外」才对玩家可见。「禁止注册」会在注册/创角接口生效。',
-  // ── 路由权重（灰度放量）──
+  // ── routing weights (gradual rollout) ──
   weight: '路由权重',
   weightManage: '路由权重（灰度放量）',
   weightNeutral: '中性',
@@ -142,7 +142,7 @@ const zh = {
   weightSaved: '路由权重已保存',
   weightSave: '保存',
   weightHint: '推荐排序按有效负载 = 负载 × 100 ÷ 权重 比较；权重 200 ≈ 吸引约两倍流量（稳态）。只影响推荐元数据，不改状态 / 维护窗口 / 已有角色优先。',
-  // ── 公告与维护窗口 ──
+  // ── announcements and maintenance windows ──
   operations: '公告与维护',
   announcements: '公告',
   annCreate: '新建公告',
@@ -177,7 +177,7 @@ const zh = {
   winBatchFailed: '失败',
   winBatchOkMsg: '批量窗口创建完成',
   winBatchPartialMsg: '批量窗口部分失败',
-  // ── Admin 操作审计 ──
+  // ── admin action audit ──
   auditLog: '操作审计',
   menuAudit: '操作审计',
   auditTime: '时间',
@@ -195,7 +195,7 @@ const zh = {
   delete: '删除',
   edit: '编辑',
   refresh: '刷新',
-  // ── 跨服配置中心 ──
+  // ── cross-server configuration center ──
   crossserverConfig: '跨服配置',
   csVersion: '当前版本',
   csDirty: '未保存',
@@ -239,7 +239,7 @@ const zh = {
   csTypePrefixTaken: '该 ID 前缀已被其他类型占用',
   yes: '是',
   no: '否',
-  // ── 跨服配置：能力总览（item 6）──
+  // ── cross-server config: capability overview (item 6) ──
   csCapability: '配置能力总览',
   csHotUpdate: '热更新',
   csHotUpdateMode: '通知-拉取（信号只带版本+hash，永不推全文）',
@@ -260,7 +260,7 @@ const zh = {
   csTopologyBaselineTip: '技术边界基准：一台服务器最多归属一个集群；分组与匹配域都不得跨拓扑。',
   csGroupsConstrained: '参与分组（运营编排 · 受拓扑约束）',
   csGroupsConstrainedTip: '运营软分组：保存时校验成员必须落在同一集群内，跨拓扑成员会被明确拒绝（拓扑为准）。',
-  // ── 服务器列表：筛选条 / 时间列 / 元数据（items 5·9·12）──
+  // ── server list: filter bar / time column / metadata (items 5, 9, 12) ──
   filter: '筛选',
   type: '类型',
   realm: '大区',
@@ -275,11 +275,11 @@ const zh = {
   lastSeen: '最近心跳',
   onlineDuration: '在线时长',
   filterResultCount: '{n} 台',
-  // ── 角色搜索：玩家 ID + 元数据（items 2·3·10）──
+  // ── character search: player ID + metadata (items 2, 3, 10) ──
   accountIdSearch: '玩家 ID',
   metadataFilter: '元数据过滤',
   metadataExampleHint: '业务概念走元数据（如 class=warrior、vip_level=6）；平台不内建职业等业务字段',
-  // ── 概览：负载时间视图 + 消息总线（items 11·13）──
+  // ── overview: load-over-time view + message bus (items 11, 13) ──
   loadTimeView: '负载时间视图',
   win5m: '5 分钟',
   win10m: '10 分钟',
@@ -313,7 +313,7 @@ const zh = {
   busAlertThreshold: '积压红线',
   busAlertTip: '深度超过红线标注告警',
   eventsPerSec: '{n} 事件/秒',
-  // ── 存储队列卡（TODO v0.2 ④ dash 队列可观测）──
+  // ── storage queue card (TODO v0.2 ④ dashboard queue observability) ──
   queueStatus: '存储队列',
   queueDisabled: '存储队列未启用',
   queueDisabledDesc: '当前存储为 SQL 后端，无指令化写队列（仅内存存储启用）',
@@ -342,7 +342,7 @@ const zh = {
   flushMerged: '合并',
   flushDuration: '耗时',
   appliedByKind: '按类型应用分布',
-  // ── 玩家视角排查（item 7）──
+  // ── player-perspective diagnostics (item 7) ──
   menuDiagnose: '排查/诊断',
   playerDiagnose: '玩家视角排查',
   diagnoseInput: '账号 / 角色 ID',
@@ -366,7 +366,7 @@ const zh = {
   effectiveLoad: '有效负载',
   diagnoseTip: '与 /v1/routing/recommended 同一条管线：排序、逐维判定、归因全部摊开，不另设判据。',
   diagnoseWinner: '推荐',
-  // ── 系统配置只读页（item 8）──
+  // ── read-only system configuration page (item 8) ──
   menuHeatmap: '负载热力图',
   systemConfig: '系统配置',
   rateLimitRules: '限流规则（生效中）',

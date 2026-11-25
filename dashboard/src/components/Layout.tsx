@@ -31,7 +31,8 @@ export default function AppLayout() {
   const mode = useTheme();
   const account = getAdminAccount();
   const screens = Grid.useBreakpoint();
-  // 窄屏收紧内容内边距（antd useBreakpoint 首帧为空对象 → 按桌面 24 处理，避免闪烁）
+  // Tighten content padding on narrow screens (antd useBreakpoint starts with
+  // an empty object on first frame → treat as desktop 24 to avoid flicker)
   const contentPad = screens.md === false ? 12 : 24;
   const {
     token: { colorBgContainer, colorBorder, borderRadiusLG },
