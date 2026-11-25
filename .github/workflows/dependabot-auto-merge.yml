@@ -1,7 +1,8 @@
-# Dependabot 自动合并：仅 patch 版本升级（x.y.Z 内变更）。
-# 合并前先跑完整门禁（Go build/vet/test + dashboard 构建 + 文档站构建），
-# minor / major 升级一律留给人工评审。仓库无需配置分支保护：
-# 本 workflow 自己执行门禁后走 --auto --squash。
+# Dependabot auto-merge: patch version bumps only (changes within x.y.Z).
+# Full gates run first (Go build/vet/test + dashboard build + docs site
+# build); minor / major bumps are always left for human review. The repo
+# needs no branch protection config: this workflow runs the gates itself,
+# then merges with --auto --squash.
 name: dependabot-auto-merge
 
 on: pull_request
@@ -29,21 +30,21 @@ jobs:
             dashboard/package-lock.json
             docs/package-lock.json
 
-      # ── 门禁：Go ─────────────────────────────────────────────
+      # ── Gate: Go ─────────────────────────────────────────────
       - name: Go gates
         run: go build ./... && go vet ./... && go test ./...
 
-      # ── 门禁：Dashboard ──────────────────────────────────────
+      # ── Gate: Dashboard ──────────────────────────────────────
       - name: Dashboard build
         working-directory: dashboard
         run: npm ci && npm run build
 
-      # ── 门禁：文档站 ─────────────────────────────────────────
+      # ── Gate: Docs site ──────────────────────────────────────
       - name: Docs build
         working-directory: docs
         run: npm ci && npx vitepress build
 
-      # ── patch 升级才自动合并 ─────────────────────────────────
+      # ── Auto-merge patch bumps only ──────────────────────────
       - name: Auto-merge patch bumps only
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +58,7 @@ jobs:
           pat='^[0-9]+\.[0-9]+\.[0-9]+'
           if [[ "$from" =~ $pat && "$to" =~ $pat ]]; then
             if [[ "${from%.*}" == "${to%.*}" ]]; then
-              # major.minor 相同 → patch 升级
+              # same major.minor → patch bump
               echo "patch bump：自动合并"
               gh pr review "$PR_URL" --approve
               gh pr merge "$PR_URL" --auto --squash

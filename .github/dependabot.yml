@@ -1,7 +1,7 @@
 version: 2
 
 updates:
-  # Go 模块（根模块 + SDK）
+  # Go modules (root module + SDK)
   - package-ecosystem: gomod
     directory: /
     schedule:
@@ -16,7 +16,7 @@ updates:
       dashboard-dev:
         dependency-type: development
 
-  # 文档站（VitePress）
+  # Docs site (VitePress)
   - package-ecosystem: npm
     directory: /docs
     schedule:
@@ -25,8 +25,9 @@ updates:
       docs-dev:
         dependency-type: development
     ignore:
-      # vitepress-plugin-mermaid@2.0.17 只 peer mermaid 10||11；
-      # mermaid ^12 会让 npm ci ERESOLVE（docs.yml 挂，见 87a29c9 之后的
-      # Deploy Docs 失败）。插件支持 12 后移除此条。
+      # vitepress-plugin-mermaid@2.0.17 only peer-depends on mermaid 10||11;
+      # mermaid ^12 makes npm ci fail with ERESOLVE (docs.yml breaks; see the
+      # Deploy Docs failures after 87a29c9). Remove this entry once the
+      # plugin supports 12.
       - dependency-name: mermaid
         versions: [">=12"]

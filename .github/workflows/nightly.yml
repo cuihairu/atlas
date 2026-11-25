@@ -1,19 +1,21 @@
-# 每日构建（rolling nightly）：四类原生安装包进滚动 `nightly` release。
+# Nightly builds (rolling nightly): four kinds of native packages go into the
+# rolling `nightly` release.
 #
-# 铁律对齐仓库红线：本 workflow 只维护 prerelease 的 nightly 滚动发布，
-# 不带版本号、不打 tag、不建正式 Release。正式发版只能由维护者手动触发。
+# Iron rule, aligned with the repo red lines: this workflow only maintains the
+# prerelease rolling nightly publication — no version number, no tag, no
+# formal Release. Formal releases can only be triggered manually by a maintainer.
 #
-# 产物四件套（资产命名 atlas-nightly-<os>-<arch>.<ext>）：
-#   linux amd64/arm64 deb + rpm（nfpm 单配置，arch 映射 amd64→x86_64）
-#   windows amd64 exe zip（原生可执行文件）+ msi（WiX v3，windows runner）
-#   全部资产由 SHA256SUMS 收口。
+# The four artifacts (asset naming atlas-nightly-<os>-<arch>.<ext>):
+#   linux amd64/arm64 deb + rpm (single nfpm config, arch mapped amd64→x86_64)
+#   windows amd64 exe zip (native executable) + msi (WiX v3, windows runner)
+#   all assets are sealed off by SHA256SUMS.
 name: nightly
 
 on:
   schedule:
-    # 离峰非整点：每天 03:31 UTC（北京 11:31），避开 Actions 高峰
+    # Off-peak, off the hour: 03:31 UTC daily (11:31 Beijing), avoiding the Actions rush
     - cron: '31 3 * * *'
-  workflow_dispatch: # 手动触发必建（同时用于首轮验证）
+  workflow_dispatch: # manual trigger must exist (also used for first-round validation)
 
 permissions:
   contents: read
@@ -26,14 +28,14 @@ jobs:
   plan:
     name: Decide whether nightly is needed
     runs-on: ubuntu-latest
-    # 只在本仓库运行：fork 触发不会推本项目的发布
+    # Run only in this repo: fork triggers never publish this project's releases
     if: github.event_name == 'workflow_dispatch' || github.repository == 'cuihairu/atlas'
     outputs:
       skip: ${{ steps.stagnation.outputs.skip }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0 # 48h 判断需要完整历史
+          fetch-depth: 0 # full history is needed for the 48h check
 
       - name: Stagnation gate (48h no new commits on main -> skip)
         if: github.event_name == 'schedule'
@@ -51,8 +53,9 @@ jobs:
           fi
 
   gate:
-    # 与 ci.yml 同源的正确性门禁：nightly 资产只出自已验证的提交。
-    # 三个 store 契约套件经环境变量门控指向下方容器；未设定时套件自动 skip。
+    # Same correctness gate as ci.yml: nightly assets only ever come from
+    # verified commits. The three store contract suites are gated via env vars
+    # pointing at the containers below; unset means the suites skip automatically.
     name: Existing correctness gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -139,7 +142,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # CGO_ENABLED=0 纯 Go 交叉编译：amd64 与 arm64 均在 amd64 runner 上出。
+      # CGO_ENABLED=0 pure-Go cross-compilation: both amd64 and arm64 are built on the amd64 runner.
       - name: Build static binaries
         run: |
           mkdir -p dist stage
@@ -153,7 +156,7 @@ jobs:
           done
           ls -l dist
 
-      # 冒烟证明 linux 二进制可执行：起服务（in-memory store）再打 healthz。
+      # Smoke test proves the linux binary runs: start the service (in-memory store), then hit healthz.
       - name: Smoke amd64 binary (serve + healthcheck)
         run: |
           export ATLAS_HTTP_ADDR=127.0.0.1:18091
@@ -171,13 +174,16 @@ jobs:
           ./dist/atlas-linux-amd64 healthcheck || { cat /tmp/atlas-smoke.log; exit 1; }
           echo "healthcheck exit 0"
 
-      # nfpm 单配置文件出 deb+rpm；版本号为滚动构建序，不是发布版本号。
-      # GOTOOLCHAIN=auto 只给这一步：nfpm 新版抬高 go 门槛（v2.47=1.26.4，
-      # v2.48=1.26.4，v2.49=1.27.4），而 setup-go 按 go.mod 的 toolchain 装
-      # go1.27.3 并置 GOTOOLCHAIN=local，于是 `go install nfpm@v2.49.0` 报
-      # "requires go >= 1.27.4 (running go 1.27.3)"。不写死版本——nfpm 每次
-      # 发版都在抬门槛，钉版本等于每次必坏；auto 让 nfpm 自取所需工具链，
-      # 我们自己的 go build 仍按 go.mod 用 1.27.3。
+      # One nfpm config produces deb+rpm; the version is a rolling build
+      # sequence, not a release version number.
+      # GOTOOLCHAIN=auto is scoped to this step only: recent nfpm releases
+      # raise the Go floor (v2.47=1.26.4, v2.48=1.26.4, v2.49=1.27.4), while
+      # setup-go installs go1.27.3 per go.mod's toolchain and sets
+      # GOTOOLCHAIN=local, so `go install nfpm@v2.49.0` reports
+      # "requires go >= 1.27.4 (running go 1.27.3)". Do not pin an nfpm
+      # version — every nfpm release raises the floor, so pinning would break
+      # on every release; auto lets nfpm fetch the toolchain it needs, while
+      # our own go build still uses 1.27.3 per go.mod.
       - name: Install nfpm
         env:
           GOTOOLCHAIN: auto
@@ -206,9 +212,11 @@ jobs:
           ls -l dist
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      # 包结构自检：解包清单必须含 /usr/bin/atlas 与 /etc/atlas/atlas.env。
-      # deb 的文件清单在 data 层，用 dpkg -c 而非 control.tar 探测；
-      # rpm -qlp 带权限列，取最后一列才是路径。
+      # Package structure self-check: the unpacked manifest must contain
+      # /usr/bin/atlas and /etc/atlas/atlas.env.
+      # The deb file list lives in the data layer, probed with dpkg -c rather
+      # than control.tar; rpm -qlp includes a permissions column, so the last
+      # column is the path.
       - name: Install rpm query tool
         run: sudo apt-get install -y rpm
 
@@ -219,8 +227,10 @@ jobs:
           rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/usr/bin/atlas'
           rpm -qlp dist/atlas-nightly-linux-x86_64.rpm | awk '{print $NF}' | grep -qx '/etc/atlas/atlas.env'
 
-      # Arch 头必须与文件名一致。另一仓的 nightly 只改名不写 Arch 字段，
-      # arm64 包内部自报 x86_64；这里逐个包比对，避免同类错误静默过关。
+      # Arch headers must match the filenames. Another repo's nightly only
+      # renamed the files without writing the Arch field, so its arm64
+      # packages reported x86_64 internally; here every package is compared
+      # individually so the same mistake cannot pass silently.
       - name: Verify package arch headers
         run: |
           for pair in atlas-nightly-linux-x86_64.rpm:x86_64 \
@@ -280,8 +290,9 @@ jobs:
           Compress-Archive -Path stage\atlas.exe -DestinationPath dist\atlas-nightly-windows-amd64.zip
           Get-Item dist\atlas-nightly-windows-amd64.zip | Select-Object Name, Length
 
-      # WiX v3 由 choco 提供；装不上或构建失败时 msi 腿如实标记 BLOCKED，
-      # 不硬造——其余资产照常进 nightly，失败原因见本步日志。
+      # WiX v3 comes from choco; if the install or build fails, the msi leg is
+      # honestly marked BLOCKED and never faked — all other assets go into
+      # nightly as usual; see this step's log for the failure reason.
       - name: Install WiX Toolset v3
         shell: pwsh
         continue-on-error: true
@@ -306,9 +317,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           & "$wixbin\light.exe" -spdb -o dist\atlas-nightly-windows-amd64.msi stage\atlas.wixobj
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          # 结构自检 + 载荷断言。dark 退出 0 只证明 msi 能解析（不安装）；
-          # 空壳包同样退出 0，所以必须解包后断言 atlas.exe 真的在里面、
-          # 且字节数与源 exe 相等。否则 cab 缺失时也会静默全绿。
+          # Structural self-check + payload assertion. dark exiting 0 only
+          # proves the msi parses (it does not install); an empty shell also
+          # exits 0, so after extraction we must assert atlas.exe is really
+          # inside and its byte count matches the source exe. Otherwise a
+          # missing cab would still pass silently.
           $exeBytes  = (Get-Item stage\atlas.exe).Length
           $msiBytes  = (Get-Item dist\atlas-nightly-windows-amd64.msi).Length
           $extracted = "$env:RUNNER_TEMP\msi-extract"
@@ -382,23 +395,26 @@ jobs:
       - name: Checksums (all assets)
         run: |
           cd dist
-          # 资产表：名字 + 字节数，进 release notes
+          # Asset manifest: names + byte sizes, for the release notes
           : > ../asset-manifest.txt
           for f in *; do
             [ "$f" = SHA256SUMS ] && continue
             sz=$(stat -c %s "$f")
             sum=$(sha256sum "$f" | cut -d' ' -f1)
-            # sha256sum 的 canonical 格式是 "<hash>  <name>"（hash 在前，两空格）。
-            # 反写成 "name  hash" 时文件虽在，`sha256sum -c SHA256SUMS` 却报
-            # "no properly formatted checksum lines found"，收口形同虚设：
-            # 下游拿到资产也无法一键校验。
+            # The canonical sha256sum format is "<hash>  <name>" (hash first,
+            # two spaces). Writing it backwards as "name  hash" leaves the
+            # files in place but makes `sha256sum -c SHA256SUMS` report
+            # "no properly formatted checksum lines found", rendering the
+            # checksum seal worthless: downstream consumers could no longer
+            # verify assets in one command.
             echo "${sum}  ${f}" >> SHA256SUMS
             echo "${f} ${sz}" >> ../asset-manifest.txt
           done
-          # 生成即自证：格式错的话这里就会红，不会静默发出去。
+          # Generate and self-verify in one go: bad formatting fails here instead of shipping silently.
           sha256sum -c SHA256SUMS
           cat ../asset-manifest.txt
-          # 四类产物收口：两个 deb + 两个 rpm + 一个 exe zip 必有；msi 另记。
+          # Final closure over the four artifacts: two deb + two rpm + one exe
+          # zip are mandatory; the msi is recorded separately.
           need=(atlas-nightly-linux-amd64.deb atlas-nightly-linux-arm64.deb \
                atlas-nightly-linux-x86_64.rpm atlas-nightly-linux-aarch64.rpm \
                atlas-nightly-windows-amd64.zip)
@@ -410,8 +426,10 @@ jobs:
           fi
           cat SHA256SUMS
 
-      # 滚动发布：恒为 prerelease 的 `nightly`，每次整组替换上一版资产。
-      # 用 gh CLI 而非 release action（action 在既有 release 更新路径上反复 403）。
+      # Rolling release: always the prerelease `nightly`; every run replaces
+      # the previous asset set as a whole. Uses the gh CLI rather than a
+      # release action (the action kept hitting 403 on the
+      # update-an-existing-release path).
       - name: Rolling release to tag 'nightly'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -480,7 +498,8 @@ jobs:
         with:
           fetch-depth: 1
       - name: Version tags must have a published release
-        # nightly 滚动 tag 不计。有 tag 无 Release = 疑似误推，仍拦。
+        # The rolling nightly tag does not count. A tag without a Release =
+        # suspected mis-push, still blocked.
         run: |
           set -uo pipefail
           TAGS=$(git ls-remote --tags origin | grep -v 'refs/tags/nightly$' | awk '{print $2}' | sed 's#refs/tags/##' | grep -v '\^{}' || true)

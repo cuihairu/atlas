@@ -1,12 +1,14 @@
-# 主 CI 门禁：Go build / vet / test + 覆盖率报告。
-# Dependabot 的自动合并 workflow 会单独重跑这些门禁；本 workflow 面向所有
-# push / PR。覆盖率目标：service 与 handler 层 >80%（docs/benchmarks.md 的
-# 回归警戒线之外的另一条质量线，见 docs/security-audit.md 的范围表）。
+# Primary CI gate: Go build / vet / test + coverage reporting.
+# Dependabot's auto-merge workflow re-runs these gates on its own; this
+# workflow targets every push / PR. Coverage targets: service and handler
+# layers >80% (a second quality line beyond the regression thresholds in
+# docs/benchmarks.md; see the scope table in docs/security-audit.md).
 #
-# 三个 store 契约套件（postgres / mysql / redisstore）通过环境变量门控，
-# 指向下方 service containers —— 与本地一致：
+# The three store contract suites (postgres / mysql / redisstore) are gated
+# via env vars pointing at the service containers below — same as locally:
 #   ATLAS_TEST_DATABASE_URL / ATLAS_TEST_MYSQL_DSN / ATLAS_TEST_REDIS_URL
-# 未设置时套件自动 skip，本地 `go test ./...` 保持零依赖。
+# Unset means the suites skip automatically; local `go test ./...` stays
+# dependency-free.
 name: ci
 
 on:
@@ -75,7 +77,7 @@ jobs:
     env:
       ATLAS_TEST_DATABASE_URL: postgres://atlas:atlas@localhost:5432/atlas_test?sslmode=disable
       ATLAS_TEST_MYSQL_DSN: atlas:atlas@tcp(127.0.0.1:3306)/atlas_test
-      # 专用逻辑库（15）：套件每次 FlushDB，不与任何真实数据共存。
+      # Dedicated logical DB (15): the suite FlushDBs on every run; no real data coexists here.
       ATLAS_TEST_REDIS_URL: redis://localhost:6379/15
 
     steps:
@@ -115,9 +117,11 @@ jobs:
           version: v2.15.0
           args: --timeout=10m
 
-      # -coverpkg 让跨包执行的代码（storetest 契约套件在三个 store 包的
-      # 测试二进制里跑）如实计入覆盖；随后按块去重（保留最大计数）得到
-      # 标准格式 profile，`go tool cover` 与 Codecov 均可直接解析。
+      # -coverpkg makes cross-package executed code (the storetest contract
+      # suite runs inside the test binaries of all three store packages) count
+      # toward coverage faithfully; the block-level dedup below (keeping the
+      # max counter) yields a standard-format profile that `go tool cover` and
+      # Codecov can both parse directly.
       - name: Test with coverage
         run: |
           go test ./internal/... -coverprofile=coverage.raw -count=1 -coverpkg=./internal/...
@@ -134,7 +138,7 @@ jobs:
       - name: Coverage report
         run: |
           go tool cover -func=coverage.out | sed 's/^/  /' > coverage.txt
-          # 每包覆盖率摘要进 Actions Summary
+          # Per-package coverage summary goes into the Actions Summary
           {
             echo "### Go coverage (per package)"
             echo '```'
@@ -149,15 +153,19 @@ jobs:
           path: coverage.out
           retention-days: 7
 
-      # 覆盖率上传 Codecov —— 公共仓库免注册 tokenless 方案（无 token，
-      # 覆盖率口径由根目录 codecov.yml 驱动）。
-      # 上传失败不阻断门禁（fail_ci_if_error: false），Codecov 侧限流/故障不应挡代码合入。
+      # Upload coverage to Codecov — tokenless, registration-free scheme for
+      # public repos (no token; the coverage configuration is driven by the
+      # root codecov.yml).
+      # Upload failure does not block the gate (fail_ci_if_error: false); Codecov-side
+      # rate limiting / outages must not block code merges.
       - uses: codecov/codecov-action@v7.1.1
         with:
           files: coverage.out
-          # 受保护分支（main）强制要求 token：tokenless 上传会被 Codecov
-          # 以 "Token required because branch is protected" 拒绝（实测）。
-          # 在仓库 Secrets 配置 CODECOV_TOKEN（codecov.io 免费获取）即生效；
-          # 未配置时保持空值，行为同 tokenless（失败不阻断门禁）。
+          # Protected branches (main) force a token: tokenless uploads get
+          # rejected by Codecov with "Token required because branch is
+          # protected" (verified in practice). Configuring CODECOV_TOKEN in
+          # repo Secrets (free from codecov.io) takes effect immediately; when
+          # unset it stays empty and behaves like tokenless (failures do not
+          # block the gate).
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false

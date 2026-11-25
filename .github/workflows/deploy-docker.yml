@@ -1,24 +1,31 @@
-# 部署到自托管 docker 主机（atlas.cuihairu.site 演示环境）
+# Deploy to the self-hosted docker host (atlas.cuihairu.site demo environment)
 #
-# 与 docker-image.yml 的分工：那个工作流在 GitHub 托管 runner 上构建并推
-# GHCR，这个工作流只做"拉镜像 → 起栈 → 验活 → 失败回滚"，跑在部署机自己的
-# runner 上（标签 atlas-docker100，与其它仓库的 runner 隔离，互不排队）。
+# Division of labor vs docker-image.yml: that workflow builds and pushes to
+# GHCR on GitHub-hosted runners; this one only does "pull images -> bring up
+# the stack -> verify health -> roll back on failure", running on the deploy
+# host's own runner (label atlas-docker100, isolated from other repos'
+# runners, no queuing contention).
 #
-# 部署机不需要源码工具链：compose 文件与 migrations/ 由本工作流同步过去，
-# 镜像全部来自 GHCR。部署幂等（同 tag 重复 up -d 无副作用）。
+# The deploy host needs no source toolchain: the compose file and migrations/
+# are synced over by this workflow; all images come from GHCR. Deployment is
+# idempotent (re-running up -d with the same tag has no side effects).
 #
-# 门禁与保障：
-#   - 绿才部署：先等 ci.yml 与 docker-image.yml 对本次提交跑完且成功
-#     （失败/超时即中止，不碰部署机）；
-#   - 验活两层：部署机本机 127.0.0.1 端口 + 线上 https://atlas.cuihairu.site/；
-#   - 失败自动回滚：把 .env 滚回上一组镜像标签重新 up 并验活，再报失败
-#     （首次部署没有上一组标签，只报错）；
-#   - 部署记录：job summary 回传 run 链接、提交、容器状态与线上验证截图
-#     （artifact: deploy-screenshot）。
+# Gates and safeguards:
+#   - Deploy only when green: wait for ci.yml and docker-image.yml to finish
+#     successfully on this commit first (abort on failure/timeout; the deploy
+#     host is never touched);
+#   - Two-layer health verification: local 127.0.0.1 ports on the deploy host
+#     + the live https://atlas.cuihairu.site/;
+#   - Automatic rollback on failure: roll .env back to the previous set of
+#     image tags, re-up and re-verify, then report failure (a first deployment
+#     has no previous tags and only reports the error);
+#   - Deployment record: the job summary carries the run link, commit,
+#     container status and a live-site verification screenshot
+#     (artifact: deploy-screenshot).
 #
-# 手动触发（tag 缺省 latest = main 最新滚动）：
+# Manual trigger (tag defaults to latest = latest rolling main):
 #   gh workflow run deploy-docker.yml
-#   gh workflow run deploy-docker.yml -f tag=<短SHA> -f deploy_dir=/data/deploy/atlas
+#   gh workflow run deploy-docker.yml -f tag=<short SHA> -f deploy_dir=/data/deploy/atlas
 name: Deploy Docker
 
 on:
@@ -36,9 +43,9 @@ on:
 permissions:
   contents: read
   packages: read
-  actions: read      # 门禁要读 ci / docker-image 的运行结论
+  actions: read      # the gate reads ci / docker-image run conclusions
 
-# 同时只允许一个部署在跑：并发 up -d 会互相 --remove-orphans。
+# Only one deployment may run at a time: concurrent up -d runs would --remove-orphans each other.
 concurrency:
   group: deploy-docker
   cancel-in-progress: false
@@ -46,26 +53,31 @@ concurrency:
 jobs:
   deploy:
     runs-on: [self-hosted, atlas-docker100]
-    # job 级超时必须大于门禁（105m）+ 部署与验活（约 30m）：
-    # 曾按 45m 设，门禁没跑完整个 job 就被强杀。
+    # The job-level timeout must exceed gates (105m) + deploy and health
+    # verification (about 30m): it was once set to 45m and the whole job got
+    # force-killed before the gates finished.
     timeout-minutes: 150
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
       SHA: ${{ github.sha }}
-      # 演示密钥与 README「演示站点」一节一致（viewer 只读，数据定期重置）；
-      # 只在部署机首次生成 .env 时使用一次，已有的 .env 不覆盖。
+      # The demo key matches the README "Demo site" section (viewer read-only,
+      # data reset periodically); used only when the deploy host's .env is
+      # first generated — an existing .env is not overwritten.
       DEMO_KEY: demo-ab36cfc2cb77ac66ccd0523512efffbe
     steps:
       - name: Checkout
         timeout-minutes: 3
         uses: actions/checkout@v7.0.1
 
-      # ── 门禁：主分支绿才部署 ─────────────────────────────────────
-      # 等两条 workflow 对本次提交跑完：ci（测试）与 docker-image（镜像已推）。
-      # 还在排队/进行中就轮询；失败或超时直接中止，不碰部署机。
-      # 轮询预算取 100 分钟：docker-image 要出 amd64+arm64（QEMU 交叉构建），
-      # 本仓库实测 20–60 分钟，先前 15 分钟的预算会在镜像没出来时误判超时。
+      # ── Gate: deploy only when main is green ─────────────────────
+      # Wait for both workflows to finish on this commit: ci (tests) and
+      # docker-image (image pushed). Poll while queued/in progress; abort
+      # straight away on failure or timeout — the deploy host is not touched.
+      # The polling budget is 100 minutes: docker-image must produce
+      # amd64+arm64 (QEMU cross-build), which takes 20–60 minutes in practice
+      # for this repo; the earlier 15-minute budget would mistime out while
+      # the image was still missing.
       - name: Gate — main green (ci + image)
         timeout-minutes: 105
         run: |
@@ -73,8 +85,9 @@ jobs:
           wait_green() {
             wf="$1"
             for _ in $(seq 1 300); do
-              # 这个端点返回的是带缩进的 JSON（"status": "x" 带空格），
-              # 先压成单行再抠字段，否则紧凑模式的 grep 永远不匹配。
+              # This endpoint returns indented JSON ("status": "x" has
+              # spaces); flatten it to one line before extracting fields,
+              # otherwise the compact-mode grep never matches.
               err=/tmp/gate-err.$$
               resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" 2>"$err" || true)"
@@ -110,25 +123,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 部署目录与 .env（记录上一组标签，供失败回滚） ─────────────
+      # ── Deploy dir and .env (record previous tags for failure rollback) ──
       - name: Prepare deploy directory
         timeout-minutes: 3
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
-          # runner 可能以 root 跑（部署机上常常没装 sudo）：按可用性取提权前缀
+          # The runner may run as root (sudo is often absent on the deploy host):
+          # pick the privilege-escalation prefix by availability
           sudo_cmd=""
           if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
             sudo_cmd="sudo"
           fi
           $sudo_cmd mkdir -p "$deploy_dir"
           $sudo_cmd chown "$(id -u):$(id -g)" "$deploy_dir"
-          # compose 与迁移文件随部署走；版本跟着 checkout 的这次提交
+          # Compose and migration files travel with the deployment; content follows this checked-out commit
           cp deployments/docker/docker-compose.deploy.yml "$deploy_dir/docker-compose.yml"
           rm -rf "$deploy_dir/migrations"
           cp -r migrations "$deploy_dir/migrations"
-          # 回滚目标 = 这次部署前 .env 里的标签（首次部署为空 = 无处可回，
-          # 失败时只报错不回滚）
+          # Rollback target = the tags in .env before this deployment (empty on
+          # first deployment = nothing to roll back to; on failure only the
+          # error is reported, no rollback)
           prev_atlas=""
           prev_dash=""
           if [ -f "$deploy_dir/.env" ]; then
@@ -137,7 +152,8 @@ jobs:
           fi
           echo "PREV_ATLAS_TAG=$prev_atlas" >> "$GITHUB_ENV"
           echo "PREV_DASHBOARD_TAG=$prev_dash" >> "$GITHUB_ENV"
-          # 只留本次部署要用的变量（口令不进版本库，从宿主机既有 .env 继承）
+          # Keep only the variables this deployment needs (secrets never enter
+          # version control; inherited from the host's existing .env)
           if [ ! -f "$deploy_dir/.env" ]; then
             cat > "$deploy_dir/.env" <<EOF
           ATLAS_TAG=${{ inputs.tag }}
@@ -151,15 +167,17 @@ jobs:
           DASHBOARD_PORT=18088
           EOF
           else
-            # 已有 .env（运维可能改了端口/口令）：只滚动镜像标签
-            # （GHCR_OWNER 一并先删再写，否则每次部署都追加一行）
+            # Existing .env (ops may have changed ports/secrets): only roll the
+            # image tags (delete GHCR_OWNER first and rewrite it too, otherwise
+            # every deployment appends another line)
             sed -i '/^ATLAS_TAG=/d;/^DASHBOARD_TAG=/d;/^GHCR_OWNER=/d' "$deploy_dir/.env"
             printf 'ATLAS_TAG=%s\nDASHBOARD_TAG=%s\nGHCR_OWNER=%s\n' \
               "${{ inputs.tag }}" "${{ inputs.tag }}" "${{ github.repository_owner }}" >> "$deploy_dir/.env"
           fi
-          # 管理口鉴权密钥：首次部署生成（管理员随机、演示密钥与 README
-          # 「演示站点」一节一致且钉 viewer 只读），已存在则原样保留。
-          # 密钥只活在部署机 .env，永不进版本库。
+          # Admin API auth keys: generated on first deployment (random key for
+          # the admin; the demo key matches the README "Demo site" section and
+          # is pinned to viewer read-only). If already present, keep as is.
+          # Keys live only in the deploy host's .env, never in version control.
           if ! grep -q '^ATLAS_ADMIN_API_KEYS=' "$deploy_dir/.env"; then
             admin_key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
             {
@@ -184,20 +202,23 @@ jobs:
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
-          # up -d 对同 tag 重复执行即幂等：镜像未变则原样不动，变了才重建
+          # up -d is idempotent when repeated with the same tag: unchanged images stay as they are, only changed ones are recreated
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" \
             up -d --remove-orphans
           docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps
 
-      # ── 验活第 1 层：部署机本机端口 ─────────────────────────────
+      # ── Health verification layer 1: local ports on the deploy host ────
       - name: Wait for health (local)
         timeout-minutes: 8
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
-          # docker 自己判定健康；这里额外做端到端探测：管理台首页 +
-          # 经 nginx 同源反代的 admin 接口 + 公网发现接口。
-          # 端口逐个按名取（一次 grep 两个变量会拿错顺序，把公网口当管理台口）。
+          # Docker judges health on its own; this adds end-to-end probes:
+          # dashboard homepage + admin API through nginx's same-origin reverse
+          # proxy + the public discovery endpoint.
+          # Ports are fetched one at a time by name (a single grep over two
+          # variables returns them in the wrong order, mistaking the public
+          # port for the dashboard port).
           read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
           dash_port="$(read_port DASHBOARD_PORT)"
           dash_port="${dash_port:-18088}"
@@ -215,7 +236,7 @@ jobs:
             sleep 10
           done
           echo "--- discovery via dashboard origin (same-origin proxy) ---"
-          # 演示舰队注册/心跳要几拍，等真的有服再收工（管理台首屏才有数据）
+          # The demo fleet takes a few registration/heartbeat beats; only finish once servers actually show up (so the dashboard's first screen has data)
           for i in $(seq 1 12); do
             body="$(curl -fsS "http://127.0.0.1:$dash_port/v1/discovery/servers?limit=3" || true)"
             if printf '%s' "$body" | grep -q '"id"'; then
@@ -225,8 +246,9 @@ jobs:
             sleep 5
           done
           echo "--- admin auth via dashboard origin ---"
-          # 鉴权开启后：无密钥必须 401，演示密钥（viewer 只读）必须能读 stats
-          # —— 这一步顺带验证了 README 里演示账号确实可用。
+          # With auth enabled: no key must get 401, the demo key (viewer
+          # read-only) must be able to read stats — this step also verifies
+          # that the demo account in the README actually works.
           code="$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$dash_port/v1/admin/stats" || true)"
           demo_key="$(grep '^ATLAS_ADMIN_API_KEYS=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- | cut -d, -f2 || true)"
           if [ -n "$demo_key" ]; then
@@ -247,7 +269,7 @@ jobs:
           echo "--- crossserver config via dashboard origin (404 = 尚未发布，正常) ---"
           curl -sS -o /dev/null -w 'http %{http_code}\n' "http://127.0.0.1:$dash_port/v1/crossserver/config"
 
-      # ── 验活第 2 层：线上域名（Cloudflare 隧道） ──────────────────
+      # ── Health verification layer 2: live domain (Cloudflare tunnel) ───
       - name: Verify online (https://atlas.cuihairu.site)
         timeout-minutes: 5
         run: |
@@ -262,11 +284,14 @@ jobs:
           curl -fsS --retry 5 --retry-delay 3 --retry-all-errors \
             "https://atlas.cuihairu.site/v1/discovery/servers?limit=2" | head -c 300; echo
 
-      # ── 部署记录：线上验证截图 ───────────────────────────────────
-      # 用 zenika/alpine-chrome 的 one-shot --screenshot；chromedp/headless-shell
-      # 是给 chromedp 客户端驱动的服务形态，one-shot 模式不生效会挂满超时。
-      # 截图是记录而不是健康检查：失败不阻塞部署（continue-on-error），
-      # 并在本机先做 curl 健康探测，若 runner 环境不支持 chromium 则留存 curl 结果。
+      # ── Deployment record: live-site verification screenshot ────────────
+      # Use zenika/alpine-chrome's one-shot --screenshot; chromedp/headless-shell
+      # is a server form driven by a chromedp client — one-shot mode does not
+      # take effect there and would hang until timeout.
+      # The screenshot is a record, not a health check: failure does not block
+      # deployment (continue-on-error), and a curl health probe runs first on
+      # this host; if the runner environment cannot run chromium, the curl
+      # result is kept instead.
       - name: Screenshot the live site
         timeout-minutes: 5
         continue-on-error: true
@@ -274,13 +299,15 @@ jobs:
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
           mkdir -p "$deploy_dir/records"
-          # 容器内 chromium 以非 root 用户（uid 1000）跑：runner 以 root 建出的
-          # 目录默认 755，容器不可写——必须放开写权限，全新部署目录才有落盘位置
+          # Chromium inside the container runs as a non-root user (uid 1000):
+          # directories created by the root runner default to 755, which the
+          # container cannot write to — write permission must be opened up so a
+          # fresh deploy directory has somewhere to save the file
           chmod 777 "$deploy_dir/records"
-          # 本机先 curl 健康检查，留存 HTTP 码作为备注
+          # curl health check first on this host; keep the HTTP code as a note
           code="$(curl -fsS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' https://atlas.cuihairu.site/ || true)"
           echo "online health code: $code"
-          # 尝试 chromium 截图（若 runner 环境缺系统库会静默退出，此处 continue-on-error 已处理）
+          # Try the chromium screenshot (if the runner environment lacks system libraries it exits silently; continue-on-error already covers this)
           for i in 1 2 3; do
             if docker run --rm -v "$deploy_dir/records":/shots \
               zenika/alpine-chrome \
@@ -296,7 +323,7 @@ jobs:
             sleep 10
           done
           echo "screenshot failed after 3 attempts" >&2
-          # 不 exit 1，让部署继续；结果可能为空或旧截图，由后续 Upload 步骤决定是否有文件
+          # No exit 1 — let the deployment continue; the result may be empty or a stale screenshot, and the Upload step below decides whether any file exists
 
       - name: Upload screenshot
         if: always()
@@ -308,7 +335,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-      # ── 失败自动回滚：滚回上一组镜像标签重新 up 并验活 ────────────
+      # ── Automatic rollback on failure: restore the previous image tags, re-up and re-verify ─────
       - name: Rollback to previous images
         if: failure()
         timeout-minutes: 10
@@ -338,7 +365,8 @@ jobs:
             sleep 6
           done
           if [ "$rolled" = "1" ]; then
-            # 回滚成功：保持 job 为失败状态（部署本身已失败），但本步骤不再额外 exit 1
+            # Rollback succeeded: keep the job in a failed state (the deployment
+            # itself failed), but this step no longer adds an extra exit 1
             echo "Rollback verified successful — deployment remains failed, rollback step exits 0."
             exit 0
           fi

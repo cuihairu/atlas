@@ -1,11 +1,13 @@
-# 周期安全审计（docs/security-audit.md）：依赖漏洞扫描。
-# 与 Dependabot 互补——Dependabot 负责日常升级，本 workflow 是独立的第二道复查；
-# govulncheck 发现**被实际调用**的已知漏洞即失败，npm audit high+ 即失败。
+# Recurring security audit (docs/security-audit.md): dependency vulnerability
+# scanning. Complements Dependabot — Dependabot handles routine upgrades,
+# this workflow is an independent second line of review;
+# govulncheck fails on known vulnerabilities that are **actually called**,
+# npm audit fails on high+.
 name: security-audit
 
 on:
   schedule:
-    - cron: "37 3 * * 1" # 每周一 03:37 UTC
+    - cron: "37 3 * * 1" # Mondays at 03:37 UTC
   workflow_dispatch:
 
 permissions:

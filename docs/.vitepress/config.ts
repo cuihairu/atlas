@@ -3,8 +3,9 @@ import { withMermaid } from 'vitepress-plugin-mermaid'
 
 type MenuItem = { text: string; link?: string; items?: MenuItem[] }
 
-// 中文页面全部位于 docs/zh/，因此 zh locale 的 nav / sidebar 只写中文文案，
-// 站内链接前缀由 localize() 统一补 /zh；站外绝对地址（GitHub Releases）原样保留。
+// Chinese pages all live under docs/zh/, so the zh locale's nav / sidebar holds
+// Chinese copy only; localize() uniformly prepends /zh to in-site links;
+// external absolute URLs (GitHub Releases) are kept as is.
 function localize<T extends MenuItem>(items: T[], prefix: string): T[] {
   return items.map((item) => ({
     ...item,
@@ -127,21 +128,28 @@ export default withMermaid({
 
   base: '/atlas/',
 
-  // 内部审计 / 评审记录不进站点：这些页面装的是 file:line 级源码引用与被推翻的旧结论，
-  // 只留在仓库里给审查看，不作为公开文档发布。VitePress 默认构建 srcDir 下所有 .md，
-  // 未出现在 nav/sidebar 只影响可发现性、不影响构建范围，必须显式排除。
-  // （security-audit.md 是公开文档，nav 与 README 文档表均引用，不在此列。）
+  // Internal audit / review records stay out of the site: these pages carry
+  // file:line-level source references and superseded conclusions, kept in the
+  // repo for reviewers only and not published as public docs. VitePress
+  // builds every .md under srcDir by default; absence from nav/sidebar only
+  // affects discoverability, not the build scope, so they must be excluded
+  // explicitly.
+  // (security-audit.md is a public document referenced by the nav and the
+  // README docs table, so it is not on this list.)
   srcExclude: [
     '**/audit-*.md',
     '审计-文档一致性.md',
-    // 用 `**/review/**` 而非 `review/**`：zh 镜像下还有一页 `zh/review/`，
-    // 它的全部内容是指向英文版评审页的语言入口，英文版既已排除就一起排除。
+    // Use `**/review/**` rather than `review/**`: the zh mirror also has a
+    // `zh/review/` page, whose entire content is a language entry pointing at
+    // the English review pages — since the English version is excluded, this
+    // one is excluded too.
     '**/review/**',
   ],
 
-  // 双语站点：根语言（root）= English，中文在 docs/zh/ → /zh/。
-  // 主题依据 locales 自动生成切换器，并按 relativePath 逐页对应
-  // （docs/zh/api.md ↔ docs/api.md），无需手写语言链接。
+  // Bilingual site: root = English, Chinese under docs/zh/ → /zh/.
+  // The theme auto-generates the switcher from locales and pairs pages by
+  // relativePath (docs/zh/api.md ↔ docs/api.md), so no language links are
+  // written by hand.
   locales: {
     root: {
       label: 'English',
@@ -291,7 +299,7 @@ export default withMermaid({
   },
 
   markdown: {
-    // 代码块行号（高亮由 VitePress 内置 shiki 提供）。
+    // Line numbers for code blocks (highlighting is provided by VitePress's built-in shiki).
     lineNumbers: true,
   },
 
