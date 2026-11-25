@@ -11,9 +11,13 @@
 # idempotent (re-running up -d with the same tag has no side effects).
 #
 # Gates and safeguards:
-#   - Deploy only when green: wait for ci.yml and docker-image.yml to finish
-#     successfully on this commit first (abort on failure/timeout; the deploy
-#     host is never touched);
+#   - Deploy only when green: the gate resolves the commit the image tag
+#     actually names (explicit <sha>, or "latest" = the newest build) and
+#     waits for ci.yml + docker-image.yml to finish successfully there
+#     (abort on failure/timeout; the deploy host is never touched). A
+#     docs-only commit has no runs (paths-ignore); the gate then walks to
+#     the nearest run-bearing ancestor, which by paths-ignore semantics
+#     has identical CI-relevant content;
 #   - Two-layer health verification: local 127.0.0.1 ports on the deploy host
 #     + the live https://atlas.cuihairu.site/;
 #   - Automatic rollback on failure: roll .env back to the previous set of
@@ -60,7 +64,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
-      SHA: ${{ github.sha }}
+      TAG: ${{ inputs.tag }}
       # The demo key matches the README "Demo site" section (viewer read-only,
       # data reset periodically); used only when the deploy host's .env is
       # first generated — an existing .env is not overwritten.
@@ -71,41 +75,104 @@ jobs:
         uses: actions/checkout@v7.0.1
 
       # ── Gate: deploy only when main is green ─────────────────────
-      # Wait for both workflows to finish on this commit: ci (tests) and
-      # docker-image (image pushed). Poll while queued/in progress; abort
-      # straight away on failure or timeout — the deploy host is not touched.
-      # The polling budget is 100 minutes: docker-image must produce
-      # amd64+arm64 (QEMU cross-build), which takes 20–60 minutes in practice
-      # for this repo; the earlier 15-minute budget would mistime out while
-      # the image was still missing.
+      # Gate on the commit the deployed tag names, not the dispatch-time
+      # HEAD: an explicit -f tag=<sha> deploys an older commit, and
+      # "latest" means the newest image docker-image.yml built — for a
+      # docs-only HEAD that is an earlier commit, and the HEAD itself has
+      # no runs at all (paths-ignore), so gating on HEAD would stall the
+      # deploy for the full budget. Poll while queued/in progress; abort
+      # straight away on failure or timeout — the deploy host is not
+      # touched. The polling budget is 100 minutes: docker-image must
+      # produce amd64+arm64 (QEMU cross-build), which takes 20–60 minutes
+      # in practice for this repo; the earlier 15-minute budget would
+      # mistime out while the image was still missing.
       - name: Gate — main green (ci + image)
         timeout-minutes: 105
         run: |
           set -euo pipefail
+          # gh_api leaves curl's stderr in API_ERR when the response comes
+          # back empty: variables cannot escape command substitutions, so
+          # the error note travels through a file instead.
+          API_ERR="$(mktemp)"
+          gh_api() {
+            : > "$API_ERR"
+            curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$1" 2>"$API_ERR" || true
+          }
+          api_note() { if [ -s "$API_ERR" ]; then tr -d '\n' < "$API_ERR" | head -c 200; else echo "empty response"; fi; }
+          if [ "$TAG" = "latest" ]; then
+            # "latest" is whatever docker-image.yml built last, so gate on
+            # that run's own commit.
+            resp="$(gh_api "https://api.github.com/repos/$REPO/actions/workflows/docker-image.yml/runs?status=success&per_page=1")"
+            GATE_SHA="$(printf '%s' "$resp" | tr -d ' \n' | grep -o '"head_sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+            if [ -z "$GATE_SHA" ]; then
+              echo "no successful docker-image build found; nothing to deploy (api: $(api_note))" >&2
+              exit 1
+            fi
+            echo "tag=latest resolves to build commit $GATE_SHA"
+          else
+            resp="$(gh_api "https://api.github.com/repos/$REPO/commits/$TAG")"
+            GATE_SHA="$(printf '%s' "$resp" | tr -d ' \n' | grep -o '"sha":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+            if [ -z "$GATE_SHA" ]; then
+              echo "cannot resolve tag $TAG to a commit (api: $(api_note))" >&2
+              exit 1
+            fi
+            # The ancestor walk below is only sound for main-lineage
+            # commits: for those, "no runs" proves the push was skipped by
+            # paths-ignore, not that the code is untested. A side-branch
+            # sha can carry arbitrary untested changes, so refuse it.
+            # Extract status and behind_by as separate fields — they are
+            # not adjacent in the JSON ("ahead_by" sits in between).
+            resp="$(gh_api "https://api.github.com/repos/$REPO/compare/$GATE_SHA...main")"
+            flat="$(printf '%s' "$resp" | tr -d ' \n')"
+            cmp_status="$(printf '%s' "$flat" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+            cmp_behind="$(printf '%s' "$flat" | grep -o '"behind_by":[0-9]*' | head -1 | cut -d: -f2 || true)"
+            if [ "$cmp_status" != "identical" ] && { [ "$cmp_status" != "ahead" ] || [ "$cmp_behind" != "0" ]; }; then
+              echo "tag $TAG ($GATE_SHA) is not on the main lineage (compare: $cmp_status, behind_by=$cmp_behind); refusing to deploy" >&2
+              exit 1
+            fi
+            echo "tag=$TAG resolves to commit $GATE_SHA (main lineage)"
+          fi
+          echo "GATE_SHA=$GATE_SHA" >> "$GITHUB_ENV"
           wait_green() {
             wf="$1"
+            sha="$GATE_SHA"
             for _ in $(seq 1 300); do
               # This endpoint returns indented JSON ("status": "x" has
               # spaces); flatten it to one line before extracting fields,
               # otherwise the compact-mode grep never matches.
-              err=/tmp/gate-err.$$
-              resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" 2>"$err" || true)"
+              resp="$(gh_api "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$sha&per_page=1")"
               flat="$(printf '%s' "$resp" | tr -d ' \n')"
               status="$(printf '%s' "$flat" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
               concl="$(printf '%s' "$flat" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              total="$(printf '%s' "$flat" | grep -o '"total_count":[0-9]*' | head -1 | cut -d: -f2 || true)"
               run_url="$(printf '%s' "$flat" | grep -o '"html_url":"[^"]*actions/runs/[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
-              if [ -z "$status" ]; then
-                echo "$wf: no run for $SHA yet (api: $(tr -d '\n' < "$err" | head -c 200)), retrying..."
-              elif [ "$status" = "completed" ]; then
+              if [ "$status" = "completed" ]; then
                 if [ "$concl" = "success" ]; then
-                  echo "$wf green — $run_url"
+                  echo "$wf green at $sha — $run_url"
                   return 0
                 fi
-                echo "$wf $concl — $run_url" >&2
+                echo "$wf $concl at $sha — $run_url" >&2
                 return 1
+              elif [ -n "$status" ]; then
+                echo "$wf $status at $sha — $run_url"
+              elif [ "$total" = "0" ]; then
+                # No run record at all for this commit: its push was
+                # skipped by paths-ignore, so its CI-relevant content
+                # equals the nearest run-bearing ancestor. Walk one parent
+                # up (the main-lineage check above keeps this sound). Run
+                # records are created at push time and never appear later,
+                # so an immediate walk cannot race one into being.
+                resp="$(gh_api "https://api.github.com/repos/$REPO/commits/$sha")"
+                parent="$(printf '%s' "$resp" | tr -d ' \n' | grep -o '"parents":\[{"sha":"[^"]*"' | head -1 | cut -d'"' -f6 || true)"
+                if [ -z "$parent" ]; then
+                  echo "$wf: no run for $sha and no parent commit; cannot gate (api: $(api_note))" >&2
+                  return 1
+                fi
+                echo "$wf: no run for $sha (paths-ignore); gating on ancestor $parent"
+                sha="$parent"
+                continue
               else
-                echo "$wf $status — $run_url"
+                echo "$wf: api error polling $sha ($(api_note)), retrying..."
               fi
               sleep 20
             done
@@ -114,6 +181,7 @@ jobs:
           }
           wait_green ci.yml
           wait_green docker-image.yml
+          rm -f "$API_ERR"
 
       - name: Login GHCR
         timeout-minutes: 3
@@ -384,6 +452,7 @@ jobs:
             echo
             echo "- 部署 run：<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>"
             echo "- 提交：\`${{ github.sha }}\`"
+            echo "- 门禁 commit：\`${GATE_SHA:-<unset>}\`（镜像标签 \`${{ inputs.tag }}\` 命名的 commit）"
             echo "- 镜像标签：\`${{ inputs.tag }}\`（回滚目标：\`${PREV_ATLAS_TAG:-首次部署}\`）"
             echo "- 部署目录：\`$deploy_dir\`"
             echo "- 站点：<https://atlas.cuihairu.site/>（线上验证截图见 artifact \`deploy-screenshot\`）"
