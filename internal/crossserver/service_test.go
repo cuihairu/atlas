@@ -400,13 +400,13 @@ func registerPollServer(t *testing.T, mem *memory.Store, id string, status model
 	}
 }
 
-// TestBusSignalAddressesAffectedServers pins 按服务/分组定向投递: the bus
-// event names the server IDs affected by the change — members of the
-// changed cluster under the document before AND after the save — while
-// targets keep naming the changed structures. Offline registrations are
-// not addressed (下线即退订), a global change addresses everyone, and a
-// change that affects no live server addresses nobody (subscribers then
-// have nothing to pull).
+// TestBusSignalAddressesAffectedServers pins targeted delivery by
+// server/group: the bus event names the server IDs affected by the change
+// — members of the changed cluster under the document before AND after the
+// save — while targets keep naming the changed structures. Offline
+// registrations are not addressed (offline means unsubscribed), a global
+// change addresses everyone, and a change that affects no live server
+// addresses nobody (subscribers then have nothing to pull).
 func TestBusSignalAddressesAffectedServers(t *testing.T) {
 	adapter := httpEvent.New()
 	var mu sync.Mutex
@@ -461,7 +461,7 @@ func TestBusSignalAddressesAffectedServers(t *testing.T) {
 
 	// 3) Removing a live member still addresses it — it has to tear the
 	// feature down even though it is no longer in the document. The group
-	// follows the member out (拓扑为准: a group must stay inside a cluster,
+	// follows the member out (topology wins: a group must stay inside a cluster,
 	// so a member leaving the topology leaves the group too).
 	spec.Topology.Clusters[0].Servers = []string{"game-1002", "game-2001"}
 	spec.Groups[0].Servers = []string{"game-2001"}
@@ -478,7 +478,7 @@ func TestBusSignalAddressesAffectedServers(t *testing.T) {
 
 	// 5) Removing the last live member still addresses it (the
 	// old-membership rule), even though only offline servers remain. The
-	// group empties with the topology (same 拓扑为准 rule as step 3).
+	// group empties with the topology (same topology-wins rule as step 3).
 	spec.Topology.Clusters[0].Servers = []string{"game-1002"}
 	spec.Groups[0].Servers = nil
 	res = save(spec, "last live member removed")

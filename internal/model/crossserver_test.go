@@ -95,8 +95,9 @@ func TestValidateCrossServerSpec(t *testing.T) {
 			s.MatchDomains[0].Servers = []string{"game-1", ""}
 		}},
 		{"empty feature key", func(s *CrossServerSpec) { s.Features[""] = true }},
-		// 拓扑为准（三者关系裁决）: groups are ops sets constrained by the
-		// topology — members must sit inside ONE cluster.
+		// Topology wins (the adjudication rule for how the three relate):
+		// groups are ops sets constrained by the topology — members must sit
+		// inside ONE cluster.
 		{"group member outside every cluster", func(s *CrossServerSpec) {
 			s.Groups[0].Servers = []string{"game-1", "game-9"}
 		}},

@@ -70,7 +70,7 @@ func TestPresenceOpsNotCoalescedInOneBatch(t *testing.T) {
 }
 
 // The capture ring must reproduce the session history and presence through
-// ReplayInto — 排障回放 is how an incident is rebuilt, so presence has to
+// ReplayInto — incident replay is how an incident is rebuilt, so presence has to
 // ride the same capture path as the other writes.
 func TestPresenceSurvivesCaptureReplay(t *testing.T) {
 	s := New()

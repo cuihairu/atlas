@@ -1,6 +1,6 @@
 package memory
 
-// Instruction-queue semantics (docs/performance.md §性能设计 — 指令化调度):
+// Instruction-queue semantics (docs/performance.md §8 — command-based scheduling):
 // merge rules, per-entity ordering, idempotency, replay/dry-run, backpressure
 // and the watermark. Batch-level tests drive applyBatchN directly for
 // determinism; the public API path is exercised by the contract suite.

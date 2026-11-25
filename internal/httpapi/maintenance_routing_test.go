@@ -9,7 +9,7 @@ import (
 	"github.com/cuihairu/atlas/internal/model"
 )
 
-// TestRoutingAvoidsMaintenanceWindowedServer walks the 维护前引导 contract
+// TestRoutingAvoidsMaintenanceWindowedServer walks the pre-maintenance steering contract
 // end to end: a server inside an active maintenance window (status still
 // "online" — the monitor has not swept yet) is steered away from by
 // /v1/routing/recommended, and /v1/admin/diagnose/routing names the window

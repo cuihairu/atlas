@@ -3,8 +3,8 @@
 // Tags are configuration, not lifecycle: the health monitor never creates or
 // removes them, and a re-registering game server cannot overwrite them (the
 // register upsert deliberately skips the tags column). Preset codes cover the
-// common game-operations cases — 火热 / 爆满 / 禁止注册 / 维护中 / 新服 /
-// 推荐 — and any custom code can be added through the admin API.
+// common game-operations cases — hot / full / no-register / maintenance /
+// new / recommended — and any custom code can be added through the admin API.
 package model
 
 import (
@@ -14,18 +14,19 @@ import (
 )
 
 // TagTier is the presentation tier of a server tag. The frontend maps tiers
-// to badge styles (hot → 火爆红, new → 新服绿, …); it is deliberately a small
-// closed set so client styling stays predictable.
+// to badge styles (hot → hot red, new → new-server green, …); it is
+// deliberately a small closed set so client styling stays predictable.
 type TagTier string
 
 const (
-	// TierHot renders the badge in the "hot" style (火爆红).
+	// TierHot renders the badge in the "hot" style (hot red).
 	TierHot TagTier = "hot"
-	// TierNew renders the badge in the "new" style (新服绿).
+	// TierNew renders the badge in the "new" style (new-server green).
 	TierNew TagTier = "new"
-	// TierWarning renders the badge in the "warning" style (爆满/维护 黄).
+	// TierWarning renders the badge in the "warning" style
+	// (full/maintenance yellow).
 	TierWarning TagTier = "warning"
-	// TierInfo renders the badge in the "info" style (推荐 蓝).
+	// TierInfo renders the badge in the "info" style (recommended blue).
 	TierInfo TagTier = "info"
 	// TierNeutral renders the badge in the default style.
 	TierNeutral TagTier = "neutral"
@@ -47,12 +48,12 @@ func (t TagTier) Valid() bool {
 // Preset tag codes. These are stable machine codes: clients match on Code,
 // never on Label (labels are operator-editable display text).
 const (
-	TagHot         = "hot"         // 火热
-	TagFull        = "full"        // 爆满
-	TagNoRegister  = "no_register" // 禁止注册 — blocks character creation
-	TagMaintenance = "maintenance" // 维护中 — block or warn, per config
-	TagNew         = "new"         // 新服
-	TagRecommended = "recommended" // 推荐
+	TagHot         = "hot"         // hot (busy)
+	TagFull        = "full"        // full
+	TagNoRegister  = "no_register" // no registration — blocks character creation
+	TagMaintenance = "maintenance" // under maintenance — block or warn, per config
+	TagNew         = "new"         // new server
+	TagRecommended = "recommended" // recommended
 )
 
 // ServerTag is one operator-set marker on a server.
@@ -63,7 +64,7 @@ const (
 type ServerTag struct {
 	// Code is the stable machine identifier: [a-z0-9][a-z0-9_-]{0,31}.
 	Code string `json:"code"`
-	// Label is the display text shown next to the badge (e.g. "火热").
+	// Label is the display text shown next to the badge (e.g. "hot").
 	Label string `json:"label"`
 	// Tier selects the badge style; see TagTier.
 	Tier TagTier `json:"tier"`
@@ -158,17 +159,18 @@ func HasTag(tags []ServerTag, code string) bool {
 	return false
 }
 
-// RegistrationBlocked reports whether new-character requests (创角 / player
-// registration) must be rejected for this server, returning the API error
-// code and message to send. It returns "" when the request may proceed.
+// RegistrationBlocked reports whether new-character requests (character
+// creation / player registration) must be rejected for this server, returning
+// the API error code and message to send. It returns "" when the request may
+// proceed.
 //
-//   - 禁止注册 (no_register) tag: always blocked — REGISTRATION_FORBIDDEN.
-//   - 维护中 (maintenance): blocked via SERVER_IN_MAINTENANCE, unless
+//   - the no_register tag: always blocked — REGISTRATION_FORBIDDEN.
+//   - maintenance: blocked via SERVER_IN_MAINTENANCE, unless
 //     warnOnly is set (ATLAS_MAINTENANCE_ENFORCE=warn) in which case the
 //     request proceeds and the caller attaches a notice instead.
 //
-// Maintenance matches either the lifecycle status or the 维护中 tag, so an
-// operator can force the gate on an otherwise-online server.
+// Maintenance matches either the lifecycle status or the maintenance tag, so
+// an operator can force the gate on an otherwise-online server.
 func (s *Server) RegistrationBlocked(warnOnly bool) (code, message string) {
 	if HasTag(s.Tags, TagNoRegister) {
 		return "REGISTRATION_FORBIDDEN",
@@ -184,9 +186,9 @@ func (s *Server) RegistrationBlocked(warnOnly bool) (code, message string) {
 	return "", ""
 }
 
-// InMaintenance reports whether the 维护中 gate applies: a maintenance
-// lifecycle status or an explicit 维护中 tag (an operator can force the gate
-// on an otherwise-online server).
+// InMaintenance reports whether the maintenance gate applies: a maintenance
+// lifecycle status or an explicit maintenance tag (an operator can force the
+// gate on an otherwise-online server).
 func (s *Server) InMaintenance() bool {
 	return s.Status == StatusMaintenance || HasTag(s.Tags, TagMaintenance)
 }

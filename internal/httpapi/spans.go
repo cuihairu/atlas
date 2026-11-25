@@ -1,4 +1,4 @@
-// OpenTelemetry root spans for the REST listeners (roadmap 可观测性深化):
+// OpenTelemetry root spans for the REST listeners (roadmap observability deepening):
 // every request that survives the quiet-path filter gets one server span.
 // The span starts under a placeholder name and is renamed to the matched
 // ServeMux pattern ("GET /v1/discovery/servers/{id}") once the mux has

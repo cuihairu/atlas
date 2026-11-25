@@ -106,7 +106,7 @@ func TestRecommendWeightNeverBeatsOwnedCharacter(t *testing.T) {
 
 // TestDiagnoseExposesWeightAndEffectiveLoad: the verdict carries both the
 // operator weight and the effective load the ranking actually used, so a
-// weight-biased win explains itself on the 排查页.
+// weight-biased win explains itself on the diagnostics page.
 func TestDiagnoseExposesWeightAndEffectiveLoad(t *testing.T) {
 	mem := memory.New()
 	weightedSeed(t, mem, "boosted", "eu", 60, 0.6, 100, 200)

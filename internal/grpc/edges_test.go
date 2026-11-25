@@ -239,7 +239,7 @@ func TestDiscoveryServiceErrors(t *testing.T) {
 }
 
 // TestCreateCharacterFailurePaths pins the three pre-projection wraps: a
-// registration-check store error (Internal), a 禁止注册 verdict
+// registration-check store error (Internal), a no_register verdict
 // (PermissionDenied), a publish failure (Internal), and a read-back failure
 // after a synchronous publish (Internal).
 func TestCreateCharacterFailurePaths(t *testing.T) {

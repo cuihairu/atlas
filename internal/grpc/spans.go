@@ -1,4 +1,4 @@
-// OpenTelemetry root spans for the gRPC port (roadmap 可观测性深化): the
+// OpenTelemetry root spans for the gRPC port (roadmap observability deepening): the
 // RPC mirror of the REST span middleware — one server span per unary RPC,
 // named by the full method ("/admin.AdminService/GetStats") with the
 // rpc.* semantic conventions and the same atlas.request_id attribute the

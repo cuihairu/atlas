@@ -303,7 +303,7 @@ func TestAdminListServers_FallbackWithoutIndex(t *testing.T) {
 	}
 }
 
-// TestAdminDiagnoseRouting walks the 排查 endpoint end to end: the winner is
+// TestAdminDiagnoseRouting walks the troubleshoot endpoint end to end: the winner is
 // the owned server (tiebreak #1) and the account's characters ride along.
 func TestAdminDiagnoseRouting(t *testing.T) {
 	fx := setupFleetFixture(t)
@@ -340,7 +340,7 @@ func TestAdminDiagnoseRouting(t *testing.T) {
 		Diagnosis struct {
 			Stage    string `json:"stage"`
 			WinnerID string `json:"winner_id"`
-			// Pinned lowercase: the dashboard's 请求参数 panel reads
+			// Pinned lowercase: the dashboard's request-parameters panel reads
 			// request.region/.account_id, so capitalized wire keys would
 			// blank the whole block.
 			Request struct {

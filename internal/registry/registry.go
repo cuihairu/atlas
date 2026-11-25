@@ -74,9 +74,9 @@ type Service struct {
 	servers store.ServerStore
 	runtime store.RuntimeStore
 	logger  *slog.Logger
-	// maintenanceEnforce is the 维护中 policy for registration gating
-	// ("block" rejects 创角, "warn" allows it with a notice). See
-	// WithMaintenanceEnforce.
+	// maintenanceEnforce is the under-maintenance policy for registration
+	// gating ("block" rejects character creation, "warn" allows it with a
+	// notice). See WithMaintenanceEnforce.
 	maintenanceEnforce string
 	// metrics records registry write-path latency (register/heartbeat/
 	// unregister); nil means unobserved (tests, embedded use).
@@ -106,10 +106,10 @@ const (
 	MaintenanceEnforceWarn  = "warn"
 )
 
-// WithMaintenanceEnforce sets the 维护中 policy used by CheckRegistration:
-// "block" (default) rejects character creation on servers in maintenance,
-// "warn" lets it through so the caller can attach a notice. Any other value
-// is treated as "block" — fail closed.
+// WithMaintenanceEnforce sets the under-maintenance policy used by
+// CheckRegistration: "block" (default) rejects character creation on
+// servers in maintenance, "warn" lets it through so the caller can attach
+// a notice. Any other value is treated as "block" — fail closed.
 func (s *Service) WithMaintenanceEnforce(mode string) *Service {
 	s.maintenanceEnforce = mode
 	return s
@@ -132,8 +132,8 @@ type RegistrationVerdict struct {
 // character projections may outlive server records, so ErrNotFound yields an
 // empty (allow) verdict; any other store error propagates.
 //
-// The gate honours the 禁止注册 tag unconditionally and the 维护中 tag or
-// maintenance status per the configured enforce mode.
+// The gate honours the no-register tag unconditionally and the maintenance
+// tag or maintenance status per the configured enforce mode.
 func (s *Service) CheckRegistration(ctx context.Context, serverID string) (RegistrationVerdict, error) {
 	srv, err := s.servers.GetServer(ctx, serverID)
 	if err != nil {

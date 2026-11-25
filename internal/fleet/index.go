@@ -3,7 +3,7 @@
 // Design decree: aggregates like region / status / version counts and the
 // server-ID index are computed once, on the write path (register /
 // heartbeat / unregister / lifecycle / tags), and kept in memory. Every view
-// — the admin stats (总览), the /servers filter bar, and the admin server
+// — the admin stats (overview), the /servers filter bar, and the admin server
 // list — reads this same aggregation instead of each page re-querying and
 // re-counting on its own. Numbers agree by construction.
 //

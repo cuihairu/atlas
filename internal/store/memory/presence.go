@@ -20,7 +20,7 @@ import (
 //
 // Invariant: a character is online ⟺ it has exactly one open session.
 // Login and Logout preserve it by construction (both mutate the character row
-// and the session state under the same charMu critical section, 拍板①).
+// and the session state under the same charMu critical section, decided ①).
 
 func (s *Store) Login(ctx context.Context, accountID int64, serverID string, characterID int64, sessionID string, at time.Time) (*model.PlayerSession, error) {
 	sess := &model.PlayerSession{

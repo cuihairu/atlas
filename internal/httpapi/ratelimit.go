@@ -37,7 +37,7 @@ type RateLimiter struct {
 	maxBuckets int
 	now        func() time.Time
 
-	// 429 accounting for the admin 网关/系统配置 page: rejections counted
+	// 429 accounting for the admin gateway/system config page: rejections counted
 	// per matched rule (endpoint) and per client IP. The client map stops
 	// growing at maxClientStats entries (spoofed-XFF guard); already-tracked
 	// clients keep counting.
@@ -137,7 +137,7 @@ type RateLimitRuleView struct {
 	Burst  int     `json:"burst"`
 }
 
-// RateLimitStats is the read-only snapshot for the admin 网关/系统配置
+// RateLimitStats is the read-only snapshot for the admin gateway/system config
 // page: the parsed effective rules (not the raw env strings) plus the 429
 // hit counts. Mutation is env-config + restart only.
 type RateLimitStats struct {

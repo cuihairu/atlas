@@ -121,7 +121,7 @@ func (a *Alerter) emit(ctx context.Context, name string, count, total int, ratio
 }
 
 // ServerOfflineEvent carries one permanent registration's offline
-// transition to the alert channel (docs/lifecycle.md §3 离线告警).
+// transition to the alert channel (docs/lifecycle.md §3 offline alerting).
 type ServerOfflineEvent struct {
 	ServerID    string
 	RegKind     string

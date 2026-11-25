@@ -1,6 +1,6 @@
 package metrics
 
-// 指令写队列观测 (TODO v0.2 ④ dash 队列可观测).
+// Instruction write-queue observability (TODO v0.2 ④ dash queue observability).
 //
 // queueCollector is the same posture as storeCollector: it reads the store's
 // queue snapshot on every scrape — zero write-path overhead, no second source

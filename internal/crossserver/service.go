@@ -1,6 +1,6 @@
 // Package crossserver implements the config center for game-server
-// coordination config (跨服协调配置): hosting, versioning, pull-on-start,
-// and notify-then-pull updates.
+// coordination config (cross-server coordination config): hosting,
+// versioning, pull-on-start, and notify-then-pull updates.
 //
 // Scope boundary (docs/config-center.md §3): Atlas hosts *coordination*
 // config only — cross-server topology, participation groups, feature
@@ -23,10 +23,10 @@
 //	poll      — the server polls version/ETag itself (the third fallback,
 //	            also the effective behavior when nothing is declared).
 //
-// Signals are addressed (按服务/分组定向投递): the bus event names the
-// server IDs affected by the change — members of the changed clusters /
-// groups / match domains under the document before and after the save —
-// so a subscriber ignores signals that do not concern it. Callback
+// Signals are addressed (targeted delivery by server/group): the bus event
+// names the server IDs affected by the change — members of the changed
+// clusters / groups / match domains under the document before and after the
+// save — so a subscriber ignores signals that do not concern it. Callback
 // dispatch is per registration (every live callback declarer is called);
 // poll needs no addressing at all.
 package crossserver
@@ -450,11 +450,12 @@ type callbackPayload struct {
 }
 
 // receivers addresses a change signal to the server IDs that must act on
-// it (按服务/分组定向投递): members of every changed cluster/group/match
-// domain, under the document before the save (a server just removed still
-// has to tear the feature down) and after it (a server just added still
-// has to join). A global change ("*" in targets) addresses everyone. Only
-// registrations that are still live are named — offline/disabled servers
+// it (targeted delivery by server/group): members of every changed
+// cluster/group/match domain, under the document before the save (a server
+// just removed still has to tear the feature down) and after it (a server
+// just added still has to join). A global change ("*" in targets)
+// addresses everyone. Only registrations that are still live are named —
+// offline/disabled servers
 // unsubscribed with their registration and pull at next boot. When the
 // server list cannot be read, addressing degrades to "*" so the signal
 // over-notifies instead of silently dropping an update.
@@ -522,10 +523,11 @@ func targetMemberIndex(spec model.CrossServerSpec) map[string]map[string]bool {
 }
 
 // receivesSignals reports whether a server in this state still hears bus
-// signals: registration lifetime is subscription lifetime (下线即退订) —
-// offline and disabled are gone; starting / maintenance / drain are live
-// processes and stay addressable. Callback dispatch keeps its stricter
-// accept-traffic rule (an HTTP callback must not race a booting server).
+// signals: registration lifetime is subscription lifetime (offline means
+// unsubscribed) — offline and disabled are gone; starting / maintenance /
+// drain are live processes and stay addressable. Callback dispatch keeps
+// its stricter accept-traffic rule (an HTTP callback must not race a
+// booting server).
 func receivesSignals(status model.ServerStatus) bool {
 	return status != model.StatusOffline && status != model.StatusDisabled
 }

@@ -5,7 +5,7 @@ import "errors"
 // Sentinel errors returned across the Atlas storage and service layers.
 //
 // Handlers in internal/httpapi map these to the error codes documented in
-// docs/api.md#错误响应.
+// docs/api.md#error-responses.
 var (
 	// ErrInvalid indicates a malformed or out-of-range argument.
 	ErrInvalid = errors.New("invalid argument")

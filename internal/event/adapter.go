@@ -99,7 +99,7 @@ type Event struct {
 	ConfigVersion int      `json:"config_version,omitempty"`
 	ConfigHash    string   `json:"config_hash,omitempty"`
 	ConfigTargets []string `json:"config_targets,omitempty"`
-	// ConfigServers addresses the signal (服务/分组定向投递): the server IDs
+	// ConfigServers addresses the signal (targeted server/group delivery): the server IDs
 	// affected by this change — members (before or after the save) of every
 	// changed cluster/group/match-domain, or ["*"] for a global change.
 	// Atlas computes it while both document versions are in hand; a

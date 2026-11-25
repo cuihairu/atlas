@@ -137,17 +137,18 @@ type Config struct {
 	AlertWebhookURL string
 
 	// MaintenanceEnforce controls what happens to a new-character request
-	// (创角) aimed at a server that is in maintenance — status or 维护中 tag:
-	// "block" rejects with 403 SERVER_IN_MAINTENANCE, "warn" lets it through
-	// and attaches a Warning header. 禁止注册 tags always reject regardless
-	// of this setting.
+	// (character creation) aimed at a server that is in maintenance — status
+	// or maintenance tag: "block" rejects with 403 SERVER_IN_MAINTENANCE,
+	// "warn" lets it through and attaches a Warning header. No-register tags
+	// always reject regardless of this setting.
 	// Env: ATLAS_MAINTENANCE_ENFORCE, default "block".
 	MaintenanceEnforce string
 
 	// RoutingMaintenanceLead is the pre-maintenance steering horizon
-	// (维护前引导): a server whose maintenance window starts within this lead
-	// is excluded from routing recommendations even while still "online" —
-	// players must not land on a server about to enter maintenance. Zero
+	// (pre-maintenance guidance): a server whose maintenance window starts
+	// within this lead is excluded from routing recommendations even while
+	// still "online" — players must not land on a server about to enter
+	// maintenance. Zero
 	// falls back to the routing default (5m); active windows always block.
 	// Env: ATLAS_ROUTING_MAINTENANCE_LEAD, default 5m.
 	RoutingMaintenanceLead time.Duration
@@ -309,9 +310,10 @@ type Config struct {
 	ServersProfile string
 
 	// OTLPEndpoint enables OpenTelemetry trace export to an OTLP/HTTP
-	// receiver (docs/api.md §请求追踪): "http://host:4318" for plaintext,
-	// "https://…" for TLS. Unset keeps the no-op tracer provider — spans
-	// are non-recording and export costs nothing (roadmap 可观测性深化).
+	// receiver (docs/api.md §request tracing): "http://host:4318" for
+	// plaintext, "https://…" for TLS. Unset keeps the no-op tracer
+	// provider — spans are non-recording and export costs nothing
+	// (roadmap observability deepening).
 	// Env: ATLAS_OTLP_ENDPOINT, default "".
 	OTLPEndpoint string
 

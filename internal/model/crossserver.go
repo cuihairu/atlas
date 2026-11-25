@@ -10,30 +10,34 @@ import (
 	"time"
 )
 
-// 跨服协调配置的五段配置面（配置中心的托管内容）：拓扑（集群）、参与
-// 分组、玩法开关、匹配域、跨服玩法类型表。全部为声明式结构，按规范化
-// JSON 持久化并计算 hash。
+// The cross-server coordination config is a five-part configuration surface
+// (managed by the config center): topology (clusters), participation groups,
+// feature switches, match domains, and the crossplay type table. All are
+// declarative structures, persisted as canonical JSON and hashed.
 type (
-	// CrossServerCluster 跨服拓扑中的一个集群（一组共同参与跨服玩法的
-	// 服务器）。Servers 为 server_id 列表，允许先建集群后补成员。
+	// CrossServerCluster is a cluster in the cross-server topology (a set of
+	// servers that jointly take part in cross-server gameplay). Servers is a
+	// list of server_ids; a cluster may be created before its members are added.
 	CrossServerCluster struct {
 		ID      string   `json:"id"`
 		Name    string   `json:"name,omitempty"`
 		Region  string   `json:"region,omitempty"`
-		Status  string   `json:"status,omitempty"` // active(缺省) / disabled
+		Status  string   `json:"status,omitempty"` // active (default) / disabled
 		Servers []string `json:"servers"`
 	}
 
-	// CrossServerGroup 参与分组：按运营口径圈定的一批服务器
-	// （如「华东跨服战场第一期」），玩法开关与匹配域可引用。
+	// CrossServerGroup is a participation group: a batch of servers scoped by
+	// operations criteria (e.g. "cross-server battlefield season 1, East
+	// China"), referenced by feature switches and match domains.
 	CrossServerGroup struct {
 		ID      string   `json:"id"`
 		Name    string   `json:"name,omitempty"`
 		Servers []string `json:"servers"`
 	}
 
-	// CrossServerMatchDomain 匹配域：同一匹配池的服务器集合。
-	// Params 为游戏自定义参数（字符串值，如 mmr_range / max_team）。
+	// CrossServerMatchDomain is a match domain: the set of servers in one
+	// matchmaking pool. Params are game-defined parameters (string values, e.g.
+	// mmr_range / max_team).
 	CrossServerMatchDomain struct {
 		ID      string            `json:"id"`
 		Name    string            `json:"name,omitempty"`
@@ -41,22 +45,25 @@ type (
 		Params  map[string]string `json:"params,omitempty"`
 	}
 
-	// CrossPlayType 跨服玩法类型表（crossplay_types）的一行：一类跨服
-	// 玩法的声明式元数据（docs/config-center.md §2.2）。类型表是舰队级
-	// 声明——改动即全局变更（diff targets=["*"]）。ID 是代码标识（术语
-	// 契约的定名锚点），IDPrefix 是该类型运行时 ID 的类型前缀（§2.1
-	// 跨服 ID 体系，全表唯一），供日志/榜单按前缀 grep 回溯。
+	// CrossPlayType is one row of the crossplay type table (crossplay_types):
+	// declarative metadata for a class of cross-server gameplay
+	// (docs/config-center.md §2.2). The type table is a fleet-level
+	// declaration — any change is a global change (diff targets=["*"]). ID is
+	// the code identifier (the naming anchor of the terminology contract);
+	// IDPrefix is the type prefix for runtime IDs of this type (§2.1
+	// cross-server ID system, unique across the table), so logs/leaderboards
+	// can grep back by prefix.
 	CrossPlayType struct {
-		ID          string `json:"id"`                    // 代码标识，如 "battlefield"（[a-z0-9._-]）
-		Name        string `json:"name,omitempty"`        // 中文定名，如「跨服战场」
-		Summary     string `json:"summary,omitempty"`     // 一句话定义
-		Lifecycle   string `json:"lifecycle,omitempty"`   // persistent(缺省) / seasonal / ephemeral
-		Matchmaking bool   `json:"matchmaking,omitempty"` // 参与经 match_domains 池撮合
-		Ranking     bool   `json:"ranking,omitempty"`     // 需要排行榜数据汇聚
-		IDPrefix    string `json:"id_prefix,omitempty"`   // 运行时 ID 类型前缀（2-8 位小写字母，全表唯一）
+		ID          string `json:"id"`                    // code identifier, e.g. "battlefield" ([a-z0-9._-])
+		Name        string `json:"name,omitempty"`        // display name (Chinese in production), e.g. "Cross-Server Battlefield"
+		Summary     string `json:"summary,omitempty"`     // one-line definition
+		Lifecycle   string `json:"lifecycle,omitempty"`   // persistent (default) / seasonal / ephemeral
+		Matchmaking bool   `json:"matchmaking,omitempty"` // participates in matchmaking via match_domains pools
+		Ranking     bool   `json:"ranking,omitempty"`     // requires leaderboard data aggregation
+		IDPrefix    string `json:"id_prefix,omitempty"`   // runtime ID type prefix (2-8 lowercase letters, unique across the table)
 	}
 
-	// CrossServerSpec 跨服配置全文。
+	// CrossServerSpec is the full cross-server configuration document.
 	CrossServerSpec struct {
 		Topology       CrossServerTopology      `json:"topology"`
 		Groups         []CrossServerGroup       `json:"groups"`
@@ -65,13 +72,14 @@ type (
 		CrossPlayTypes []CrossPlayType          `json:"crossplay_types"`
 	}
 
-	// CrossServerTopology 跨服拓扑（集群列表）。
+	// CrossServerTopology is the cross-server topology (a list of clusters).
 	CrossServerTopology struct {
 		Clusters []CrossServerCluster `json:"clusters"`
 	}
 
-	// CrossServerConfig 带版本号的跨服配置快照。Version 由存储层在
-	// 每次保存时原子自增（单调递增），Hash 为 Spec 的规范化摘要。
+	// CrossServerConfig is a versioned snapshot of the cross-server config.
+	// Version is incremented atomically by the store on every save
+	// (monotonically increasing); Hash is the canonical digest of Spec.
 	CrossServerConfig struct {
 		Version   int             `json:"version"`
 		Hash      string          `json:"hash"`
@@ -80,37 +88,41 @@ type (
 	}
 )
 
-// CrossPlayType.Lifecycle 的合法取值（缺省 persistent）：常驻玩法 /
-// 赛季制（榜单与匹配池随赛季重置）/ 限时活动窗口。
+// Valid values of CrossPlayType.Lifecycle (default persistent): always-on
+// gameplay / seasonal (leaderboards and match pools reset each season) /
+// limited-time event window.
 const (
 	CrossPlayLifecyclePersistent = "persistent"
 	CrossPlayLifecycleSeasonal   = "seasonal"
 	CrossPlayLifecycleEphemeral  = "ephemeral"
 )
 
-// 七类标准跨服玩法类型的代码标识（术语契约锚点，docs/config-center.md
-// §2.2）。类型表由运营发布而非代码内置，这套常量保证文档、管理台与
-// 接入方对「类型定名」引用的是同一个词。
+// The code identifiers of the seven standard cross-server gameplay types
+// (terminology contract anchors, docs/config-center.md §2.2). The type table
+// is published by operations rather than hard-coded, so these constants
+// guarantee that the docs, the admin console and integrators all refer to the
+// same word for "the type name".
 const (
-	CrossPlayBattlefield = "battlefield" // 跨服战场 Cross-Server Battlefield（xb）
-	CrossPlayDungeon     = "dungeon"     // 跨服副本/BOSS Cross-Server Dungeon（xd）
-	CrossPlayRanking     = "ranking"     // 跨服排行榜 Cross-Server Ranking（xr）
-	CrossPlayGuildWar    = "guildwar"    // 跨服公会战/领地战 Cross-Server Guild War（xg）
-	CrossPlayTrade       = "trade"       // 跨服交易行/拍卖 Cross-Server Trade（xt）
-	CrossPlayChat        = "chat"        // 跨服聊天/社交 Cross-Server Chat（xc）
-	CrossPlayTeam        = "team"        // 跨服组队/招募 Cross-Server Team Up（xp）
+	CrossPlayBattlefield = "battlefield" // Cross-Server Battlefield (xb)
+	CrossPlayDungeon     = "dungeon"     // Cross-Server Dungeon / boss (xd)
+	CrossPlayRanking     = "ranking"     // Cross-Server Ranking (xr)
+	CrossPlayGuildWar    = "guildwar"    // Cross-Server Guild War / territory war (xg)
+	CrossPlayTrade       = "trade"       // Cross-Server Trade / auction (xt)
+	CrossPlayChat        = "chat"        // Cross-Server Chat / social (xc)
+	CrossPlayTeam        = "team"        // Cross-Server Team Up / recruiting (xp)
 )
 
-// TargetAll 是变更目标里的通配符：任何服务器都应重新拉取
-// （全局变更，如玩法开关表整体改动）。
+// TargetAll is the wildcard in a change target: every server should re-pull
+// (a global change, e.g. a wholesale edit to the feature switch table).
 const TargetAll = "*"
 
-// ETag 返回该配置的 HTTP 强校验标签（引号包裹的 hash）。
+// ETag returns the HTTP strong validator for this config (the hash in quotes).
 func (c *CrossServerConfig) ETag() string { return `"` + c.Hash + `"` }
 
-// NormalizeCrossServerSpec 把 nil 切片 / map 补成空容器。JSON 里 nil 与
-// 空数组序列化不同，不归一化则「同一份配置」可能算出两个 hash，
-// 幂等保存（内容未变则不升版本）就失效了。
+// NormalizeCrossServerSpec replaces nil slices / maps with empty containers.
+// In JSON, nil and an empty array serialize differently, so without
+// normalization "the same config" could produce two different hashes, and an
+// idempotent save (no version bump when content is unchanged) would fail.
 func NormalizeCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 	if spec.Topology.Clusters == nil {
 		spec.Topology.Clusters = []CrossServerCluster{}
@@ -138,10 +150,12 @@ func NormalizeCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 	return spec
 }
 
-// CloneCrossServerSpec 返回 spec 的深拷贝。配置文档按值存取、按前后
-// 两个版本做 diff：store 若与调用方共享底层数组，调用方之后的原地
-// 改写会连同已存的历史一起改掉（SQL store 走 JSON 序列化天然无别名，
-// 内存 store 必须显式克隆——三库契约一致）。
+// CloneCrossServerSpec returns a deep copy of spec. Config documents are
+// stored and read by value and diffed between the previous and next versions:
+// if the store shared the underlying arrays with the caller, the caller's
+// later in-place mutation would rewrite the stored history too (the SQL store
+// goes through JSON serialization and has no aliasing by nature; the memory
+// store must clone explicitly — all three stores honor the same contract).
 func CloneCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 	out := spec
 	out.Topology.Clusters = make([]CrossServerCluster, len(spec.Topology.Clusters))
@@ -161,14 +175,16 @@ func CloneCrossServerSpec(spec CrossServerSpec) CrossServerSpec {
 		d.Params = maps.Clone(d.Params)
 		out.MatchDomains[i] = d
 	}
-	// 类型表行是纯值类型（string/bool），切片克隆即完全独立。
+	// Type table rows are pure value types (string/bool), so cloning the
+	// slice makes them fully independent.
 	out.CrossPlayTypes = slices.Clone(spec.CrossPlayTypes)
 	return out
 }
 
-// EmptyCrossServerConfig 是 version=0 的空快照：配置中心还没被写过。
-// 游戏服务器启动拉取拿到它即为「暂无跨服协调配置」，可照常起服
-// （不断服），而不是把它当成拉取失败。
+// EmptyCrossServerConfig is the version=0 empty snapshot: the config center
+// has never been written to. When a game server's startup pull gets it, that
+// means "no cross-server coordination config yet" and it may start normally
+// (no service interruption), rather than treating it as a pull failure.
 func EmptyCrossServerConfig() *CrossServerConfig {
 	return &CrossServerConfig{
 		Version: 0,
@@ -177,23 +193,25 @@ func EmptyCrossServerConfig() *CrossServerConfig {
 	}
 }
 
-// HashCrossServerSpec 计算 Spec 的确定性摘要：encoding/json 对 map
-// 按键排序、struct 字段序固定，因此同一 Spec 的序列化字节稳定；
-// 取 sha256 前 16 个十六进制字符（64 bit）作版本指纹。
+// HashCrossServerSpec computes a deterministic digest of the spec:
+// encoding/json sorts map keys and struct field order is fixed, so the
+// serialized bytes of a given spec are stable. The first 16 hex characters of
+// the sha256 (64 bits) serve as the version fingerprint.
 func HashCrossServerSpec(spec CrossServerSpec) string {
 	spec = NormalizeCrossServerSpec(spec)
 	payload, err := json.Marshal(spec)
 	if err != nil {
-		// Spec 只含 string/bool/slice/map，Marshal 不可能失败；
-		// 防御性兜底：内容不变则摘要恒定。
+		// Spec contains only string/bool/slice/map, so Marshal cannot fail;
+		// this defensive fallback keeps the digest stable for unchanged content.
 		payload = []byte(fmt.Sprintf("%v", spec))
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-// ValidateCrossServerSpec 结构校验：ID 唯一、玩法开关 key 合法。
-// 不校验 server 存在性——引用的服务器可后注册（拓扑先行的规划期）。
+// ValidateCrossServerSpec performs structural validation: unique IDs and
+// valid feature-switch keys. It does not check that servers exist — a
+// referenced server may be registered later (topology-first planning phase).
 func ValidateCrossServerSpec(spec CrossServerSpec) error {
 	clusterIDs := make(map[string]bool, len(spec.Topology.Clusters))
 	for i, c := range spec.Topology.Clusters {
@@ -225,11 +243,14 @@ func ValidateCrossServerSpec(spec CrossServerSpec) error {
 		}
 	}
 
-	// 拓扑为准（三者关系裁决，docs/config-center.md §三者关系与冲突裁决）。
-	// clusters 是服务器互通的技术边界：一台服务器至多属于一个集群
-	// （重叠即拓扑错误）；参与分组是运营编排的软集合，必须完整落在
-	// 一个集群内 —— 圈进跨拓扑或拓扑外服务器直接拒绝，错误信息说明
-	// 该去哪改（先补拓扑，或把分组拆开）。
+	// Topology wins (the adjudication rule for how the three relate:
+	// docs/config-center.md §2.3). Clusters are the technical boundary for
+	// server interconnection: a server
+	// belongs to at most one cluster (overlap is a topology error). A
+	// participation group is a soft ops-orchestration set and must sit wholly
+	// inside ONE cluster — including a server from another topology or outside
+	// any topology is rejected outright, and the error explains what to fix
+	// (declare the cluster membership first, or split the group).
 	serverCluster := make(map[string]string)
 	for _, c := range spec.Topology.Clusters {
 		for _, srv := range c.Servers {

@@ -50,7 +50,7 @@ func TestRecommendAvoidsUpcomingWindowWithinLead(t *testing.T) {
 	mem := memory.New()
 	seed(t, mem, "eu-1", "eu", model.StatusOnline, 1, 0.01, 100)
 	seed(t, mem, "eu-2", "eu", model.StatusOnline, 50, 0.5, 100)
-	// 维护前引导: window opens in 2 minutes, inside the default 5m lead —
+	// Pre-maintenance steering: window opens in 2 minutes, inside the default 5m lead —
 	// eu-1 is a landing spot that dies mid-session.
 	window(t, mem, "w-eu-1", "eu-1", frozen.Add(2*time.Minute), frozen.Add(time.Hour))
 

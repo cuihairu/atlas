@@ -178,7 +178,7 @@ FROM servers WHERE 1=1`
 		args = append(args, string(f.Status))
 		n++
 	}
-	// 玩法直查 tag filter: jsonb containment — each requested code must exist
+	// gameplay direct-query tag filter: jsonb containment — each requested code must exist
 	// as a PUBLIC tag (Public=true) on the server. One containment condition
 	// per code, so multiple tags AND together; the memory store implements
 	// the same semantics over its tags index (storetest pins parity).

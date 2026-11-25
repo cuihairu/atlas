@@ -1,8 +1,8 @@
 package metrics
 
-// 指令写队列指标测试 (TODO v0.2 ④): the collector reads QueueStats at
-// scrape time — these assertions pin the atlas_store_queue_* family against
-// real queue writes (register via the queue, then scrape).
+// Instruction write-queue metric tests (TODO v0.2 ④): the collector reads
+// QueueStats at scrape time — these assertions pin the atlas_store_queue_*
+// family against real queue writes (register via the queue, then scrape).
 
 import (
 	"context"

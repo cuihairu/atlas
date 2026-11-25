@@ -1,5 +1,5 @@
 // Auth enforcement for the gRPC transport, mirroring the three REST
-// security domains (docs/api.md §认证). The Go SDK already attaches the
+// security domains (docs/api.md §Authentication). The Go SDK already attaches the
 // right credential per call — "authorization: Bearer …" for Registry and
 // Admin methods, nothing for Public — this interceptor is the server side
 // that was missing: without it the same Disable / RollbackMigration

@@ -73,7 +73,7 @@ func (s *Server) GetStats(ctx context.Context, _ *pb.GetStatsRequest) (*pb.GetSt
 	return out, nil
 }
 
-// GetLoadHeatmap mirrors GET /v1/admin/load-heatmap (服务器热力图): one row
+// GetLoadHeatmap mirrors GET /v1/admin/load-heatmap (server heatmap): one row
 // per live server, bucketed load averages over the window. The fleet index
 // and sampler are optional attachments — without them rows come back with
 // empty buckets, never an error.

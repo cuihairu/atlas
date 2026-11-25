@@ -48,11 +48,12 @@ func openTestStore(t *testing.T) *Store {
 	return New(client)
 }
 
-// TestDataLossFlushAll_HeartbeatRefills automates the「Redis 数据丢失」
+// TestDataLossFlushAll_HeartbeatRefills automates the "Redis data loss"
 // row of the failure-injection matrix (docs/performance.md §7): after
-// FLUSHALL the runtime keys are gone — 判活依据在 PG 档案与 last_seen_at
-// 年龄,不依赖 Redis 键存活 — no stale view leaks through the batched
-// read, and the next heartbeat refills that server's data only.
+// FLUSHALL the runtime keys are gone — liveness is judged from the PG
+// profile and the last_seen_at age, not from Redis key survival — no stale
+// view leaks through the batched read, and the next heartbeat refills that
+// server's data only.
 func TestDataLossFlushAll_HeartbeatRefills(t *testing.T) {
 	mr := miniredis.RunT(t)
 	st := New(redis.NewClient(&redis.Options{Addr: mr.Addr()}))
@@ -70,7 +71,7 @@ func TestDataLossFlushAll_HeartbeatRefills(t *testing.T) {
 	mr.FlushAll()
 
 	// Single-key read reports not-found; the batched read shows no stale
-	// entries (缺失即缺席 — 客户端列表不会看到残留的玩家/负载).
+	// entries (missing means absent — the client list sees no leftover players/load).
 	if _, err := st.GetRuntime(ctx, "game-1001"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("get after flushall = %v, want ErrNotFound", err)
 	}
@@ -83,7 +84,8 @@ func TestDataLossFlushAll_HeartbeatRefills(t *testing.T) {
 	}
 
 	// Heartbeat refills: a live server's next heartbeat recreates its row;
-	// a silent server stays absent (其失联结论由巡检验证,键恢复不代劳).
+	// a silent server stays absent (its lost-contact verdict is the health sweep's
+	// to make; key recovery does not supply it).
 	if err := st.RecordHeartbeat(ctx, "game-1001", hb); err != nil {
 		t.Fatalf("re-heartbeat: %v", err)
 	}

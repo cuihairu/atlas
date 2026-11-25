@@ -32,7 +32,7 @@ import (
 // shared fixtures (benchRegisterServers) are single-value on status/version
 // and would make those dimensions match the whole table.
 //
-// 分布: region 4 桶 (reg-0 = 1/4), version 3 桶 (1/3), platform 4 桶 (1/4),
+// Spread: region 4 buckets (reg-0 = 1/4), version 3 buckets (1/3), platform 4 buckets (1/4),
 // status online 80% / maintenance 10% / starting 10%, tags hot 25% /
 // hot+new 12.5%.
 func benchMixedServers(ctx context.Context, b *testing.B, s *Store, n int) {

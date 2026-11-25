@@ -6,9 +6,9 @@ import (
 )
 
 // This file implements the inverted indexes over the in-memory server and
-// character tables (docs/performance.md §性能设计 — 索引策略).
+// character tables (docs/performance.md §8 — index strategy).
 //
-// Atomicity contract (拍板①): every index mutation happens inside the SAME
+// Atomicity contract (decided ①): every index mutation happens inside the SAME
 // write-lock critical section as the data mutation it mirrors — index and
 // data can never diverge, and readers hold the matching read lock so they
 // always see a consistent (data, index) pair. Maintenance is incremental:

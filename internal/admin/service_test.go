@@ -696,7 +696,7 @@ func TestListShards_ByRealm(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Server tags (标记体系)
+// Server tags (tagging scheme)
 // ---------------------------------------------------------------------------
 
 func TestServerTagCRUD(t *testing.T) {

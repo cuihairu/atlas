@@ -15,8 +15,8 @@ import (
 	atlastracing "github.com/cuihairu/atlas/internal/tracing"
 )
 
-// PresenceView is the 角色在线查询 response: the character row, its resolved
-// presence status, and the open session (nil when offline).
+// PresenceView is the character presence query response: the character
+// row, its resolved presence status, and the open session (nil when offline).
 type PresenceView struct {
 	Character      *model.Character     `json:"character"`
 	PresenceStatus model.PresenceStatus `json:"presence_status"`
@@ -192,8 +192,8 @@ func (s *Service) GetPresence(ctx context.Context, characterID int64) (*Presence
 	return view, nil
 }
 
-// ListOnlineByServer returns the online characters on a server (某服在线名单)
-// with cursor pagination, the "某服在线名单" query.
+// ListOnlineByServer returns the online characters on a server (per-server
+// online roster) with cursor pagination, the "per-server online roster" query.
 func (s *Service) ListOnlineByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, string, error) {
 	ctx, span := atlastracing.Start(ctx, "directory.list_online_by_server")
 	defer span.End()

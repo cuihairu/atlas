@@ -111,7 +111,7 @@ func TestRegistrationBlocked(t *testing.T) {
 		t.Fatal("online server should allow registration in warn mode")
 	}
 
-	// 禁止注册 always wins, even in warn mode.
+	// The no_register tag always wins, even in warn mode.
 	s := base(func(s *Server) {
 		s.Tags = []ServerTag{{Code: TagNoRegister, Label: "禁止注册", Tier: TierWarning, Public: true}}
 	})
@@ -122,7 +122,7 @@ func TestRegistrationBlocked(t *testing.T) {
 		t.Fatal("no_register must ignore warn mode")
 	}
 
-	// 维护中 via tag: blocks by default, warns when warnOnly.
+	// Maintenance via tag: blocks by default, warns when warnOnly.
 	s = base(func(s *Server) {
 		s.Tags = []ServerTag{{Code: TagMaintenance, Label: "维护中", Tier: TierWarning, Public: true}}
 	})
@@ -133,7 +133,7 @@ func TestRegistrationBlocked(t *testing.T) {
 		t.Fatal("maintenance tag warn mode should allow")
 	}
 
-	// 维护中 via lifecycle status behaves the same.
+	// Maintenance via lifecycle status behaves the same.
 	s = base(func(s *Server) { s.Status = StatusMaintenance })
 	if code, _ := s.RegistrationBlocked(false); code != "SERVER_IN_MAINTENANCE" {
 		t.Fatalf("maintenance status block = %q", code)

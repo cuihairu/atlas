@@ -183,7 +183,7 @@ func (m *Monitor) sweep(ctx context.Context) error {
 
 	// Temporary registrations expire on their own path — separate from the
 	// status machine above and unreachable for any other class
-	// (docs/lifecycle.md §3 注册生命周期). The lease counts from the
+	// (docs/lifecycle.md §3 registration lifecycle). The lease counts from the
 	// registration time (created_at + reg_ttl_seconds), so reclaiming needs
 	// no runtime data and behaves identically on every store backend. Only
 	// an explicit RegTemporary marker enters this loop: permanent and
@@ -234,10 +234,11 @@ func (m *Monitor) expireTemporary(ctx context.Context, servers []*model.Server, 
 }
 
 // alertPermanentOffline reports a permanent registration that just left the
-// auto-managed rotation for offline (docs/lifecycle.md §3 离线告警). The
-// monitor only drives offline transitions for auto-managed statuses
+// auto-managed rotation for offline (docs/lifecycle.md §3 offline alerting).
+// The monitor only drives offline transitions for auto-managed statuses
 // (starting / online / suspect) — operator-set maintenance never reaches
-// this path, which is the 维修状态豁免 the alert contract requires.
+// this path, which is the maintenance-state exemption the alert contract
+// requires.
 func (m *Monitor) alertPermanentOffline(ctx context.Context, srv *model.Server, age time.Duration) {
 	if m.alerter == nil {
 		return

@@ -1,4 +1,4 @@
-// Request-level tracing (roadmap 可观测性深化, first slice): every request
+// Request-level tracing (roadmap observability deepening, first slice): every request
 // that reaches one of the three HTTP listeners gets a request id — taken
 // from an inbound X-Request-ID when the caller supplies one, generated
 // otherwise — echoed back on the response, stored in the request context,

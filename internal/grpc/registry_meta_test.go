@@ -16,7 +16,7 @@ import (
 // that mirror registry.RegisterRequest (the REST register body): notify
 // declaration, runtime seeding (players / started_at) and lifecycle class.
 // A dropped mapping here silently narrows the gRPC surface relative to REST,
-// which is the exact regression todo.md "gRPC RegisterRequest 子集" guarded.
+// which is the exact regression guarded by todo.md's "gRPC RegisterRequest subset" item.
 func TestRegister_GrpcMetaFields(t *testing.T) {
 	c := newTestConn(t)
 	ctx := context.Background()

@@ -11,10 +11,10 @@ import (
 )
 
 // Out-of-order character events are an accepted v0.1 tradeoff
-// (docs/sync.md §乱序处理 — eventual consistency, no event versions), but
-// retreating a field that is only ever supposed to advance is always
-// wrong: it can never be a newer value, only a stale one. These tests pin
-// the one monotonic field the projection owns.
+// (docs/sync.md §out-of-order handling — eventual consistency, no event
+// versions), but retreating a field that is only ever supposed to advance
+// is always wrong: it can never be a newer value, only a stale one. These
+// tests pin the one monotonic field the projection owns.
 func TestApplyEventCreatedReplayDoesNotRetreatLoginAt(t *testing.T) {
 	svc, mem := newTestService()
 	ctx := context.Background()

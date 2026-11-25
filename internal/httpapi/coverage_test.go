@@ -158,7 +158,7 @@ func (s *disabledSnapshotStore) QueueStats() store.QueueStats { return store.Que
 
 // TestAdminIndexQueueStatusDisabled pins the disabled-store contract: a
 // store without an instruction queue answers 503 INDEX_QUEUE_DISABLED (the
-// sentinel the dashboard keys its 未启用 state on), never an empty snapshot.
+// sentinel the dashboard keys its not-enabled state on), never an empty snapshot.
 func TestAdminIndexQueueStatusDisabled(t *testing.T) {
 	mem := memory.New()
 	h := &Handler{store: &noQueueStore{Store: mem}, logger: newQuietLogger(t)}

@@ -1,6 +1,6 @@
 // Package tracing wires the OpenTelemetry trace pipeline (roadmap
-// 可观测性深化, the span-tree slice): when ATLAS_OTLP_ENDPOINT is set,
-// root spans opened at the REST listeners and the gRPC port export over
+// observability deepening, the span-tree slice): when ATLAS_OTLP_ENDPOINT
+// is set, root spans opened at the REST listeners and the gRPC port export over
 // OTLP/HTTP to whatever receiver the deployment runs (Jaeger, Tempo, a
 // vendor collector — the protocol is the commitment, not a backend).
 // Unset stays the global no-op provider: spans are non-recording and the

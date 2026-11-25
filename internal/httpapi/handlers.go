@@ -78,22 +78,22 @@ func (h *Handler) WithFleetIndex(idx *fleet.Index) *Handler {
 }
 
 // WithRateLimiter attaches the listener rate limiter for the read-only
-// 网关/系统配置 page (TODO 系统配置): parsed effective rules plus 429 hit
+// gateway/system config page (TODO system config): parsed effective rules plus 429 hit
 // counts. Configuration itself stays env-driven — the page never mutates.
 func (h *Handler) WithRateLimiter(rl *RateLimiter) *Handler {
 	h.limiter = rl
 	return h
 }
 
-// WithTelemetry attaches the lightweight series sampler for the 概览负载
-// 时间视图 and 消息总线 panels. Without it the endpoints report empty
+// WithTelemetry attaches the lightweight series sampler for the load-over-time
+// and message-bus panels. Without it the endpoints report empty
 // series (older embedders keep the same response shape).
 func (h *Handler) WithTelemetry(s *telemetry.Sampler) *Handler {
 	h.telemetry = s
 	return h
 }
 
-// WithBusStats attaches the counting event adapter backing the 消息总线
+// WithBusStats attaches the counting event adapter backing the message-bus
 // panel's current counters.
 func (h *Handler) WithBusStats(c *event.CountingAdapter) *Handler {
 	h.bus = c
@@ -150,7 +150,7 @@ func (h *Handler) RegisterPublicRoutes(mux *http.ServeMux) {
 
 	// The strict config pull also serves the public listener: game servers
 	// with no registry gateway pull it here (docs/config-center.md §4.2/§5
-	// — 公网 :8080 / 注册 :8081). Unpublished is 404 CONFIG_NOT_FOUND,
+	// — public :8080 / register :8081). Unpublished is 404 CONFIG_NOT_FOUND,
 	// never an empty document.
 	h.registerCrossServerPull(mux)
 
@@ -177,16 +177,16 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/stats", h.handleAdminStats)
 	mux.HandleFunc("GET /v1/admin/servers", h.handleAdminListServers)
 	mux.HandleFunc("GET /v1/admin/characters/search", h.handleAdminSearchCharacters)
-	// 玩家视角排查 (TODO 排查/诊断): the routing decision walked through the
-	// same Recommend pipeline with intermediates exposed, plus the account's
+	// Player-side troubleshooting (TODO troubleshoot/diagnose): the routing decision walked
+	// through the same Recommend pipeline with intermediates exposed, plus the account's
 	// characters / directory entries.
 	mux.HandleFunc("GET /v1/admin/diagnose/routing", h.handleAdminDiagnoseRouting)
-	// 网关/系统配置只读页: parsed rate-limit rules + 429 hit counts.
+	// Read-only gateway/system config page: parsed rate-limit rules + 429 hit counts.
 	mux.HandleFunc("GET /v1/admin/rate-limits", h.handleAdminRateLimits)
-	// 负载时间视图 (概览) 与 消息总线 panels: lightweight ring-buffer series.
+	// Load-over-time view (overview) and message-bus panels: lightweight ring-buffer series.
 	mux.HandleFunc("GET /v1/admin/load-series", h.handleAdminLoadSeries)
 	mux.HandleFunc("GET /v1/admin/bus-series", h.handleAdminBusSeries)
-	// 服务器热力图: per-server load grid, one row per live server.
+	// Server heatmap: per-server load grid, one row per live server.
 	mux.HandleFunc("GET /v1/admin/load-heatmap", h.handleAdminLoadHeatmap)
 	mux.HandleFunc("POST /v1/admin/migrations", h.handleAdminCreateMigration)
 	mux.HandleFunc("GET /v1/admin/migrations", h.handleAdminListMigrations)
@@ -196,7 +196,7 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/admin/realms", h.handleAdminListRealms)
 	mux.HandleFunc("POST /v1/admin/shards", h.handleAdminCreateShard)
 	mux.HandleFunc("GET /v1/admin/shards", h.handleAdminListShards)
-	// Server tags (标记体系): GET shows the full list including internal
+	// Server tags (tagging system): GET shows the full list including internal
 	// tags; POST upserts one tag by code; DELETE removes one by code.
 	mux.HandleFunc("GET /v1/admin/servers/{id}/tags", h.handleAdminGetServerTags)
 	mux.HandleFunc("POST /v1/admin/servers/{id}/tags", h.handleAdminAddServerTag)
@@ -215,7 +215,7 @@ func (h *Handler) RegisterAdminRoutes(mux *http.ServeMux) {
 	// single versioned config document.
 	mux.HandleFunc("GET /v1/admin/crossserver/config", h.handleAdminGetCrossServerConfig)
 	mux.HandleFunc("PUT /v1/admin/crossserver/config", h.handleAdminUpdateCrossServerConfig)
-	// Instruction queue status (TODO v0.2 ④ dash 队列可观测): memory store
+	// Instruction queue status (TODO v0.2 ④ dash queue observability): memory store
 	// exposes queue pressure / watermark / flush stats; SQL stores return
 	// 503 INDEX_QUEUE_DISABLED.
 	mux.HandleFunc("GET /v1/admin/indexqueue/status", h.handleAdminIndexQueueStatus)
@@ -564,7 +564,7 @@ func (h *Handler) handleCreateCharacter(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Registration gating (server tags): 禁止注册 always rejects; 维护中
+	// Registration gating (server tags): no_register always rejects; maintenance
 	// rejects or warns per ATLAS_MAINTENANCE_ENFORCE. Checked before
 	// enqueueing so async adapters never accept a gated request.
 	verdict, err := h.registry.CheckRegistration(r.Context(), req.ServerID)
@@ -740,7 +740,7 @@ func (h *Handler) handleListCharactersByServer(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleGetCharacterPresence answers 角色在线查询
+// handleGetCharacterPresence answers character online presence query
 // (PP-3, docs/presence.md §4): GET /v1/directory/characters/{character_id}/presence.
 func (h *Handler) handleGetCharacterPresence(w http.ResponseWriter, r *http.Request) {
 	charID, err := strconv.ParseInt(r.PathValue("character_id"), 10, 64)
@@ -761,7 +761,7 @@ func (h *Handler) handleGetCharacterPresence(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, view)
 }
 
-// handleListOnlineByServer answers 某服在线名单与计数
+// handleListOnlineByServer answers one server's online roster and count
 // (PP-3, docs/presence.md §4): GET /v1/directory/servers/{id}/presence.
 func (h *Handler) handleListOnlineByServer(w http.ResponseWriter, r *http.Request) {
 	serverID := r.PathValue("id")
@@ -1031,7 +1031,7 @@ func (h *Handler) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
-// handleAdminDiagnoseRouting is the 玩家视角排查 entry (排查/诊断): given an
+// handleAdminDiagnoseRouting is the player-side troubleshooting entry (troubleshoot/diagnose): given an
 // account (and optional client filters mirroring the recommend request), it
 // returns the routing walkthrough — same pipeline as /v1/routing/recommended
 // with the intermediates exposed — plus the account's characters / directory
@@ -1098,7 +1098,7 @@ func (h *Handler) handleAdminRateLimits(w http.ResponseWriter, r *http.Request) 
 }
 
 // parseSeriesWindow maps the chart window tiers (5m/10m/30m/1h/10h) shared
-// by the 负载时间视图 and 消息总线 panels. Empty defaults to 1h.
+// by the load-over-time and message-bus panels. Empty defaults to 1h.
 func parseSeriesWindow(raw string) (time.Duration, bool) {
 	switch raw {
 	case "", "1h":
@@ -1122,7 +1122,7 @@ type loadPoint struct {
 	Load    float64   `json:"load"`
 }
 
-// handleAdminLoadSeries serves the 概览负载时间视图: players / load series
+// handleAdminLoadSeries serves the overview load-over-time view: players / load series
 // for the whole fleet, one region, or one server (drill-down), over the
 // shared window tiers. Scope resolution: server_id > region > fleet.
 func (h *Handler) handleAdminLoadSeries(w http.ResponseWriter, r *http.Request) {
@@ -1161,10 +1161,10 @@ func (h *Handler) handleAdminLoadSeries(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// handleAdminLoadHeatmap serves the 服务器热力图: one grid row per live
+// handleAdminLoadHeatmap serves the server heatmap: one grid row per live
 // server — the current record (same fleet index snapshot the admin lists
 // read) joined with its bucketed load history from the same rings the
-// 负载时间视图 samples. window=1h (default) → 12 buckets of 5m, 24h →
+// load-over-time view samples. window=1h (default) → 12 buckets of 5m, 24h →
 // 24 buckets of 1h. Buckets carry a sample count so the client can render
 // "no data" (sampler restart, server registered mid-window) as its own
 // state instead of mistaking it for zero load.
@@ -1197,7 +1197,7 @@ func (h *Handler) handleAdminLoadHeatmap(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// handleAdminBusSeries serves the 消息总线 panel: per topic the backlog
+// handleAdminBusSeries serves the message-bus panel: per topic the backlog
 // depth curve plus produce / consume rates computed from the cumulative
 // counters over the window. Current totals come from the counting adapter.
 func (h *Handler) handleAdminBusSeries(w http.ResponseWriter, r *http.Request) {
@@ -1380,7 +1380,7 @@ func (h *Handler) handleAdminSearchCharacters(w http.ResponseWriter, r *http.Req
 		Cursor:        q.Get("cursor"),
 	}
 
-	// 玩家 ID 搜索: the opaque account reference. class_id is no longer a
+	// Player ID search: the opaque account reference. class_id is no longer a
 	// built-in parameter (platform de-hardening — filter via
 	// metadata_key=class instead).
 	if acctStr := q.Get("account_id"); acctStr != "" {
@@ -1602,10 +1602,10 @@ func (h *Handler) handleAdminListShards(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// ── Server tags (标记体系) ──────────────────────────────────────
+// ── Server tags (tagging system) ────────────────────────────────
 
-// handleAdminSetServerWeight sets the operator routing weight (灰度放量
-// knob; 0 clears back to neutral). Weight is admin-owned configuration like
+// handleAdminSetServerWeight sets the operator routing weight (the gradual
+// rollout knob; 0 clears back to neutral). Weight is admin-owned configuration like
 // tags: register and heartbeat never touch it.
 func (h *Handler) handleAdminSetServerWeight(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

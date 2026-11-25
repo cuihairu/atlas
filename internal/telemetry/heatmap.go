@@ -1,6 +1,7 @@
-// Heatmap aggregation (TODO 服务器热力图): turns the per-server load series
+// Heatmap aggregation (TODO server heatmap): turns the per-server load series
 // into the bucketed averages the dashboard heatmap colors. Everything is
-// derived from the same rings the 负载时间视图 reads — one sampler, one truth.
+// derived from the same rings the load-over-time view reads — one sampler,
+// one truth.
 package telemetry
 
 import (
@@ -105,8 +106,8 @@ func BucketizePair(load, players []Point, window time.Duration, bucketCount int,
 
 // BuildServerHeatmap joins live server records with their per-server series
 // (names "load.server.<id>.load" / "load.server.<id>.players", the same
-// rings the 负载时间视图 serves). series may be nil for embedders without a
-// sampler: rows still carry the live record with empty buckets. Rows sort
+// rings the load-over-time view serves). series may be nil for embedders
+// without a sampler: rows still carry the live record with empty buckets. Rows sort
 // by region then server id so the grid is stable across refreshes.
 func BuildServerHeatmap(servers []*model.Server, series func(name string, window time.Duration) []Point, window time.Duration, bucketCount int, now time.Time) []ServerHeatmap {
 	out := make([]ServerHeatmap, 0, len(servers))

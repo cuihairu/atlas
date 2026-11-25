@@ -303,7 +303,7 @@ type characterPresence struct {
 	} `json:"character"`
 }
 
-// 角色在线查询: GET /v1/directory/characters/{character_id}/presence
+// Character online presence query: GET /v1/directory/characters/{character_id}/presence
 func TestPresenceCharacterQuery(t *testing.T) {
 	ts, _ := setupTestServer(t)
 	defer ts.Close()
@@ -364,7 +364,7 @@ func TestPresenceCharacterQuery(t *testing.T) {
 	}
 }
 
-// 某服在线名单与计数: GET /v1/directory/servers/{id}/presence
+// One server's online roster and count: GET /v1/directory/servers/{id}/presence
 func TestPresenceServerRoster(t *testing.T) {
 	ts, _ := setupTestServer(t)
 	defer ts.Close()

@@ -22,7 +22,7 @@ func (s *Server) CreateCharacter(ctx context.Context, req *pb.CreateCharacterReq
 	}
 
 	// Registration gating (server tags), mirroring the REST handler:
-	// 禁止注册 always rejects; 维护中 follows ATLAS_MAINTENANCE_ENFORCE.
+	// no_register always rejects; the maintenance tag follows ATLAS_MAINTENANCE_ENFORCE.
 	verdict, err := s.registry.CheckRegistration(ctx, req.ServerId)
 	if err != nil {
 		return nil, statusErr(err)

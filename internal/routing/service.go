@@ -23,7 +23,7 @@ const (
 )
 
 // DefaultPreMaintenanceLead is how far ahead of a maintenance window start
-// recommendations stop steering players to that server (维护前引导): the
+// recommendations stop steering players to that server (pre-maintenance steering): the
 // server is still "online" — the health monitor only flips it at start_at —
 // but landing there means the session gets dropped minutes into play.
 const DefaultPreMaintenanceLead = 5 * time.Minute
@@ -49,7 +49,7 @@ type Service struct {
 	runtime    store.RuntimeStore
 	characters store.CharacterStore
 	// windows supplies maintenance windows; a server with an active or
-	// imminent window is excluded from recommendations (安全约束). nil
+	// imminent window is excluded from recommendations (safety constraint). nil
 	// means window awareness is off — only used by tests, never in prod.
 	windows store.MaintenanceWindowStore
 
@@ -104,7 +104,7 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 		req.Status = model.StatusOnline
 	}
 
-	// 维护前引导 (TODO v0.2+ candidate): servers with an active maintenance
+	// Pre-maintenance steering (TODO v0.2+ candidate): servers with an active maintenance
 	// window — or one starting within the lead — are not safe landing spots,
 	// no matter how the rest of the request filters look. Like status, the
 	// window exclusion applies to the fallback pass too: recommending a
@@ -144,14 +144,14 @@ func (s *Service) Recommend(ctx context.Context, req Request) (*model.Server, st
 	return winner, s.reasonFor(candidates, winner, owned, strict), nil
 }
 
-// ── 玩家视角排查 (管理台「排查/诊断」) ────────────────────────────────
+// ── Player-perspective troubleshooting (admin console "Troubleshooting/Diagnostics") ───
 //
 // Diagnose runs the exact Recommend pipeline with every intermediate result
 // exposed: which servers the strict filters kept, whether the fallback pass
 // took over, per-server eligibility for a login right now, the ranking, and
 // the winner's reason. It calls the same listMatching predicate, the same
 // runtime merge, the same ownedServers tiebreak, the same sortCandidates and
-// reasonFor — 摊开中间结果, never a second criteria set (the 排查页 decree).
+// reasonFor — intermediate results laid bare, never a second criteria set (the diagnostics-page decree).
 
 // Diagnosis is the full walkthrough of one recommendation request.
 type Diagnosis struct {
@@ -519,7 +519,7 @@ const NeutralServerWeight = 100
 // effectiveLoad maps a server's real load through its operator weight:
 // load × 100 / weight. Weight 100 (and unset 0) are neutral; weight 200
 // halves the perceived load so the server attracts roughly twice as much
-// traffic in steady state (灰度放量 knob), weight 50 doubles it. The real
+// traffic in steady state (gradual-rollout knob), weight 50 doubles it. The real
 // load stays the safety input everywhere else — only this ranking
 // comparison is weight-adjusted.
 func effectiveLoad(s *model.Server) float64 {

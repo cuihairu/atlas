@@ -3,7 +3,7 @@
 // It is safe for concurrent use. This implementation requires no external
 // dependencies and is useful for testing and development.
 //
-// Concurrency shape (docs/performance.md §性能设计): three lock domains —
+// Concurrency shape (docs/performance.md §3): three lock domains —
 //
 //   - s.mu:      servers map + the serverIndex (region/realm/shard/version/
 //     platform/status/public-tags inverted indexes)
@@ -58,7 +58,7 @@ type Store struct {
 	// index (characterID → active session_id) and the per-character history
 	// (characterID → session_ids, oldest first) live beside the character
 	// rows under charMu, so a login/logout flips presence and session state
-	// in ONE critical section (拍板①).
+	// in ONE critical section (decided ①).
 	sessions       map[string]*model.PlayerSession
 	activeSession  map[int64]string
 	sessionsByChar map[int64][]string
@@ -237,7 +237,7 @@ func (s *Store) UpdateServerStatusIf(ctx context.Context, id string, fromStatus,
 func (s *Store) UpdateServerTags(ctx context.Context, id string, tags []model.ServerTag) error {
 	// Replace, never mutate in place: readers hold shallow copies of the
 	// struct and would otherwise race on the shared backing array. The
-	// copy is made outside the queue's critical section (锁外构造).
+	// copy is made outside the queue's critical section (built outside the lock).
 	var cp []model.ServerTag
 	if len(tags) > 0 {
 		cp = make([]model.ServerTag, len(tags))
@@ -284,7 +284,7 @@ func (s *Store) applyRegisterServer(ins *instruction) error {
 	if existing, ok := s.servers[srv.ID]; ok {
 		// Idempotent update: overwrite mutable fields. Index maintenance is
 		// remove(old projection) + add(new projection) — O(1), same
-		// critical section as the data (拍板①/②).
+		// critical section as the data (decided ①/②).
 		old := projectServer(existing)
 		existing.Name = srv.Name
 		existing.Type = srv.Type
@@ -621,7 +621,7 @@ func (s *Store) applyDeleteCharacter(key string) error {
 // ---------------------------------------------------------------------------
 
 func (s *Store) RecordHeartbeat(ctx context.Context, id string, hb model.Heartbeat) error {
-	// Build the runtime snapshot outside any lock (锁外构造); the applier
+	// Build the runtime snapshot outside any lock (built outside the lock); the applier
 	// only assigns it into the map.
 	rt := model.Runtime{
 		Status:     hb.Status,
@@ -946,7 +946,7 @@ func matchServer(srv *model.Server, f store.ServerFilter) bool {
 	if f.Status != "" && srv.Status != f.Status {
 		return false
 	}
-	// 玩法直查 tag filter: AND semantics over PUBLIC tag codes only —
+	// gameplay direct-query tag filter: AND semantics over PUBLIC tag codes only —
 	// internal tags never match (mirror of model.PublicTags and of the
 	// srvIdx.tags bucket, which indexes public codes exclusively).
 	if len(f.Tags) > 0 {

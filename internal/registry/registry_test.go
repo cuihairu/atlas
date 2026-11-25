@@ -317,7 +317,7 @@ func TestCheckRegistration(t *testing.T) {
 		t.Fatalf("online verdict = %+v err=%v", v, err)
 	}
 
-	// 禁止注册 always blocks.
+	// The no-register tag always blocks.
 	tags := []model.ServerTag{{Code: model.TagNoRegister, Label: "禁止注册", Tier: model.TierWarning, Public: true}}
 	if err := mem.UpdateServerTags(ctx, registered.ID, tags); err != nil {
 		t.Fatalf("set tags: %v", err)
@@ -327,7 +327,7 @@ func TestCheckRegistration(t *testing.T) {
 		t.Fatalf("no_register verdict = %+v err=%v", v, err)
 	}
 
-	// 维护中 tag: blocks in default (block) mode, warns in warn mode.
+	// The maintenance tag: blocks in default (block) mode, warns in warn mode.
 	tags = []model.ServerTag{{Code: model.TagMaintenance, Label: "维护中", Tier: model.TierWarning, Public: true}}
 	if err := mem.UpdateServerTags(ctx, registered.ID, tags); err != nil {
 		t.Fatalf("set tags: %v", err)
@@ -339,7 +339,7 @@ func TestCheckRegistration(t *testing.T) {
 		t.Fatalf("maintenance warn verdict = %+v", v.Warn)
 	}
 
-	// 维护中 via lifecycle status behaves identically.
+	// Maintenance via lifecycle status behaves identically.
 	if err := mem.UpdateServerStatus(ctx, registered.ID, model.StatusMaintenance); err != nil {
 		t.Fatalf("set maintenance: %v", err)
 	}

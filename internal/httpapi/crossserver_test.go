@@ -509,7 +509,7 @@ func TestRegisterRejectsBadNotifyDeclaration(t *testing.T) {
 	}
 }
 
-// TestRegisterCoexistingModesAndSwitch pins 可并存可切换: both push
+// TestRegisterCoexistingModesAndSwitch pins coexistence and switching: both push
 // channels may be declared at once ("subscribe,callback" + callback URL),
 // and a plain re-registration replaces the declaration — switching to
 // poll clears the old callback URL instead of leaving it behind.

@@ -1,6 +1,6 @@
 // Counting adapter: wraps any EventAdapter with per-topic publish / consume
-// / in-flight counters — the data face behind the 消息总线 observability
-// panel (TODO 观测深化). Works for the in-process http adapter and the queue
+// / in-flight counters — the data face behind the message-bus observability
+// panel (TODO observability deepening). Works for the in-process http adapter and the queue
 // adapters alike: consumption is counted where handlers actually run.
 package event
 

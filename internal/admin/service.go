@@ -508,7 +508,7 @@ func (s *Service) DeleteAnnouncement(ctx context.Context, id string) error {
 	return s.store.DeleteAnnouncement(ctx, id)
 }
 
-// ── Server tags (标记体系) ─────────────────────────────────────────
+// ── Server tags (tagging scheme) ───────────────────────────────────
 
 // AddServerTagRequest is the DTO for adding (or replacing) one tag on a
 // server. Public is a pointer so "omitted" can differ from "false": an

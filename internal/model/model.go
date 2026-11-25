@@ -51,12 +51,12 @@ func (s *Server) HasNotifyMode(mode string) bool {
 // ServerStatus is the lifecycle state of a game server. The full state machine
 // is documented in docs/lifecycle.md.
 //
-// 状态三态 (lifecycle.md §0): this type carries both sides of the split —
-// Server.Status is the reconciled Effective state every external view
+// Three-state model (lifecycle.md §0): this type carries both sides of the
+// split — Server.Status is the reconciled Effective state every external view
 // advertises, Heartbeat.Status is the Observed state reported by the game
 // server. Renames that name the three roles explicitly in fields are
 // reserved for the v1.0 API freeze window so the wire contract evolves once,
-// not piecemeal (TODO v0.2+ 定档).
+// not piecemeal (TODO v0.2+ to be scheduled).
 type ServerStatus string
 
 const (
@@ -79,7 +79,7 @@ const (
 	StatusDisabled ServerStatus = "disabled"
 )
 
-// Registration lifecycle classes (docs/lifecycle.md §3 注册生命周期).
+// Registration lifecycle classes (docs/lifecycle.md §3, registration lifecycle).
 //
 //   - RegPermanent: never auto-expired; only an explicit admin instruction
 //     can remove the record.
@@ -185,15 +185,15 @@ type Server struct {
 	Endpoint Endpoint          `json:"endpoint"`
 	Capacity int               `json:"capacity"`
 	Metadata map[string]string `json:"metadata,omitempty"`
-	// Tags are operator-set markers (火热 / 禁止注册 / 新服 / …, see
-	// tags.go). They are configuration owned by the admin API: the register
+	// Tags are operator-set markers (hot / no registration / new server / …,
+	// see tags.go). They are configuration owned by the admin API: the register
 	// upsert never touches them. Discovery responses keep only tags with
 	// Public set; the admin API returns the full list.
 	Tags []ServerTag `json:"tags,omitempty"`
 	// Weight is the operator-set routing steering weight (1..1000; 100 =
 	// neutral, 0 = unset/neutral). Routing ranks candidates on effective
 	// load = load × 100 / weight, so >100 attracts more recommendations and
-	// <100 dampens (灰度放量 knob). Like tags this is admin-owned
+	// <100 dampens it (a gradual-rollout knob). Like tags this is admin-owned
 	// configuration: the register upsert never touches it.
 	Weight int `json:"weight,omitempty"`
 	// Source marks who owns the profile fields of this record. Empty and
@@ -223,7 +223,7 @@ type Server struct {
 	// NotifyCallbackURL.
 	NotifyMode        string `json:"notify_mode,omitempty"`
 	NotifyCallbackURL string `json:"notify_callback_url,omitempty"`
-	// Status is the Effective (生效态) lifecycle state advertised to every
+	// Status is the Effective lifecycle state advertised to every
 	// external view — discovery, routing, stats, clients. Operator intent
 	// (Desired) and heartbeat observation (Observed) reconcile into it; the
 	// layering is defined in docs/lifecycle.md §0 and the storage split in
@@ -357,7 +357,7 @@ func (s *Server) OverCapacity() bool {
 // Metadata carries arbitrary key-value pairs synced from the game server.
 // Typical uses:
 //   - KBEngine: {"baseapp_id":"baseapp-01", "dbid":"123456"}
-//   - General:  {"guild":"星辰", "vip_level":"6", "scene_id":"lobby-03"}
+//   - General:  {"guild":"stars", "vip_level":"6", "scene_id":"lobby-03"}
 //
 // Metadata is stored as JSON and returned in directory responses. It enables
 // fast lookup of which backend process a character is currently bound to.
@@ -386,7 +386,7 @@ type Character struct {
 }
 
 // PresenceStatus is a character's observed online state
-// (docs/presence.md §2 玩家在线状态机).
+// (docs/presence.md §2, the player online-state machine).
 //
 // PresenceUnknown is the default for a character that has never reported
 // presence: the index row exists (a projection written by character.created)

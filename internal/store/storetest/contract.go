@@ -916,7 +916,7 @@ func characters(t *testing.T, ctx context.Context, s Core) {
 		t.Errorf("server search = %d, want 2", len(got))
 	}
 	// class_id is retired as a built-in filter (platform de-hardening):
-	// 职业 filters through metadata; account filters by the opaque 玩家 ID.
+	// class filters through metadata; account filters by the opaque player ID.
 	if got, _ := find(store.CharacterSearchFilter{MetadataKey: "class", MetadataValue: "wizard", MinLevel: &minLvl, MaxLevel: &maxLvl}); len(got) != 1 || got[0].Name != "gil-sun-strider" {
 		t.Errorf("metadata+level search = %+v, want gil-sun-strider", got)
 	}

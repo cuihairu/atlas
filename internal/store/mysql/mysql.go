@@ -165,7 +165,7 @@ FROM servers WHERE 1=1`
 		q += " AND status = ?"
 		args = append(args, string(f.Status))
 	}
-	// 玩法直查 tag filter: JSON containment over the tags TEXT column (valid
+	// gameplay direct-query tag filter: JSON containment over the tags TEXT column (valid
 	// JSON or NULL — NULL never matches). Each requested code must appear as
 	// a PUBLIC tag; multiple codes AND together, mirroring the memory store's
 	// tags index (storetest pins parity).

@@ -24,7 +24,7 @@ var adminHandlePattern = regexp.MustCompile(`adminMux\.Handle\("([^"]+)"`)
 // patterns at runtime, so the pin reads the registration site itself — and
 // also checks that every HandleFunc call site was matched, so a registration
 // reformatted across lines cannot slip past silently. This is the mechanical
-// half of the v1.0 API-freeze preparation (todo.md "API 稳定化与 v1.0");
+// half of the v1.0 API-freeze preparation (todo.md "API stabilization & v1.0");
 // the freeze decision itself stays with the user.
 func TestRouteSurfacePinned(t *testing.T) {
 	src, err := os.ReadFile("handlers.go")

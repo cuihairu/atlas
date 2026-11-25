@@ -9,7 +9,7 @@ import (
 	"github.com/cuihairu/atlas/internal/store"
 )
 
-// 指令化写路径 (docs/performance.md §性能设计 — 指令化调度).
+// Command-based write path (docs/performance.md §8 — command-based scheduling).
 //
 // Every hot write enters the store as an instruction envelope
 // {kind, target, params, base_version, idempotency_key} instead of taking
@@ -17,31 +17,32 @@ import (
 // (hash(target): the same entity always lands in the same lane — FIFO,
 // single writer, no races), and each lane's applier commits a whole batch
 // inside ONE critical section where the data mutation and its index
-// maintenance happen together (拍板① 同锁同临界区; ② 锁外构造、批内只做
-// 指针/映射操作; 索引增量维护 O(1)/条, 禁全量重建).
+// maintenance happen together (decided ① same lock, same critical section;
+// ② build outside the lock, batches do only pointer/map operations;
+// incremental index maintenance O(1)/entry, full rebuilds forbidden).
 //
-// Merge rules are declared per kind (拍板②), not hidden in lock bodies:
+// Merge rules are declared per kind (decided ②), not hidden in lock bodies:
 // heartbeat / server-status / server-tags are last-writer-wins, so a batch
 // coalesces same-kind same-target envelopes down to the newest. Deletes
 // and character patches are order-sensitive and never merge. Priority
-// (配置变更 > 心跳) is two lane classes — a config instruction never queues
+// (config change > heartbeat) is two lane classes — a config instruction never queues
 // behind heartbeats (separate lanes, separate capacity), and hot-lane
 // backlog cannot delay a config commit.
 //
-// Visibility & versions (拍板③): every applied instruction advances a
+// Visibility & versions (decided ③): every applied instruction advances a
 // monotonic watermark. base_version is stamped at enqueue; at apply, a
 // mismatch means later instructions already landed — the current kind set
 // is overwrite-commutative per entity, so it resolves by re-applying over
-// current state (重算/幂等覆盖). A compare-and-set kind instead carries its
+// current state (re-apply / idempotent overwrite). A compare-and-set kind instead carries its
 // precondition in the payload (opUpdateServerStatusIf guards on the
 // current status) and simply reports not-applied when the world moved. An
 // idempotency key deduplicates retries through a bounded LRU.
 //
-// Replay & dry-run (拍板④): applied instructions land in a bounded capture
+// Replay & dry-run (decided ④): applied instructions land in a bounded capture
 // ring (payloads deep-copied); ReplayInto rebuilds a fresh store from it
 // and DryRun applies it to a sandbox copy without touching the live store.
 //
-// Read path unchanged (拍板⑤): reads stay RLock + watermark checks; the
+// Read path unchanged (decided ⑤): reads stay RLock + watermark checks; the
 // instruction machinery is write-side only.
 
 // Lane sizing. Deliberately constants — the design doc pins the shape;
@@ -61,7 +62,7 @@ const (
 // base_version mismatch on a non-commutative operation must reject instead
 // of re-apply. No kind carries that semantic today (the status CAS guards
 // on the current status, not the watermark), so the mismatch path stays
-// 重算 (re-apply over current state) and this error is never returned.
+// re-apply (over current state) and this error is never returned.
 var errVersionConflict = errors.New("memory: base_version mismatch (instruction stream moved on)")
 
 // opKind enumerates every instruction the queue understands. Each kind
@@ -141,7 +142,7 @@ func (k opKind) mergeable() bool {
 }
 
 // instruction is the write envelope. Payload fields are prepared by the
-// caller BEFORE enqueue (锁外构造): the applier's critical section only
+// caller BEFORE enqueue (built outside the lock): the applier's critical section only
 // does map/index assignments.
 type instruction struct {
 	kind       opKind
@@ -241,7 +242,7 @@ func (e captureEntry) instruction() *instruction {
 }
 
 // ReplayInto rebuilds the effect of src's capture ring on dst, in order —
-// 排障回放: dump the ring, replay, and the sandbox reproduces the live
+// incident replay: dump the ring, replay, and the sandbox reproduces the live
 // write history. Idempotency keys are preserved, so replaying a stream
 // that already ran against src is a no-op only on dst (fresh LRU), which
 // is exactly the reproduction you want.
@@ -258,7 +259,7 @@ func ReplayInto(dst *Store, src *Store) error {
 }
 
 // DryRun replays the live capture ring onto a sandbox copy and reports
-// what the write stream produced, without touching the live store (预检):
+// what the write stream produced, without touching the live store (pre-check):
 // applied-count per kind plus the sandbox's final watermark.
 func DryRun(src *Store) (map[string]uint64, uint64, error) {
 	sandbox := New()
@@ -443,7 +444,7 @@ func (s *Store) applyBatchN(batch []*instruction) {
 		s.merged.Add(uint64(merged))
 	}
 
-	// One critical section for data + index (拍板①).
+	// One critical section for data + index (decided ①).
 	s.mu.Lock()
 	s.charMu.Lock()
 	byKind := make(map[opKind]int, 1)
@@ -456,7 +457,7 @@ func (s *Store) applyBatchN(batch []*instruction) {
 				continue
 			}
 		}
-		// base_version semantics (拍板③): current kinds are
+		// base_version semantics (decided ③): current kinds are
 		// overwrite-commutative under single-writer lanes, so a watermark
 		// mismatch resolves by re-applying over current state. The one
 		// compare-and-set kind carries its own precondition (fromStatus)

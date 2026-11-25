@@ -1,6 +1,6 @@
 package memory
 
-// Benchmarks for the indexed store (docs/performance.md §性能设计).
+// Benchmarks for the indexed store (docs/performance.md §8).
 // Public-API only so the file also compiles against the pre-index full-scan
 // implementation — the before/after numbers in the doc come from running
 // exactly this file on both sides. The tags-filter benchmark lives in

@@ -27,8 +27,8 @@ type ServerFilter struct {
 	Platform string
 	Status   model.ServerStatus
 	// Tags narrows to servers carrying ALL of the listed public tag codes.
-	// Internal tags (Public=false) never match — the player-facing 玩法直查
-	// filter operates on the public badge surface only, mirroring
+	// Internal tags (Public=false) never match — the player-facing gameplay
+	// direct-query filter operates on the public badge surface only, mirroring
 	// model.PublicTags. Every store implements the same AND semantics so
 	// the storetest contract pins one behavior across memory/PG/MySQL.
 	Tags   []string
@@ -50,13 +50,13 @@ type CharacterPatch struct {
 // CharacterSearchFilter controls which characters are returned by SearchCharacters.
 //
 // ClassID was removed as a built-in filter (platform de-hardcoding decree):
-// 职业 is a game-business concept — it belongs in metadata (e.g.
+// class is a game-business concept — it belongs in metadata (e.g.
 // metadata.class), not in platform query parameters. The DB class column
 // stays for read compat with existing projections.
 type CharacterSearchFilter struct {
 	Name     string
 	ServerID string
-	// AccountID filters by the opaque account reference (玩家 ID 搜索).
+	// AccountID filters by the opaque account reference (player ID search).
 	AccountID int64
 	// MetadataKey requires MetadataValue: the key=value pair filter.
 	MetadataKey   string
@@ -194,7 +194,7 @@ type PlayerSessionStore interface {
 	CountOnlineByServer(ctx context.Context, serverID string) (int, error)
 
 	// ListOnlineByServer returns the online characters on a server, ordered by
-	// character ID with cursor pagination (the "某服在线名单" query).
+	// character ID with cursor pagination (the "online roster on a server" query).
 	ListOnlineByServer(ctx context.Context, serverID string, limit int, cursor string) ([]*model.Character, string, error)
 }
 
@@ -362,7 +362,7 @@ func IsNotFound(err error) bool {
 }
 
 // FlushRecord describes one committed write batch of the instruction queue
-// (docs/performance.md §性能设计 — 指令化调度): how many instructions the
+// (docs/performance.md §8 — command-based scheduling): how many instructions the
 // batch contained, how many were coalesced away by same-entity merge rules,
 // and how long the single critical section took.
 type FlushRecord struct {
@@ -413,7 +413,7 @@ type QueueStats struct {
 	// start — the coarse shape of the write workload at a glance.
 	AppliedByKind map[string]uint64 `json:"applied_by_kind"`
 	// CaptureLen is the number of instructions in the replay capture ring
-	// (排障回放用, bounded).
+	// (for incident replay, bounded).
 	CaptureLen int `json:"capture_len"`
 }
 

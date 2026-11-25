@@ -1,4 +1,4 @@
-// Request-level tracing for the gRPC port (docs/api.md §请求追踪): the
+// Request-level tracing for the gRPC port (docs/api.md §Request Tracing): the
 // correlation handle REST assigns on the three HTTP listeners extends to
 // :9090 — the inbound x-request-id metadata is adopted when present
 // (identical charset/cap as the HTTP header), generated otherwise, echoed

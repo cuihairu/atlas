@@ -22,7 +22,7 @@ import (
 )
 
 // setupTagServer is setupTestServer with the registry maintenance policy
-// injected, so the 維護 enforce mode (block | warn) is testable.
+// injected, so the maintenance enforce mode (block | warn) is testable.
 func setupTagServer(t *testing.T, enforce string) (*httptest.Server, *memory.Store) {
 	t.Helper()
 	mem := memory.New()
@@ -279,7 +279,7 @@ func TestCreateCharacterNoRegisterTag(t *testing.T) {
 		t.Fatalf("no_register should be public: %+v", srv.Tags)
 	}
 
-	// 创角 rejected with a clear error.
+	// Character creation rejected with a clear error.
 	resp = postJSON(t, ts, "/v1/directory/characters", map[string]any{
 		"account_id": 1001, "server_id": "game-1", "character_id": 90001, "name": "被拒角色",
 	})
@@ -308,7 +308,7 @@ func TestCreateCharacterNoRegisterTag(t *testing.T) {
 }
 
 func TestCreateCharacterMaintenanceGate(t *testing.T) {
-	// Default mode: a 维护中 tag (server otherwise online) blocks creation.
+	// Default mode: a maintenance tag (server otherwise online) blocks creation.
 	ts, _ := setupTagServer(t, "")
 	defer ts.Close()
 	registerTestServer(t, ts, "game-1")
@@ -349,7 +349,7 @@ func TestCreateCharacterMaintenanceGate(t *testing.T) {
 		t.Fatalf("warn-mode create = %d, want 201", resp.StatusCode)
 	}
 
-	// 禁止注册 ignores the warn mode and still rejects.
+	// no_register ignores the warn mode and still rejects.
 	if resp := addTag(t, tsWarn, "game-2", map[string]any{"code": "no_register"}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("add no_register: %d", resp.StatusCode)
 	} else {

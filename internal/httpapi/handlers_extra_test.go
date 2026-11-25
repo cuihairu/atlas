@@ -336,7 +336,7 @@ func TestLoadSeriesScopes(t *testing.T) {
 	}
 }
 
-// TestBusSeriesWithCountingAdapter pins the 消息总线 panel wiring: depth
+// TestBusSeriesWithCountingAdapter pins the message-bus panel wiring: depth
 // rings from the sampler plus live counters from the counting adapter.
 func TestBusSeriesWithCountingAdapter(t *testing.T) {
 	base := httpadapter.New()
