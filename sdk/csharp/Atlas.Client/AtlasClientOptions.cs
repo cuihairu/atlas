@@ -20,7 +20,7 @@ public sealed class AtlasClientOptions
     /// counterpart, sent as Bearer).</summary>
     public string? AdminApiKey { get; set; }
 
-    /// <summary>Static headers sent on every call (docs/api.md 请求追踪) —
+    /// <summary>Static headers sent on every call (docs/api.md Request Tracing) —
     /// e.g. a process-level "X-Request-ID" correlation id. Applied after
     /// auth, keys verbatim.</summary>
     public Dictionary<string, string>? DefaultHeaders { get; set; }

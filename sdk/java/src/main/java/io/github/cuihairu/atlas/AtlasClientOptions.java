@@ -59,7 +59,7 @@ public class AtlasClientOptions {
         return defaultHeaders;
     }
 
-    /** Static headers sent on every call (docs/api.md 请求追踪) — e.g. a
+    /** Static headers sent on every call (docs/api.md Request Tracing) — e.g. a
      * process-level "X-Request-ID" correlation id. Copied defensively. */
     public AtlasClientOptions setDefaultHeaders(Map<String, String> defaultHeaders) {
         this.defaultHeaders = defaultHeaders == null ? Map.of() : Map.copyOf(defaultHeaders);

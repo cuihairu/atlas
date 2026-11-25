@@ -474,7 +474,7 @@ class AtlasClientTest {
         assertNotNull(c.listServers());
     }
 
-    // ── Default headers (docs/api.md 请求追踪) ──
+    // ── Default headers (docs/api.md Request Tracing) ──
 
     @Test
     void defaultHeadersRideOnEveryCall() throws IOException {

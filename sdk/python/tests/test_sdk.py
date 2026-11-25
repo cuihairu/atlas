@@ -556,7 +556,7 @@ def test_async_admin_weight() -> None:
     assert body_of(s, "POST", r"/v1/admin/servers/game-1/weight")["body"] == {"weight": 300}
 
 
-# ── Default headers (docs/api.md 请求追踪) ──
+# ── Default headers (docs/api.md Request Tracing) ──
 
 
 def test_default_headers_sync() -> None:

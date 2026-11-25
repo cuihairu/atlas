@@ -52,7 +52,7 @@ type Options struct {
 	// DefaultHeaders are static headers (REST) / metadata (gRPC) sent on
 	// every call, both transports — e.g. a process-level "X-Request-ID"
 	// so an operator can grep every call one game-server instance made
-	// across REST and gRPC hop logs (docs/api.md §请求追踪). Per-call ids
+	// across REST and gRPC hop logs (docs/api.md §Request Tracing). Per-call ids
 	// need no option over gRPC: attach metadata to the ctx you pass in.
 	// Keys are applied verbatim; don't set the same key here and on the
 	// gRPC ctx (gRPC metadata would carry duplicates).

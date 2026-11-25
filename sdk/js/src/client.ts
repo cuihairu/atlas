@@ -48,7 +48,7 @@ export interface AtlasClientOptions {
   registryToken?: string;
   /** API key for the Admin scope. */
   adminApiKey?: string;
-  /** Static headers sent on every call (docs/api.md 请求追踪) — e.g. a
+  /** Static headers sent on every call (docs/api.md Request Tracing) — e.g. a
    * process-level "X-Request-ID" correlation id. */
   defaultHeaders?: Record<string, string>;
   /** Per-attempt timeout in ms (default 10000; 0 disables). */

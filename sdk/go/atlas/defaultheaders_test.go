@@ -27,7 +27,7 @@ import (
 )
 
 // TestDefaultHeadersREST: Options.DefaultHeaders ride on every REST
-// request — the correlation-header channel docs/api.md §请求追踪 promises.
+// request — the correlation-header channel docs/api.md §Request Tracing promises.
 func TestDefaultHeadersREST(t *testing.T) {
 	var seen atomic.Value
 	mux := http.NewServeMux()
@@ -61,7 +61,7 @@ func TestDefaultHeadersREST(t *testing.T) {
 
 // TestDefaultHeadersGRPC: the same option lands as gRPC metadata on the
 // wire — captured by a server-side interceptor reading the exact key the
-// server's trace interceptor adopts (docs/api.md §请求追踪).
+// server's trace interceptor adopts (docs/api.md §Request Tracing).
 func TestDefaultHeadersGRPC(t *testing.T) {
 	var seen atomic.Value
 	capture := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {

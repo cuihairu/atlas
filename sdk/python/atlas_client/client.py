@@ -71,7 +71,7 @@ class _Config:
         self.base_backoff = base_backoff
         self.headers = {"Accept": "application/json"}
         if default_headers:
-            # Static headers sent on every call (docs/api.md 请求追踪) —
+            # Static headers sent on every call (docs/api.md Request Tracing) —
             # e.g. a process-level X-Request-ID correlation id.
             self.headers.update(default_headers)
 
