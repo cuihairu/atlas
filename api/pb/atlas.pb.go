@@ -2389,7 +2389,7 @@ type SearchCharactersRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	ServerId string                 `protobuf:"bytes,2,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
-	// class_id is deprecated (platform de-hardening): 职业 is a game-business
+	// class_id is deprecated (platform de-hardening): class/profession is a game-business
 	// concept, filtered via metadata (metadata_key="class") instead. The field
 	// stays on the wire for compat but the server no longer honours it.
 	//
@@ -2399,7 +2399,7 @@ type SearchCharactersRequest struct {
 	MaxLevel *int32 `protobuf:"varint,5,opt,name=max_level,json=maxLevel,proto3,oneof" json:"max_level,omitempty"`
 	Limit    int32  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
 	Cursor   string `protobuf:"bytes,7,opt,name=cursor,proto3" json:"cursor,omitempty"`
-	// AccountID filters by the opaque account reference (玩家 ID 搜索).
+	// AccountID filters by the opaque account reference (player ID search).
 	AccountId int64 `protobuf:"varint,8,opt,name=account_id,json=accountId,proto3" json:"account_id,omitempty"`
 	// Metadata key=value pair filter (same contract as the REST search).
 	MetadataKey   string `protobuf:"bytes,9,opt,name=metadata_key,json=metadataKey,proto3" json:"metadata_key,omitempty"`

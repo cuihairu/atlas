@@ -312,7 +312,7 @@ message LoadHeatmapResponse {
 message SearchCharactersRequest {
   string name = 1;
   string server_id = 2;
-  // class_id is deprecated (platform de-hardening): 职业 is a game-business
+  // class_id is deprecated (platform de-hardening): class/profession is a game-business
   // concept, filtered via metadata (metadata_key="class") instead. The field
   // stays on the wire for compat but the server no longer honours it.
   optional int32 class_id = 3 [deprecated = true];
@@ -320,7 +320,7 @@ message SearchCharactersRequest {
   optional int32 max_level = 5;
   int32 limit = 6;
   string cursor = 7;
-  // AccountID filters by the opaque account reference (玩家 ID 搜索).
+  // AccountID filters by the opaque account reference (player ID search).
   int64 account_id = 8;
   // Metadata key=value pair filter (same contract as the REST search).
   string metadata_key = 9;
