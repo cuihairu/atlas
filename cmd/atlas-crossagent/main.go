@@ -18,7 +18,7 @@
 //	POST /ctl/bus-off                      — drop the bus subscription
 //	                                       (updates missed until reset)
 //	POST /ctl/bus-reset                    — rebuild the subscription, then
-//	                                       re-pull once (断连补拉)
+//	                                       re-pull once (catch-up after disconnect)
 //	GET  /ctl/status                        — current snapshot + counters
 //
 // The same listener serves POST /notify, the callback-mode signal URL.
@@ -131,7 +131,7 @@ func main() {
 		}(),
 		MaxBackoff: 5 * time.Second,
 		OnApply: func(cfg *atlas.CrossServerConfig) {
-			// "热生效" in the reference agent: swap the in-memory view and
+			// "Hot apply" in the reference agent: swap the in-memory view and
 			// log. A real game server re-reads its cross-server modules
 			// here — no restart, no re-register.
 			features := 0
@@ -209,7 +209,7 @@ func main() {
 	var bus = &busState{}
 	// busDrop ends the subscription without rebuilding it — the
 	// fault-injection twin of bus-reset, used to walk the "an update landed
-	// while I was disconnected" window (断连→改配置→重连→补拉).
+	// while I was disconnected" window (disconnect → config change → reconnect → catch-up re-pull).
 	busDrop := func() {
 		bus.drop()
 	}
@@ -236,7 +236,7 @@ func main() {
 			log.Info("bus signal received",
 				"type", string(e.Type), "version", e.ConfigVersion, "hash", e.ConfigHash,
 				"targets", e.ConfigTargets, "receivers", e.ConfigServers)
-			// 定向投递: pull only when the signal names this server (or
+			// Targeted delivery: pull only when the signal names this server (or
 			// everyone). Atlas computes the receiver list from the config
 			// before AND after the change, so both "just joined a group"
 			// and "just left one" reach this server.
@@ -253,7 +253,7 @@ func main() {
 		}
 		bus.replace(adapter, rdb)
 		log.Info("subscribed to config topic", "topic", event.TopicConfig, "group", "crossagent-"+*serverID)
-		// 补拉: an update may have landed while the subscription was down.
+		// Catch-up re-pull: an update may have landed while the subscription was down.
 		watcher.Notify()
 		return nil
 	}
@@ -267,8 +267,8 @@ func main() {
 	// Heartbeat loop: proof of life, independent of the config center.
 	// The first success after failures re-pulls the config: while
 	// heartbeats fail Atlas marks the server offline and stops naming it
-	// as a signal receiver (下线即退订), so an update landed in that window
-	// is picked up as soon as registration comes back (补拉).
+	// as a signal receiver (unregister = unsubscribe), so an update landed in that window
+	// is picked up as soon as registration comes back (catch-up re-pull).
 	var hbFailed atomic.Bool
 	go func() {
 		tick := time.NewTicker(*heartbeatIn)

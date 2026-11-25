@@ -161,7 +161,7 @@ func (s *liveState) tick(interval time.Duration) (players int, load float64) {
 }
 
 // defaultFleet mirrors the demo cluster used across the docs (screenshots and
-// 场景导览 walkthroughs): 华东/华北/华南 game servers plus two cross-server
+// Scenario Tour walkthroughs): cn-east/cn-north/cn-south game servers plus two cross-server
 // config agent nodes, and one server parked in maintenance.
 func defaultFleet() []fleetEntry {
 	return []fleetEntry{
@@ -895,7 +895,7 @@ func subscribeConfig(ctx context.Context, log *slog.Logger, watcher *atlas.Confi
 		return nil, err
 	}
 	log.Info("subscribed to config topic", "server_id", serverID, "topic", event.TopicConfig, "group", group)
-	// 补拉: an update may have landed before the subscription existed.
+	// Catch-up re-pull: an update may have landed before the subscription existed.
 	watcher.Notify()
 	return func() {
 		_ = adapter.Close()

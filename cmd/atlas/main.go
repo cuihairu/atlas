@@ -74,7 +74,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// OpenTelemetry trace export (roadmap 可观测性深化): disabled unless
+	// OpenTelemetry trace export (roadmap: deeper observability): disabled unless
 	// ATLAS_OTLP_ENDPOINT is set — no-op provider, non-recording spans,
 	// zero cost. Flushed on the shutdown path below so trailing spans land.
 	shutdownTracing, err := atlastracing.Setup(context.Background(), atlastracing.Options{
@@ -269,7 +269,7 @@ func main() {
 	prom := metrics.New(composite)
 
 	// Create services.
-	// 维护中 registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
+	// In-maintenance registration policy (ATLAS_MAINTENANCE_ENFORCE): block | warn.
 	regSvc := registry.New(serverStore, runtimeStore, logger).WithMaintenanceEnforce(cfg.MaintenanceEnforce)
 	discSvc := discovery.New(serverStore, runtimeStore)
 	dirSvc := directory.New(charStore).WithPlayerSessions(sessionStore)
@@ -333,7 +333,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 消息总线观测 (TODO 观测深化): wrap the adapter with per-topic
+	// Message-bus observability (TODO: observability deepening): wrap the adapter with per-topic
 	// publish/consume/in-flight counters — the data face for the admin bus
 	// panel. Wrapped before any subscriber or publisher is wired, so every
 	// event the process handles is counted exactly once.
@@ -344,8 +344,8 @@ func main() {
 			"max_delivery", cfg.EventMaxDelivery, "adapter", cfg.EventAdapter)
 	}
 
-	// Lightweight series sampler (概览负载时间视图 / 消息总线曲线 / 服务器
-	// 热力图): 15s samples, ≥24h retention (the 24h heatmap window needs it;
+	// Lightweight series sampler (overview load timeline / message-bus curves /
+	// server heatmap): 15s samples, ≥24h retention (the 24h heatmap window needs it;
 	// rings stay in-memory, ~150KB per series — no TSDB by decree). Probes:
 	// fleet load per server/region/fleet, bus counters per topic.
 	sampler := telemetry.NewSampler(15*time.Second, 24*time.Hour+15*time.Minute)
@@ -429,7 +429,7 @@ func main() {
 	defer monitorCancel()
 	go monitor.Run(monitorCtx)
 
-	// Set up HTTP handlers. 维护前引导: the routing service reads
+	// Set up HTTP handlers. Pre-maintenance steering: the routing service reads
 	// maintenance windows so recommendations never land players on a server
 	// inside — or minutes from — a maintenance window. The lead horizon is
 	// tuned via ATLAS_ROUTING_MAINTENANCE_LEAD (default 5m in the service).
@@ -701,7 +701,7 @@ func main() {
 	}
 
 	// ── gRPC API (all five services, TODO v0.1.5) ──────────
-	// Same security domains as REST (docs/api.md §认证): Registry and
+	// Same security domains as REST (docs/api.md §Authentication): Registry and
 	// Admin RPCs are guarded when tokens/keys are configured, unconfigured
 	// stays the open dev mode. The Go SDK already sends the right
 	// credential per call over gRPC (grpc.go callCtx). Order mirrors the
