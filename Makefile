@@ -12,39 +12,45 @@ build:
 run: build
 	ATLAS_STORE=memory ./bin/atlas
 
-# 再生成 api/pb（api/proto/atlas.proto 首注释与生成文件头都写「make proto」）。
-# 工具链必须与已提交文件头一致，否则 diff 会带版本噪声：
+# Regenerate api/pb (both the first comment in api/proto/atlas.proto and the
+# generated file header say "make proto").
+# The toolchain must match the committed file headers, or the diff carries
+# version noise:
 #   protoc 3.21.12 · protoc-gen-go v1.36.12
 #     go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
 #   protoc-gen-go-grpc v1.6.2
 #     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
-# module= 前缀把 go_package 的模块路径剥掉，产物落 api/pb/（已验证与提交逐字节一致）。
+# The module= prefix strips the module path from go_package so output lands in
+# api/pb/ (verified byte-for-byte identical to the committed files).
 proto:
 	protoc --proto_path=. \
 		--go_out=module=github.com/cuihairu/atlas:. \
 		--go-grpc_out=module=github.com/cuihairu/atlas:. \
 		api/proto/atlas.proto
 
-# ================= 本地测试口径 (local testing scope) =================
-# CI 与本地开发按改动面三路分流——改一行文档不该全量编译：
-#   1) 文档改动（*.md、docs/**、图片）→ 不编译。主 CI workflow 的 paths-ignore
-#      已跳过这些路径；本地无需全量跑。
-#   2) 代码改动 → 只跑改动子集：
-#      - `go test ./internal/<改动包>/...`
-#      - `go test ./sdk/<改动包>/...`
-#   3) 全量（make test）→ 仅以下情形触发：
-#      go.mod / go.sum / go.work、.github/**、Docker/Compose 配置、发布前。
+# ================= Local testing scope =================
+# CI and local development split into three paths by change scope — a one-line
+# docs edit should not trigger a full build:
+#   1) Docs changes (*.md, docs/**, images) → no build. The main CI workflow's
+#      paths-ignore already skips these paths; no need to run everything locally.
+#   2) Code changes → run only the affected subset:
+#      - `go test ./internal/<changed-package>/...`
+#      - `go test ./sdk/<changed-package>/...`
+#   3) Full run (make test) → only in these cases:
+#      go.mod / go.sum / go.work, .github/**, Docker/Compose config, pre-release.
 # ==========================================================================
 
 test:
 	go test -v -race -count=1 ./...
 
-# ============== 98% 覆盖率门禁 (coverage gate, 2026-10-31) ==============
-# 口径与 ci.yml「Test with coverage」一致：./internal/... 交叉覆盖
-# (-coverpkg=./internal/...) + 按块去重（保留最大计数）。
-# internal/store/storetest 为测试支撑包，从门禁口径剔除（其未覆盖行是
-# t.Fatalf 失败分支——诚实覆盖即测试失败；见 todo.md）。
-# 前置：SQL/Redis 契约容器（无则 SQL 套件 skip，总覆盖约 82%，门禁必挂）：
+# ============== 98% coverage gate (2026-10-31) ==============
+# Same scope as ci.yml's "Test with coverage": cross-coverage of ./internal/...
+# (-coverpkg=./internal/...) + per-block dedup (keep the max count).
+# internal/store/storetest is a test-support package and is excluded from the
+# gate (its uncovered lines are t.Fatalf failure branches — honest coverage
+# would mean the test failed; see todo.md).
+# Prerequisites: SQL/Redis contract containers (without them the SQL suites
+# skip, total coverage drops to ~82% and the gate fails):
 #   docker run -d --name atlas-cov-pg   -p 15432:5432 -e POSTGRES_USER=atlas \
 #     -e POSTGRES_PASSWORD=atlas -e POSTGRES_DB=atlas_test postgres:16-alpine
 #   docker run -d --name atlas-cov-mysql -p 13307:3306 -e MYSQL_USER=atlas \

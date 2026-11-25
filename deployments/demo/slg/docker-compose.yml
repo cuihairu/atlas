@@ -1,11 +1,11 @@
-# SLG 策略 demo —— 长驻世界服 + 联盟战临时跨服（赛季/合服语义）。
+# SLG strategy demo — long-lived world servers + alliance-war temporary cross-servers (season/merge semantics).
 #
-# 一键起（在本目录执行）：
+# One-command startup (run in this directory):
 #   docker compose up -d --build
-# 管理台: http://localhost:28230
-# 收尾:   docker compose down -v
+# Dashboard: http://localhost:28230
+# Teardown: docker compose down -v
 #
-# 端口段 28230-28235（与其他品类 demo 错开，可并行起）。
+# Port range 28230-28235 (offset from other genre demos so they can run side by side).
 name: atlas-demo-slg
 
 services:
@@ -24,7 +24,8 @@ services:
       ATLAS_STORE: postgres
       ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
       ATLAS_REDIS_URL: redis://redis:6379/0
-      # 世界服/联盟战都是 subscribe 模式收跨服拓扑变更（赛季编排靠它）
+      # World servers and alliance wars both receive cross-server topology changes
+      # in subscribe mode (season orchestration relies on it)
       ATLAS_EVENT_ADAPTER: redis
       ATLAS_PUBLIC_URL: http://localhost:28231
     ports:
@@ -94,8 +95,9 @@ services:
       start_period: 5s
       retries: 3
 
-  # SLG 舰队：3 个赛季世界服（长驻，subscribe 收赛季编排）+ 2 个联盟战
-  # 临时跨服（4 分钟一个"战役日"，打完下线，休整 1 分钟开下一场）。
+  # SLG fleet: 3 seasonal world servers (long-lived, subscribe for season
+  # orchestration) + 2 alliance-war temporary cross-servers (4 minutes per
+  # "battle day", offline when it ends, 1 minute of rest before the next round).
   demoagents:
     build:
       context: ../../..

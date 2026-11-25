@@ -1,11 +1,11 @@
-# 卡牌/放置 demo —— 最小接入形态（账号服 + 逻辑服 + 无状态计算服）。
+# Card / idle demo — minimal integration shape (account server + logic server + stateless compute server).
 #
-# 一键起（在本目录执行）：
+# One-command startup (run in this directory):
 #   docker compose up -d --build
-# 管理台: http://localhost:28240
-# 收尾:   docker compose down -v
+# Dashboard: http://localhost:28240
+# Teardown: docker compose down -v
 #
-# 端口段 28240-28245（与其他品类 demo 错开，可并行起）。
+# Port range 28240-28245 (offset from other genre demos so they can run side by side).
 name: atlas-demo-card
 
 services:
@@ -92,7 +92,7 @@ services:
       start_period: 5s
       retries: 3
 
-  # 卡牌舰队：三台服、无 realm/shard/标签/跨服——接入 Atlas 的最小形态。
+  # Card fleet: three servers, no realm/shard/tags/cross-server — the minimal shape for adopting Atlas.
   demoagents:
     build:
       context: ../../..

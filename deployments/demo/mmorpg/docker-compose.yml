@@ -1,12 +1,12 @@
-# MMORPG 大世界 demo —— gateway + 分线场景服 + 跨服战场。
+# MMORPG open-world demo — gateway + instanced scene servers + cross-server battlefields.
 #
-# 一键起（在本目录执行）：
+# One-command startup (run in this directory):
 #   docker compose up -d --build
-# 管理台: http://localhost:28210  （服务器/角色目录/跨服配置都有真实数据）
-# 收尾:   docker compose down -v
+# Dashboard: http://localhost:28210  (servers / character directory / cross-server config all have real data)
+# Teardown: docker compose down -v
 #
-# 端口段 28210-28215（与其他品类 demo 错开，可并行起）：
-#   28210 管理台   28211 公网 API   28212 注册 API   28213 管理 API
+# Port range 28210-28215 (offset from other genre demos so they can run side by side):
+#   28210 dashboard   28211 public API   28212 registry API   28213 admin API
 #   28214 PostgreSQL  28215 Redis
 name: atlas-demo-mmorpg
 
@@ -26,7 +26,7 @@ services:
       ATLAS_STORE: postgres
       ATLAS_DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas?sslmode=disable
       ATLAS_REDIS_URL: redis://redis:6379/0
-      # 跨服战场节点用 subscribe 模式收配置变更信号（Redis Streams）
+      # Cross-server battlefield nodes receive config change signals in subscribe mode (Redis Streams)
       ATLAS_EVENT_ADAPTER: redis
       ATLAS_PUBLIC_URL: http://localhost:28211
     ports:
@@ -40,7 +40,7 @@ services:
       start_period: 10s
       retries: 3
 
-  # Schema bootstrap：distroless 镜像没有 psql，迁移一次性服务代跑。
+  # Schema bootstrap: the distroless image has no psql, so the one-shot migrate service runs the migrations.
   migrate:
     image: postgres:17-alpine
     depends_on:
@@ -97,7 +97,7 @@ services:
       start_period: 5s
       retries: 3
 
-  # MMORPG 舰队：2 网关 + 6 分线场景服（含 1 台停机维护）+ 2 跨服战场。
+  # MMORPG fleet: 2 gateways + 6 instanced scene servers (1 under maintenance) + 2 cross-server battlefields.
   demoagents:
     build:
       context: ../../..

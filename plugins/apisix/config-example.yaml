@@ -1,6 +1,6 @@
-# APISIX 示例配置：Atlas 公网入口（v0.1.13 交付）
+# APISIX example config: Atlas public entry point (shipped with v0.1.13)
 #
-# 1) 启用插件（APISIX config.yaml）：
+# 1) Enable plugins (APISIX config.yaml):
 #
 #    plugins:                          # add to the existing list
 #      - atlas-auth
@@ -8,17 +8,17 @@
 #
 #    nginx_config:
 #      http:
-#        shared_dicts:                 # atlas-ratelimit 计数器
+#        shared_dicts:                 # atlas-ratelimit counters
 #          - atlas_ratelimit: 10m
 #
-#    plugin_attr:                      # 可选：全局默认不可用时兜底
+#    plugin_attr:                      # optional: fallback when no global default is available
 #      ...
 #
-# 2) 路由（此文件可 etcd 初始化或 Admin API 逐条创建）：
+# 2) Routes (this file can be used to initialize etcd or create each one via the Admin API):
 #
 #    curl http://127.0.0.1:9180/apisix/admin/routes/atlas -X PUT -H "X-API-KEY: $ADMIN_KEY" -d @config-example.yaml
 #
-#    （内容由 data: 键承载；也可直接粘贴到 Admin API 请求体）
+#    (the content is carried by the data: key; you can also paste it directly into an Admin API request body)
 
 name: atlas
 uri: /v1/*
@@ -32,22 +32,22 @@ plugins:
     account_header: X-Atlas-Player-ID
     required: true
     strip_token: true
-    accounts:                 # 静态映射示例；生产环境替换为 token 服务校验
+    accounts:                 # static mapping example; replace with token-service validation in production
       demo-token-alice: 1001
       demo-token-bob: 1002
   atlas-ratelimit:
     groups:
-      - prefix: /v1/registry   # 写路径收紧
+      - prefix: /v1/registry   # tighter limits on write paths
         rate: 50
         window: 60
       - prefix: /v1/directory
         rate: 300
         window: 60
-      - prefix: /v1/routing    # 登录高峰高频路径
+      - prefix: /v1/routing    # high-frequency path during login peaks
         rate: 1000
         window: 60
       - prefix: /v1/discovery
         rate: 600
         window: 60
-    default_rate: 0            # 未列出的路径不限流
+    default_rate: 0            # paths not listed are not rate limited
     rejected_code: 429

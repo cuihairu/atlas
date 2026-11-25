@@ -1,23 +1,28 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Atlas 快速搭建 —— 一条命令起全栈（Atlas + PostgreSQL + Redis + 迁移引导）
+# Atlas quick start — bring up the full stack with one command (Atlas + PostgreSQL + Redis + schema bootstrap)
 #
-# 用法（在本文件所在目录执行）：
-#   cp .env.example .env          # 敏感值（如数据库密码）只放 .env，不写死在这里
+# Usage (run in this file's directory):
+#   cp .env.example .env          # secrets (e.g. database password) go in .env only, not hard-coded here
 #   docker compose up -d
-#   curl http://localhost:8080/healthz      # {"status":"ok"} 即起服成功
+#   curl http://localhost:8080/healthz      # {"status":"ok"} means the stack is up
 #
-# 数据持久化在哪：
-#   - PostgreSQL（服务器档案 / 角色索引 / 迁移记录）→ 具名卷 atlas_pgdata，
-#     `docker volume inspect atlas_pgdata` 可查看宿主机实际路径；down -v 才会删数据。
-#   - Redis（心跳等运行时状态，本来就是易失数据）→ 不挂卷，容器重建即清空，属预期行为。
+# Where data persists:
+#   - PostgreSQL (server records / character index / migration history) → named
+#     volume atlas_pgdata; `docker volume inspect atlas_pgdata` shows the actual
+#     host path; only `down -v` deletes the data.
+#   - Redis (runtime state such as heartbeats, ephemeral by nature) → no volume;
+#     a container rebuild clears it, which is expected.
 #
-# 怎么换版本：
-#   - Atlas 镜像：改 .env 的 ATLAS_IMAGE（latest=main 最新滚动；可 pin 成
-#     裸短 SHA（如 e3f802d）或日期标签；本地开发镜像写本地 tag 即可）。
-#   - PostgreSQL / Redis：直接改下面对应 service 的 image 标签。
+# How to change versions:
+#   - Atlas image: edit ATLAS_IMAGE in .env (latest = newest rolling build of
+#     main; can be pinned to a bare short SHA (e.g. e3f802d) or a date tag;
+#     use a local tag for locally built dev images).
+#   - PostgreSQL / Redis: change the image tag of the corresponding service below.
 #
-# 配置怎么改：Atlas 全部走 ATLAS_* 环境变量（与二进制裸跑同一套），在下面
-# atlas.environment 里增删即可；常见项见 README「Docker 快速搭建」，事件总线见 docs/sync.md。
+# How to change config: Atlas is driven entirely by ATLAS_* environment
+# variables (the same set as running the binary bare) — add or remove entries
+# in atlas.environment below; see README "Docker quick start" for common items
+# and docs/sync.md for the event bus.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: atlas
@@ -25,12 +30,12 @@ name: atlas
 services:
   atlas:
     image: ${ATLAS_IMAGE:-ghcr.io/cuihairu/atlas:latest}
-    # 首次拉取不用 --pull always 也行；追 main 滚动更新的用户可加 pull_policy: always
+    # No need for --pull always on first pull; users tracking main's rolling updates can add pull_policy: always
     container_name: atlas
     restart: unless-stopped
     depends_on:
       migrate:
-        condition: service_completed_successfully   # 先建表再起服
+        condition: service_completed_successfully   # create tables first, then start the service
       postgres:
         condition: service_healthy
       redis:
@@ -39,25 +44,28 @@ services:
       ATLAS_STORE: postgres
       ATLAS_DATABASE_URL: postgres://atlas:${ATLAS_PG_PASSWORD:-atlas}@postgres:5432/atlas?sslmode=disable
       ATLAS_REDIS_URL: redis://redis:6379/0
-      # 可选：角色写入改走消息总线异步缓冲（默认 http = 进程内同步）。
-      # 例：ATLAS_EVENT_ADAPTER: redis   # 复用本栈 Redis，写端点返回 202
-      # 更多适配器与变量见 docs/sync.md。
+      # Optional: buffer character writes asynchronously over the message bus
+      # (default http = in-process synchronous).
+      # Example: ATLAS_EVENT_ADAPTER: redis   # reuse this stack's Redis; the write endpoint returns 202
+      # See docs/sync.md for more adapters and variables.
     ports:
-      - "8080:8080"   # 公网：Discovery / Directory / Routing（玩家客户端、网关）
-      - "8081:8081"   # 内网：Registry 注册/心跳（游戏服务器）
-      - "8082:8082"   # 管理端：Admin / 审计 / Prometheus /metrics
-      - "9090:9090"   # gRPC（同功能高性能通道，Go SDK 可选）
+      - "8080:8080"   # public: Discovery / Directory / Routing (player clients, gateways)
+      - "8081:8081"   # internal: Registry register/heartbeat (game servers)
+      - "8082:8082"   # admin: Admin / audit / Prometheus /metrics
+      - "9090:9090"   # gRPC (same features over a high-performance channel, optional for the Go SDK)
     healthcheck:
-      # distroless 镜像没有 shell/curl，健康探测直接调二进制自带子命令
+      # The distroless image has no shell/curl; the health probe calls the binary's built-in subcommand directly
       test: ["CMD", "/atlas", "healthcheck"]
       interval: 15s
       timeout: 3s
       start_period: 10s
       retries: 3
 
-  # 一次性建表服务：跑完 migrations/ 全部 PostgreSQL 迁移后即退出（exit 0），
-  # atlas 等它成功后再启动。官方 postgres 镜像自带 psql，迁移不进业务镜像
-  # （业务镜像是 distroless，无 shell）。改表只增不改已发布的迁移文件。
+  # One-shot table-creation service: runs all PostgreSQL migrations in
+  # migrations/ then exits (exit 0); atlas waits for its success before
+  # starting. The official postgres image ships psql, so migrations do not go
+  # into the app image (the app image is distroless, no shell). Schema changes
+  # are additive only — never modify published migration files.
   migrate:
     image: postgres:17-alpine
     depends_on:
@@ -71,7 +79,7 @@ services:
       PGDATABASE: atlas
     volumes:
       - ./migrations:/migrations:ro
-    # shell 变量必须写成 $$f：裸 $f 会被 compose 自己先插值成空串
+    # Shell variables must be written $$f: a bare $f would be interpolated by compose itself into an empty string
     entrypoint: ["sh", "-c", "for f in /migrations/0*.sql; do case \"$$f\" in *_mysql.sql) continue ;; esac; echo \"applying $$f\"; psql -v ON_ERROR_STOP=1 -f \"$$f\" || exit 1; done"]
     restart: "no"
 
@@ -81,7 +89,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: atlas
-      # 密码从 .env 读（敏感值不写死）；本地默认 atlas，生产务必改强密码
+      # Password read from .env (secrets not hard-coded); defaults to atlas locally — use a strong password in production
       POSTGRES_PASSWORD: ${ATLAS_PG_PASSWORD:-atlas}
       POSTGRES_DB: atlas
     volumes:
@@ -91,8 +99,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    # 默认不暴露到宿主机（只有 Atlas 在 docker 网络内访问）。
-    # 需要本机 psql 调试时取消注释：
+    # Not exposed to the host by default (only Atlas reaches it on the docker network).
+    # Uncomment for local psql debugging:
     # ports:
     #   - "127.0.0.1:15432:5432"
 
@@ -100,13 +108,13 @@ services:
     image: redis:8-alpine
     container_name: atlas-redis
     restart: unless-stopped
-    # 心跳/运行时状态是易失数据，不挂持久卷；重建容器丢运行时属预期
+    # Heartbeat/runtime state is ephemeral data, no persistent volume; losing runtime state on container rebuild is expected
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    # 需要本机 redis-cli 调试时取消注释：
+    # Uncomment for local redis-cli debugging:
     # ports:
     #   - "127.0.0.1:16379:6379"
 
