@@ -1,4 +1,4 @@
--- Atlas: registration lifecycle class (docs/lifecycle.md §3 注册生命周期).
+-- Atlas: registration lifecycle class (docs/lifecycle.md §3 Registration Lifecycle).
 -- Two classes of registration:
 --   permanent — never auto-expired; only an explicit admin instruction can
 --               remove the record. The default for every pre-existing row.
