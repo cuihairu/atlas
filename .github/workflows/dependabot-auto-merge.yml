@@ -50,7 +50,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
+          # Strip dependabot's trailing " in <path> [in <group>]" suffix
+          # before version parsing (up to two segments): "bump vitest from
+          # 5.1.0 to 5.1.1 in /dashboard in the dashboard-dev group" would
+          # otherwise parse `to` as the whole suffix.
           title="$(gh pr view "$PR_URL" --json title -q .title)"
+          title="${title% in *}"
+          title="${title% in *}"
           from="$(sed -E 's/.* from v?([^ ]+) to .*/\1/' <<<"$title")"
           to="$(sed -E 's/.* to v?([^ ]+)$/\1/' <<<"$title")"
           echo "bump: $from -> $to (title: $title)"
@@ -60,8 +66,11 @@ jobs:
             if [[ "${from%.*}" == "${to%.*}" ]]; then
               # same major.minor → patch bump
               echo "patch bump：自动合并"
-              gh pr review "$PR_URL" --approve
-              gh pr merge "$PR_URL" --auto --squash
+              # No branch protection on main and this run already executed
+              # the full gate suite above, so the squash merge needs no
+              # review. GITHUB_TOKEN cannot approve PRs (categorical GitHub
+              # restriction), so the former --approve step could never pass.
+              gh pr merge "$PR_URL" --squash --delete-branch
               exit 0
             fi
             echo "minor bump：需要人工评审"
