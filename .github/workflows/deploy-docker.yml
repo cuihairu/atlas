@@ -71,7 +71,10 @@ jobs:
       DEMO_KEY: demo-ab36cfc2cb77ac66ccd0523512efffbe
     steps:
       - name: Checkout
-        timeout-minutes: 3
+        # The deploy host's route to github.com stalls intermittently (TLS
+        # terminated mid-transfer); the fetch's internal retry needs more
+        # than the earlier 3-minute budget to ride out a bad window.
+        timeout-minutes: 8
         uses: actions/checkout@v7.0.1
 
       # ── Gate: deploy only when main is green ─────────────────────
@@ -263,7 +266,23 @@ jobs:
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
-          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" pull
+          compose() {
+            docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" "$@"
+          }
+          # The GHCR images are the deployment payload and must resolve
+          # remotely: a fresh tag has to actually exist before anything
+          # is touched on the host.
+          compose pull atlas dashboard demoagents
+          # Base images (postgres:17-alpine / redis:8-alpine) come from
+          # docker.io, which is intermittently unreachable or DNS-poisoned
+          # from this host (resolved to a bogus IP more than once). They
+          # only need to exist locally — an earlier deploy cached them —
+          # so fall back to the cached copy instead of failing the whole
+          # deployment on a registry check.
+          if ! compose pull migrate postgres redis; then
+            docker image inspect postgres:17-alpine redis:8-alpine >/dev/null
+            echo "docker.io unreachable; using locally cached postgres:17-alpine / redis:8-alpine"
+          fi
 
       - name: Deploy containers
         timeout-minutes: 10
@@ -405,7 +424,11 @@ jobs:
 
       # ── Automatic rollback on failure: restore the previous image tags, re-up and re-verify ─────
       - name: Rollback to previous images
-        if: failure()
+        # Only roll back when a previous tag set was recorded — i.e. the
+        # deploy actually got past "Prepare deploy directory". A failure
+        # before that point (bad checkout, gate refusal) never touched the
+        # host, so there is nothing to roll back.
+        if: failure() && (env.PREV_ATLAS_TAG != '' || env.PREV_DASHBOARD_TAG != '')
         timeout-minutes: 10
         run: |
           set -uo pipefail
