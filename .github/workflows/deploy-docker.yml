@@ -262,7 +262,12 @@ jobs:
           cat "$deploy_dir/.env" | sed "s/ATLAS_ADMIN_API_KEYS=.*/ATLAS_ADMIN_API_KEYS=<redacted>/"
 
       - name: Pull images
-        timeout-minutes: 10
+        # A fresh GHCR build can take >10 minutes to download on this
+        # host even while layers are progressing normally (2026-11-27
+        # deploy 45946665759 was killed mid-download at exactly 10m).
+        # Job-level budget (150m) leaves ample room; the docker.io base
+        # fallback below is bounded separately by its own registry timeouts.
+        timeout-minutes: 30
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
