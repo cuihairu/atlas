@@ -271,8 +271,12 @@ jobs:
         # mid-layer (2026-11-27 deploy 45948868084 / 45957881220), and
         # `docker compose pull` does not retry a failed layer copy. Retry
         # the payload pull a bounded number of times; each attempt resumes
-        # from layers already committed to the local cache.
-        timeout-minutes: 30
+        # from layers already committed to the local cache. A single full
+        # pull on this host can exceed 30m (attempt 1 of deploy
+        # 45960807937 ran 16.5m before its first RST and attempt 2 needed
+        # more), so budget 60m — the job-level 150m limit still leaves room
+        # for the rest of the pipeline.
+        timeout-minutes: 60
         run: |
           set -euo pipefail
           deploy_dir="${{ inputs.deploy_dir }}"
