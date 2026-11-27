@@ -29,6 +29,10 @@ on:
       - '.gitignore'
       - '*.svg'
       - '.editorconfig'
+  # Fired by dependabot-auto-merge after its GITHUB_TOKEN squash merge:
+  # that push event cannot re-trigger push workflows (GitHub recursion
+  # suppression), so main would otherwise sit without a CI run.
+  workflow_dispatch:
 permissions:
   contents: read
 

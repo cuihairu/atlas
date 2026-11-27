@@ -71,6 +71,13 @@ jobs:
               # review. GITHUB_TOKEN cannot approve PRs (categorical GitHub
               # restriction), so the former --approve step could never pass.
               gh pr merge "$PR_URL" --squash --delete-branch
+              # The squash-merge push is made with GITHUB_TOKEN, so it does
+              # not fire push workflows (GitHub recursion suppression) and
+              # the merged main HEAD would get no CI run at all.
+              # workflow_dispatch is explicitly exempt from that
+              # suppression, so re-fire both gate workflows on main.
+              gh workflow run ci.yml --ref main
+              gh workflow run docker-image.yml --ref main
               exit 0
             fi
             echo "minor bump：需要人工评审"
