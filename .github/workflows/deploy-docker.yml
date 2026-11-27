@@ -267,6 +267,11 @@ jobs:
         # deploy 45946665759 was killed mid-download at exactly 10m).
         # Job-level budget (150m) leaves ample room; the docker.io base
         # fallback below is bounded separately by its own registry timeouts.
+        # GHCR blob CDN (185.199.108/109/110.154:443) intermittently RSTs
+        # mid-layer (2026-11-27 deploy 45948868084 / 45957881220), and
+        # `docker compose pull` does not retry a failed layer copy. Retry
+        # the payload pull a bounded number of times; each attempt resumes
+        # from layers already committed to the local cache.
         timeout-minutes: 30
         run: |
           set -euo pipefail
@@ -277,7 +282,20 @@ jobs:
           # The GHCR images are the deployment payload and must resolve
           # remotely: a fresh tag has to actually exist before anything
           # is touched on the host.
-          compose pull atlas dashboard demoagents
+          pulled=0
+          for attempt in 1 2 3; do
+            echo "GHCR payload pull attempt $attempt/3"
+            if compose pull atlas dashboard demoagents; then
+              pulled=1
+              break
+            fi
+            echo "GHCR pull attempt $attempt failed; retrying"
+            sleep 10
+          done
+          if [ "$pulled" != "1" ]; then
+            echo "GHCR payload pull failed after 3 attempts" >&2
+            exit 1
+          fi
           # Base images (postgres:17-alpine / redis:8-alpine) come from
           # docker.io, which is intermittently unreachable or DNS-poisoned
           # from this host (resolved to a bogus IP more than once). They
