@@ -445,9 +445,9 @@ jobs:
             echo
             echo "## Assets"
             echo
-            echo "```"
+            printf '```\n'
             cat asset-manifest.txt
-            echo "```"
+            printf '```\n'
             echo
             echo "The deb/rpm sets are cross-compiled for amd64 and arm64; the"
             echo "amd64 binary is execution-smoked (serve + /healthz) and both"
